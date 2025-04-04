@@ -16,7 +16,7 @@ import EmailIcon from '@mui/icons-material/Email';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import PhoneIcon from '@mui/icons-material/Phone';
 import { useTheme } from '@mui/material/styles';
-import { ColorModeContext } from './layout';
+import { ColorModeContext } from './ColorModeContext';
 
 // Styled components
 const PageContainer = styled(Box)(({ theme }) => ({
@@ -227,17 +227,6 @@ export default function Home() {
               <Typography variant="body2">contact@learn-loop.org</Typography>
             </ContactItem>
           </Box>
-          
-          {/* <Box>
-            <ContactItem>
-              <LocationOnIcon fontSize="small" color="primary" />
-              <Typography variant="body2">2127 Deer Path, Waukesha, WI 53189-8237</Typography>
-            </ContactItem>
-            <ContactItem>
-              <PhoneIcon fontSize="small" color="primary" />
-              <Typography variant="body2">(262) 899-2272</Typography>
-            </ContactItem>
-          </Box> */}
         </FooterContent>
         <Divider sx={{ my: 2 }} />
         <Typography variant="body2" align="center" sx={{ pt: 1, opacity: 0.7 }}>
