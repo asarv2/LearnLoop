@@ -1,22 +1,18 @@
 'use client';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter'
-import { Roboto } from 'next/font/google';
 import { ThemeProvider } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
-import { useState, useEffect, createContext, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { lightTheme, darkTheme } from '../theme';
 import "./globals.css";
+import { Orbitron } from 'next/font/google';
+import { ColorModeContext } from './ColorModeContext';
 
-const roboto = Roboto({
-  weight: ['300', '400', '500', '700'],
+// Load Orbitron font from Google Fonts
+const futuristicFont = Orbitron({
   subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-roboto',
-});
-
-// Create context for theme mode
-export const ColorModeContext = createContext({ 
-  toggleColorMode: () => {} 
+  weight: ['400', '500', '700'],
+  variable: '--font-futuristic',
 });
 
 export default function RootLayout({
@@ -47,12 +43,12 @@ export default function RootLayout({
   );
 
   return (
-    <html lang="en">
+    <html lang="en" className={futuristicFont.variable}>
       <head>
         <title>LearnLoop</title>
         <meta name="description" content="On a mission to elevate university learning with AI." />
       </head>
-      <body className={roboto.variable}>
+      <body>
         {mounted && (
           <ColorModeContext.Provider value={colorMode}>
             <ThemeProvider theme={theme}>
