@@ -34,10 +34,10 @@ const schema = {
             messages: {
                 pk: 'id',
                 pkType: 'string',
-                columns: ['id', 'created_at', 'content', 'role', 'chat', 'completed', 'completed_at'],
+                columns: ['id', 'created_at', 'content', 'role', 'chat_id', 'completed', 'completed_at'],
                 relationships: [
                     {
-                        column: 'chat',
+                        column: 'chat_id',
                         references: 'chats',
                         references_column: 'id',
                     },
