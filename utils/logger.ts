@@ -19,8 +19,6 @@ async function insertLogToDatabase(
       level,
       message: message + " " + contextJson,
     });
-
-    throw new Error("Failed to insert log to database");
   } catch (error) {
     throw new Error(`Failed to insert log to database: ${error}`);
   }
