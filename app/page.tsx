@@ -14,22 +14,18 @@ import {
   Text, 
   Button,
   Card,
-  Spinner
+  Spinner,
+  Badge,
+  Container
 } from '@radix-ui/themes';
-import { FileTextIcon, PlayIcon } from '@radix-ui/react-icons';
+import { FileTextIcon, PlayIcon, CheckIcon } from '@radix-ui/react-icons';
 import InterviewSimulation from '@/components/InterviewSimulation';
-interface PDFData {
-  fileName: string;
-  fileSize: number;
-  pdfData: string; // base64 encoded PDF
-}
 
 export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [candidateName, setCandidateName] = useState('');
-  const [interviewType, setInterviewType] = useState('Mechanical Engineering');
+  const [interviewType, setInterviewType] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [pdfData, setPdfData] = useState<PDFData | null>(null);
   const [resumePDFFile, setResumePDFFile] = useState<File | null>(null);
   const [interviewStarted, setInterviewStarted] = useState(false);
   const [chatId, setChatId] = useState('');
@@ -64,28 +60,18 @@ export default function Home() {
   };
 
   const startInterview = async () => {
-    if (!selectedFile || !candidateName.trim()) {
-      alert('Please select a resume file and enter the candidate name');
+    if (!selectedFile || !candidateName.trim() || !interviewType.trim()) {
+      alert('Please complete all steps before starting the interview');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      let pdfResult;
-      
-      // Check if we're using the sample resume (already have pdfData)
-      if (pdfData && selectedFile.name === 'John_Doe_Resume.pdf') {
-        // Use the already loaded sample resume data
-        pdfResult = pdfData;
-      } else {
-        // Process PDF data from uploaded file
-        const result = await processPDFData();
-        if (!result) {
-          throw new Error('Failed to process PDF data');
-        }
-        setPdfData(result);
-        pdfResult = result;
+      // Process PDF data from uploaded file
+      const result = await processPDFData();
+      if (!result) {
+        throw new Error('Failed to process PDF data');
       }
 
       // Start interview - now we'll pass the PDF data directly
@@ -118,12 +104,18 @@ export default function Home() {
   const handleBack = () => {
     setInterviewStarted(false);
     setChatId('');
-    // Optionally reset other state if needed
-    // setSelectedFile(null);
-    // setCandidateName('');
-    // setResumeData(null);
-    // setFormattedResumeText('');
   };
+
+  const isStepComplete = (step: number) => {
+    switch (step) {
+      case 1: return candidateName.trim() !== '';
+      case 2: return interviewType.trim() !== '';
+      case 3: return selectedFile !== null;
+      default: return false;
+    }
+  };
+
+  const allStepsComplete = isStepComplete(1) && isStepComplete(2) && isStepComplete(3);
 
   if (interviewStarted && chatId) {
     return (
@@ -138,186 +130,393 @@ export default function Home() {
   }
 
   return (
-    <Box maxWidth="800px" mx="auto" p="6">
+    <Box style={{ minHeight: '100vh', background: 'var(--gray-1)' }}>
       {/* Header */}
-      <Card size="4" mb="6" style={{ background: 'linear-gradient(135deg, var(--blue-1) 0%, var(--purple-1) 100%)', border: '1px solid var(--blue-6)' }}>
-        <Flex direction="column" align="center" gap="4" p="6">
-          <Heading size="8" weight="bold" align="center" color="blue">
-            LearnLoop Training Platform
+      <Box style={{ 
+        background: 'white', 
+        borderBottom: '1px solid var(--gray-6)',
+        position: 'sticky',
+        top: '0',
+        zIndex: '100'
+      }}>
+        <Container size="4">
+          <Flex justify="between" align="center" py="4">
+            <Flex align="center" gap="3">
+              <Box style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, var(--blue-9) 0%, var(--purple-9) 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Text size="4" weight="bold" style={{ color: 'white' }}>L</Text>
+              </Box>
+              <Heading size="6" weight="bold">
+                LearnLoop
+              </Heading>
+            </Flex>
+            <Badge size="2" variant="soft" color="blue">
+              AI Interview Training
+            </Badge>
+          </Flex>
+        </Container>
+      </Box>
+
+      {/* Main Content */}
+      <Container size="4" py="8">
+        {/* Hero Section */}
+        <Box mb="10" style={{ textAlign: 'center' }}>
+          <Heading size="9" weight="bold" mb="4">
+            Master Your Interview Skills
           </Heading>
-          <Text size="4" align="center" color="gray">
-            Professional Interview Simulation for Mechanical Engineers
+          <Text size="5" color="gray" mb="6" style={{ lineHeight: '1.6', maxWidth: '600px', margin: '0 auto 24px auto' }}>
+            Practice with AI-powered candidates and receive detailed feedback on your interviewing performance
           </Text>
-          <Text size="2" align="center" color="gray" style={{ maxWidth: '600px' }}>
-            Practice your interviewing skills by conducting realistic interview simulations. 
-            Upload a candidate&apos;s resume and engage in an AI-powered interview experience.
-          </Text>
-        </Flex>
-      </Card>
+        </Box>
 
-      {/* Setup Form */}
-      <Card size="4">
-        <Flex direction="column" gap="6" p="6">
-          <Heading size="5" weight="bold">
-            Start New Interview Simulation
-          </Heading>
+        {/* Step Cards with Progress Bars */}
+        <Box maxWidth="800px" mx="auto">
+          {/* Step 1: Candidate Name */}
+          <Box mb="4">
+            <Card style={{ 
+              background: 'white',
+              border: `1px solid ${isStepComplete(1) ? 'var(--green-8)' : 'var(--gray-6)'}`,
+              borderRadius: '12px',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+              transition: 'all 0.2s ease'
+            }}>
+              <Box p="6">
+                <Flex align="center" gap="4">
+                  <Box style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    background: isStepComplete(1) ? 'var(--green-9)' : 'var(--gray-7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    {isStepComplete(1) ? (
+                      <CheckIcon color="white" width="16" height="16" />
+                    ) : (
+                      <Text size="2" weight="bold" style={{ color: 'white' }}>1</Text>
+                    )}
+                  </Box>
+                  <Box style={{ flex: 1 }}>
+                    <Flex align="center" gap="2" mb="3">
+                      <Text size="4" weight="bold">Candidate Information</Text>
+                      {isStepComplete(1) && (
+                        <Badge size="1" variant="soft" color="green">Complete</Badge>
+                      )}
+                    </Flex>
 
-          {/* Candidate Name */}
-          <Box>
-            <Text size="3" weight="medium" mb="2">
-              Candidate Name
-            </Text>
-            <input
-              type="text"
-              placeholder="Enter the candidate&apos;s name"
-              value={candidateName}
-              onChange={(e) => setCandidateName(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '12px',
-                borderRadius: '6px',
-                border: '1px solid var(--gray-6)',
-                fontSize: '16px'
-              }}
-            />
-            <Text size="1" color="gray" mt="1">
-                             This will be used as the candidate&apos;s identity in the simulation
-            </Text>
-          </Box>
-
-          {/* Interview Type */}
-          <Box>
-            <Text size="3" weight="medium" mb="2">
-              Interview Type
-            </Text>
-            <input
-              type="text"
-              value={interviewType}
-              onChange={(e) => setInterviewType(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '12px',
-                borderRadius: '6px',
-                border: '1px solid var(--gray-6)',
-                fontSize: '16px'
-              }}
-            />
-            <Text size="1" color="gray" mt="1">
-              The type of engineering position being interviewed for
-            </Text>
-          </Box>
-
-          {/* Resume Upload */}
-          <Box>
-            <Text size="3" weight="medium" mb="2">
-              Candidate Resume (PDF)
-            </Text>
-            <Card 
-              size="3" 
-              style={{ 
-                border: '2px dashed var(--gray-6)', 
-                background: 'var(--gray-1)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-              onClick={() => document.getElementById('resume-upload')?.click()}
-            >
-              <Flex direction="column" align="center" gap="3" p="4">
-                <FileTextIcon width="32" height="32" color="var(--gray-9)" />
-                {selectedFile ? (
-                  <>
-                    <Text size="3" weight="medium" color="green">
-                      {selectedFile.name}
-                    </Text>
-                    <Text size="2" color="gray">
-                      Click to change file
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Text size="3" weight="medium">
-                      Click to upload resume
-                    </Text>
-                    <Text size="2" color="gray">
-                      PDF files only
-                    </Text>
-                  </>
-                )}
-              </Flex>
+                    <input
+                      type="text"
+                      placeholder="Enter candidate&apos;s full name"
+                      value={candidateName}
+                      onChange={(e) => setCandidateName(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        border: `1px solid ${isStepComplete(1) ? 'var(--green-7)' : 'var(--gray-6)'}`,
+                        fontSize: '16px',
+                        outline: 'none',
+                        background: 'white'
+                      }}
+                    />
+                  </Box>
+                </Flex>
+              </Box>
             </Card>
-            <input
-              id="resume-upload"
-              type="file"
-              accept=".pdf"
-              onChange={handleFileChange}
-              style={{ display: 'none' }}
-            />
           </Box>
 
-          {/* Sample Resume Button */}
+          {/* Progress Bar 1 */}
+          <Flex justify="center" mb="4">
+            <Box style={{
+              width: '2px',
+              height: '24px',
+              background: isStepComplete(1) ? 'var(--green-8)' : 'var(--gray-6)',
+              borderRadius: '2px'
+            }} />
+          </Flex>
+
+          {/* Step 2: Position Type */}
+          <Box mb="4">
+            <Card style={{ 
+              background: 'white',
+              border: `1px solid ${isStepComplete(2) ? 'var(--green-8)' : 'var(--gray-6)'}`,
+              borderRadius: '12px',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+              transition: 'all 0.2s ease'
+            }}>
+              <Box p="6">
+                <Flex align="center" gap="4">
+                  <Box style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    background: isStepComplete(2) ? 'var(--green-9)' : 'var(--gray-7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    {isStepComplete(2) ? (
+                      <CheckIcon color="white" width="16" height="16" />
+                    ) : (
+                      <Text size="2" weight="bold" style={{ color: 'white' }}>2</Text>
+                    )}
+                  </Box>
+                  <Box style={{ flex: 1 }}>
+                    <Flex align="center" gap="2" mb="3">
+                      <Text size="4" weight="bold">Position Type</Text>
+                      {isStepComplete(2) && (
+                        <Badge size="1" variant="soft" color="green">Complete</Badge>
+                      )}
+                    </Flex>
+
+                    <input
+                      type="text"
+                      placeholder="e.g., Marketing Manager, Software Engineer, Sales Representative"
+                      value={interviewType}
+                      onChange={(e) => setInterviewType(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        border: `1px solid ${isStepComplete(2) ? 'var(--green-7)' : 'var(--gray-6)'}`,
+                        fontSize: '16px',
+                        outline: 'none',
+                        background: 'white'
+                      }}
+                    />
+                  </Box>
+                </Flex>
+              </Box>
+            </Card>
+          </Box>
+
+          {/* Progress Bar 2 */}
+          <Flex justify="center" mb="4">
+            <Box style={{
+              width: '2px',
+              height: '24px',
+              background: isStepComplete(2) ? 'var(--green-8)' : 'var(--gray-6)',
+              borderRadius: '2px'
+            }} />
+          </Flex>
+
+          {/* Step 3: Resume Upload */}
+          <Box mb="4">
+            <Card style={{ 
+              background: 'white',
+              border: `1px solid ${isStepComplete(3) ? 'var(--green-8)' : 'var(--gray-6)'}`,
+              borderRadius: '12px',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+              transition: 'all 0.2s ease'
+            }}>
+              <Box p="6">
+                <Flex align="center" gap="4">
+                  <Box style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    background: isStepComplete(3) ? 'var(--green-9)' : 'var(--gray-7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    {isStepComplete(3) ? (
+                      <CheckIcon color="white" width="16" height="16" />
+                    ) : (
+                      <Text size="2" weight="bold" style={{ color: 'white' }}>3</Text>
+                    )}
+                  </Box>
+                  <Box style={{ flex: 1 }}>
+                    <Flex align="center" gap="2" mb="3">
+                      <Text size="4" weight="bold">Candidate Resume</Text>
+                      {isStepComplete(3) && (
+                        <Badge size="1" variant="soft" color="green">Complete</Badge>
+                      )}
+                    </Flex>
+
+                    <Box
+                      style={{
+                        border: `2px dashed ${isStepComplete(3) ? 'var(--green-7)' : 'var(--gray-6)'}`,
+                        borderRadius: '8px',
+                        padding: '24px',
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        background: isStepComplete(3) ? 'var(--green-1)' : 'var(--gray-1)',
+                        transition: 'all 0.2s ease'
+                      }}
+                      onClick={() => document.getElementById('resume-upload')?.click()}
+                    >
+                      {selectedFile ? (
+                        <Flex direction="column" align="center" gap="2">
+                          <CheckIcon width="24" height="24" color="var(--green-9)" />
+                          <Text size="3" weight="medium" color="green">
+                            {selectedFile.name}
+                          </Text>
+                          <Text size="1" color="gray">Click to change file</Text>
+                        </Flex>
+                      ) : (
+                        <Flex direction="column" align="center" gap="2">
+                          <FileTextIcon width="24" height="24" color="var(--gray-9)" />
+                          <Text size="3" weight="medium">Click to upload resume</Text>
+                          <Text size="1" color="gray">PDF files only</Text>
+                        </Flex>
+                      )}
+                    </Box>
+                    <input
+                      id="resume-upload"
+                      type="file"
+                      accept=".pdf"
+                      onChange={handleFileChange}
+                      style={{ display: 'none' }}
+                    />
+                  </Box>
+                </Flex>
+              </Box>
+            </Card>
+          </Box>
+
+          {/* Progress Bar 3 */}
+          <Flex justify="center" mb="4">
+            <Box style={{
+              width: '2px',
+              height: '24px',
+              background: isStepComplete(3) ? 'var(--green-8)' : 'var(--gray-6)',
+              borderRadius: '2px'
+            }} />
+          </Flex>
+
+          {/* Step 4: Additional Notes (Optional) */}
+          <Box mb="4">
+            <Card style={{ 
+              background: 'white',
+              border: '1px solid var(--gray-6)',
+              borderRadius: '12px',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+              transition: 'all 0.2s ease'
+            }}>
+              <Box p="6">
+                <Flex align="center" gap="4">
+                  <Box style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    background: 'var(--gray-7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <Text size="2" weight="bold" style={{ color: 'white' }}>4</Text>
+                  </Box>
+                  <Box style={{ flex: 1 }}>
+                    <Flex align="center" gap="2" mb="3">
+                      <Text size="4" weight="bold">Additional Notes</Text>
+                      <Badge size="1" variant="soft" color="gray">Optional</Badge>
+                    </Flex>
+
+                    <textarea
+                      placeholder="Add anything that may be unique to this interview..."
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--gray-6)',
+                        fontSize: '16px',
+                        outline: 'none',
+                        background: 'white',
+                        minHeight: '80px',
+                        resize: 'vertical',
+                        fontFamily: 'inherit'
+                      }}
+                    />
+                  </Box>
+                </Flex>
+              </Box>
+            </Card>
+          </Box>
+
+          {/* Progress Bar 4 */}
+          <Flex justify="center" mb="4">
+            <Box style={{
+              width: '2px',
+              height: '24px',
+              background: allStepsComplete ? 'var(--green-8)' : 'var(--gray-6)',
+              borderRadius: '2px'
+            }} />
+          </Flex>
+
+          {/* Step 5: Start Interview */}
           <Box>
-            <Text size="2" color="gray" mb="2">
-              For testing purposes:
-            </Text>
-            <Button
-              variant="soft"
-              size="2"
-              onClick={async () => {
-                try {
-                  setCandidateName('John Doe');
-                  
-                  // Load the actual PDF file for sample resume
-                  const pdfResponse = await fetch('/api/resume/pdf');
-                  const pdfBlob = await pdfResponse.blob();
-                  const pdfFile = new File([pdfBlob], 'John_Doe_Resume.pdf', { type: 'application/pdf' });
-                  setResumePDFFile(pdfFile);
-                  setSelectedFile(pdfFile);
-                  
-                  // Set a placeholder PDF data
-                  setPdfData({
-                    fileName: 'John_Doe_Resume.pdf',
-                    fileSize: pdfFile.size,
-                    pdfData: '' // Will be processed when interview starts
-                  });
-                } catch (error) {
-                  console.error('Error loading sample resume:', error);
-                }
-              }}
-            >
-              Use Sample Resume (John Doe)
-            </Button>
+            <Card style={{ 
+              background: allStepsComplete ? 'white' : 'var(--gray-2)',
+              border: `1px solid ${allStepsComplete ? 'var(--blue-7)' : 'var(--gray-6)'}`,
+              borderRadius: '12px',
+              boxShadow: allStepsComplete ? '0 4px 12px rgba(0, 100, 200, 0.15)' : '0 1px 3px rgba(0, 0, 0, 0.1)',
+              transition: 'all 0.2s ease'
+            }}>
+              <Box p="6">
+                <Flex align="center" gap="4">
+                  <Box style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    background: allStepsComplete ? 'var(--blue-9)' : 'var(--gray-7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <PlayIcon color="white" width="16" height="16" />
+                  </Box>
+                  <Box style={{ flex: 1 }}>
+                    <Flex align="center" gap="2" mb="3">
+                      <Text size="4" weight="bold">Start Interview Simulation</Text>
+                      {allStepsComplete && (
+                        <Badge size="1" variant="soft" color="blue">Ready to start</Badge>
+                      )}
+                    </Flex>
+
+                    <Button
+                      size="3"
+                      onClick={startInterview}
+                      disabled={!allStepsComplete || isLoading}
+                      style={{ 
+                        width: '100%',
+                        background: allStepsComplete ? 'var(--blue-9)' : 'var(--gray-6)',
+                        opacity: allStepsComplete ? 1 : 0.6,
+                        cursor: allStepsComplete ? 'pointer' : 'not-allowed'
+                      }}
+                    >
+                      {isLoading ? (
+                        <Flex align="center" gap="2">
+                          <Spinner size="2" />
+                          <Text>Starting Interview...</Text>
+                        </Flex>
+                      ) : (
+                        <Flex align="center" gap="2">
+                          <PlayIcon />
+                          <Text>Start Interview</Text>
+                        </Flex>
+                      )}
+                    </Button>
+                  </Box>
+                </Flex>
+              </Box>
+            </Card>
           </Box>
-
-          {/* Start Button */}
-          <Button
-            size="4"
-            onClick={startInterview}
-            disabled={!selectedFile || !candidateName.trim() || isLoading}
-            style={{ width: '100%' }}
-          >
-            {isLoading ? (
-              <Flex align="center" gap="2">
-                <Spinner size="2" />
-                <Text>Starting Interview...</Text>
-              </Flex>
-            ) : (
-              <Flex align="center" gap="2">
-                <PlayIcon />
-                <Text>Start Interview Simulation</Text>
-              </Flex>
-            )}
-          </Button>
-
-          {/* Info */}
-          <Card size="2" style={{ background: 'var(--blue-1)', border: '1px solid var(--blue-6)' }}>
-            <Text size="2" color="blue">
-              <strong>How it works:</strong> Once you start the simulation, you&apos;ll be conducting an interview 
-              with an AI candidate who will respond based on the uploaded resume. At the end, you&apos;ll receive 
-              detailed feedback on your interviewing performance.
-            </Text>
-          </Card>
-        </Flex>
-      </Card>
+        </Box>
+      </Container>
     </Box>
   );
 }

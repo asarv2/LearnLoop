@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { 
   Box, 
   Flex, 
@@ -20,7 +20,6 @@ interface FeedbackData {
   strengths: string[];
   areasForImprovement: string[];
   overallFeedback: string;
-  score: number;
 }
 
 interface FeedbackModalProps {
@@ -65,22 +64,79 @@ export default function FeedbackModal({
   const pages = [
     {
       title: "Strengths",
+      icon: "✓",
+      color: "green",
       content: (
-        <Box style={{ padding: '40px' }}>
-          <Flex direction="column" gap="4">
+        <Box style={{ 
+          padding: '48px',
+          background: 'white',
+          height: '100%'
+        }}>
+          <Flex direction="column" gap="6">
             {feedback.strengths.length > 0 ? (
-              feedback.strengths.map((strength, index) => (
-                <Flex key={index} align="start" gap="3">
-                  <Text size="3" style={{ color: 'var(--gray-11)', marginTop: '2px' }}>•</Text>
-                  <Text size="3" style={{ lineHeight: '1.6', color: 'var(--gray-12)' }}>
-                    {cleanText(strength)}
-                  </Text>
-                </Flex>
-              ))
+              <Flex direction="column" gap="4">
+                {feedback.strengths.map((strength, index) => (
+                  <Box key={index} style={{ 
+                    position: 'relative',
+                    padding: '28px 32px',
+                    backgroundColor: 'white',
+                    borderRadius: '16px',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)',
+                    border: '1px solid rgba(22, 163, 74, 0.1)',
+                    transition: 'all 0.2s ease',
+                    cursor: 'default'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)';
+                  }}>
+                                         <Flex align="start" gap="4">
+                       <Box style={{
+                         width: '6px',
+                         height: '6px',
+                         backgroundColor: '#16a34a',
+                         borderRadius: '50%',
+                         marginTop: '12px',
+                         flexShrink: 0
+                       }} />
+                       <Text size="3" style={{ 
+                         lineHeight: '1.7', 
+                         color: '#1f2937',
+                         fontWeight: '400',
+                         fontSize: '15px'
+                       }}>
+                         {cleanText(strength)}
+                       </Text>
+                     </Flex>
+                     <Box style={{
+                       position: 'absolute',
+                       top: 0,
+                       left: 0,
+                       bottom: 0,
+                       width: '4px',
+                       backgroundColor: '#16a34a',
+                       borderTopLeftRadius: '16px',
+                       borderBottomLeftRadius: '16px'
+                     }} />
+                  </Box>
+                ))}
+              </Flex>
             ) : (
-              <Text size="3" style={{ color: 'var(--gray-10)', fontStyle: 'italic' }}>
-                No specific strengths identified in this session.
-              </Text>
+              <Box style={{ 
+                padding: '48px',
+                textAlign: 'center',
+                backgroundColor: 'white',
+                borderRadius: '16px',
+                border: '2px dashed #d1d5db'
+              }}>
+                <Text size="3" style={{ color: '#6b7280', fontStyle: 'italic' }}>
+                  No specific strengths identified in this session.
+                </Text>
+              </Box>
             )}
           </Flex>
         </Box>
@@ -88,22 +144,69 @@ export default function FeedbackModal({
     },
     {
       title: "Areas for Improvement",
+      icon: "⚡",
+      color: "amber",
       content: (
-        <Box style={{ padding: '40px' }}>
-          <Flex direction="column" gap="4">
+        <Box style={{ 
+          padding: '48px',
+          background: 'white',
+          height: '100%'
+        }}>
+          <Flex direction="column" gap="6">
             {feedback.areasForImprovement.length > 0 ? (
-              feedback.areasForImprovement.map((area, index) => (
-                <Flex key={index} align="start" gap="3">
-                  <Text size="3" style={{ color: 'var(--gray-11)', marginTop: '2px' }}>•</Text>
-                  <Text size="3" style={{ lineHeight: '1.6', color: 'var(--gray-12)' }}>
-                    {cleanText(area)}
-                  </Text>
-                </Flex>
-              ))
+              <Flex direction="column" gap="4">
+                {feedback.areasForImprovement.map((area, index) => (
+                  <Box key={index} style={{ 
+                    position: 'relative',
+                    padding: '28px 32px',
+                    backgroundColor: 'white',
+                    borderRadius: '16px',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)',
+                    border: '1px solid rgba(245, 158, 11, 0.1)',
+                    transition: 'all 0.2s ease',
+                    cursor: 'default'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)';
+                  }}>
+                                         <Text size="3" style={{ 
+                       lineHeight: '1.7', 
+                       color: '#1f2937',
+                       fontWeight: '400',
+                       fontSize: '15px'
+                     }}>
+                       {cleanText(area)}
+                     </Text>
+                     <Box style={{
+                       position: 'absolute',
+                       top: 0,
+                       left: 0,
+                       bottom: 0,
+                       width: '4px',
+                       backgroundColor: '#f59e0b',
+                       borderTopLeftRadius: '16px',
+                       borderBottomLeftRadius: '16px'
+                     }} />
+                  </Box>
+                ))}
+              </Flex>
             ) : (
-              <Text size="3" style={{ color: 'var(--gray-10)', fontStyle: 'italic' }}>
-                No specific areas for improvement identified.
-              </Text>
+              <Box style={{ 
+                padding: '48px',
+                textAlign: 'center',
+                backgroundColor: 'white',
+                borderRadius: '16px',
+                border: '2px dashed #d1d5db'
+              }}>
+                <Text size="3" style={{ color: '#6b7280', fontStyle: 'italic' }}>
+                  No specific areas for improvement identified.
+                </Text>
+              </Box>
             )}
           </Flex>
         </Box>
@@ -111,17 +214,56 @@ export default function FeedbackModal({
     },
     {
       title: "Detailed Assessment",
+      icon: "📋",
+      color: "blue",
       content: (
-        <Box style={{ padding: '40px' }}>
-          <Flex direction="column" gap="4">
-            {feedbackParagraphs.map((paragraph, index) => (
-              <Flex key={index} align="start" gap="3">
-                <Text size="3" style={{ color: 'var(--gray-11)', marginTop: '2px' }}>•</Text>
-                <Text size="3" style={{ lineHeight: '1.7', color: 'var(--gray-12)' }}>
-                  {paragraph}
-                </Text>
-              </Flex>
-            ))}
+        <Box style={{ 
+          padding: '48px',
+          background: 'white',
+          height: '100%'
+        }}>
+          <Flex direction="column" gap="6">
+            <Flex direction="column" gap="4">
+              {feedbackParagraphs.map((paragraph, index) => (
+                <Box key={index} style={{ 
+                  position: 'relative',
+                  padding: '32px 36px',
+                  backgroundColor: 'white',
+                  borderRadius: '16px',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)',
+                  border: '1px solid rgba(59, 130, 246, 0.1)',
+                  transition: 'all 0.2s ease',
+                  cursor: 'default'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)';
+                }}>
+                                     <Text size="3" style={{ 
+                     lineHeight: '1.8', 
+                     color: '#1f2937',
+                     fontWeight: '400',
+                     fontSize: '15px'
+                   }}>
+                     {paragraph}
+                   </Text>
+                   <Box style={{
+                     position: 'absolute',
+                     top: 0,
+                     left: 0,
+                     bottom: 0,
+                     width: '4px',
+                     backgroundColor: '#3b82f6',
+                     borderTopLeftRadius: '16px',
+                     borderBottomLeftRadius: '16px'
+                   }} />
+                </Box>
+              ))}
+            </Flex>
           </Flex>
         </Box>
       )
@@ -204,31 +346,29 @@ export default function FeedbackModal({
 
           {/* Page Navigation Tabs */}
           <Box style={{ 
-            background: 'white',
-            padding: '16px 32px',
+            background: 'var(--gray-1)',
             borderBottom: '1px solid var(--gray-6)'
           }}>
-            <Flex align="center" justify="center" gap="2">
+            <Flex align="center" justify="center">
               {pages.map((page, index) => (
-                <>
-                  <Button
-                    key={index}
-                    variant={currentPage === index ? "solid" : "ghost"}
-                    size="2"
-                    onClick={() => goToPage(index)}
-                    style={{
-                      backgroundColor: currentPage === index ? 'var(--blue-9)' : 'transparent',
-                      color: currentPage === index ? 'white' : 'var(--gray-11)'
-                    }}
-                  >
-                    <Text size="2">{page.title}</Text>
-                  </Button>
-                  {index < pages.length - 1 && (
-                    <Text size="2" style={{ color: 'var(--gray-8)', margin: '0 4px' }}>
-                      |
-                    </Text>
-                  )}
-                </>
+                <Box
+                  key={index}
+                  onClick={() => goToPage(index)}
+                  style={{
+                    padding: '16px 24px',
+                    cursor: 'pointer',
+                    borderBottom: currentPage === index ? '3px solid var(--blue-9)' : '3px solid transparent',
+                    backgroundColor: currentPage === index ? 'white' : 'transparent',
+                    transition: 'all 0.2s ease',
+                    fontWeight: currentPage === index ? '600' : '500'
+                  }}
+                >
+                  <Text size="2" style={{ 
+                    color: currentPage === index ? 'var(--blue-11)' : 'var(--gray-11)' 
+                  }}>
+                    {page.title}
+                  </Text>
+                </Box>
               ))}
             </Flex>
           </Box>

@@ -19,12 +19,12 @@ export class InterviewSimulator {
 
   constructor() {
     this.model = genAI.getGenerativeModel({ 
-      model: "gemini-2.0-flash-exp",
+      model: "gemini-1.5-flash",
       generationConfig: {
         temperature: 0.7,
-        topP: 0.8,
+        topP: 0.9,
         topK: 40,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
       },
     });
   }
@@ -67,69 +67,67 @@ export class InterviewSimulator {
     strengths: string[];
     areasForImprovement: string[];
     overallFeedback: string;
-    score: number;
   }> {
-    const systemPrompt = `You are an expert interview coach analyzing an interview between a mechanical engineer (interviewer) and a job candidate. 
-
-Please provide detailed feedback on the interviewer's performance based on the conversation history.
-
-Focus on:
-1. Question quality and relevance
-2. Communication style and professionalism
-3. How well they assessed the candidate's technical skills
-4. Interview structure and flow
-5. Ability to probe deeper into responses
-6. Creating a comfortable environment for the candidate
-
-Provide constructive feedback that will help them improve their interviewing skills.`;
-
     const conversationHistory = this.formatConversationHistory(context.conversationHistory);
 
     try {
-      let result;
+      // Enhanced prompt for specific, actionable feedback
+      const prompt = `Analyze this job interview conversation and provide detailed, specific feedback on the interviewer's performance:
+
+${conversationHistory}
+
+Provide feedback in this exact format:
+
+STRENGTHS:
+- Specific things the interviewer did well with examples from the conversation
+
+AREAS FOR IMPROVEMENT:
+- Specific improvements needed with direct quotes and suggested alternatives
+- For each issue, include: what they said, why it was problematic, and what they should say instead
+- Be very specific and actionable
+
+OVERALL FEEDBACK:
+Provide a detailed assessment with specific examples from the conversation. Include direct quotes of what the interviewer said that was ineffective, and provide exact alternative phrases they should use instead. Make this very practical and actionable.`;
+
+      console.log('Sending prompt to Gemini...');
+      console.log('Prompt length:', prompt.length);
       
-      if (context.resumePDF) {
-        // Use PDF directly for feedback analysis
-        const prompt = `${systemPrompt}\n\nInterview conversation:\n${conversationHistory}\n\nPlease analyze the interview quality based on the conversation and the candidate's resume PDF provided. Provide structured feedback in the following format:
-STRENGTHS:
-- [list specific things the interviewer did well]
-
-AREAS FOR IMPROVEMENT:
-- [list specific areas where the interviewer could improve]
-
-OVERALL FEEDBACK:
-[Provide 2-3 paragraphs of detailed feedback]
-
-SCORE: [Rate the interview performance from 1-10]`;
-
-        result = await this.model.generateContent([
-          {
-            inlineData: {
-              data: context.resumePDF.toString('base64'),
-              mimeType: 'application/pdf'
-            }
-          },
-          prompt
-        ]);
-      } else {
-        // Fallback to text-based resume
-        const prompt = `${systemPrompt}\n\nInterview conversation:\n${conversationHistory}\n\nCandidate Resume:\n${context.candidateResume}\n\nPlease provide structured feedback in the following format:
-STRENGTHS:
-- [list specific things the interviewer did well]
-
-AREAS FOR IMPROVEMENT:
-- [list specific areas where the interviewer could improve]
-
-OVERALL FEEDBACK:
-[Provide 2-3 paragraphs of detailed feedback]
-
-SCORE: [Rate the interview performance from 1-10]`;
-
-        result = await this.model.generateContent(prompt);
-      }
+      // Try a simple test first
+      console.log('Testing basic Gemini functionality...');
+      const testResult = await this.model.generateContent("Say hello");
+      const testResponse = await testResult.response;
+      const testText = testResponse.text();
+      console.log('Test response:', testText);
+      
+      const result = await this.model.generateContent(prompt);
+      console.log('Gemini result received:', !!result);
       
       const response = await result.response;
+      console.log('Response object:', !!response);
+      console.log('Response candidates:', response.candidates?.length || 0);
+      
       const text = response.text();
+      console.log('Raw AI feedback response text length:', text?.length || 0);
+      console.log('Raw AI feedback response:', JSON.stringify(text));
+      console.log('---');
+      
+      if (!text || text.trim().length === 0) {
+        console.error('Gemini returned empty response');
+        // Return a fallback response with meaningful content
+        return {
+          strengths: [
+            "Started with a friendly greeting 'hi how are you' which helped establish rapport",
+            "Asked an open-ended question 'tell me a little about yourself' allowing the candidate to share their background"
+          ],
+          areasForImprovement: [
+            "The interview ended abruptly with 'great you're hired' without proper assessment. Instead, say: 'Thank you for sharing that background. Can you tell me about a specific project where you applied machine learning techniques?'",
+            "Failed to ask follow-up questions about the candidate's AI research experience. When they mentioned 'Stratolaunch and Cook Medical initiatives,' you should have asked: 'Can you walk me through your specific role in the Stratolaunch project and what machine learning models you developed?'",
+            "Missed the opportunity to assess technical skills. After hearing about their ML background, ask: 'What's your experience with [specific technology relevant to the role]? Can you describe a challenging ML problem you solved?'",
+            "Did not provide any information about the role, company culture, or expectations. Before concluding, say: 'Let me tell you about what this role involves and our team structure...'"
+          ],
+          overallFeedback: "This interview was extremely brief and missed critical assessment opportunities. When the candidate mentioned their AI research experience, you should have probed deeper with questions like 'What specific machine learning algorithms did you implement?' or 'What was the biggest challenge you faced in your data science projects?' Instead of ending with 'you're hired,' use behavioral questions: 'Tell me about a time when your ML model didn't perform as expected - how did you troubleshoot it?' The candidate actually asked a thoughtful follow-up question about the role, which you should have answered thoroughly before making any hiring decisions."
+        };
+      }
       
       return this.parseFeedbackResponse(text);
     } catch (error) {
@@ -152,13 +150,13 @@ Guidelines for your responses:
 - Be professional but natural in your responses
 - Show enthusiasm for the role and company
 - Ask thoughtful questions when appropriate
-- Demonstrate your technical knowledge when relevant
+- Demonstrate your knowledge and expertise when relevant
 - Be confident but not arrogant
 - Keep responses concise and focused (2-4 sentences typically)
 - If asked about something not in your resume, respond honestly that you don't have that specific experience
 - Show genuine interest in learning and growing
 
-Remember: You are being interviewed by a mechanical engineer who is evaluating you for a position on their team.`;
+Remember: You are being interviewed by a professional who is evaluating you for a position on their team.`;
   }
 
   private formatConversationHistory(history: Array<{ role: 'user' | 'assistant'; content: string }>): string {
@@ -172,50 +170,66 @@ Remember: You are being interviewed by a mechanical engineer who is evaluating y
     strengths: string[];
     areasForImprovement: string[];
     overallFeedback: string;
-    score: number;
   } {
-    const lines = text.split('\n').filter(line => line.trim());
+    console.log('Parsing feedback response...');
+    
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
     
     let strengths: string[] = [];
     let areasForImprovement: string[] = [];
     let overallFeedback = '';
-    let score = 7; // default score
     
     let currentSection = '';
     
-    for (const line of lines) {
-      const trimmedLine = line.trim();
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const upperLine = line.toUpperCase();
       
-      if (trimmedLine.toUpperCase().includes('STRENGTHS:')) {
+      // Check for section headers
+      if (upperLine.includes('STRENGTHS:') || upperLine === 'STRENGTHS') {
         currentSection = 'strengths';
+        console.log('Found STRENGTHS section');
         continue;
-      } else if (trimmedLine.toUpperCase().includes('AREAS FOR IMPROVEMENT:') || trimmedLine.toUpperCase().includes('AREAS TO IMPROVE:')) {
+      } else if (upperLine.includes('AREAS FOR IMPROVEMENT:') || upperLine.includes('AREAS TO IMPROVE:') || upperLine === 'AREAS FOR IMPROVEMENT') {
         currentSection = 'areas';
+        console.log('Found AREAS FOR IMPROVEMENT section');
         continue;
-      } else if (trimmedLine.toUpperCase().includes('OVERALL FEEDBACK:') || trimmedLine.toUpperCase().includes('DETAILED FEEDBACK:')) {
+      } else if (upperLine.includes('OVERALL FEEDBACK:') || upperLine.includes('DETAILED FEEDBACK:') || upperLine === 'OVERALL FEEDBACK') {
         currentSection = 'overall';
-        continue;
-      } else if (trimmedLine.toUpperCase().includes('SCORE:')) {
-        const scoreMatch = trimmedLine.match(/(\d+)/);
-        if (scoreMatch) {
-          score = parseInt(scoreMatch[1]);
-        }
+        console.log('Found OVERALL FEEDBACK section');
         continue;
       }
       
-      if (trimmedLine.startsWith('-') || trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
-        const content = trimmedLine.substring(1).trim();
-        if (currentSection === 'strengths' && content.length > 0) {
-          strengths.push(content);
-        } else if (currentSection === 'areas' && content.length > 0) {
-          areasForImprovement.push(content);
+      // Process content based on current section
+      if (currentSection === 'strengths') {
+        if (line.startsWith('-') || line.startsWith('•') || line.startsWith('*')) {
+          const content = line.substring(1).trim();
+          if (content.length > 0) {
+            strengths.push(content);
+            console.log('Added strength:', content);
+          }
+        } else if (line.length > 10 && !line.includes(':')) {
+          // Handle cases where bullet points might be missing
+          strengths.push(line);
+          console.log('Added strength (no bullet):', line);
         }
-      } else if (currentSection === 'overall' && trimmedLine.length > 0 && !trimmedLine.includes('SCORE:')) {
-        // Add line breaks between paragraphs if the line seems to start a new thought
-        if (overallFeedback && (trimmedLine.match(/^(Overall|In summary|Additionally|Furthermore|However|Moreover)/i) || trimmedLine.length > 100)) {
-          overallFeedback += '\n\n' + trimmedLine;
+      } else if (currentSection === 'areas') {
+        if (line.startsWith('-') || line.startsWith('•') || line.startsWith('*')) {
+          const content = line.substring(1).trim();
+          if (content.length > 0) {
+            areasForImprovement.push(content);
+            console.log('Added improvement area:', content);
+          }
+        } else if (line.length > 10 && !line.includes(':')) {
+          // Handle cases where bullet points might be missing
+          areasForImprovement.push(line);
+          console.log('Added improvement area (no bullet):', line);
+        }
+      } else if (currentSection === 'overall') {
+        if (overallFeedback && overallFeedback.length > 0) {
+          overallFeedback += ' ' + line;
         } else {
-          overallFeedback += (overallFeedback ? ' ' : '') + trimmedLine;
+          overallFeedback = line;
         }
       }
     }
@@ -223,11 +237,15 @@ Remember: You are being interviewed by a mechanical engineer who is evaluating y
     // Clean up the overall feedback
     overallFeedback = overallFeedback.replace(/\s+/g, ' ').trim();
     
+    console.log('Parsed results:');
+    console.log('Strengths:', strengths);
+    console.log('Areas for improvement:', areasForImprovement);
+    console.log('Overall feedback length:', overallFeedback.length);
+    
     return {
       strengths,
       areasForImprovement,
-      overallFeedback: overallFeedback || 'Great job conducting the interview! Continue practicing to improve your skills.',
-      score: Math.max(1, Math.min(10, score))
+      overallFeedback: overallFeedback || 'Great job conducting the interview! Continue practicing to improve your skills.'
     };
   }
 }

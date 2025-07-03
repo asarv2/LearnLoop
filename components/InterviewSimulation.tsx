@@ -7,7 +7,6 @@ import {
   Text, 
   Button,
   Card,
-  TextArea,
   Spinner
 } from '@radix-ui/themes';
 import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
@@ -145,11 +144,13 @@ export default function InterviewSimulation({
         setFeedback(data.feedback);
         setShowFeedback(true);
       } else {
+        console.error('Feedback generation failed:', data);
         throw new Error(data.error || 'Failed to generate feedback');
       }
     } catch (error) {
       console.error('Error generating feedback:', error);
-      alert('Failed to generate feedback. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      alert(`Failed to generate feedback: ${errorMessage}. Please check the console for more details.`);
     } finally {
       setIsLoading(false);
     }
@@ -179,8 +180,8 @@ export default function InterviewSimulation({
         flex: 1, 
         display: 'flex', 
         flexDirection: 'column',
-        background: 'var(--gray-1)',
-        overflow: 'hidden'
+        background: 'transparent',
+        overflow: 'hidden',
       }}>
         {/* Messages */}
         <Box style={{ 
@@ -232,7 +233,7 @@ export default function InterviewSimulation({
                     >
                       <Flex direction="column" gap="2">
                         <Text size="1" style={{ color: 'var(--gray-11)' }} weight="medium">
-                          {message.role === 'user' ? 'You (Interviewer)' : candidateName}
+                          {message.role === 'user' ? '' : candidateName}
                         </Text>
                         <Text size="2" style={{ lineHeight: '1.5', color: 'var(--gray-12)' }}>
                           {message.content}
@@ -270,42 +271,66 @@ export default function InterviewSimulation({
         {/* Input Area */}
         {isInterviewActive && (
           <Box style={{ 
-            borderTop: '1px solid var(--gray-6)', 
             padding: '24px',
-            background: 'var(--gray-1)',
+            background: 'transparent',
             flexShrink: 0
           }}>
-            <Flex gap="3">
-              <Box style={{ flex: 1 }}>
-                <TextArea
-                  placeholder="Type your interview question or response..."
-                  value={currentMessage}
-                  onChange={(e) => setCurrentMessage(e.target.value)}
-                  onKeyDown={handleKeyPress}
-                  disabled={isLoading}
-                  rows={3}
-                  style={{ width: '100%', resize: 'none' }}
-                />
-              </Box>
+            <Box style={{ position: 'relative', maxWidth: '800px', margin: '0 auto' }}>
+              <input
+                type="text"
+                placeholder="Type your interview question..."
+                value={currentMessage}
+                onChange={(e) => setCurrentMessage(e.target.value)}
+                onKeyDown={handleKeyPress}
+                disabled={isLoading}
+                style={{
+                  width: '100%',
+                  padding: '12px 50px 12px 16px',
+                  borderRadius: '24px',
+                  border: '1px solid var(--gray-6)',
+                  fontSize: '16px',
+                  outline: 'none',
+                  background: 'white',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                  transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = 'var(--blue-7)';
+                  e.target.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(59, 130, 246, 0.1)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = 'var(--gray-6)';
+                  e.target.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
+                }}
+              />
               <Button
                 onClick={sendMessage}
                 disabled={!currentMessage.trim() || isLoading}
-                size="3"
-                style={{ alignSelf: 'flex-end' }}
+                size="1"
+                style={{
+                  position: 'absolute',
+                  right: '6px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  borderRadius: '20px',
+                  background: currentMessage.trim() && !isLoading ? 'var(--blue-9)' : 'var(--gray-6)',
+                  border: 'none',
+                  width: '36px',
+                  height: '36px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: currentMessage.trim() && !isLoading ? 'pointer' : 'not-allowed'
+                }}
               >
-                <PaperPlaneIcon />
-                Send
+                <PaperPlaneIcon width="16" height="16" />
               </Button>
-            </Flex>
-            <Text size="1" style={{ color: 'var(--gray-11)' }} mt="2">
-              Press Enter to send, Shift+Enter for new line
-            </Text>
+            </Box>
           </Box>
         )}
 
         {!isInterviewActive && !showFeedback && (
           <Box style={{ 
-            borderTop: '1px solid var(--gray-6)', 
             padding: '24px',
             background: 'var(--gray-1)',
             flexShrink: 0
