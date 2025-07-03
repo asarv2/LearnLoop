@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     const chatId = formData.get('chatId') as string;
     const candidateName = formData.get('candidateName') as string;
     const resumePDF = formData.get('resumePDF') as File;
-    const interviewType = formData.get('interviewType') as string || 'Mechanical Engineering';
+    const interviewType = formData.get('interviewType') as string || 'Professional Interview';
     
     if (!chatId || !candidateName) {
       return NextResponse.json(
@@ -27,6 +27,8 @@ export async function POST(request: NextRequest) {
     
     // Get conversation history
     const messages = await getMessagesByChat(chatId);
+    console.log('Total messages retrieved:', messages.length);
+    
     const conversationHistory = messages
       .filter(msg => msg.role === 'user' || msg.role === 'assistant')
       .filter(msg => msg.content && !msg.content.includes('Interview simulation started'))
@@ -35,7 +37,11 @@ export async function POST(request: NextRequest) {
         content: msg.content || ''
       }));
     
+    console.log('Filtered conversation history length:', conversationHistory.length);
+    console.log('Conversation history:', conversationHistory);
+    
     if (conversationHistory.length < 2) {
+      console.log('Not enough conversation history for feedback');
       return NextResponse.json(
         { error: 'Not enough conversation history for meaningful feedback' },
         { status: 400 }
@@ -43,6 +49,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Generate feedback
+    console.log('Starting feedback generation...');
     const context: InterviewContext = {
       role: 'interviewer',
       candidateName,
@@ -51,7 +58,15 @@ export async function POST(request: NextRequest) {
       conversationHistory
     };
     
+    console.log('Interview context:', {
+      candidateName,
+      interviewType,
+      hasPDF: !!resumePDFBuffer,
+      conversationLength: conversationHistory.length
+    });
+    
     const feedback = await interviewSimulator.generateInterviewFeedback(context);
+    console.log('Feedback generated successfully:', feedback);
     
     // Update the chat with feedback and mark as completed
     await updateChat(chatId, {

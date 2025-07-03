@@ -53,12 +53,12 @@ export default function InterviewHeader({
 
   // Determine which PDF source to use
   const getPDFSource = () => {
-    // If we have an uploaded PDF file, use its object URL
+    // Use the uploaded PDF file's object URL
     if (resumeObjectURL) {
       return resumeObjectURL;
     }
-    // Fallback to sample resume for John Doe
-    return '/api/resume/pdf';
+    // No fallback - return null if no PDF is available
+    return null;
   };
 
   return (
@@ -171,7 +171,7 @@ export default function InterviewHeader({
                     <Separator size="4" />
                     
                     <Box style={{ flex: 1, border: '1px solid var(--gray-7)', borderRadius: '6px', overflow: 'hidden' }}>
-                      {resumeObjectURL ? (
+                      {getPDFSource() ? (
                         <iframe
                           src={getPDFSource()}
                           style={{

@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     const message = formData.get('message') as string;
     const candidateName = formData.get('candidateName') as string;
     const resumePDF = formData.get('resumePDF') as File;
-    const interviewType = formData.get('interviewType') as string || 'Mechanical Engineering';
+    const interviewType = formData.get('interviewType') as string || 'Professional Interview';
     
     if (!chatId || !message || !candidateName) {
       return NextResponse.json(

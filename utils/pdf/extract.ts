@@ -54,7 +54,7 @@ export async function parseResumeFromPDF(pdfBuffer: Buffer): Promise<ResumeData>
     }
     
     // Extract skills section
-    const skillsRegex = new RegExp('(?:SKILLS|TECHNICAL SKILLS|CORE COMPETENCIES)[:\\s]*(.*?)(?=\\n[A-Z]{2,}|\\n\\n|$)', 'i');
+    const skillsRegex = new RegExp('(?:SKILLS|CORE SKILLS|TECHNICAL SKILLS|COMPETENCIES|CORE COMPETENCIES)[:\\s]*(.*?)(?=\\n[A-Z]{2,}|\\n\\n|$)', 'i');
     const skillsMatch = text.match(skillsRegex);
     if (skillsMatch) {
       const skillsText = skillsMatch[1];
