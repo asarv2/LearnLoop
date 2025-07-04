@@ -8,6 +8,7 @@ export interface InterviewContext {
   candidateResume?: string; // Keep for backward compatibility
   resumePDF?: Buffer; // New PDF support
   interviewType: string;
+  additionalNotes?: string; // Additional context about the interview
   conversationHistory: Array<{
     role: 'user' | 'assistant';
     content: string;
@@ -19,7 +20,7 @@ export class InterviewSimulator {
 
   constructor() {
     this.model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       generationConfig: {
         temperature: 0.7,
         topP: 0.9,
@@ -71,23 +72,28 @@ export class InterviewSimulator {
     const conversationHistory = this.formatConversationHistory(context.conversationHistory);
 
     try {
-      // Enhanced prompt for specific, actionable feedback
       const prompt = `Analyze this job interview conversation and provide detailed, specific feedback on the interviewer's performance:
 
-${conversationHistory}
+      ${conversationHistory}
 
-Provide feedback in this exact format:
+      Provide feedback in this exact format:
 
-STRENGTHS:
-- Specific things the interviewer did well with examples from the conversation
+      STRENGTHS:  
+      - List specific things the interviewer did well.  
+      - For each strength, include direct quotes from the conversation.  
+      - Explain *why* each action or question was effective.
 
-AREAS FOR IMPROVEMENT:
-- Specific improvements needed with direct quotes and suggested alternatives
-- For each issue, include: what they said, why it was problematic, and what they should say instead
-- Be very specific and actionable
+      MISSTEPS & WHY THEY MATTER:  
+      - Identify specific moments where the interviewer could have done better.  
+      - Include exact quotes of what they said.  
+      - Explain why each quote was unclear, unhelpful, biased, or ineffective.  
 
-OVERALL FEEDBACK:
-Provide a detailed assessment with specific examples from the conversation. Include direct quotes of what the interviewer said that was ineffective, and provide exact alternative phrases they should use instead. Make this very practical and actionable.`;
+      SAY THIS INSTEAD:  
+      - For each misstep above, provide a clear, improved version of the same question or statement.  
+      - Phrase each alternative as if you're rewriting the interviewer's text to be clearer, more professional, or more effective.
+      - Be practical and actionable — do not be vague.
+
+      Keep your feedback concise but detailed enough to guide real improvement. Always include direct quotes for both the original and the improved versions.`;
 
       console.log('Sending prompt to Gemini...');
       console.log('Prompt length:', prompt.length);
@@ -138,12 +144,16 @@ Provide a detailed assessment with specific examples from the conversation. Incl
 
   private buildCandidateSystemPrompt(context: InterviewContext): string {
     const resumeInfo = context.resumePDF 
-      ? "Your resume is provided as a PDF document. Answer questions based on the experience and skills mentioned in your resume."
+      ? "Your resume is provided as a PDF document. Answer questions based on the information provided in your resume."
       : `Your resume/background:\n${context.candidateResume}`;
+
+    const additionalContext = context.additionalNotes 
+      ? `\n\nAdditional context about this interview:\n${context.additionalNotes}`
+      : '';
 
     return `You are simulating a job candidate named ${context.candidateName} in a ${context.interviewType} interview. 
 
-${resumeInfo}
+${resumeInfo}${additionalContext}
 
 Guidelines for your responses:
 - Answer questions based on the experience and skills mentioned in your resume
@@ -152,11 +162,13 @@ Guidelines for your responses:
 - Ask thoughtful questions when appropriate
 - Demonstrate your knowledge and expertise when relevant
 - Be confident but not arrogant
-- Keep responses concise and focused (2-4 sentences typically)
+- Keep responses concise and focused (2-4 sentences typically, unless the interviewer asks for more detail)
+- You don't have to pretened to know everything, you're a candidate, not a perfect person
 - If asked about something not in your resume, respond honestly that you don't have that specific experience
 - Show genuine interest in learning and growing
+${context.additionalNotes ? '- Take into account the additional context provided about this interview' : ''}
 
-Remember: You are being interviewed by a professional who is evaluating you for a position on their team.`;
+Remember: You are being interviewed by a professional who is evaluating you for a position on their team or even just for the company.`;
   }
 
   private formatConversationHistory(history: Array<{ role: 'user' | 'assistant'; content: string }>): string {
@@ -175,8 +187,8 @@ Remember: You are being interviewed by a professional who is evaluating you for 
     
     const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
     
-    let strengths: string[] = [];
-    let areasForImprovement: string[] = [];
+    const strengths: string[] = [];
+    const areasForImprovement: string[] = [];
     let overallFeedback = '';
     
     let currentSection = '';

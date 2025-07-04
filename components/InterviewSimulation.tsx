@@ -25,6 +25,7 @@ interface InterviewSimulationProps {
   resumePDFFile?: File | null;
   interviewType: string;
   chatId: string;
+  additionalNotes?: string;
   initialMessage?: string;
   onBack?: () => void;
 }
@@ -34,6 +35,7 @@ export default function InterviewSimulation({
   resumePDFFile,
   interviewType,
   chatId,
+  additionalNotes,
   initialMessage = "Hello! Thank you for taking the time to meet with me today.",
   onBack
 }: InterviewSimulationProps) {
@@ -81,6 +83,11 @@ export default function InterviewSimulation({
       formData.append('candidateName', candidateName);
       formData.append('interviewType', interviewType);
       
+      // Include additional notes if available
+      if (additionalNotes) {
+        formData.append('additionalNotes', additionalNotes);
+      }
+      
       // Include PDF file if available
       if (resumePDFFile) {
         formData.append('resumePDF', resumePDFFile);
@@ -127,6 +134,11 @@ export default function InterviewSimulation({
       formData.append('chatId', chatId);
       formData.append('candidateName', candidateName);
       formData.append('interviewType', interviewType);
+      
+      // Include additional notes if available
+      if (additionalNotes) {
+        formData.append('additionalNotes', additionalNotes);
+      }
       
       // Include PDF file if available
       if (resumePDFFile) {

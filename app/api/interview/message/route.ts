@@ -11,6 +11,7 @@ export async function POST(request: NextRequest) {
     const candidateName = formData.get('candidateName') as string;
     const resumePDF = formData.get('resumePDF') as File;
     const interviewType = formData.get('interviewType') as string || 'Professional Interview';
+    const additionalNotes = formData.get('additionalNotes') as string;
     
     if (!chatId || !message || !candidateName) {
       return NextResponse.json(
@@ -49,6 +50,7 @@ export async function POST(request: NextRequest) {
       candidateName,
       resumePDF: resumePDFBuffer,
       interviewType,
+      additionalNotes,
       conversationHistory
     };
     
