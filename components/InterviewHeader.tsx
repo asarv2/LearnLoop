@@ -173,7 +173,7 @@ export default function InterviewHeader({
                     <Box style={{ flex: 1, border: '1px solid var(--gray-7)', borderRadius: '6px', overflow: 'hidden' }}>
                       {getPDFSource() ? (
                         <iframe
-                          src={getPDFSource()}
+                          src={getPDFSource() || undefined}
                           style={{
                             width: '100%',
                             height: '100%',
