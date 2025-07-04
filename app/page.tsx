@@ -1,7 +1,7 @@
 /**
  * app/page.tsx
  * Landing page for LearnLoop - AI Interview Training Platform
- * @AshokSaravanan222 & @siladiea
+ * Fixed video display issues
  */
 
 "use client";
@@ -19,8 +19,7 @@ import {
 } from '@radix-ui/themes';
 import { 
   ChatBubbleIcon, 
-  CheckIcon, 
-  PersonIcon,
+  CheckIcon,
   TargetIcon,
   LightningBoltIcon,
   ArrowRightIcon
@@ -104,61 +103,207 @@ export default function LandingPage() {
             </Text>
           </Box>
 
-          {/* Hero Visual */}
-          <Box style={{ 
-            maxWidth: '900px',
-            margin: '0 auto',
-            borderRadius: '16px',
-            overflow: 'hidden',
-            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.1)',
-            background: 'white',
-            border: '1px solid var(--gray-6)'
-          }}>
-            <Box p="6" style={{ background: 'var(--gray-2)' }}>
-              <Flex gap="2" mb="4">
-                <Box style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--red-9)' }} />
-                <Box style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--yellow-9)' }} />
-                <Box style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--green-9)' }} />
-              </Flex>
-              <Card style={{ background: 'white', padding: '24px' }}>
-                <Flex direction="column" gap="4">
-                  <Flex align="center" gap="3">
-                    <Box style={{
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '50%',
-                      background: 'var(--blue-3)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <PersonIcon color="var(--blue-11)" />
-                    </Box>
-                    <Box>
-                      <Text weight="bold">AI Candidate</Text>
-                      <Text size="2" color="gray">Software Engineer</Text>
-                    </Box>
-                  </Flex>
-                  <Box style={{ 
-                    background: 'var(--gray-2)', 
-                    padding: '12px 16px', 
-                    borderRadius: '12px',
-                    borderTopLeftRadius: '4px'
-                  }}>
-                    <Text size="2">
-                      "I have 5 years of experience in full-stack development, particularly with React and Node.js. 
-                      I'm passionate about creating scalable applications and have led several successful projects..."
-                    </Text>
-                  </Box>
-                  <Flex gap="2">
-                    <Button size="1" variant="soft">Ask follow-up</Button>
-                    <Button size="1" variant="soft">Technical question</Button>
-                    <Button size="1" variant="soft">Behavioral question</Button>
-                  </Flex>
-                </Flex>
-              </Card>
-            </Box>
+          {/* How It Works Header */}
+          <Box style={{ textAlign: 'center' }}>
+            <Heading size="7" weight="bold" mb="4">
+              How It Works
+            </Heading>
+            <Text size="4" color="gray" style={{ maxWidth: '600px', margin: '0 auto' }}>
+              Get started with AI interview training in just three simple steps
+            </Text>
           </Box>
+        </Container>
+      </Section>
+
+      {/* Step 1: Upload Resume */}
+      <Section py="7">
+        <Container size="4">
+          <Grid columns={{ initial: '1', lg: '2' }} gap="8" align="center">
+            <Box>
+              <Flex align="center" gap="4" mb="4">
+                <Box style={{
+                  width: '60px',
+                  height: '60px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, var(--blue-9) 0%, var(--blue-11) 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontSize: '24px',
+                  fontWeight: 'bold'
+                }}>
+                  1
+                </Box>
+                <Heading size="6" weight="bold">Upload Resume</Heading>
+              </Flex>
+              <Text size="4" color="gray" style={{ lineHeight: '1.6' }}>
+                Start by uploading the candidate's resume and configuring the interview settings. 
+                Our AI analyzes the resume content to create a realistic candidate persona that 
+                matches their background, experience, and skills. You can also specify the 
+                interview type and focus areas to tailor the simulation to your needs.
+              </Text>
+            </Box>
+            <Box style={{ 
+              position: 'relative',
+              aspectRatio: '16/9',
+              borderRadius: '15px',
+              overflow: 'hidden',
+              boxShadow: '0 12px 40px rgba(0, 0, 0, 0.15)'
+            }}>
+              <video 
+                width="100%" 
+                height="100%" 
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="auto"
+                style={{ 
+                  objectFit: 'cover',
+                  display: 'block',
+                  imageRendering: 'crisp-edges',
+                  transform: 'translateZ(0)',
+                  backfaceVisibility: 'hidden'
+                }}
+                onError={(e) => {
+                  console.error('Video error:', e);
+                }}
+              >
+                <source src="/videos/FirstScreen.mp4" type="video/mp4" />
+                <source src="/videos/FirstScreen.webm" type="video/webm" />
+                Your browser doesn't support video playback.
+              </video>
+            </Box>
+          </Grid>
+        </Container>
+      </Section>
+
+      {/* Step 2: Practice Interview */}
+      <Section py="7" style={{ background: 'white' }}>
+        <Container size="4">
+          <Grid columns={{ initial: '1', lg: '2' }} gap="8" align="center">
+            <Box style={{ 
+              position: 'relative',
+              aspectRatio: '16/9',
+              borderRadius: '15px',
+              overflow: 'hidden',
+              boxShadow: '0 12px 40px rgba(0, 0, 0, 0.15)'
+            }}>
+              <video 
+                width="100%" 
+                height="100%" 
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="auto"
+                style={{ 
+                  objectFit: 'cover',
+                  display: 'block',
+                  imageRendering: 'crisp-edges',
+                  transform: 'translateZ(0)',
+                  backfaceVisibility: 'hidden'
+                }}
+                onError={(e) => {
+                  console.error('Video error:', e);
+                }}
+              >
+                <source src="/videos/FirstScreen.mp4" type="video/mp4" />
+                <source src="/videos/FirstScreen.webm" type="video/webm" />
+                Your browser doesn't support video playback.
+              </video>
+            </Box>
+            <Box>
+              <Flex align="center" gap="4" mb="4">
+                <Box style={{
+                  width: '60px',
+                  height: '60px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, var(--green-9) 0%, var(--green-11) 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontSize: '24px',
+                  fontWeight: 'bold'
+                }}>
+                  2
+                </Box>
+                <Heading size="6" weight="bold">Practice Interview</Heading>
+              </Flex>
+              <Text size="4" color="gray" style={{ lineHeight: '1.6' }}>
+                Conduct a natural conversation with our AI candidate that responds authentically 
+                based on their resume data. Ask questions, explore their experience, and practice 
+                your interviewing techniques in a realistic simulation. The AI candidate will 
+                respond as if they were the real person, providing detailed answers about their background.
+              </Text>
+            </Box>
+          </Grid>
+        </Container>
+      </Section>
+
+      {/* Step 3: Get Feedback */}
+      <Section py="7">
+        <Container size="4">
+          <Grid columns={{ initial: '1', lg: '2' }} gap="8" align="center">
+            <Box>
+              <Flex align="center" gap="4" mb="4">
+                <Box style={{
+                  width: '60px',
+                  height: '60px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, var(--purple-9) 0%, var(--purple-11) 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontSize: '24px',
+                  fontWeight: 'bold'
+                }}>
+                  3
+                </Box>
+                <Heading size="6" weight="bold">Get Feedback</Heading>
+              </Flex>
+              <Text size="4" color="gray" style={{ lineHeight: '1.6' }}>
+                After your interview session, receive comprehensive feedback on your performance. 
+                Our AI analyzes your questioning techniques, communication style, and interview 
+                flow to provide actionable insights. Learn what worked well and get specific 
+                recommendations for improvement to become a more effective interviewer.
+              </Text>
+            </Box>
+            <Box style={{ 
+              position: 'relative',
+              aspectRatio: '16/9',
+              borderRadius: '15px',
+              overflow: 'hidden',
+              boxShadow: '0 12px 40px rgba(0, 0, 0, 0.15)'
+            }}>
+              <video 
+                width="100%" 
+                height="100%" 
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="auto"
+                style={{ 
+                  objectFit: 'cover',
+                  display: 'block',
+                  imageRendering: 'crisp-edges',
+                  transform: 'translateZ(0)',
+                  backfaceVisibility: 'hidden'
+                }}
+                onError={(e) => {
+                  console.error('Video error:', e);
+                }}
+              >
+                <source src="/videos/FirstScreen.mp4" type="video/mp4" />
+                <source src="/videos/FirstScreen.webm" type="video/webm" />
+                Your browser doesn't support video playback.
+              </video>
+            </Box>
+          </Grid>
         </Container>
       </Section>
 
@@ -235,92 +380,10 @@ export default function LandingPage() {
         </Container>
       </Section>
 
-      {/* How It Works Section */}
-      <Section py="9">
-        <Container size="4">
-          <Box style={{ textAlign: 'center' }} mb="8">
-            <Heading size="7" weight="bold" mb="4">
-              How It Works
-            </Heading>
-            <Text size="4" color="gray" style={{ maxWidth: '600px', margin: '0 auto' }}>
-              Get started with AI interview training in just three simple steps
-            </Text>
-          </Box>
-
-          <Grid columns={{ initial: '1', md: '3' }} gap="8">
-            <Flex direction="column" align="center" style={{ textAlign: 'center' }}>
-              <Box style={{
-                width: '80px',
-                height: '80px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, var(--blue-9) 0%, var(--blue-11) 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 0 24px',
-                color: 'white',
-                fontSize: '32px',
-                fontWeight: 'bold'
-              }}>
-                1
-              </Box>
-              <Heading size="5" mb="3">Upload Resume</Heading>
-              <Text color="gray" style={{ lineHeight: '1.6' }}>
-                Upload the candidate's resume and specify the interview type to create a realistic simulation
-              </Text>
-            </Flex>
-
-            <Flex direction="column" align="center" style={{ textAlign: 'center' }}>
-              <Box style={{
-                width: '80px',
-                height: '80px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, var(--green-9) 0%, var(--green-11) 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 0 24px',
-                color: 'white',
-                fontSize: '32px',
-                fontWeight: 'bold'
-              }}>
-                2
-              </Box>
-              <Heading size="5" mb="3">Practice Interview</Heading>
-              <Text color="gray" style={{ lineHeight: '1.6' }}>
-                Conduct a natural conversation with our AI candidate that responds based on the resume data
-              </Text>
-            </Flex>
-
-            <Flex direction="column" align="center" style={{ textAlign: 'center' }}>
-              <Box style={{
-                width: '80px',
-                height: '80px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, var(--purple-9) 0%, var(--purple-11) 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 0 24px',
-                color: 'white',
-                fontSize: '32px',
-                fontWeight: 'bold'
-              }}>
-                3
-              </Box>
-              <Heading size="5" mb="3">Get Feedback</Heading>
-              <Text color="gray" style={{ lineHeight: '1.6' }}>
-                Receive detailed feedback on your performance with specific suggestions for improvement
-              </Text>
-            </Flex>
-          </Grid>
-        </Container>
-      </Section>
-
       {/* Benefits Section */}
       <Section py="9" style={{ background: 'white' }}>
         <Container size="4">
-                    <Grid columns={{ initial: '1', lg: '2' }} gap="8" align="center">
+          <Grid columns={{ initial: '1', lg: '2' }} gap="8" align="center">
             <Box>
               <Heading size="7" weight="bold" mb="4">
                 Improve Your Interview Success Rate
@@ -355,10 +418,8 @@ export default function LandingPage() {
         </Container>
       </Section>
 
-      
-
       {/* Footer */}
-      <Box py="6" style={{ background: 'var(--gray-12)', color: 'var(--gray-11)' }}>
+      <Box py="6" style={{ background: 'white', color: 'var(--gray-11)' }}>
         <Container size="4">
           <Flex justify="between" align="center">
             <Flex align="center" gap="3">
@@ -373,7 +434,7 @@ export default function LandingPage() {
               }}>
                 <Text size="3" weight="bold" style={{ color: 'white' }}>L</Text>
               </Box>
-              <Text size="3" weight="medium" style={{ color: 'white' }}>
+              <Text size="3" weight="medium" style={{ color: 'blue' }}>
                 LearnLoop
               </Text>
             </Flex>
