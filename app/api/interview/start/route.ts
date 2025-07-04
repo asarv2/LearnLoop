@@ -7,6 +7,7 @@ export async function POST(request: NextRequest) {
     const candidateName = formData.get('candidateName') as string;
     const interviewType = formData.get('interviewType') as string;
     const resumeFile = formData.get('resume') as File;
+    const additionalNotes = formData.get('additionalNotes') as string;
 
     if (!candidateName || !interviewType || !resumeFile) {
       return NextResponse.json({ 

@@ -27,6 +27,7 @@ export default function InterviewPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [candidateName, setCandidateName] = useState('');
   const [interviewType, setInterviewType] = useState('');
+  const [additionalNotes, setAdditionalNotes] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [resumePDFFile, setResumePDFFile] = useState<File | null>(null);
   const [interviewStarted, setInterviewStarted] = useState(false);
@@ -81,6 +82,7 @@ export default function InterviewPage() {
       formData.append('candidateName', candidateName);
       formData.append('interviewType', interviewType);
       formData.append('resume', selectedFile);
+      formData.append('additionalNotes', additionalNotes);
 
       const response = await fetch('/api/interview/start', {
         method: 'POST',
@@ -117,6 +119,7 @@ export default function InterviewPage() {
       case 1: return candidateName.trim() !== '';
       case 2: return interviewType.trim() !== '';
       case 3: return selectedFile !== null;
+      case 4: return additionalNotes.trim() !== '';
       default: return false;
     }
   };
@@ -130,6 +133,7 @@ export default function InterviewPage() {
         resumePDFFile={resumePDFFile}
         interviewType={interviewType}
         chatId={chatId}
+        additionalNotes={additionalNotes}
         onBack={handleBack}
       />
     );
@@ -406,7 +410,7 @@ export default function InterviewPage() {
           <Box mb="4">
             <Card style={{ 
               background: 'white',
-              border: '1px solid var(--gray-6)',
+              border: `1px solid ${isStepComplete(4) ? 'var(--green-8)' : 'var(--gray-6)'}`,
               borderRadius: '12px',
               boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
               transition: 'all 0.2s ease'
@@ -417,27 +421,37 @@ export default function InterviewPage() {
                     width: '32px',
                     height: '32px',
                     borderRadius: '50%',
-                    background: 'var(--gray-7)',
+                    background: isStepComplete(4) ? 'var(--green-9)' : 'var(--gray-7)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0
                   }}>
-                    <Text size="2" weight="bold" style={{ color: 'white' }}>4</Text>
+                    {isStepComplete(4) ? (
+                      <CheckIcon color="white" width="16" height="16" />
+                    ) : (
+                      <Text size="2" weight="bold" style={{ color: 'white' }}>4</Text>
+                    )}
                   </Box>
                   <Box style={{ flex: 1 }}>
                     <Flex align="center" gap="2" mb="3">
                       <Text size="4" weight="bold">Additional Notes</Text>
-                      <Badge size="1" variant="soft" color="gray">Optional</Badge>
+                      {isStepComplete(4) ? (
+                        <Badge size="1" variant="soft" color="green">Complete</Badge>
+                      ) : (
+                        <Badge size="1" variant="soft" color="gray">Optional</Badge>
+                      )}
                     </Flex>
 
                     <textarea
-                      placeholder="Add anything that may be unique to this interview..."
+                      placeholder="Additional information such as stage of the interview, interviewee level, etc..."
+                      value={additionalNotes}
+                      onChange={(e) => setAdditionalNotes(e.target.value)}
                       style={{
                         width: '100%',
                         padding: '12px 16px',
                         borderRadius: '8px',
-                        border: '1px solid var(--gray-6)',
+                        border: `1px solid ${isStepComplete(4) ? 'var(--green-7)' : 'var(--gray-6)'}`,
                         fontSize: '16px',
                         outline: 'none',
                         background: 'white',
