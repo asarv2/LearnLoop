@@ -22,6 +22,7 @@ interface InterviewHeaderProps {
   isInterviewActive: boolean;
   onShowFeedback?: () => void;
   onBack?: () => void;
+  interviewStartTime?: Date; // Add this prop to track when interview started
 }
 
 export default function InterviewHeader({
@@ -31,10 +32,12 @@ export default function InterviewHeader({
   onEndInterview,
   isInterviewActive,
   onShowFeedback,
-  onBack
+  onBack,
+  interviewStartTime
 }: InterviewHeaderProps) {
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
   const [resumeObjectURL, setResumeObjectURL] = useState<string | null>(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
 
   // Create object URL for the PDF file
   useEffect(() => {
@@ -50,6 +53,40 @@ export default function InterviewHeader({
       setResumeObjectURL(null);
     }
   }, [resumePDFFile]);
+
+  // Timer effect for active interviews
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (isInterviewActive) {
+      const startTime = interviewStartTime || new Date();
+      interval = setInterval(() => {
+        const now = new Date();
+        const diffInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+        setElapsedTime(diffInSeconds);
+      }, 1000);
+      
+      // Set initial time immediately
+      const now = new Date();
+      const diffInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+      setElapsedTime(diffInSeconds);
+    } else {
+      setElapsedTime(0);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [isInterviewActive, interviewStartTime]);
+
+  // Format time as MM:SS
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // Determine which PDF source to use
   const getPDFSource = () => {
@@ -95,9 +132,9 @@ export default function InterviewHeader({
           {/* Right side - Controls */}
           <Flex align="center" gap="3">
             {isInterviewActive ? (
-              <Badge size="2" color="green">
-                Active
-              </Badge>
+              <Text size="2" weight="medium" color="gray">
+                {formatTime(elapsedTime)}
+              </Text>
             ) : (
               <Button 
                 variant="soft" 
@@ -219,4 +256,4 @@ export default function InterviewHeader({
       `}</style>
     </>
   );
-} 
+}
