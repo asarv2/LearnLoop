@@ -66,8 +66,11 @@ export class InterviewSimulator {
 
   async generateInterviewFeedback(context: InterviewContext): Promise<{
     strengths: string[];
-    areasForImprovement: string[];
-    overallFeedback: string;
+    misstepsAndAlternatives: string[];
+    flags: {
+      greenFlags: string[];
+      redFlags: string[];
+    };
   }> {
     const conversationHistory = this.formatConversationHistory(context.conversationHistory);
 
@@ -83,27 +86,26 @@ export class InterviewSimulator {
       - For each strength, include direct quotes from the conversation.  
       - Explain *why* each action or question was effective.
 
-      MISSTEPS & WHY THEY MATTER:  
+      MISSTEPS & SAY THIS INSTEAD:  
       - Identify specific moments where the interviewer could have done better.  
-      - Include exact quotes of what they said.  
-      - Explain why each quote was unclear, unhelpful, biased, or ineffective.  
-
-      SAY THIS INSTEAD:  
-      - For each misstep above, provide a clear, improved version of the same question or statement.  
-      - Phrase each alternative as if you're rewriting the interviewer's text to be clearer, more professional, or more effective.
+      - Include exact quotes of what they said and explain why it was problematic.
+      - Then provide the improved version: "Say this instead: [better version]"
       - Be practical and actionable — do not be vague.
 
-      Keep your feedback concise but detailed enough to guide real improvement. Always include direct quotes for both the original and the improved versions.`;
+      GREEN FLAGS (Positive signals the interviewer should have recognized):
+      - List subtle positive indicators the candidate displayed that the interviewer should have picked up on
+      - These should be based on actual things the candidate said or did in the conversation
+      - Explain what each green flag indicates about the candidate
+
+      RED FLAGS (Warning signals the interviewer should have recognized):
+      - List subtle concerning indicators the candidate displayed that the interviewer should have caught
+      - These should be based on actual things the candidate said or did in the conversation  
+      - Explain what each red flag might indicate about potential issues
+
+      Keep your feedback concise but detailed enough to guide real improvement. Always include direct quotes and be specific about what the interviewer should have noticed.`;
 
       console.log('Sending prompt to Gemini...');
       console.log('Prompt length:', prompt.length);
-      
-      // Try a simple test first
-      console.log('Testing basic Gemini functionality...');
-      const testResult = await this.model.generateContent("Say hello");
-      const testResponse = await testResult.response;
-      const testText = testResponse.text();
-      console.log('Test response:', testText);
       
       const result = await this.model.generateContent(prompt);
       console.log('Gemini result received:', !!result);
@@ -122,16 +124,25 @@ export class InterviewSimulator {
         // Return a fallback response with meaningful content
         return {
           strengths: [
-            "Started with a friendly greeting 'hi how are you' which helped establish rapport",
+            "Started with a friendly greeting which helped establish rapport",
             "Asked an open-ended question 'tell me a little about yourself' allowing the candidate to share their background"
           ],
-          areasForImprovement: [
-            "The interview ended abruptly with 'great you're hired' without proper assessment. Instead, say: 'Thank you for sharing that background. Can you tell me about a specific project where you applied machine learning techniques?'",
-            "Failed to ask follow-up questions about the candidate's AI research experience. When they mentioned 'Stratolaunch and Cook Medical initiatives,' you should have asked: 'Can you walk me through your specific role in the Stratolaunch project and what machine learning models you developed?'",
-            "Missed the opportunity to assess technical skills. After hearing about their ML background, ask: 'What's your experience with [specific technology relevant to the role]? Can you describe a challenging ML problem you solved?'",
-            "Did not provide any information about the role, company culture, or expectations. Before concluding, say: 'Let me tell you about what this role involves and our team structure...'"
+          misstepsAndAlternatives: [
+            "The interview ended abruptly with 'great you're hired' without proper assessment. This shows poor judgment and lack of thorough evaluation. Say this instead: 'Thank you for sharing that background. Can you tell me about a specific project where you applied machine learning techniques?'",
+            "Failed to ask follow-up questions about the candidate's experience. When they mentioned specific initiatives, you should have probed deeper. Say this instead: 'Can you walk me through your specific role in that project and what challenges you faced?'",
+            "Did not provide any information about the role or company expectations. Say this instead: 'Let me tell you about what this role involves and our team structure...'"
           ],
-          overallFeedback: "This interview was extremely brief and missed critical assessment opportunities. When the candidate mentioned their AI research experience, you should have probed deeper with questions like 'What specific machine learning algorithms did you implement?' or 'What was the biggest challenge you faced in your data science projects?' Instead of ending with 'you're hired,' use behavioral questions: 'Tell me about a time when your ML model didn't perform as expected - how did you troubleshoot it?' The candidate actually asked a thoughtful follow-up question about the role, which you should have answered thoroughly before making any hiring decisions."
+          flags: {
+            greenFlags: [
+              "Candidate mentioned specific technical experience and projects, showing hands-on expertise",
+              "Candidate asked thoughtful follow-up questions about the role, demonstrating genuine interest",
+              "Candidate spoke confidently about their background without being arrogant"
+            ],
+            redFlags: [
+              "Candidate may have been too brief in their responses, potentially hiding lack of depth",
+              "Candidate didn't ask about team dynamics or company culture, which could indicate lack of cultural fit awareness"
+            ]
+          }
         };
       }
       
@@ -168,6 +179,26 @@ Guidelines for your responses:
 - Show genuine interest in learning and growing
 ${context.additionalNotes ? '- Take into account the additional context provided about this interview' : ''}
 
+IMPORTANT: Include subtle green and red flags in your responses that a skilled interviewer should pick up on:
+
+GREEN FLAGS (positive signals to display occasionally):
+- Mention specific metrics or results from past work (e.g., "improved performance by 30%")
+- Ask thoughtful questions about team dynamics, company culture, or growth opportunities
+- Reference learning from failures or challenges in a mature way
+- Show genuine curiosity about the role and company mission
+- Demonstrate collaborative mindset when discussing past projects
+- Express interest in mentoring or being mentored
+
+RED FLAGS (concerning signals to display subtly - use sparingly):
+- Occasionally be vague about specific contributions in team projects
+- Show slight hesitation when discussing certain past experiences
+- Make minor inconsistencies in timeline or details (nothing major)
+- Briefly mention conflicts with past colleagues but quickly move on
+- Show overconfidence in areas outside your expertise
+- Ask questions that focus only on benefits/compensation rather than the work itself
+
+Be subtle with these flags - they should feel natural and not obvious. The interviewer should have to pay attention to catch them.
+
 Remember: You are being interviewed by a professional who is evaluating you for a position on their team or even just for the company.`;
   }
 
@@ -180,16 +211,25 @@ Remember: You are being interviewed by a professional who is evaluating you for 
 
   private parseFeedbackResponse(text: string): {
     strengths: string[];
-    areasForImprovement: string[];
-    overallFeedback: string;
+    misstepsAndAlternatives: string[];
+    flags: {
+      greenFlags: string[];
+      redFlags: string[];
+    };
   } {
     console.log('Parsing feedback response...');
     
     const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
     
     const strengths: string[] = [];
-    const areasForImprovement: string[] = [];
-    let overallFeedback = '';
+    const misstepsAndAlternatives: string[] = [];
+    const flags: {
+      greenFlags: string[];
+      redFlags: string[];
+    } = {
+      greenFlags: [],
+      redFlags: []
+    };
     
     let currentSection = '';
     
@@ -202,13 +242,17 @@ Remember: You are being interviewed by a professional who is evaluating you for 
         currentSection = 'strengths';
         console.log('Found STRENGTHS section');
         continue;
-      } else if (upperLine.includes('AREAS FOR IMPROVEMENT:') || upperLine.includes('AREAS TO IMPROVE:') || upperLine === 'AREAS FOR IMPROVEMENT') {
-        currentSection = 'areas';
-        console.log('Found AREAS FOR IMPROVEMENT section');
+      } else if (upperLine.includes('MISSTEPS & SAY THIS INSTEAD:') || upperLine.includes('MISSTEPS AND SAY THIS INSTEAD:') || upperLine === 'MISSTEPS & SAY THIS INSTEAD') {
+        currentSection = 'misstepsAndAlternatives';
+        console.log('Found MISSTEPS & SAY THIS INSTEAD section');
         continue;
-      } else if (upperLine.includes('OVERALL FEEDBACK:') || upperLine.includes('DETAILED FEEDBACK:') || upperLine === 'OVERALL FEEDBACK') {
-        currentSection = 'overall';
-        console.log('Found OVERALL FEEDBACK section');
+      } else if (upperLine.includes('GREEN FLAGS:') || upperLine === 'GREEN FLAGS') {
+        currentSection = 'greenFlags';
+        console.log('Found GREEN FLAGS section');
+        continue;
+      } else if (upperLine.includes('RED FLAGS:') || upperLine === 'RED FLAGS') {
+        currentSection = 'redFlags';
+        console.log('Found RED FLAGS section');
         continue;
       }
       
@@ -225,39 +269,55 @@ Remember: You are being interviewed by a professional who is evaluating you for 
           strengths.push(line);
           console.log('Added strength (no bullet):', line);
         }
-      } else if (currentSection === 'areas') {
+      } else if (currentSection === 'misstepsAndAlternatives') {
         if (line.startsWith('-') || line.startsWith('•') || line.startsWith('*')) {
           const content = line.substring(1).trim();
           if (content.length > 0) {
-            areasForImprovement.push(content);
-            console.log('Added improvement area:', content);
+            misstepsAndAlternatives.push(content);
+            console.log('Added misstep:', content);
           }
         } else if (line.length > 10 && !line.includes(':')) {
           // Handle cases where bullet points might be missing
-          areasForImprovement.push(line);
-          console.log('Added improvement area (no bullet):', line);
+          misstepsAndAlternatives.push(line);
+          console.log('Added misstep (no bullet):', line);
         }
-      } else if (currentSection === 'overall') {
-        if (overallFeedback && overallFeedback.length > 0) {
-          overallFeedback += ' ' + line;
-        } else {
-          overallFeedback = line;
+      } else if (currentSection === 'greenFlags') {
+        if (line.startsWith('-') || line.startsWith('•') || line.startsWith('*')) {
+          const content = line.substring(1).trim();
+          if (content.length > 0) {
+            flags.greenFlags.push(content);
+            console.log('Added green flag:', content);
+          }
+        } else if (line.length > 10 && !line.includes(':')) {
+          // Handle cases where bullet points might be missing
+          flags.greenFlags.push(line);
+          console.log('Added green flag (no bullet):', line);
+        }
+      } else if (currentSection === 'redFlags') {
+        if (line.startsWith('-') || line.startsWith('•') || line.startsWith('*')) {
+          const content = line.substring(1).trim();
+          if (content.length > 0) {
+            flags.redFlags.push(content);
+            console.log('Added red flag:', content);
+          }
+        } else if (line.length > 10 && !line.includes(':')) {
+          // Handle cases where bullet points might be missing
+          flags.redFlags.push(line);
+          console.log('Added red flag (no bullet):', line);
         }
       }
     }
     
-    // Clean up the overall feedback
-    overallFeedback = overallFeedback.replace(/\s+/g, ' ').trim();
-    
     console.log('Parsed results:');
     console.log('Strengths:', strengths);
-    console.log('Areas for improvement:', areasForImprovement);
-    console.log('Overall feedback length:', overallFeedback.length);
+    console.log('Missteps and alternatives:', misstepsAndAlternatives);
+    console.log('Green flags:', flags.greenFlags);
+    console.log('Red flags:', flags.redFlags);
     
     return {
       strengths,
-      areasForImprovement,
-      overallFeedback: overallFeedback || 'Great job conducting the interview! Continue practicing to improve your skills.'
+      misstepsAndAlternatives,
+      flags
     };
   }
 }

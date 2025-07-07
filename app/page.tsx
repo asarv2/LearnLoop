@@ -102,21 +102,12 @@ export default function LandingPage() {
               improve your questioning techniques, and become a more effective interviewer.
             </Text>
           </Box>
-
-          {/* How It Works Header */}
-          <Box style={{ textAlign: 'center' }}>
-            <Heading size="7" weight="bold" mb="4">
-              How It Works
-            </Heading>
-            <Text size="4" color="gray" style={{ maxWidth: '600px', margin: '0 auto' }}>
-              Get started with AI interview training in just three simple steps
-            </Text>
-          </Box>
         </Container>
       </Section>
 
       {/* Step 1: Upload Resume */}
       <Section py="7">
+        
         <Container size="4">
           <Grid columns={{ initial: '1', lg: '2' }} gap="8" align="center">
             <Box>
@@ -267,9 +258,9 @@ export default function LandingPage() {
               </Flex>
               <Text size="4" color="gray" style={{ lineHeight: '1.6' }}>
                 After your interview session, receive comprehensive feedback on your performance. 
-                Our AI analyzes your questioning techniques, communication style, and interview 
-                flow to provide actionable insights. Learn what worked well and get specific 
-                recommendations for improvement to become a more effective interviewer.
+                Our AI analyzes your questioning techniques, identifies what you did well, highlights 
+                missteps with specific alternatives, and reveals subtle green and red flags you should 
+                have noticed about the candidate. Learn to become a more effective interviewer.
               </Text>
             </Box>
             <Box style={{ 
