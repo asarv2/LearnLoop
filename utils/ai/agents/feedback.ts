@@ -8,11 +8,12 @@ const feedbackSchema = z.object({
     redFlags: z.array(z.string()),
 });
 
-const feedbackAgent = new Agent({
-    name: 'Feedback',
-    model: "gemini-2.5-flash",
-    instructions:'You are to provide feedback on the interview. You are to provide feedback on the interview as a candidate would.',
-    outputType: feedbackSchema,
-  });
-
-  export default feedbackAgent;
+export const getFeedbackAgent = () => {
+    const feedbackAgent = new Agent({
+        name: 'Feedback',
+        model: "gemini-2.5-flash",
+        instructions: 'You are to provide feedback on the interview. You are to provide feedback on the interview as a candidate would.',
+        outputType: feedbackSchema,
+    });
+    return feedbackAgent;
+}

@@ -7,6 +7,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCheatingAgent } from "@/utils/ai/agents/cheating";
 import { getRegularAgent } from "@/utils/ai/agents/regular";
 import { getValidResume } from "@/utils/google/get-valid-resume";
+import { updateMessage } from "@/utils/mutations/messages/update-message";
+import { generateConversationHistory } from "@/utils/ai/chat/conversation-history";
+import { getMessagesByChat } from "@/utils/queries/messages/get-messages-by-chat";
 
 export async function POST(request: NextRequest) {
     // use form data
@@ -15,6 +18,7 @@ export async function POST(request: NextRequest) {
     const messageInput = formData.get("message");
 
     const chat = await getChat(chatId as string);
+    const messages = await getMessagesByChat(chatId as string);
 
     const interviewType = chat.type;
     const candidateName = chat.name;
@@ -35,27 +39,31 @@ export async function POST(request: NextRequest) {
         agent = await getRegularAgent();
     }
 
+    const conversationHistory = generateConversationHistory(messages);
+
     const input: AgentInputItem[] = [
         {
             role: "user",
-            content: messageInput as string,
+            content: [
+                {
+                    type: "input_text",
+                    text: `
+                    You are interviewing ${candidateName} for the position of ${candidatePosition}.
+                    ${additionalInstructions}
+                    `,
+                },
+                {
+                    type: "input_image",
+                    image: `https://generativelanguage.googleapis.com/v1beta/${resume.google_file_id}`,
+                }
+            ]
         },
+        ...conversationHistory,
         {
-        role: "user",
-        content: [
-            {
-                type: "input_text",
-                text: `
-                You are interviewing ${candidateName} for the position of ${candidatePosition}.
-                ${additionalInstructions}
-                `,
-            },
-            {
-                type: "input_image",
-                image: `https://generativelanguage.googleapis.com/v1beta/${resume.google_file_id}`,
-            }
-        ]
-    }];
+            role: "user",
+            content: messageInput as string,
+        }
+    ];
 
     const runner = new Runner();
 
@@ -68,6 +76,11 @@ export async function POST(request: NextRequest) {
     );
 
     let messageText = "";
+    const message = await createMessage({
+        chat_id: chatId as string,
+        content: "",
+        role: "assistant"
+    });
     for await (const event of result) {
         // these are the raw events from the model
         if (event.type === 'raw_model_stream_event') {
@@ -75,20 +88,21 @@ export async function POST(request: NextRequest) {
                 messageText += event.data.delta;
             }
         }
-        // agent updated events
-        if (event.type == 'agent_updated_stream_event') {
-          console.log(`${event.type} %s`, event.agent.name);
-        }
-        // Agent SDK specific events
-        if (event.type === 'run_item_stream_event') {
-          console.log(`${event.type} %o`, event.item);
-        }
-      }
+        // // agent updated events
+        // if (event.type == 'agent_updated_stream_event') {
+        //   console.log(`${event.type} %s`, event.agent.name);
+        // }
+        // // Agent SDK specific events
+        // if (event.type === 'run_item_stream_event') {
+        //   console.log(`${event.type} %o`, event.item);
+        // }
+    }
 
-    const message = await createMessage({
-        chat_id: chatId as string,
+    await updateMessage(message.id, {
         content: messageText as string,
-        role: "assistant",
+        completed: true,
+        completed_at: new Date().toISOString(),
     });
+    // TODO: make this a streaming response, for all the deltas above. Use SSE
     return NextResponse.json({ message });
 }
