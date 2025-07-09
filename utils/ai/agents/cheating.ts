@@ -3,7 +3,7 @@ import { getChat } from '@/utils/queries/chats/get-chat';
 
 export const getCheatingAgent = async (chatId: string): Promise<Agent> => {
     const chat = await getChat(chatId);
-    const additionalInstructions = chat.additional_instructions;
+    const additionalInstructions = chat.additional_info;
 
 
     return new Agent({
