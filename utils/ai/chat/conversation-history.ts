@@ -37,12 +37,13 @@ export const generateConversationHistory = (messages: Message[]): AgentInputItem
 
 export const generateConversationHistoryRealtime = (messages: Message[]): RealtimeItem[] => {
     const conversationHistory: RealtimeItem[] = [];
-    for (const message of messages) {
+    for (let i = 0; i < messages.length; i++) {
+        const message = messages[i];
         if (message.role === "user" && message.content) {
             conversationHistory.push({
                 type: "message",
                 status: "completed",
-                itemId: "user_message",
+                itemId: `user_message_${i}`,
                 role: "user",
                 content: [{ type: "input_text", text: message.content }]
             });
@@ -50,7 +51,7 @@ export const generateConversationHistoryRealtime = (messages: Message[]): Realti
             conversationHistory.push({
                 type: "message",
                 status: "completed",
-                itemId: "assistant_message",
+                itemId: `assistant_message_${i}`,
                 role: "assistant",
                 content: [
                     { type: "text", text: message.content }

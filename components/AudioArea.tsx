@@ -16,8 +16,6 @@ import { logError } from '@/utils/logger';
 import { getCheatingRealtimeSession } from '@/utils/ai/agents/cheating';
 import { getRegularRealtimeSession } from '@/utils/ai/agents/regular';
 import { RealtimeItem, RealtimeSession } from '@openai/agents/realtime';
-import { generateResumeHistoryRealtime } from '@/utils/ai/chat/resume-history';
-import { generateConversationHistoryRealtime } from '@/utils/ai/chat/conversation-history';
 
 interface AudioAreaProps {
     chat: Chat;
@@ -139,16 +137,13 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
             try {
                 session =
                     chat.type === 'cheating'
-                        ? await getCheatingRealtimeSession()
-                        : await getRegularRealtimeSession();
+                        ? await getCheatingRealtimeSession(chat, messages)
+                        : await getRegularRealtimeSession(chat, messages);
 
-                // seed history *before* connect
-                session.updateHistory([
-                    await generateResumeHistoryRealtime(chat),
-                    ...generateConversationHistoryRealtime(messages),
-                ]);
+                const { api_key } = await fetch('/api/chat/audio', { method: 'POST' })
+                    .then(r => r.json());
 
-                await session.connect({ apiKey: "ek_686edf3879f48191ae1efe33cfe2269f" }); // never a raw key
+                await session.connect({ apiKey: api_key }); // never a raw key
 
                 setIsConnected(true);
 

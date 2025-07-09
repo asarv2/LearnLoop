@@ -1,6 +1,9 @@
 import { Agent } from '@openai/agents';
 import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
 import { realtimeConfig } from '../main';
+import { Chat, Message } from '@/types';
+import { generateResumeHistoryRealtime } from '../chat/resume-history';
+import { generateConversationHistoryRealtime } from '../chat/conversation-history';
 
 const cheatingInstructions = `
 Your resume is provided as a PDF document. Answer questions based on the information provided in your resume.
@@ -37,10 +40,16 @@ export const getCheatingAgent = (): Agent => {
     });
 }
 
-export const getCheatingRealtimeSession = (): RealtimeSession => {
+export const getCheatingRealtimeSession = async (chat: Chat, messages: Message[]): Promise<RealtimeSession> => {
+    const resumeHistory = await generateResumeHistoryRealtime(chat);
+    const conversationHistory = generateConversationHistoryRealtime(messages);
+    const history = [resumeHistory, ...conversationHistory];
+
     const agent = new RealtimeAgent({
         name: 'Interviewee (Cheater)',
         instructions: cheatingInstructions,
     });
-    return new RealtimeSession(agent, realtimeConfig);
+    const session = new RealtimeSession(agent, realtimeConfig);
+    session.updateHistory(history);
+    return session;
 }
