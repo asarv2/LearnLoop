@@ -12,7 +12,7 @@ import {
 import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
 import InterviewHeader from './InterviewHeader';
 import FeedbackModal from './FeedbackModal';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getMessagesByChat } from '@/utils/queries/messages/get-messages-by-chat';
 import { getChat } from '@/utils/queries/chats/get-chat';
 import { useRouter } from 'next/navigation';
@@ -23,27 +23,35 @@ interface InterviewSimulationProps {
   chatId: string;
 }
 
+interface StreamingMessage {
+  id: string;
+  content: string;
+  completed: boolean;
+}
+
 export default function InterviewSimulation({
   chatId,
 }: InterviewSimulationProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [currentMessage, setCurrentMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isInterviewActive, setIsInterviewActive] = useState(true);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [streamingMessage, setStreamingMessage] = useState<StreamingMessage | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { data: chat, isLoading: chatLoading } = useQuery({
+  const { data: chat } = useQuery({
     queryKey: ['chat', chatId],
     queryFn: () => getChat(chatId)
   });
 
-  const { data: messages = [], isLoading: messagesLoading } = useQuery({
+  const { data: messages = [] } = useQuery({
     queryKey: ['messages', chatId],
     queryFn: () => getMessagesByChat(chatId)
   });
 
-  const {data: feedback, isLoading: feedbackLoading} = useQuery({
+  const { data: feedback } = useQuery({
     queryKey: ['feedback', chatId],
     queryFn: () => getFeedbackByChat(chatId)
   });
@@ -54,29 +62,107 @@ export default function InterviewSimulation({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, streamingMessage]);
 
   const sendMessage = async () => {
     if (!currentMessage.trim() || isLoading || !isInterviewActive) return;
 
+    const userMessage = currentMessage;
     setCurrentMessage('');
     setIsLoading(true);
+    setStreamingMessage(null);
 
     try {
       const formData = new FormData();
       formData.append('chatId', chatId);
-      formData.append('message', currentMessage);
+      formData.append('message', userMessage);
       
       const response = await fetch('/api/chat/message', {
         method: 'POST',
         body: formData,
       });
 
-      // TODO: get streaming response
-      const data = await response.json();
-      console.log(data);
+      if (!response.ok) {
+        throw new Error('Failed to send message');
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              switch (data.type) {
+                case 'message_created':
+                  setStreamingMessage({
+                    id: data.messageId,
+                    content: '',
+                    completed: false
+                  });
+                  break;
+                
+                case 'content_delta':
+                  setStreamingMessage(prev => prev ? {
+                    ...prev,
+                    content: data.content
+                  } : null);
+                  break;
+                
+                case 'message_completed':
+                  setStreamingMessage(prev => prev ? {
+                    ...prev,
+                    content: data.content,
+                    completed: true
+                  } : null);
+                  
+                  // Invalidate messages query to refetch updated data
+                  await queryClient.invalidateQueries({
+                    queryKey: ['messages', chatId]
+                  });
+                  
+                  // Clear streaming message after a brief delay
+                  setTimeout(() => {
+                    setStreamingMessage(null);
+                  }, 100);
+                  break;
+                
+                case 'error':
+                  console.error('Streaming error:', data.error);
+                  setStreamingMessage(null);
+                  
+                  // Invalidate messages query to refetch updated data
+                  await queryClient.invalidateQueries({
+                    queryKey: ['messages', chatId]
+                  });
+                  break;
+              }
+            } catch (parseError) {
+              console.error('Error parsing SSE data:', parseError);
+            }
+          }
+        }
+      }
     } catch (error) {
       logError('Error sending message:', error);
+      setStreamingMessage(null);
+      
+      // Invalidate messages query to ensure we have the latest data
+      await queryClient.invalidateQueries({
+        queryKey: ['messages', chatId]
+      });
     } finally {
       setIsLoading(false);
     }
@@ -98,6 +184,10 @@ export default function InterviewSimulation({
       const data = await response.json();
 
       if (data.success) {
+        // Invalidate feedback query to get the new feedback
+        await queryClient.invalidateQueries({
+          queryKey: ['feedback', chatId]
+        });
         setShowFeedback(true);
       } else {
         console.error('Feedback generation failed:', data);
@@ -118,6 +208,20 @@ export default function InterviewSimulation({
       sendMessage();
     }
   };
+
+  // Combine regular messages with streaming message for display
+  const displayMessages = [...messages];
+  if (streamingMessage) {
+    displayMessages.push({
+      id: streamingMessage.id,
+      content: streamingMessage.content,
+      role: 'assistant' as const,
+      chat_id: chatId,
+      completed: streamingMessage.completed,
+      completed_at: '',
+      created_at: new Date().toISOString()
+    });
+  }
 
   return (
     <Box style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -147,7 +251,7 @@ export default function InterviewSimulation({
           background: 'white'
         }}>
           <Flex direction="column" gap="4">
-            {messages.map((message) => (
+            {displayMessages.map((message) => (
               <Box key={message.id}>
                 <Flex 
                   direction={message.role === 'user' ? 'row-reverse' : 'row'} 
@@ -192,7 +296,15 @@ export default function InterviewSimulation({
                           {message.role === 'user' ? '' : chat?.name || 'John Doe'}
                         </Text>
                         <Text size="2" style={{ lineHeight: '1.5', color: 'var(--gray-12)' }}>
-                          {message.content}
+                          {message.role === 'assistant' && !message.completed && !message.content 
+                            ? `${chat?.name || 'John Doe'} is thinking...`
+                            : message.role === 'assistant' && message.completed && !message.content
+                            ? 'No response'
+                            : message.content
+                          }
+                          {message.role === 'assistant' && !message.completed && message.content && (
+                            <span style={{ opacity: 0.7 }}>▊</span>
+                          )}
                         </Text>
                         <Text size="1" style={{ color: 'var(--gray-11)' }}>
                           {new Date(message.created_at).toLocaleTimeString()}
@@ -204,7 +316,7 @@ export default function InterviewSimulation({
               </Box>
             ))}
             
-            {isLoading && (
+            {isLoading && !streamingMessage && (
               <Flex align="center" gap="2" justify="start">
                 <Card size="1" style={{ padding: '8px', background: 'var(--green-3)' }}>
                   <ChatBubbleIcon color="var(--green-9)" />
