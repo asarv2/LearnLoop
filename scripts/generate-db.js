@@ -47,10 +47,13 @@ const writeFile = (filePath, content) => {
     console.log(`✅ Generated: ${path.relative(process.cwd(), filePath)}`);
 };
 
-/** 
- * Fallback: Extract table names from database.types.ts when Supabase is not available
+// --- Schema Extraction Functions ---
+
+/**
+ * Dynamically extracts schema information from database.types.ts
+ * This leverages the actual TypeScript type definitions
  */
-const extractTableNamesFromDatabaseTypes = () => {
+const extractSchemaFromDatabaseTypes = async () => {
     console.log('📖 Reading database types from:', DB_TYPES_FILE_PATH);
     
     if (!fs.existsSync(DB_TYPES_FILE_PATH)) {
@@ -60,6 +63,40 @@ const extractTableNamesFromDatabaseTypes = () => {
     }
     
     const content = fs.readFileSync(DB_TYPES_FILE_PATH, 'utf8');
+    
+    // Extract the Constants object which contains enum information
+    const constantsMatch = content.match(/export const Constants = ({[\s\S]*?}) as const/);
+    let enums = {};
+    
+    if (constantsMatch) {
+        console.log('📊 Found Constants object, extracting enum information');
+        try {
+            // Create a temporary file to evaluate the Constants object
+            const tempFile = path.join(__dirname, 'temp-constants.js');
+            const tempContent = `
+                const Constants = ${constantsMatch[1]};
+                console.log(JSON.stringify(Constants, null, 2));
+            `;
+            
+            fs.writeFileSync(tempFile, tempContent);
+            
+            // Execute the temp file to get the Constants object
+            const { execSync } = require('child_process');
+            const result = execSync(`node ${tempFile}`, { encoding: 'utf8' });
+            
+            // Clean up temp file
+            fs.unlinkSync(tempFile);
+            
+            const constants = JSON.parse(result);
+            
+            if (constants.public && constants.public.Enums) {
+                enums = constants.public.Enums;
+                console.log('📋 Found schema enums:', Object.keys(enums));
+            }
+        } catch {
+            console.log('⚠️  Could not parse Constants object, continuing without enum info');
+        }
+    }
     
     // Extract table names from the Tables interface
     const tablesMatch = content.match(/Tables:\s*{([\s\S]*?)}\s*Views:/);
@@ -71,7 +108,7 @@ const extractTableNamesFromDatabaseTypes = () => {
     
     const tablesContent = tablesMatch[1];
     
-    // Extract individual table names - look for table definitions (not Row, Insert, Update, etc.)
+    // Extract individual table names
     const tableMatches = tablesContent.match(/^\s+(\w+):\s*{$/gm);
     
     if (!tableMatches) {
@@ -85,29 +122,40 @@ const extractTableNamesFromDatabaseTypes = () => {
     }).filter(name => !['Row', 'Insert', 'Update', 'Relationships'].includes(name));
     
     console.log('📋 Found tables:', tableNames);
-    return tableNames;
+    
+    // Build comprehensive schema for each table
+    const schema = { public: { tables: {} } };
+    
+    for (const tableName of tableNames) {
+        console.log(`📋 Processing table: ${tableName}`);
+        
+        const tableInfo = extractTableInfo(content, tableName);
+        schema.public.tables[tableName] = tableInfo;
+        
+        console.log(`   - Primary key: ${tableInfo.pk} (${tableInfo.pkType})`);
+        console.log(`   - Columns: ${tableInfo.columns.length}`);
+        console.log(`   - Relationships: ${tableInfo.relationships.length}`);
+    }
+    
+    return schema;
 };
 
 /**
- * Extract relationships from database.types.ts
+ * Extract comprehensive information for a specific table
  */
-const extractRelationshipsFromDatabaseTypes = (tableName) => {
-    const content = fs.readFileSync(DB_TYPES_FILE_PATH, 'utf8');
-    
-    // Debug: Check if we can find the table at all
-    if (!content.includes(`${tableName}:`)) {
-        console.log(`   DEBUG: Table ${tableName} not found in content`);
-        return [];
-    }
-    
-    // Find the specific table definition using a simpler approach
+const extractTableInfo = (content, tableName) => {
+    // Find the table definition
     const tableStartIndex = content.indexOf(`${tableName}: {`);
     if (tableStartIndex === -1) {
-        console.log(`   DEBUG: Table start not found for ${tableName}`);
-        return [];
+        return {
+            pk: 'id',
+            pkType: 'string',
+            columns: [],
+            relationships: []
+        };
     }
     
-    // Find the end of this table definition by looking for the next table or end of Tables section
+    // Find the end of this table definition by counting braces
     let braceCount = 0;
     let tableEndIndex = tableStartIndex;
     let inTableDef = false;
@@ -127,21 +175,72 @@ const extractRelationshipsFromDatabaseTypes = (tableName) => {
     }
     
     const tableContent = content.substring(tableStartIndex, tableEndIndex + 1);
-    console.log(`   DEBUG: Found table content length: ${tableContent.length}`);
     
+    // Extract Row type to get column information
+    const rowMatch = tableContent.match(/Row:\s*{([\s\S]*?)}/);
+    let columns = [];
+    let primaryKey = 'id';
+    let primaryKeyType = 'string';
+    
+    if (rowMatch) {
+        const rowContent = rowMatch[1];
+        
+        // Extract column definitions
+        const columnMatches = rowContent.match(/(\w+):\s*([^\n]+)/g);
+        if (columnMatches) {
+            columns = columnMatches.map(match => {
+                const [, columnName, columnType] = match.match(/(\w+):\s*(.+)/);
+                return {
+                    name: columnName.trim(),
+                    type: columnType.trim()
+                };
+            });
+            
+            // Determine primary key and its type
+            const idColumn = columns.find(col => col.name === 'id');
+            if (idColumn) {
+                primaryKey = 'id';
+                if (idColumn.type.includes('number')) {
+                    primaryKeyType = 'number';
+                } else {
+                    primaryKeyType = 'string';
+                }
+            }
+        }
+    }
+    
+    // Extract relationships
+    const relationships = extractTableRelationships(tableContent);
+    
+    return {
+        pk: primaryKey,
+        pkType: primaryKeyType,
+        columns: columns.map(col => col.name),
+        relationships
+    };
+};
+
+/**
+ * Extract relationships for a specific table from its content
+ */
+const extractTableRelationships = (tableContent) => {
     // Look for Relationships section
     const relationshipsMatch = tableContent.match(/Relationships:\s*\[([\s\S]*?)\]/);
     
     if (!relationshipsMatch) {
-        console.log(`   DEBUG: No Relationships section found for ${tableName}`);
         return [];
     }
     
     const relationshipsContent = relationshipsMatch[1];
-    console.log(`   DEBUG: Relationships content: ${relationshipsContent.substring(0, 200)}...`);
     
-    // Extract foreign key relationships with a more specific regex
+    // Debug: log what we found
+    if (relationshipsContent.trim().length > 10) {
+        console.log(`   DEBUG: Found relationships content (first 200 chars): ${relationshipsContent.substring(0, 200)}...`);
+    }
+    
+    // Extract foreign key relationships
     const relationships = [];
+    // Updated regex to handle TypeScript object literal syntax (no quotes around property names)
     const fkRegex = /foreignKeyName:\s*"([^"]+)"[\s\S]*?columns:\s*\["([^"]+)"\][\s\S]*?referencedRelation:\s*"([^"]+)"[\s\S]*?referencedColumns:\s*\["([^"]+)"\]/g;
     
     let match;
@@ -157,37 +256,13 @@ const extractRelationshipsFromDatabaseTypes = (tableName) => {
     return relationships;
 };
 
-/**
- * Create fallback schema from database.types.ts
- */
-const createFallbackSchema = (tableNames) => {
+// --- Supabase Schema Introspection Functions ---
+
+async function buildSchemaFromSupabase(supabase, tableNames) {
     const schema = { public: { tables: {} } };
     
     for (const tableName of tableNames) {
-        console.log(`📋 Processing table: ${tableName}`);
-        
-        // Extract relationships
-        const relationships = extractRelationshipsFromDatabaseTypes(tableName);
-        console.log(`   Found ${relationships.length} relationships for ${tableName}:`, relationships);
-        
-        schema.public.tables[tableName] = {
-            pk: 'id', // Default assumption
-            pkType: 'string', // Default assumption
-            columns: [], // We don't need this for generation
-            relationships
-        };
-    }
-    
-    return schema;
-};
-
-// --- Schema Introspection Functions ---
-
-async function buildSchemaFromTableNames(supabase, tableNames) {
-    const schema = { public: { tables: {} } };
-    
-    for (const tableName of tableNames) {
-        console.log(`📋 Processing table: ${tableName}`);
+        console.log(`📋 Processing table from Supabase: ${tableName}`);
         
         // Get columns information
         const { data: columns, error: columnsError } = await supabase
@@ -473,21 +548,22 @@ async function main() {
         let schema;
         
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-            console.log('⚠️  Supabase credentials not found, using fallback mode...');
-            console.log('   Reading schema information from database.types.ts');
+            console.log('⚠️  Supabase credentials not found, using database.types.ts parsing...');
             
-            // Fallback: Extract table names from database.types.ts
-            const tableNames = extractTableNamesFromDatabaseTypes();
-            schema = createFallbackSchema(tableNames);
+            // Extract schema from database.types.ts
+            schema = await extractSchemaFromDatabaseTypes();
         } else {
-            console.log('🔗 Connecting to Supabase...');
+            console.log('🔗 Connecting to Supabase for enhanced schema information...');
             
             // Initialize Supabase client
             const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
             
-            // Get dynamic schema information from Supabase
-            const tableNames = extractTableNamesFromDatabaseTypes(); // Still get table names from types file
-            schema = await buildSchemaFromTableNames(supabase, tableNames);
+            // First get table names from database.types.ts
+            const localSchema = await extractSchemaFromDatabaseTypes();
+            const tableNames = Object.keys(localSchema.public.tables);
+            
+            // Then enhance with live Supabase data
+            schema = await buildSchemaFromSupabase(supabase, tableNames);
         }
         
         console.log('📊 Schema information retrieved:', Object.keys(schema.public.tables));
