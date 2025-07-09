@@ -129,7 +129,7 @@ export default function LandingPage() {
                 <Heading size="6" weight="bold">Upload Resume</Heading>
               </Flex>
               <Text size="4" color="gray" style={{ lineHeight: '1.6' }}>
-                Start by uploading the candidate's resume and configuring the interview settings. 
+                Start by uploading the candidate&apos;s resume and configuring the interview settings. 
                 Our AI analyzes the resume content to create a realistic candidate persona that 
                 matches their background, experience, and skills. You can also specify the 
                 interview type and focus areas to tailor the simulation to your needs.
@@ -163,7 +163,7 @@ export default function LandingPage() {
               >
                 <source src="/videos/FirstScreen.mp4" type="video/mp4" />
                 <source src="/videos/FirstScreen.webm" type="video/webm" />
-                Your browser doesn't support video playback.
+                Your browser doesn&apos;t support video playback.
               </video>
             </Box>
           </Grid>
@@ -202,7 +202,7 @@ export default function LandingPage() {
               >
                 <source src="/videos/FirstScreen.mp4" type="video/mp4" />
                 <source src="/videos/FirstScreen.webm" type="video/webm" />
-                Your browser doesn't support video playback.
+                Your browser doesn&apos;t support video playback.
               </video>
             </Box>
             <Box>
@@ -291,7 +291,7 @@ export default function LandingPage() {
               >
                 <source src="/videos/FirstScreen.mp4" type="video/mp4" />
                 <source src="/videos/FirstScreen.webm" type="video/webm" />
-                Your browser doesn't support video playback.
+                Your browser doesn&apos;t support video playback.
               </video>
             </Box>
           </Grid>
@@ -430,7 +430,7 @@ export default function LandingPage() {
               </Text>
             </Flex>
             <Text size="2" color="blue">
-              © 2025 LearnLoop. All rights reserved.
+              © 2025 LearnLoop LLC. All rights reserved.
             </Text>
           </Flex>
         </Container>
