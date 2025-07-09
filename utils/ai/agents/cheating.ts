@@ -1,9 +1,9 @@
 import { Agent } from '@openai/agents';
-import { InterviewContext } from '../gemini';
 import { getChat } from '@/utils/queries/chats/get-chat';
 
 export const getCheatingAgent = async (chatId: string): Promise<Agent> => {
     const chat = await getChat(chatId);
+    const additionalInstructions = chat.additional_instructions;
 
 
     return new Agent({

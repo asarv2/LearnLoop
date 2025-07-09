@@ -3,10 +3,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { createClient } = require('@supabase/supabase-js');
-
-// Load environment variables
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 // Import the AST-based schema extractor
 const { extractSchema } = require('./ast/extract-schema.js');
@@ -23,10 +19,6 @@ const LOGGER_IMPORT_PATH = '@/utils/logger';
 
 // Define the path to the actual database types file for parsing
 const DB_TYPES_FILE_PATH = path.join(__dirname, '../database.types.ts');
-
-// Supabase configuration
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SERVICE_ROLE_KEY;
 
 // --- Helper Functions ---
 
@@ -73,92 +65,6 @@ const convertAstSchemaToLegacyFormat = (astSchema) => {
     
     return schema;
 };
-
-// --- Supabase Schema Introspection Functions ---
-
-async function buildSchemaFromSupabase(supabase, tableNames) {
-    const schema = { public: { tables: {} } };
-    
-    for (const tableName of tableNames) {
-        console.log(`📋 Processing table from Supabase: ${tableName}`);
-        
-        // Get columns information
-        const { data: columns, error: columnsError } = await supabase
-            .from('information_schema.columns')
-            .select('column_name, data_type, is_nullable, column_default')
-            .eq('table_schema', 'public')
-            .eq('table_name', tableName)
-            .order('ordinal_position');
-            
-        if (columnsError) {
-            console.warn(`⚠️  Could not fetch columns for ${tableName}:`, columnsError);
-            continue;
-        }
-        
-        // Get primary key information
-        const { data: primaryKeys } = await supabase
-            .from('information_schema.key_column_usage')
-            .select('column_name')
-            .eq('table_schema', 'public')
-            .eq('table_name', tableName)
-            .not('constraint_name', 'is', null);
-            
-        // Get foreign key relationships
-        const { data: foreignKeys, error: fkError } = await supabase
-            .from('information_schema.referential_constraints')
-            .select(`
-                constraint_name,
-                information_schema.key_column_usage!inner(
-                    column_name,
-                    referenced_table_name,
-                    referenced_column_name
-                )
-            `)
-            .eq('constraint_schema', 'public')
-            .eq('information_schema.key_column_usage.table_name', tableName);
-        
-        // Determine primary key
-        let primaryKey = 'id';
-        let primaryKeyType = 'string';
-        
-        if (primaryKeys && primaryKeys.length > 0) {
-            primaryKey = primaryKeys[0].column_name;
-        }
-        
-        // Determine primary key type from columns
-        const pkColumn = columns?.find(col => col.column_name === primaryKey);
-        if (pkColumn) {
-            if (pkColumn.data_type.includes('uuid')) {
-                primaryKeyType = 'string';
-            } else if (pkColumn.data_type.includes('integer') || pkColumn.data_type.includes('bigint')) {
-                primaryKeyType = 'number';
-            }
-        }
-        
-        // Build relationships
-        const relationships = [];
-        if (foreignKeys && !fkError) {
-            for (const fk of foreignKeys) {
-                if (fk.information_schema?.key_column_usage) {
-                    relationships.push({
-                        column: fk.information_schema.key_column_usage.column_name,
-                        references: fk.information_schema.key_column_usage.referenced_table_name,
-                        references_column: fk.information_schema.key_column_usage.referenced_column_name
-                    });
-                }
-            }
-        }
-        
-        schema.public.tables[tableName] = {
-            pk: primaryKey,
-            pkType: primaryKeyType,
-            columns: columns ? columns.map(col => col.column_name) : [],
-            relationships
-        };
-    }
-    
-    return schema;
-}
 
 // --- Template Generation Functions ---
 
@@ -371,26 +277,7 @@ async function main() {
         const astSchema = extractSchema(DB_TYPES_FILE_PATH);
         schema = convertAstSchemaToLegacyFormat(astSchema);
         
-        // Optional: enhance with live Supabase data if credentials are available
-        if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-            console.log('🔗 Enhancing with live Supabase data...');
-            
-            try {
-                const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-                const tableNames = Object.keys(schema.public.tables);
-                const liveSchema = await buildSchemaFromSupabase(supabase, tableNames);
-                
-                // Merge live data with AST data (AST takes precedence)
-                for (const tableName of tableNames) {
-                    if (liveSchema.public.tables[tableName]) {
-                        // Keep AST structure but potentially enhance with live data
-                        console.log(`✅ Validated table ${tableName} with live data`);
-                    }
-                }
-                         } catch {
-                 console.log('⚠️  Could not connect to Supabase, continuing with AST-only data');
-             }
-        }
+                console.log('✅ Using pure AST-based schema extraction (no live validation needed)');
         
         console.log('📊 Schema information retrieved:', Object.keys(schema.public.tables));
 
