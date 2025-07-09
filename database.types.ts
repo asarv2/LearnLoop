@@ -68,29 +68,29 @@ export type Database = {
         Row: {
           chat_id: string
           created_at: string
-          errors: string | null
-          green_flags: string | null
+          errors: string[]
+          green_flags: string[]
           id: string
-          red_flags: string | null
-          strengths: string | null
+          red_flags: string[]
+          strengths: string[]
         }
         Insert: {
           chat_id: string
           created_at?: string
-          errors?: string | null
-          green_flags?: string | null
+          errors?: string[]
+          green_flags?: string[]
           id?: string
-          red_flags?: string | null
-          strengths?: string | null
+          red_flags?: string[]
+          strengths?: string[]
         }
         Update: {
           chat_id?: string
           created_at?: string
-          errors?: string | null
-          green_flags?: string | null
+          errors?: string[]
+          green_flags?: string[]
           id?: string
-          red_flags?: string | null
-          strengths?: string | null
+          red_flags?: string[]
+          strengths?: string[]
         }
         Relationships: [
           {

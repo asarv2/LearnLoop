@@ -12,49 +12,41 @@ import {
 import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
 import InterviewHeader from './InterviewHeader';
 import FeedbackModal from './FeedbackModal';
-
-interface Message {
-  id: string;
-  content: string;
-  role: 'user' | 'assistant';
-  timestamp: Date;
-}
+import { useQuery } from '@tanstack/react-query';
+import { getMessagesByChat } from '@/utils/queries/messages/get-messages-by-chat';
+import { getChat } from '@/utils/queries/chats/get-chat';
+import { useRouter } from 'next/navigation';
+import { logError } from '@/utils/logger';
+import { getFeedbackByChat } from '@/utils/queries/feedback/get-feedback-by-chat';
 
 interface InterviewSimulationProps {
-  candidateName: string;
-  resumePDFFile?: File | null;
-  interviewType: string;
-  candidateType: string;
   chatId: string;
-  additionalNotes?: string;
-  initialMessage?: string;
-  onBack?: () => void;
 }
 
 export default function InterviewSimulation({
-  candidateName,
-  resumePDFFile,
-  interviewType,
-  candidateType,
   chatId,
-  additionalNotes,
-  initialMessage = "Hello! Thank you for taking the time to meet with me today.",
-  onBack
 }: InterviewSimulationProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      content: initialMessage,
-      role: 'assistant',
-      timestamp: new Date()
-    }
-  ]);
+  const router = useRouter();
   const [currentMessage, setCurrentMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isInterviewActive, setIsInterviewActive] = useState(true);
-  const [feedback, setFeedback] = useState(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const { data: chat, isLoading: chatLoading } = useQuery({
+    queryKey: ['chat', chatId],
+    queryFn: () => getChat(chatId)
+  });
+
+  const { data: messages = [], isLoading: messagesLoading } = useQuery({
+    queryKey: ['messages', chatId],
+    queryFn: () => getMessagesByChat(chatId)
+  });
+
+  const {data: feedback, isLoading: feedbackLoading} = useQuery({
+    queryKey: ['feedback', chatId],
+    queryFn: () => getFeedbackByChat(chatId)
+  });
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -67,14 +59,6 @@ export default function InterviewSimulation({
   const sendMessage = async () => {
     if (!currentMessage.trim() || isLoading || !isInterviewActive) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: currentMessage,
-      role: 'user',
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
     setCurrentMessage('');
     setIsLoading(true);
 
@@ -82,47 +66,17 @@ export default function InterviewSimulation({
       const formData = new FormData();
       formData.append('chatId', chatId);
       formData.append('message', currentMessage);
-      formData.append('candidateName', candidateName);
-      formData.append('interviewType', interviewType);
-      formData.append('candidateType', candidateType);
       
-      // Include additional notes if available
-      if (additionalNotes) {
-        formData.append('additionalNotes', additionalNotes);
-      }
-      
-      // Include PDF file if available
-      if (resumePDFFile) {
-        formData.append('resumePDF', resumePDFFile);
-      }
-
-      const response = await fetch('/api/interview/message', {
+      const response = await fetch('/api/chat/message', {
         method: 'POST',
         body: formData,
       });
 
+      // TODO: get streaming response
       const data = await response.json();
-
-      if (data.success) {
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: data.response,
-          role: 'assistant',
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      } else {
-        throw new Error(data.error || 'Failed to send message');
-      }
+      console.log(data);
     } catch (error) {
-      console.error('Error sending message:', error);
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: 'I apologize, but I&apos;m having trouble responding right now. Could you please try again?',
-        role: 'assistant',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      logError('Error sending message:', error);
     } finally {
       setIsLoading(false);
     }
@@ -135,21 +89,8 @@ export default function InterviewSimulation({
     try {
       const formData = new FormData();
       formData.append('chatId', chatId);
-      formData.append('candidateName', candidateName);
-      formData.append('interviewType', interviewType);
-      formData.append('candidateType', candidateType);
-      
-      // Include additional notes if available
-      if (additionalNotes) {
-        formData.append('additionalNotes', additionalNotes);
-      }
-      
-      // Include PDF file if available
-      if (resumePDFFile) {
-        formData.append('resumePDF', resumePDFFile);
-      }
 
-      const response = await fetch('/api/interview/feedback', {
+      const response = await fetch('/api/chat/end', {
         method: 'POST',
         body: formData,
       });
@@ -157,7 +98,6 @@ export default function InterviewSimulation({
       const data = await response.json();
 
       if (data.success) {
-        setFeedback(data.feedback);
         setShowFeedback(true);
       } else {
         console.error('Feedback generation failed:', data);
@@ -182,13 +122,13 @@ export default function InterviewSimulation({
   return (
     <Box style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <InterviewHeader
-        candidateName={candidateName}
-        interviewType={interviewType}
-        resumePDFFile={resumePDFFile}
+        candidateName={chat?.name || 'John Doe'}
+        interviewType={chat?.type || ''}
+        resumeId={chat?.resume_id || ''}
         onEndInterview={endInterview}
         isInterviewActive={isInterviewActive}
         onShowFeedback={() => setShowFeedback(true)}
-        onBack={onBack}
+        onBack={() => router.push('/')}
       />
 
       {/* Chat Area */}
@@ -249,13 +189,13 @@ export default function InterviewSimulation({
                     >
                       <Flex direction="column" gap="2">
                         <Text size="1" style={{ color: 'var(--gray-11)' }} weight="medium">
-                          {message.role === 'user' ? '' : candidateName}
+                          {message.role === 'user' ? '' : chat?.name || 'John Doe'}
                         </Text>
                         <Text size="2" style={{ lineHeight: '1.5', color: 'var(--gray-12)' }}>
                           {message.content}
                         </Text>
                         <Text size="1" style={{ color: 'var(--gray-11)' }}>
-                          {message.timestamp.toLocaleTimeString()}
+                          {new Date(message.created_at).toLocaleTimeString()}
                         </Text>
                       </Flex>
                     </Card>
@@ -273,7 +213,7 @@ export default function InterviewSimulation({
                   <Flex align="center" gap="2" p="3">
                     <Spinner size="1" />
                     <Text size="2" style={{ color: 'var(--gray-11)' }}>
-                      {candidateName} is thinking...
+                      {chat?.name || 'John Doe'} is thinking...
                     </Text>
                   </Flex>
                 </Card>
@@ -364,8 +304,8 @@ export default function InterviewSimulation({
       <FeedbackModal
         isOpen={showFeedback}
         onClose={() => setShowFeedback(false)}
-        feedback={feedback}
-        candidateName={candidateName}
+        feedback={feedback?.[0] || null}
+        candidateName={chat?.name || 'John Doe'}
       />
     </Box>
   );
