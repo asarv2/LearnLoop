@@ -10,8 +10,9 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const name = formData.get("name") as string;
-    const interviewType = formData.get("interviewType") as InterviewType;
+    const interviewType = formData.get("type") as InterviewType;
     const position = formData.get("position") as string;
+    const additional_info = formData.get("additional_info") as string;
     const googleFileId = await uploadResume(formData);
     const resume = await createResume({
         google_file_id: googleFileId,
@@ -26,6 +27,7 @@ export async function POST(request: NextRequest) {
         name: name as string,
         position: position as string,
         type: interviewType,
+        additional_info: additional_info,
     });
     
     return NextResponse.json({ chat });

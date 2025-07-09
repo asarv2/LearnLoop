@@ -15,7 +15,7 @@ import { FileTextIcon, Cross2Icon, ArrowLeftIcon } from '@radix-ui/react-icons';
 interface InterviewHeaderProps {
   candidateName: string;
   interviewType: string;
-  resumePDFFile?: File | null;
+  resumeId: string;
   onEndInterview: () => void;
   isInterviewActive: boolean;
   onShowFeedback?: () => void;
@@ -26,7 +26,7 @@ interface InterviewHeaderProps {
 export default function InterviewHeader({
   candidateName,
   interviewType, // Keep for future use
-  resumePDFFile,
+  resumeId,
   onEndInterview,
   isInterviewActive,
   onShowFeedback,
@@ -36,23 +36,7 @@ export default function InterviewHeader({
   // Suppress lint warning for interviewType - keeping for future use
   void interviewType;
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
-  const [resumeObjectURL, setResumeObjectURL] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
-
-  // Create object URL for the PDF file
-  useEffect(() => {
-    if (resumePDFFile) {
-      const url = URL.createObjectURL(resumePDFFile);
-      setResumeObjectURL(url);
-      
-      // Cleanup function to revoke the object URL
-      return () => {
-        URL.revokeObjectURL(url);
-      };
-    } else {
-      setResumeObjectURL(null);
-    }
-  }, [resumePDFFile]);
 
   // Timer effect for active interviews
   useEffect(() => {
@@ -88,15 +72,6 @@ export default function InterviewHeader({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Determine which PDF source to use
-  const getPDFSource = () => {
-    // Use the uploaded PDF file's object URL
-    if (resumeObjectURL) {
-      return resumeObjectURL;
-    }
-    // No fallback - return null if no PDF is available
-    return null;
-  };
 
   return (
     <>
@@ -208,9 +183,9 @@ export default function InterviewHeader({
                     <Separator size="4" />
                     
                     <Box style={{ flex: 1, border: '1px solid var(--gray-7)', borderRadius: '6px', overflow: 'hidden' }}>
-                      {getPDFSource() ? (
+                      {resumeId ? (
                         <iframe
-                          src={getPDFSource() || undefined}
+                          src={`/api/resume/${resumeId}`}
                           style={{
                             width: '100%',
                             height: '100%',

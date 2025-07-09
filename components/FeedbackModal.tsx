@@ -15,20 +15,12 @@ import {
   ChevronRightIcon,
   DotFilledIcon
 } from '@radix-ui/react-icons';
-
-interface FeedbackData {
-  strengths: string[];
-  misstepsAndAlternatives: string[];
-  flags: {
-    greenFlags: string[];
-    redFlags: string[];
-  };
-}
+import { Feedback } from '@/types';
 
 interface FeedbackModalProps {
   isOpen: boolean;
   onClose: () => void;
-  feedback: FeedbackData | null;
+  feedback: Feedback | null;
   candidateName: string;
 }
 
@@ -141,9 +133,9 @@ export default function FeedbackModal({
           height: '100%'
         }}>
           <Flex direction="column" gap="6">
-            {feedback.misstepsAndAlternatives.length > 0 ? (
+            {feedback.errors && feedback.errors.length > 0 ? (
               <Flex direction="column" gap="4">
-                {feedback.misstepsAndAlternatives.map((misstep, index) => (
+                {feedback.errors.map((error, index) => (
                   <Box key={index} style={{ 
                     position: 'relative',
                     padding: '28px 32px',
@@ -168,7 +160,7 @@ export default function FeedbackModal({
                        fontWeight: '400',
                        fontSize: '15px'
                      }}>
-                       {cleanText(misstep)}
+                       {cleanText(error)}
                      </Text>
                      <Box style={{
                        position: 'absolute',
@@ -229,9 +221,9 @@ export default function FeedbackModal({
                   Green Flags
                 </Text>
               </Flex>
-              {feedback.flags.greenFlags.length > 0 ? (
+              {feedback.green_flags.length > 0 ? (
                 <Flex direction="column" gap="3">
-                  {feedback.flags.greenFlags.map((flag, index) => (
+                  {feedback.green_flags.map((flag, index) => (
                     <Box key={index} style={{ 
                       position: 'relative',
                       padding: '20px 24px',
@@ -304,9 +296,9 @@ export default function FeedbackModal({
                   Red Flags
                 </Text>
               </Flex>
-              {feedback.flags.redFlags.length > 0 ? (
+              {feedback.red_flags.length > 0 ? (
                 <Flex direction="column" gap="3">
-                  {feedback.flags.redFlags.map((flag, index) => (
+                  {feedback.red_flags.map((flag, index) => (
                     <Box key={index} style={{ 
                       position: 'relative',
                       padding: '20px 24px',

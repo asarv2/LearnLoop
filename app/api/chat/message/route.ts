@@ -6,10 +6,10 @@ import { createMessage } from "@/utils/mutations/messages/create-message";
 import { NextRequest, NextResponse } from "next/server";
 import { getCheatingAgent } from "@/utils/ai/agents/cheating";
 import { getRegularAgent } from "@/utils/ai/agents/regular";
-import { getValidResume } from "@/utils/google/get-valid-resume";
 import { updateMessage } from "@/utils/mutations/messages/update-message";
 import { generateConversationHistory } from "@/utils/ai/chat/conversation-history";
 import { getMessagesByChat } from "@/utils/queries/messages/get-messages-by-chat";
+import { generateResumeHistory } from "@/utils/ai/chat/resume-history";
 
 export async function POST(request: NextRequest) {
     // use form data
@@ -21,16 +21,6 @@ export async function POST(request: NextRequest) {
     const messages = await getMessagesByChat(chatId as string);
 
     const interviewType = chat.type;
-    const candidateName = chat.name;
-    const candidatePosition = chat.position;
-    const additionalInstructions = chat.additional_info;
-
-    if (!chat.resume_id) {
-        return NextResponse.json({ error: "Chat does not have a resume" }, { status: 400 });
-    }
-
-    const resume = await getValidResume(chat.resume_id);
-
 
     let agent: Agent;
     if (interviewType === 'cheating') {
@@ -39,25 +29,11 @@ export async function POST(request: NextRequest) {
         agent = await getRegularAgent();
     }
 
+    const resumeHistory = await generateResumeHistory(chat);
     const conversationHistory = generateConversationHistory(messages);
 
     const input: AgentInputItem[] = [
-        {
-            role: "user",
-            content: [
-                {
-                    type: "input_text",
-                    text: `
-                    You are interviewing ${candidateName} for the position of ${candidatePosition}.
-                    ${additionalInstructions}
-                    `,
-                },
-                {
-                    type: "input_image",
-                    image: `https://generativelanguage.googleapis.com/v1beta/${resume.google_file_id}`,
-                }
-            ]
-        },
+        resumeHistory,
         ...conversationHistory,
         {
             role: "user",
@@ -88,14 +64,6 @@ export async function POST(request: NextRequest) {
                 messageText += event.data.delta;
             }
         }
-        // // agent updated events
-        // if (event.type == 'agent_updated_stream_event') {
-        //   console.log(`${event.type} %s`, event.agent.name);
-        // }
-        // // Agent SDK specific events
-        // if (event.type === 'run_item_stream_event') {
-        //   console.log(`${event.type} %o`, event.item);
-        // }
     }
 
     await updateMessage(message.id, {
