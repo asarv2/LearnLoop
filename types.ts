@@ -21,3 +21,13 @@ export type Log = Tables<'logs'>;
 export type Message = Tables<'messages'>;
 // --- RESUMES ---
 export type Resume = Tables<'resumes'>;
+
+// =============================================
+// ============= UTILITY TYPES =============
+// =============================================
+
+// Union type of all table names
+export type TableName = 'chats' | 'feedback' | 'logs' | 'messages' | 'resumes';
+
+// Union type of all entity types
+export type Entity = Chat | Feedback | Log | Message | Resume;

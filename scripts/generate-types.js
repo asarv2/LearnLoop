@@ -29,10 +29,10 @@ const toSingular = (tableName) => {
 };
 
 /** 
- * Dynamically extracts table names from database.types.ts 
- * This parses the TypeScript file to find table definitions
+ * Dynamically extracts table names and schema information from database.types.ts
+ * This creates a temporary JavaScript file to import the types and extract the schema
  */
-const extractTableNamesFromDatabaseTypes = () => {
+const extractSchemaFromDatabaseTypes = async () => {
     console.log('📖 Reading database types from:', DB_TYPES_FILE_PATH);
     
     if (!fs.existsSync(DB_TYPES_FILE_PATH)) {
@@ -41,10 +41,43 @@ const extractTableNamesFromDatabaseTypes = () => {
         process.exit(1);
     }
     
+    // Read the database types file
     const content = fs.readFileSync(DB_TYPES_FILE_PATH, 'utf8');
     
-    // Extract table names from the Tables interface
-    // Look for patterns like: tableName: {
+    // Extract the Constants object which contains the actual schema information
+    const constantsMatch = content.match(/export const Constants = ({[\s\S]*?}) as const/);
+    
+    if (constantsMatch) {
+        console.log('📊 Found Constants object, using it for schema extraction');
+        try {
+            // Create a temporary file to evaluate the Constants object
+            const tempFile = path.join(__dirname, 'temp-constants.js');
+            const tempContent = `
+                const Constants = ${constantsMatch[1]};
+                console.log(JSON.stringify(Constants, null, 2));
+            `;
+            
+            fs.writeFileSync(tempFile, tempContent);
+            
+            // Execute the temp file to get the Constants object
+            const { execSync } = require('child_process');
+            const result = execSync(`node ${tempFile}`, { encoding: 'utf8' });
+            
+            // Clean up temp file
+            fs.unlinkSync(tempFile);
+            
+            const constants = JSON.parse(result);
+            
+            // Extract table names from the constants if available
+            if (constants.public && constants.public.Enums) {
+                console.log('📋 Found schema enums:', Object.keys(constants.public.Enums));
+            }
+        } catch {
+            console.log('⚠️  Could not parse Constants object, falling back to regex parsing');
+        }
+    }
+    
+    // Fallback: Extract table names from the Tables interface using regex
     const tablesMatch = content.match(/Tables:\s*{([\s\S]*?)}\s*Views:/);
     
     if (!tablesMatch) {
@@ -55,7 +88,6 @@ const extractTableNamesFromDatabaseTypes = () => {
     const tablesContent = tablesMatch[1];
     
     // Extract individual table names - look for table definitions (not Row, Insert, Update, etc.)
-    // Match pattern: spaces + tableName + : + spaces + {
     const tableMatches = tablesContent.match(/^\s+(\w+):\s*{$/gm);
     
     if (!tableMatches) {
@@ -69,17 +101,85 @@ const extractTableNamesFromDatabaseTypes = () => {
     }).filter(name => !['Row', 'Insert', 'Update', 'Relationships'].includes(name));
     
     console.log('📋 Found tables:', tableNames);
-    return tableNames;
+    
+    // Extract relationships for each table
+    const schema = { tables: {} };
+    
+    for (const tableName of tableNames) {
+        const relationships = extractTableRelationships(content, tableName);
+        schema.tables[tableName] = {
+            relationships
+        };
+    }
+    
+    return schema;
+};
+
+/**
+ * Extract relationships for a specific table from the database types content
+ */
+const extractTableRelationships = (content, tableName) => {
+    // Find the table definition
+    const tableStartIndex = content.indexOf(`${tableName}: {`);
+    if (tableStartIndex === -1) {
+        return [];
+    }
+    
+    // Find the end of this table definition by counting braces
+    let braceCount = 0;
+    let tableEndIndex = tableStartIndex;
+    let inTableDef = false;
+    
+    for (let i = tableStartIndex; i < content.length; i++) {
+        const char = content[i];
+        if (char === '{') {
+            braceCount++;
+            inTableDef = true;
+        } else if (char === '}') {
+            braceCount--;
+            if (inTableDef && braceCount === 0) {
+                tableEndIndex = i;
+                break;
+            }
+        }
+    }
+    
+    const tableContent = content.substring(tableStartIndex, tableEndIndex + 1);
+    
+    // Look for Relationships section
+    const relationshipsMatch = tableContent.match(/Relationships:\s*\[([\s\S]*?)\]/);
+    
+    if (!relationshipsMatch) {
+        return [];
+    }
+    
+    const relationshipsContent = relationshipsMatch[1];
+    
+    // Extract foreign key relationships
+    const relationships = [];
+    const fkRegex = /foreignKeyName:\s*"([^"]+)"[\s\S]*?columns:\s*\["([^"]+)"\][\s\S]*?referencedRelation:\s*"([^"]+)"[\s\S]*?referencedColumns:\s*\["([^"]+)"\]/g;
+    
+    let match;
+    while ((match = fkRegex.exec(relationshipsContent)) !== null) {
+        relationships.push({
+            column: match[2],
+            references: match[3],
+            references_column: match[4]
+        });
+    }
+    
+    return relationships;
 };
 
 // --- Main Generation Logic ---
 
-function main() {
+async function main() {
     console.log('🚀 Generating dynamic database types...');
 
     try {
-        // Dynamically extract table names from database.types.ts
-        const tableNames = extractTableNamesFromDatabaseTypes();
+        // Dynamically extract schema from database.types.ts
+        const schema = await extractSchemaFromDatabaseTypes();
+        const tableNames = Object.keys(schema.tables);
 
         // Start with the static prefix content
         let content = `// This file is auto-generated by scripts/generate-types.js
@@ -105,6 +205,19 @@ export type SchemaName = keyof Database;
             content += `// --- ${tableName.toUpperCase()} ---\n`;
             content += `export type ${pascalName} = Tables<'${tableName}'>;\n`;
         }
+
+        // Add additional utility types
+        content += `
+// =============================================
+// ============= UTILITY TYPES =============
+// =============================================
+
+// Union type of all table names
+export type TableName = ${tableNames.map(name => `'${name}'`).join(' | ')};
+
+// Union type of all entity types
+export type Entity = ${tableNames.map(name => `${toPascalCase(toSingular(name))}`).join(' | ')};
+`;
 
         // Write the final content to the output file
         fs.writeFileSync(OUTPUT_FILE, content);
