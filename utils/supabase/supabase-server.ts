@@ -1,4 +1,3 @@
-import { SchemaName } from '@/types';
 import { Database } from '@/database.types'
 import { CookieOptions, createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
@@ -18,7 +17,6 @@ export default async function useSupabaseServer(cookieStore: ReturnType<typeof c
           );
         },
       },
-      db: { schema: process.env.NEXT_PUBLIC_SUPABASE_SCHEMA as SchemaName },
       auth: useServiceRole ? {
         autoRefreshToken: false,
         persistSession: false
