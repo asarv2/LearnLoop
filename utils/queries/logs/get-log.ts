@@ -4,13 +4,14 @@
 import { cookies } from "next/headers";
 import supabaseServer from "@/utils/supabase/supabase-server";
 import { logError } from "@/utils/logger";
+import type { Tables } from "@/database.types";
 
 /**
  * Fetches a single log by its primary key.
  * @param id The primary key of the log.
- * @returns The log object or null if not found. The return type is inferred.
+ * @returns The log object or null if not found.
  */
-export const getLog = async (id: string) => {
+export const getLog = async (id: string): Promise<Tables<'logs'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("logs")

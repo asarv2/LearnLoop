@@ -4,14 +4,14 @@
 import { cookies } from "next/headers";
 import supabaseServer from "@/utils/supabase/supabase-server";
 import { logError } from "@/utils/logger";
-import type { TablesInsert } from "@/database.types";
+import type { TablesInsert, Tables } from "@/database.types";
 
 /**
  * Creates a new feedback in the database.
  * @param newData The data for the new feedback.
- * @returns The newly created feedback. The return type is inferred.
+ * @returns The newly created feedback.
  */
-export const createFeedback = async (newData: TablesInsert<'feedback'>) => {
+export const createFeedback = async (newData: TablesInsert<'feedback'>): Promise<Tables<'feedback'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("feedback")

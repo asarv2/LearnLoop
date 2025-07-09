@@ -4,13 +4,14 @@
 import { cookies } from "next/headers";
 import supabaseServer from "@/utils/supabase/supabase-server";
 import { logError } from "@/utils/logger";
+import type { Tables } from "@/database.types";
 
 /**
  * Deletes a resume from the database.
  * @param id The primary key of the resume to delete.
- * @returns The deleted data. The return type is inferred.
+ * @returns The deleted data.
  */
-export const deleteResume = async (id: string) => {
+export const deleteResume = async (id: string): Promise<Tables<'resumes'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("resumes")

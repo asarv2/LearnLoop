@@ -4,13 +4,14 @@
 import { cookies } from "next/headers";
 import supabaseServer from "@/utils/supabase/supabase-server";
 import { logError } from "@/utils/logger";
+import type { Tables } from "@/database.types";
 
 /**
  * Deletes a feedback from the database.
  * @param id The primary key of the feedback to delete.
- * @returns The deleted data. The return type is inferred.
+ * @returns The deleted data.
  */
-export const deleteFeedback = async (id: string) => {
+export const deleteFeedback = async (id: string): Promise<Tables<'feedback'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("feedback")

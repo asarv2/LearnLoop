@@ -4,14 +4,14 @@
 import { cookies } from "next/headers";
 import supabaseServer from "@/utils/supabase/supabase-server";
 import { logError } from "@/utils/logger";
-import type { TablesInsert } from "@/database.types";
+import type { TablesInsert, Tables } from "@/database.types";
 
 /**
  * Creates a new log in the database.
  * @param newData The data for the new log.
- * @returns The newly created log. The return type is inferred.
+ * @returns The newly created log.
  */
-export const createLog = async (newData: TablesInsert<'logs'>) => {
+export const createLog = async (newData: TablesInsert<'logs'>): Promise<Tables<'logs'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("logs")
