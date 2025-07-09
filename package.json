@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npm run gen:db && npm run gen:types && npm run gen:queries && next dev --turbopack",
+    "dev": "npm run gen:all && next dev --turbopack",
+    "gen:all": "npm run gen:db && npm run gen:types && npm run gen:queries",
     "gen:db": "npx supabase gen types typescript --project-id uslxyheljqngrofpygud --schema public > database.types.ts",
     "gen:queries": "node ./scripts/generate-db.js",
     "gen:types": "node ./scripts/generate-types.js",
@@ -13,6 +14,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@openai/agents": "^0.0.10",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-icons": "^1.3.2",
@@ -23,8 +25,9 @@
     "@supabase/supabase-js": "^2.50.2",
     "@tanstack/react-query": "^5.81.5",
     "ai": "^4.3.16",
+    "dotenv": "^17.1.0",
     "next": "15.3.4",
-    "openai": "^5.8.2",
+    "openai": "^5.8.3",
     "pdf-parse": "^1.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

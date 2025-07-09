@@ -16,30 +16,88 @@ export type Database = {
     Tables: {
       chats: {
         Row: {
+          additional_info: string
           completed: boolean
           completed_at: string
           created_at: string
           feedback: Json | null
           id: string
+          name: string
+          position: string
+          resume_id: string | null
           title: string
         }
         Insert: {
+          additional_info?: string
           completed?: boolean
           completed_at?: string
           created_at?: string
           feedback?: Json | null
           id?: string
+          name?: string
+          position?: string
+          resume_id?: string | null
           title: string
         }
         Update: {
+          additional_info?: string
           completed?: boolean
           completed_at?: string
           created_at?: string
           feedback?: Json | null
           id?: string
+          name?: string
+          position?: string
+          resume_id?: string | null
           title?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "chats_resume_id_fkey"
+            columns: ["resume_id"]
+            isOneToOne: false
+            referencedRelation: "resumes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feedback: {
+        Row: {
+          chat_id: string
+          created_at: string
+          errors: string | null
+          green_flags: string | null
+          id: string
+          red_flags: string | null
+          strengths: string | null
+        }
+        Insert: {
+          chat_id: string
+          created_at?: string
+          errors?: string | null
+          green_flags?: string | null
+          id?: string
+          red_flags?: string | null
+          strengths?: string | null
+        }
+        Update: {
+          chat_id?: string
+          created_at?: string
+          errors?: string | null
+          green_flags?: string | null
+          id?: string
+          red_flags?: string | null
+          strengths?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       logs: {
         Row: {
@@ -99,6 +157,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      resumes: {
+        Row: {
+          created_at: string
+          google_file_id: string | null
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          google_file_id?: string | null
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          google_file_id?: string | null
+          id?: string
+        }
+        Relationships: []
       }
     }
     Views: {

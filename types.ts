@@ -13,7 +13,11 @@ export type SchemaName = keyof Database;
 
 // --- CHATS ---
 export type Chat = Tables<'chats'>;
+// --- FEEDBACK ---
+export type Feedback = Tables<'feedback'>;
 // --- LOGS ---
 export type Log = Tables<'logs'>;
 // --- MESSAGES ---
 export type Message = Tables<'messages'>;
+// --- RESUMES ---
+export type Resume = Tables<'resumes'>;
