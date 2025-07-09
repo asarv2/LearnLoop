@@ -68,8 +68,10 @@ const AudioVisualizer = ({ isActive }: AudioVisualizerProps) => {
 
 export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
     const [currentTranscript, setCurrentTranscript] = useState('');
+    const [micActive, setMicActive] = useState(false);
     const currentMessageRef = useRef<{ id: string } | null>(null);
     const [isConnected, setIsConnected] = useState(false);
+    const sessionRef = useRef<RealtimeSession | null>(null);
 
     const syncTranscriptToMessages = useCallback(async (content: string, role: 'user' | 'assistant') => {
         try {
@@ -105,57 +107,54 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
         }
     }, [chat.id]);
 
-    const handleHistory = useCallback(async (history: RealtimeItem[]) => {
+    const handleHistory = useCallback(
+      async (history: RealtimeItem[]) => {
         const last = history.at(-1);
-        if (last?.type === 'message' && last.role === 'user' && last.status === 'completed') {
-            let text = '';
-            if ('text' in last.content[0]) {
-                text = last.content[0].text
-            } else if ('transcript' in last.content[0] && last.content[0].transcript) {
-                text = last.content[0].transcript
-            } else {
-                throw new Error("Invalid message content");
-            }
-            setCurrentTranscript(text);
-            await syncTranscriptToMessages(text, 'user');
-        } else if (last?.type === 'message' && last.role === 'assistant' && last.status === 'completed') {
-            let text = '';
-            if ('text' in last.content[0]) {
-                text = last.content[0].text
-            } else if ('transcript' in last.content[0] && last.content[0].transcript) {
-                text = last.content[0].transcript
-            } else {
-                throw new Error("Invalid message content");
-            }
-            await syncTranscriptToMessages(text, 'assistant');
-        }
-    }, [syncTranscriptToMessages]);
+        if (!last || last.type !== 'message' || (last.role === 'assistant' && last.status !== 'completed') || last.role === 'system') return;
+
+        const text =
+          last.role === 'user'
+            ? 'text' in last.content[0] ? last.content[0].text : last.content[0].transcript
+            : 'text' in last.content[0] ? last.content[0].text : last.content[0].transcript;
+        if (!text) return;
+
+        if (last.role === 'user') setCurrentTranscript(text);
+        await syncTranscriptToMessages(text, last.role);
+      },
+      [syncTranscriptToMessages],
+    );
 
     useEffect(() => {
-        let session: RealtimeSession;
+        let mounted = true;
         (async () => {
             try {
-                session =
-                    chat.type === 'cheating'
-                        ? await getCheatingRealtimeSession(chat, messages)
-                        : await getRegularRealtimeSession(chat, messages);
+                const session =
+                  chat.type === 'cheating'
+                    ? await getCheatingRealtimeSession(chat, messages)
+                    : await getRegularRealtimeSession(chat, messages);
 
-                const { api_key } = await fetch('/api/chat/audio', { method: 'POST' })
-                    .then(r => r.json());
+                const { api_key } = await fetch('/api/chat/audio', {
+                  method: 'POST',
+                }).then((r) => r.json());
 
-                await session.connect({ apiKey: api_key }); // never a raw key
+                await session.connect({ apiKey: api_key });
 
-                setIsConnected(true);
-
+                if (!mounted) return;
                 session.on('history_updated', handleHistory);
-                session.on('error', (e) => onError(e.error as string));
+                session.on('error', (e) => onError(String(e.error)));
+                sessionRef.current = session;
+                setIsConnected(true);
             } catch (e) {
                 onError(e as string);
             }
         })();
 
-        return () => session?.close();
-    }, [chat, handleHistory, messages, onError]);
+        return () => {
+          mounted = false;
+          sessionRef.current?.off('history_updated', handleHistory);
+          sessionRef.current?.close();
+        };
+    }, [chat, handleHistory, messages, onError]);   // reconnect only when chat changes
 
     return (
         <Box style={{
@@ -167,7 +166,7 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
             padding: '2rem',
             gap: '1.5rem'
         }}>
-            <AudioVisualizer isActive={isConnected} />
+            <AudioVisualizer isActive={micActive} />
 
             <Flex direction="column" align="center" gap="3" style={{ textAlign: 'center' }}>
                 <Text size="4" weight="medium" color={isConnected ? 'blue' : 'gray'}>
@@ -182,6 +181,33 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
                     }}>
                         &ldquo;{currentTranscript}&rdquo;
                     </Text>
+                )}
+
+                {isConnected && (
+                  <button
+                    onMouseDown={() => {
+                      sessionRef.current?.mute(false);
+                      setMicActive(true);
+                    }}
+                    onMouseUp={() => {
+                      sessionRef.current?.mute(true);
+                      setMicActive(false);
+                    }}
+                    onMouseLeave={() => {
+                      sessionRef.current?.mute(true);
+                      setMicActive(false);
+                    }}
+                    style={{
+                      padding: '0.75rem 1.5rem',
+                      borderRadius: 6,
+                      background: micActive ? '#a855f7' : '#e5e7eb',
+                      color: micActive ? '#fff' : '#374151',
+                      cursor: 'pointer',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {micActive ? 'Recording…' : 'Hold to Speak'}
+                  </button>
                 )}
             </Flex>
         </Box>
