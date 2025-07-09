@@ -23,6 +23,13 @@ export type Message = Tables<'messages'>;
 export type Resume = Tables<'resumes'>;
 
 // =============================================
+// ================ ENUM TYPES ================
+// =============================================
+
+export type LogLevel = "info" | "error" | "warn" | "debug";
+export type MessageRole = "user" | "assistant";
+
+// =============================================
 // ============= UTILITY TYPES =============
 // =============================================
 
