@@ -8,6 +8,7 @@ export interface InterviewContext {
   candidateResume?: string; // Keep for backward compatibility
   resumePDF?: Buffer; // New PDF support
   interviewType: string;
+  candidateType?: string; // Type of candidate: 'regular', 'ai-assisted', 'random'
   additionalNotes?: string; // Additional context about the interview
   conversationHistory: Array<{
     role: 'user' | 'assistant';
@@ -74,10 +75,23 @@ export class InterviewSimulator {
   }> {
     const conversationHistory = this.formatConversationHistory(context.conversationHistory);
 
+    // Determine if this was actually an AI-assisted candidate for feedback context
+    let actualCandidateType = context.candidateType;
+    if (actualCandidateType === 'random') {
+      // We can't know what random selected, so provide general feedback
+      actualCandidateType = 'unknown';
+    }
+
+    const cheatingContext = actualCandidateType === 'ai-assisted' 
+      ? `\n\nIMPORTANT CONTEXT: This candidate was actually using AI assistance tools (like Cluealy) during the interview. In your analysis, specifically evaluate whether the interviewer detected signs of AI assistance and how they could have identified cheating behaviors.`
+      : actualCandidateType === 'unknown'
+      ? `\n\nIMPORTANT CONTEXT: This candidate may or may not have been using AI assistance. Evaluate whether the interviewer looked for potential signs of AI assistance or cheating.`
+      : '';
+
     try {
       const prompt = `Analyze this job interview conversation and provide detailed, specific feedback on the interviewer's performance:
 
-      ${conversationHistory}
+      ${conversationHistory}${cheatingContext}
 
       Provide feedback in this exact format:
 
@@ -85,12 +99,14 @@ export class InterviewSimulator {
       - List specific things the interviewer did well.  
       - For each strength, include direct quotes from the conversation.  
       - Explain *why* each action or question was effective.
+      ${actualCandidateType === 'ai-assisted' ? '- Specifically note if they detected any signs of AI assistance or asked probing questions.' : ''}
 
       MISSTEPS & SAY THIS INSTEAD:  
       - Identify specific moments where the interviewer could have done better.  
       - Include exact quotes of what they said and explain why it was problematic.
       - Then provide the improved version: "Say this instead: [better version]"
       - Be practical and actionable — do not be vague.
+      ${actualCandidateType === 'ai-assisted' ? '- Include missed opportunities to detect AI assistance or cheating behaviors.' : ''}
 
       GREEN FLAGS (Positive signals the interviewer should have recognized):
       - List subtle positive indicators the candidate displayed that the interviewer should have picked up on
@@ -101,6 +117,7 @@ export class InterviewSimulator {
       - List subtle concerning indicators the candidate displayed that the interviewer should have caught
       - These should be based on actual things the candidate said or did in the conversation  
       - Explain what each red flag might indicate about potential issues
+      ${actualCandidateType === 'ai-assisted' ? '- Focus especially on signs that might indicate AI assistance: overly polished answers, textbook responses, vague personal details, etc.' : ''}
 
       Keep your feedback concise but detailed enough to guide real improvement. Always include direct quotes and be specific about what the interviewer should have noticed.`;
 
@@ -162,9 +179,48 @@ export class InterviewSimulator {
       ? `\n\nAdditional context about this interview:\n${context.additionalNotes}`
       : '';
 
+    // Determine candidate behavior based on type
+    let candidateTypePrompt = '';
+    let actualCandidateType = context.candidateType;
+    
+    // Handle random selection
+    if (actualCandidateType === 'random') {
+      actualCandidateType = Math.random() < 0.5 ? 'regular' : 'ai-assisted';
+    }
+
+    if (actualCandidateType === 'ai-assisted') {
+      candidateTypePrompt = `
+
+CRITICAL: You are an AI-ASSISTED CANDIDATE using tools like Cluealy to help with responses. Display these subtle cheating behaviors:
+
+AI-ASSISTED BEHAVIORS (be very subtle):
+- Occasionally pause slightly longer before technical answers as if processing or reading
+- Give surprisingly polished or structured answers to complex questions
+- Sometimes use buzzwords or phrases that sound slightly "textbook-perfect"
+- Occasionally provide answers that are technically correct but lack personal experience depth
+- When discussing past projects, sometimes be vague about your specific role vs the team's role
+- Might give generic advice or solutions that could apply to many situations
+- Sometimes reference best practices or methodologies without explaining personal experience with them
+- May struggle with follow-up questions that require deep, specific personal anecdotes
+- Occasionally use phrases like "I read that..." or "I've learned that..." when discussing strategies
+- Might give perfectly structured STAR method responses but lack emotional connection to experiences
+
+SPECIFIC CHEATING SIGNS TO INCLUDE:
+- Answer questions about problem-solving with textbook solutions rather than messy real-world experiences
+- When asked about failures, give sanitized examples that sound like they're from a career advice blog
+- Use marketing language when describing company culture or team dynamics
+- Sometimes answer questions that weren't exactly asked, as if misunderstanding due to AI interpretation
+- Give overly diplomatic answers to controversial or difficult questions
+- Mention specific metrics or achievements that sound impressive but are hard to verify`;
+    } else {
+      candidateTypePrompt = `
+
+You are a REGULAR CANDIDATE with natural, authentic responses.`;
+    }
+
     return `You are simulating a job candidate named ${context.candidateName} in a ${context.interviewType} interview. 
 
-${resumeInfo}${additionalContext}
+${resumeInfo}${additionalContext}${candidateTypePrompt}
 
 Guidelines for your responses:
 - Answer questions based on the experience and skills mentioned in your resume
@@ -174,7 +230,7 @@ Guidelines for your responses:
 - Demonstrate your knowledge and expertise when relevant
 - Be confident but not arrogant
 - Keep responses concise and focused (2-4 sentences typically, unless the interviewer asks for more detail)
-- You don't have to pretened to know everything, you're a candidate, not a perfect person
+- You don't have to pretend to know everything, you're a candidate, not a perfect person
 - If asked about something not in your resume, respond honestly that you don't have that specific experience
 - Show genuine interest in learning and growing
 ${context.additionalNotes ? '- Take into account the additional context provided about this interview' : ''}
@@ -197,9 +253,11 @@ RED FLAGS (concerning signals to display subtly - use sparingly):
 - Show overconfidence in areas outside your expertise
 - Ask questions that focus only on benefits/compensation rather than the work itself
 
-Be subtle with these flags - they should feel natural and not obvious. The interviewer should have to pay attention to catch them.
+${actualCandidateType === 'ai-assisted' ? 'REMEMBER: You are AI-assisted, so include the cheating behaviors listed above while maintaining professionalism.' : ''}
 
-Remember: You are being interviewed by a professional who is evaluating you for a position on their team or even just for the company.`;
+Be subtle with all flags - they should feel natural and not obvious. The interviewer should have to pay attention to catch them.
+
+Remember: You are being interviewed by a professional who is evaluating you for a position on their team or company.`;
   }
 
   private formatConversationHistory(history: Array<{ role: 'user' | 'assistant'; content: string }>): string {

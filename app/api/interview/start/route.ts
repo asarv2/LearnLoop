@@ -6,12 +6,13 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const candidateName = formData.get('candidateName') as string;
     const interviewType = formData.get('interviewType') as string;
+    const candidateType = formData.get('candidateType') as string;
     const resumeFile = formData.get('resume') as File;
     const additionalNotes = formData.get('additionalNotes') as string;
 
-    if (!candidateName || !interviewType || !resumeFile) {
+    if (!candidateName || !interviewType || !candidateType || !resumeFile) {
       return NextResponse.json({ 
-        error: 'Missing required fields: candidateName, interviewType, or resume file' 
+        error: 'Missing required fields: candidateName, interviewType, candidateType, or resume file' 
       }, { status: 400 });
     }
 
