@@ -3,7 +3,7 @@
 import { Agent, AgentInputItem, Runner } from "@openai/agents";
 import { getChat } from "@/utils/queries/chats/get-chat";
 import { createMessage } from "@/utils/mutations/messages/create-message";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getCheatingAgent } from "@/utils/ai/agents/cheating";
 import { getRegularAgent } from "@/utils/ai/agents/regular";
 import { updateMessage } from "@/utils/mutations/messages/update-message";
@@ -51,26 +51,82 @@ export async function POST(request: NextRequest) {
         }
     );
 
-    let messageText = "";
+    // Create the initial message in the database
     const message = await createMessage({
         chat_id: chatId as string,
         content: "",
-        role: "assistant"
+        role: "assistant",
+        completed: false
     });
-    for await (const event of result) {
-        // these are the raw events from the model
-        if (event.type === 'raw_model_stream_event') {
-            if (event.data.type === 'output_text_delta') {
-                messageText += event.data.delta;
+
+    // Create a readable stream for SSE
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+        async start(controller) {
+            let messageText = "";
+            
+            try {
+                // Send the initial message ID
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                    type: 'message_created', 
+                    messageId: message.id 
+                })}\n\n`));
+
+                for await (const event of result) {
+                    // these are the raw events from the model
+                    if (event.type === 'raw_model_stream_event') {
+                        if (event.data.type === 'output_text_delta') {
+                            messageText += event.data.delta;
+                            
+                            // Send the delta to the client
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                                type: 'content_delta', 
+                                delta: event.data.delta,
+                                content: messageText 
+                            })}\n\n`));
+                        }
+                    }
+                }
+
+                // Update the message as completed
+                await updateMessage(message.id, {
+                    content: messageText,
+                    completed: true,
+                    completed_at: new Date().toISOString(),
+                });
+
+                // Send completion signal
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                    type: 'message_completed',
+                    messageId: message.id,
+                    content: messageText
+                })}\n\n`));
+
+            } catch (error) {
+                console.error('Streaming error:', error);
+                
+                // Update message with error state
+                await updateMessage(message.id, {
+                    content: messageText || "Sorry, I encountered an error while processing your message.",
+                    completed: true,
+                    completed_at: new Date().toISOString(),
+                });
+
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                    type: 'error',
+                    error: 'Failed to generate response'
+                })}\n\n`));
+            } finally {
+                controller.close();
             }
         }
-    }
-
-    await updateMessage(message.id, {
-        content: messageText as string,
-        completed: true,
-        completed_at: new Date().toISOString(),
     });
-    // TODO: make this a streaming response, for all the deltas above. Use SSE
-    return NextResponse.json({ message });
+
+    return new Response(readable, {
+        headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+        },
+    });
 }

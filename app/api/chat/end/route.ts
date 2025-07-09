@@ -7,6 +7,7 @@ import { AgentInputItem, Runner } from "@openai/agents";
 import { createFeedback } from "@/utils/mutations/feedback/create-feedback";
 import { generateResumeHistory } from "@/utils/ai/chat/resume-history";
 import { getChat } from "@/utils/queries/chats/get-chat";
+import { generateFeedbackHistory } from "@/utils/ai/chat/feedback-history";
 
 export async function POST(request: NextRequest) {
     const formData = await request.formData();
@@ -17,13 +18,15 @@ export async function POST(request: NextRequest) {
 
     const resumeHistory = await generateResumeHistory(chat);
     const conversationHistory = generateConversationHistory(messages);
+    const feedbackHistory = await generateFeedbackHistory(chat);
 
     const input: AgentInputItem[] = [
         resumeHistory,
         ...conversationHistory,
+        feedbackHistory,
     ];  
 
-    const agent = getFeedbackAgent();
+    const agent = getFeedbackAgent(chat.type === 'cheating');
 
     const runner = new Runner();
 
