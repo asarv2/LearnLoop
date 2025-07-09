@@ -12,8 +12,9 @@ export default async function useSupabaseServer(cookieStore: ReturnType<typeof c
           return (await cookieStore).getAll().map(cookie => ({ name: cookie.name, value: cookie.value }));
         },
         async setAll(cookiesToSet: { name: string, value: string, options?: CookieOptions }[]) {
-          cookiesToSet.forEach(async ({ name, value, options }) =>
-            (await cookieStore).set(name, value, options)
+          const store = await cookieStore;
+          cookiesToSet.forEach(({ name, value, options }) =>
+            store.set(name, value, options)
           );
         },
       },

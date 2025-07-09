@@ -4,13 +4,14 @@
 import { cookies } from "next/headers";
 import supabaseServer from "@/utils/supabase/supabase-server";
 import { logError } from "@/utils/logger";
+import type { Tables } from "@/database.types";
 
 /**
  * Deletes a log from the database.
  * @param id The primary key of the log to delete.
- * @returns The deleted data. The return type is inferred.
+ * @returns The deleted data.
  */
-export const deleteLog = async (id: string) => {
+export const deleteLog = async (id: string): Promise<Tables<'logs'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("logs")

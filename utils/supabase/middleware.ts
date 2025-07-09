@@ -1,4 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { createQueryClient } from "../react-query/queryClient";
 import { Database } from "@/database.types";
@@ -14,7 +14,7 @@ export const updateSession = async (request: NextRequest) => {
       },
     });
 
-    const supabase = createServerClient(
+    const supabase = createServerClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
@@ -22,7 +22,7 @@ export const updateSession = async (request: NextRequest) => {
           getAll() {
             return request.cookies.getAll()
           },
-          setAll(cookiesToSet) {
+          setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
             cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
             response = NextResponse.next({
               request,
@@ -31,8 +31,7 @@ export const updateSession = async (request: NextRequest) => {
               response.cookies.set(name, value, options)
             )
           },
-        },
-        db: { schema: process.env.NEXT_PUBLIC_SUPABASE_SCHEMA as keyof Database }
+        }
       },
     );
 

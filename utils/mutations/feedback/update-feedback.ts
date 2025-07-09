@@ -4,15 +4,15 @@
 import { cookies } from "next/headers";
 import supabaseServer from "@/utils/supabase/supabase-server";
 import { logError } from "@/utils/logger";
-import type { TablesUpdate } from "@/database.types";
+import type { TablesUpdate, Tables } from "@/database.types";
 
 /**
  * Updates an existing feedback.
  * @param id The primary key of the feedback to update.
  * @param updates The data to update.
- * @returns The updated feedback. The return type is inferred.
+ * @returns The updated feedback.
  */
-export const updateFeedback = async (id: string, updates: TablesUpdate<'feedback'>) => {
+export const updateFeedback = async (id: string, updates: TablesUpdate<'feedback'>): Promise<Tables<'feedback'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("feedback")

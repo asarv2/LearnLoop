@@ -4,14 +4,14 @@
 import { cookies } from "next/headers";
 import supabaseServer from "@/utils/supabase/supabase-server";
 import { logError } from "@/utils/logger";
-import type { TablesInsert } from "@/database.types";
+import type { TablesInsert, Tables } from "@/database.types";
 
 /**
  * Creates a new resume in the database.
  * @param newData The data for the new resume.
- * @returns The newly created resume. The return type is inferred.
+ * @returns The newly created resume.
  */
-export const createResume = async (newData: TablesInsert<'resumes'>) => {
+export const createResume = async (newData: TablesInsert<'resumes'>): Promise<Tables<'resumes'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("resumes")

@@ -7,8 +7,6 @@ import {
   Heading, 
   Text, 
   Button,
-  Card,
-  Badge,
   Separator
 } from '@radix-ui/themes';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -27,7 +25,7 @@ interface InterviewHeaderProps {
 
 export default function InterviewHeader({
   candidateName,
-  interviewType,
+  interviewType, // Keep for future use
   resumePDFFile,
   onEndInterview,
   isInterviewActive,
@@ -35,6 +33,8 @@ export default function InterviewHeader({
   onBack,
   interviewStartTime
 }: InterviewHeaderProps) {
+  // Suppress lint warning for interviewType - keeping for future use
+  void interviewType;
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
   const [resumeObjectURL, setResumeObjectURL] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);

@@ -4,12 +4,13 @@
 import { cookies } from "next/headers";
 import supabaseServer from "@/utils/supabase/supabase-server";
 import { logError } from "@/utils/logger";
+import type { Tables } from "@/database.types";
 
 /**
  * Fetches all records from the chats table.
- * @returns An array of chats. The return type is inferred.
+ * @returns An array of chats.
  */
-export const getChats = async () => {
+export const getChats = async (): Promise<Tables<'chats'>[]> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase.from("chats").select("*");
 

@@ -76,13 +76,14 @@ const getQueryByIdTemplate = (tableName, singularName, pk, pkType) => {
 import { cookies } from "next/headers";
 import supabaseServer from "${SUPABASE_SERVER_IMPORT_PATH}";
 import { logError } from "${LOGGER_IMPORT_PATH}";
+import type { Tables } from "${SCHEMA_IMPORT_PATH}";
 
 /**
  * Fetches a single ${singularName} by its primary key.
  * @param ${pk} The primary key of the ${singularName}.
- * @returns The ${singularName} object or null if not found. The return type is inferred.
+ * @returns The ${singularName} object or null if not found.
  */
-export const ${functionName} = async (${pk}: ${pkType}) => {
+export const ${functionName} = async (${pk}: ${pkType}): Promise<Tables<'${tableName}'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("${tableName}")
@@ -108,12 +109,13 @@ const getQueryAllTemplate = (tableName) => {
 import { cookies } from "next/headers";
 import supabaseServer from "${SUPABASE_SERVER_IMPORT_PATH}";
 import { logError } from "${LOGGER_IMPORT_PATH}";
+import type { Tables } from "${SCHEMA_IMPORT_PATH}";
 
 /**
  * Fetches all records from the ${tableName} table.
- * @returns An array of ${tableName}. The return type is inferred.
+ * @returns An array of ${tableName}.
  */
-export const ${functionName} = async () => {
+export const ${functionName} = async (): Promise<Tables<'${tableName}'>[]> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase.from("${tableName}").select("*");
 
@@ -139,13 +141,14 @@ const getQueryByFkTemplate = (tableName, fk, schemaInfo) => {
 import { cookies } from "next/headers";
 import supabaseServer from "${SUPABASE_SERVER_IMPORT_PATH}";
 import { logError } from "${LOGGER_IMPORT_PATH}";
+import type { Tables } from "${SCHEMA_IMPORT_PATH}";
 
 /**
  * Fetches all ${tableName} related to a specific ${relatedTable}.
  * @param ${paramName} The ID of the related ${relatedTable}.
- * @returns An array of ${tableName}. The return type is inferred.
+ * @returns An array of ${tableName}.
  */
-export const ${functionName} = async (${paramName}: ${paramType}) => {
+export const ${functionName} = async (${paramName}: ${paramType}): Promise<Tables<'${tableName}'>[]> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("${tableName}")
@@ -170,14 +173,14 @@ const getCreateMutationTemplate = (tableName, singularName) => {
 import { cookies } from "next/headers";
 import supabaseServer from "${SUPABASE_SERVER_IMPORT_PATH}";
 import { logError } from "${LOGGER_IMPORT_PATH}";
-import type { TablesInsert } from "${SCHEMA_IMPORT_PATH}";
+import type { TablesInsert, Tables } from "${SCHEMA_IMPORT_PATH}";
 
 /**
  * Creates a new ${singularName} in the database.
  * @param newData The data for the new ${singularName}.
- * @returns The newly created ${singularName}. The return type is inferred.
+ * @returns The newly created ${singularName}.
  */
-export const ${functionName} = async (newData: TablesInsert<'${tableName}'>) => {
+export const ${functionName} = async (newData: TablesInsert<'${tableName}'>): Promise<Tables<'${tableName}'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("${tableName}")
@@ -203,15 +206,15 @@ const getUpdateMutationTemplate = (tableName, singularName, pk, pkType) => {
 import { cookies } from "next/headers";
 import supabaseServer from "${SUPABASE_SERVER_IMPORT_PATH}";
 import { logError } from "${LOGGER_IMPORT_PATH}";
-import type { TablesUpdate } from "${SCHEMA_IMPORT_PATH}";
+import type { TablesUpdate, Tables } from "${SCHEMA_IMPORT_PATH}";
 
 /**
  * Updates an existing ${singularName}.
  * @param ${pk} The primary key of the ${singularName} to update.
  * @param updates The data to update.
- * @returns The updated ${singularName}. The return type is inferred.
+ * @returns The updated ${singularName}.
  */
-export const ${functionName} = async (${pk}: ${pkType}, updates: TablesUpdate<'${tableName}'>) => {
+export const ${functionName} = async (${pk}: ${pkType}, updates: TablesUpdate<'${tableName}'>): Promise<Tables<'${tableName}'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("${tableName}")
@@ -238,13 +241,14 @@ const getDeleteMutationTemplate = (tableName, singularName, pk, pkType) => {
 import { cookies } from "next/headers";
 import supabaseServer from "${SUPABASE_SERVER_IMPORT_PATH}";
 import { logError } from "${LOGGER_IMPORT_PATH}";
+import type { Tables } from "${SCHEMA_IMPORT_PATH}";
 
 /**
  * Deletes a ${singularName} from the database.
  * @param ${pk} The primary key of the ${singularName} to delete.
- * @returns The deleted data. The return type is inferred.
+ * @returns The deleted data.
  */
-export const ${functionName} = async (${pk}: ${pkType}) => {
+export const ${functionName} = async (${pk}: ${pkType}): Promise<Tables<'${tableName}'>> => {
   const supabase = await supabaseServer(cookies());
   const { data, error } = await supabase
     .from("${tableName}")
