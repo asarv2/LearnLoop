@@ -15,7 +15,7 @@ export const getChatsByResume = async (resumeId: string) => {
   const { data, error } = await supabase
     .from("chats")
     .select("*")
-    .eq("", resumeId);
+    .eq("resume_id", resumeId);
 
   if (error) {
     logError("Error fetching chats by resume", error);

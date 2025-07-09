@@ -15,7 +15,7 @@ export const getMessagesByChat = async (chatId: string) => {
   const { data, error } = await supabase
     .from("messages")
     .select("*")
-    .eq("", chatId);
+    .eq("chat_id", chatId);
 
   if (error) {
     logError("Error fetching messages by chat", error);

@@ -15,7 +15,7 @@ export const getFeedbackByChat = async (chatId: string) => {
   const { data, error } = await supabase
     .from("feedback")
     .select("*")
-    .eq("", chatId);
+    .eq("chat_id", chatId);
 
   if (error) {
     logError("Error fetching feedback by chat", error);

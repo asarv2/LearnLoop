@@ -104,6 +104,13 @@ function extractSchema(dbTypesPath = path.resolve(__dirname, "../../database.typ
           return elementType.getLiteralValue();
         }
       }
+      // Handle tuple types - get first element
+      if (t.isTuple()) {
+        const elements = t.getTupleElements();
+        if (elements.length > 0 && elements[0].isStringLiteral()) {
+          return elements[0].getLiteralValue();
+        }
+      }
       return "";
     }
   }
