@@ -15,7 +15,7 @@ import { updateMessage } from '@/utils/mutations/messages/update-message';
 import { logError } from '@/utils/logger';
 import { getCheatingRealtimeSession } from '@/utils/ai/agents/cheating';
 import { getRegularRealtimeSession } from '@/utils/ai/agents/regular';
-import { RealtimeSession } from '@openai/agents/realtime';
+import { RealtimeItem, RealtimeSession } from '@openai/agents/realtime';
 import { generateResumeHistoryRealtime } from '@/utils/ai/chat/resume-history';
 import { generateConversationHistoryRealtime } from '@/utils/ai/chat/conversation-history';
 
@@ -73,7 +73,6 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
     const currentMessageRef = useRef<{ id: string } | null>(null);
     const [isConnected, setIsConnected] = useState(false);
 
-
     const syncTranscriptToMessages = useCallback(async (content: string, role: 'user' | 'assistant') => {
         try {
             if (role === 'user') {
@@ -108,47 +107,61 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
         }
     }, [chat.id]);
 
-
+    const handleHistory = useCallback(async (history: RealtimeItem[]) => {
+        const last = history.at(-1);
+        if (last?.type === 'message' && last.role === 'user' && last.status === 'completed') {
+            let text = '';
+            if ('text' in last.content[0]) {
+                text = last.content[0].text
+            } else if ('transcript' in last.content[0] && last.content[0].transcript) {
+                text = last.content[0].transcript
+            } else {
+                throw new Error("Invalid message content");
+            }
+            setCurrentTranscript(text);
+            await syncTranscriptToMessages(text, 'user');
+        } else if (last?.type === 'message' && last.role === 'assistant' && last.status === 'completed') {
+            let text = '';
+            if ('text' in last.content[0]) {
+                text = last.content[0].text
+            } else if ('transcript' in last.content[0] && last.content[0].transcript) {
+                text = last.content[0].transcript
+            } else {
+                throw new Error("Invalid message content");
+            }
+            await syncTranscriptToMessages(text, 'assistant');
+        }
+    }, [syncTranscriptToMessages]);
 
     useEffect(() => {
-        const connectToRealtimeSession = async () => {
+        let session: RealtimeSession;
+        (async () => {
             try {
-                if (chat) {
-                    let realtimeSession: RealtimeSession;
-                    if (chat.type === "cheating") {
-                        realtimeSession = getCheatingRealtimeSession()
-                    } else if (chat.type === "regular") {
-                        realtimeSession = getRegularRealtimeSession()
-                    } else {
-                        throw new Error("Invalid chat type");
-                    }
-                    const resumeHistory = await generateResumeHistoryRealtime(chat);
-                    const conversationHistory = generateConversationHistoryRealtime(messages);
-                    realtimeSession.updateHistory([resumeHistory, ...conversationHistory]);
-                    await realtimeSession.connect({
-                        apiKey: "ek_686edf3879f48191ae1efe33cfe2269f"
-                    })
-                    setIsConnected(true)
-                    realtimeSession.addListener('conversation.item.input_audio_transcription.completed',
-                        // @ts-expect-error - this is a valid event
-                        async (evt: { transcript: string }) => {
-                            const text = evt.transcript as string;
-                            setCurrentTranscript(text);
-                            await syncTranscriptToMessages(text, 'user');
-                        });
-                    realtimeSession.addListener('conversation.item.response.text.completed',
-                        // @ts-expect-error - this is a valid event
-                        async (evt: { text: string }) => {
-                            const text = evt.text as string;
-                            await syncTranscriptToMessages(text, 'assistant');
-                        });
-                }
-            } catch (error) {
-                onError(error as string);
+                session =
+                    chat.type === 'cheating'
+                        ? await getCheatingRealtimeSession()
+                        : await getRegularRealtimeSession();
+
+                // seed history *before* connect
+                session.updateHistory([
+                    await generateResumeHistoryRealtime(chat),
+                    ...generateConversationHistoryRealtime(messages),
+                ]);
+
+                await session.connect({ apiKey: "ek_686edf3879f48191ae1efe33cfe2269f" }); // never a raw key
+
+                setIsConnected(true);
+
+                session.on('history_updated', handleHistory);
+                session.on('error', (e) => onError(e.error as string));
+            } catch (e) {
+                onError(e as string);
             }
-        }
-        connectToRealtimeSession();
-    }, [chat, syncTranscriptToMessages, messages, onError]);
+        })();
+
+        return () => session?.close();
+    }, [chat, handleHistory, messages, onError]);
+
     return (
         <Box style={{
             display: 'flex',
