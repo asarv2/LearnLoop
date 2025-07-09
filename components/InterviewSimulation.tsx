@@ -11,6 +11,7 @@ import { logError } from '@/utils/logger';
 import { getFeedbackByChat } from '@/utils/queries/feedback/get-feedback-by-chat';
 import ChatArea from './ChatArea';
 import { Box } from '@radix-ui/themes';
+import AudioArea from './AudioArea';
 
 interface InterviewSimulationProps {
   chatId: string;
@@ -32,6 +33,7 @@ export default function InterviewSimulation({
   const [isInterviewActive, setIsInterviewActive] = useState(true);
   const [showFeedback, setShowFeedback] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<StreamingMessage | null>(null);
+  const [isAudioMode, setIsAudioMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { data: chat } = useQuery({
@@ -56,6 +58,17 @@ export default function InterviewSimulation({
   useEffect(() => {
     scrollToBottom();
   }, [messages, streamingMessage]);
+
+  const handleToggleAudioMode = () => {
+    setIsAudioMode(prev => !prev);
+  };
+
+  const handleAudioError = (error: string) => {
+    logError('Audio mode error:', error);
+    // Revert to text mode on error
+    setIsAudioMode(false);
+    alert(`Audio mode error: ${error}. Switching back to text mode.`);
+  };
 
   const sendMessage = async () => {
     if (!currentMessage.trim() || isLoading || !isInterviewActive) return;
@@ -133,7 +146,7 @@ export default function InterviewSimulation({
                   break;
 
                 case 'error':
-                  console.error('Streaming error:', data.error);
+                  logError('Streaming error:', data.error);
                   setStreamingMessage(null);
 
                   // Invalidate messages query to refetch updated data
@@ -143,7 +156,7 @@ export default function InterviewSimulation({
                   break;
               }
             } catch (parseError) {
-              console.error('Error parsing SSE data:', parseError);
+              logError('Error parsing SSE data:', parseError);
             }
           }
         }
@@ -183,11 +196,11 @@ export default function InterviewSimulation({
         });
         setShowFeedback(true);
       } else {
-        console.error('Feedback generation failed:', data);
+        logError('Feedback generation failed:', data);
         throw new Error(data.error || 'Failed to generate feedback');
       }
     } catch (error) {
-      console.error('Error generating feedback:', error);
+      logError('Error generating feedback:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       alert(`Failed to generate feedback: ${errorMessage}. Please check the console for more details.`);
     } finally {
@@ -226,22 +239,30 @@ export default function InterviewSimulation({
         isInterviewActive={isInterviewActive}
         onShowFeedback={() => setShowFeedback(true)}
         onBack={() => router.push('/')}
+        isAudioMode={isAudioMode}
+        onToggleAudioMode={handleToggleAudioMode}
       />
 
-      <ChatArea
-        displayMessages={displayMessages}
-        isLoading={isLoading}
-        streamingMessage={!!streamingMessage}
-        isInterviewActive={isInterviewActive}
-        showFeedback={showFeedback}
-        currentMessage={currentMessage}
-        setCurrentMessage={setCurrentMessage}
-        handleKeyPress={handleKeyPress}
-        sendMessage={sendMessage}
-        chat={chat!}
-        messagesEndRef={messagesEndRef}
-      />
-
+      {isAudioMode ? (
+        <AudioArea 
+          chat={chat!}
+          onError={handleAudioError}
+        />
+      ) : (
+        <ChatArea
+          displayMessages={displayMessages}
+          isLoading={isLoading}
+          streamingMessage={!!streamingMessage}
+          isInterviewActive={isInterviewActive}
+          showFeedback={showFeedback}
+          currentMessage={currentMessage}
+          setCurrentMessage={setCurrentMessage}
+          handleKeyPress={handleKeyPress}
+          sendMessage={sendMessage}
+          chat={chat!}
+          messagesEndRef={messagesEndRef}
+        />
+      )}
 
       {/* Feedback Modal */}
       <FeedbackModal

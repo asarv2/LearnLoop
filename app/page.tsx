@@ -25,17 +25,13 @@ import {
   ArrowRightIcon
 } from '@radix-ui/react-icons';
 import { useRouter } from 'next/navigation';
+import { logError } from '@/utils/logger';
 
 export default function LandingPage() {
   const router = useRouter();
 
   const handleGetStarted = () => {
     router.push('/interview');
-  };
-
-  const handleBookDemo = () => {
-    // TODO: Implement demo booking functionality
-    console.log('Book demo clicked');
   };
 
   return (
@@ -68,7 +64,7 @@ export default function LandingPage() {
             </Flex>
             <Flex gap="3" align="center">
               <a href="https://calendly.com/siladiea2005/demo-meeting" target="_blank">
-                <Button variant="outline" onClick={handleBookDemo}>
+                <Button variant="outline">
                   Book Demo
                 </Button>
               </a>
@@ -158,7 +154,7 @@ export default function LandingPage() {
                   backfaceVisibility: 'hidden'
                 }}
                 onError={(e) => {
-                  console.error('Video error:', e);
+                  logError('Video error:', e);
                 }}
               >
                 <source src="/videos/FirstScreen.mp4" type="video/mp4" />
@@ -197,7 +193,7 @@ export default function LandingPage() {
                   backfaceVisibility: 'hidden'
                 }}
                 onError={(e) => {
-                  console.error('Video error:', e);
+                  logError('Video error:', e);
                 }}
               >
                 <source src="/videos/FirstScreen.mp4" type="video/mp4" />
@@ -286,7 +282,7 @@ export default function LandingPage() {
                   backfaceVisibility: 'hidden'
                 }}
                 onError={(e) => {
-                  console.error('Video error:', e);
+                  logError('Video error:', e);
                 }}
               >
                 <source src="/videos/FirstScreen.mp4" type="video/mp4" />

@@ -163,16 +163,19 @@ export type Database = {
       }
       resumes: {
         Row: {
+          content: string | null
           created_at: string
           google_file_id: string | null
           id: string
         }
         Insert: {
+          content?: string | null
           created_at?: string
           google_file_id?: string | null
           id?: string
         }
         Update: {
+          content?: string | null
           created_at?: string
           google_file_id?: string | null
           id?: string

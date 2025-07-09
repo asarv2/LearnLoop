@@ -20,7 +20,9 @@ interface InterviewHeaderProps {
   isInterviewActive: boolean;
   onShowFeedback?: () => void;
   onBack?: () => void;
-  interviewStartTime?: Date; // Add this prop to track when interview started
+  interviewStartTime?: Date;
+  isAudioMode?: boolean;
+  onToggleAudioMode?: () => void;
 }
 
 export default function InterviewHeader({
@@ -31,7 +33,9 @@ export default function InterviewHeader({
   isInterviewActive,
   onShowFeedback,
   onBack,
-  interviewStartTime
+  interviewStartTime,
+  isAudioMode = false,
+  onToggleAudioMode
 }: InterviewHeaderProps) {
   // Suppress lint warning for interviewType - keeping for future use
   void interviewType;
@@ -119,6 +123,35 @@ export default function InterviewHeader({
                 disabled={!onShowFeedback}
               >
                 View Feedback
+              </Button>
+            )}
+
+            {/* Audio Mode Toggle */}
+            {isInterviewActive && onToggleAudioMode && (
+              <Button 
+                variant={isAudioMode ? "solid" : "soft"} 
+                color={isAudioMode ? "purple" : "gray"}
+                size="2"
+                onClick={onToggleAudioMode}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                <svg 
+                  width="16" 
+                  height="16" 
+                  viewBox="0 0 24 24" 
+                  fill="currentColor"
+                  style={{ flexShrink: 0 }}
+                >
+                  <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z"/>
+                  <path d="M19 10v1a7 7 0 0 1-14 0v-1"/>
+                  <path d="M12 18v4"/>
+                  <path d="M8 22h8"/>
+                </svg>
+                {isAudioMode ? 'Audio' : 'Audio'}
               </Button>
             )}
 

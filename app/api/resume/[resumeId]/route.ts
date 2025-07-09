@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import supabaseServer from "@/utils/supabase/supabase-server";
+import { logError } from '@/utils/logger';
 
 export async function GET(
   req: NextRequest,
@@ -28,7 +29,7 @@ export async function GET(
       headers: { 'Content-Type': 'application/pdf' },
     });
   } catch (error) {
-    console.error('Error fetching resume:', error);
+    logError('Error fetching resume:', error);
     return NextResponse.json({ error: 'Failed to fetch resume' }, { status: 500 });
   }
 } 

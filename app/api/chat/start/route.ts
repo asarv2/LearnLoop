@@ -4,6 +4,7 @@ import { InterviewType } from "@/types";
 import { uploadResume } from "@/utils/google/upload-resume";
 import { createChat } from "@/utils/mutations/chats/create-chat";
 import { createResume } from "@/utils/mutations/resumes/create-resume";
+import { extractTextFromPDF } from "@/utils/pdf/extract";
 import { uploadResumeToSupabase } from "@/utils/storage/upload-resume-to-supabase";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -14,8 +15,14 @@ export async function POST(request: NextRequest) {
     const position = formData.get("position") as string;
     const additional_info = formData.get("additional_info") as string;
     const googleFileId = await uploadResume(formData);
+
+    // finding resume text, convert to buffer
+    const resumeFile = await formData.get("resume") as File;
+    const resumeBuffer = await resumeFile.arrayBuffer();
+    const content = await extractTextFromPDF(Buffer.from(resumeBuffer));
     const resume = await createResume({
         google_file_id: googleFileId,
+        content: content,
     });
     // use the resume id to upload to supabase
     await uploadResumeToSupabase(resume.id, formData);

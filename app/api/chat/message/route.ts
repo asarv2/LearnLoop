@@ -10,6 +10,7 @@ import { updateMessage } from "@/utils/mutations/messages/update-message";
 import { generateConversationHistory } from "@/utils/ai/chat/conversation-history";
 import { getMessagesByChat } from "@/utils/queries/messages/get-messages-by-chat";
 import { generateResumeHistory } from "@/utils/ai/chat/resume-history";
+import { logError } from "@/utils/logger";
 
 export async function POST(request: NextRequest) {
     // use form data
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
                 })}\n\n`));
 
             } catch (error) {
-                console.error('Streaming error:', error);
+                logError('Streaming error:', error);
                 
                 // Update message with error state
                 await updateMessage(message.id, {

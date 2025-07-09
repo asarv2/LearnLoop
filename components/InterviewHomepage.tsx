@@ -21,6 +21,7 @@ import {
 import { FileTextIcon, PlayIcon, CheckIcon } from '@radix-ui/react-icons';
 import { useRouter } from 'next/navigation';
 import { InterviewType } from '@/types';
+import { logError } from '@/utils/logger';
 
 type CandidateType = 'regular' | 'ai-assisted' | 'random';
 
@@ -82,7 +83,7 @@ export default function InterviewHomepage() {
                 throw new Error(data.error || 'Failed to start interview');
             }
         } catch (error) {
-            console.error('Error starting interview:', error);
+            logError('Error starting interview:', error);
             alert('Failed to start interview. Please try again.');
         } finally {
             setIsLoading(false);
