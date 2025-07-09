@@ -1,5 +1,6 @@
 import { Agent } from '@openai/agents';
 import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
+import { realtimeConfig } from '../main';
 
 const cheatingInstructions = `
 Your resume is provided as a PDF document. Answer questions based on the information provided in your resume.
@@ -28,7 +29,7 @@ SPECIFIC CHEATING SIGNS TO INCLUDE:
 
 `
 
-export const getCheatingAgent = async (): Promise<Agent> => {
+export const getCheatingAgent = (): Agent => {
     return new Agent({
         name: 'Interviewee (Cheater)',
         model: "gemini-2.5-flash",
@@ -36,12 +37,10 @@ export const getCheatingAgent = async (): Promise<Agent> => {
     });
 }
 
-export const getCheatingRealtimeSession = async (): Promise<RealtimeSession> => {
+export const getCheatingRealtimeSession = (): RealtimeSession => {
     const agent = new RealtimeAgent({
         name: 'Interviewee (Cheater)',
         instructions: cheatingInstructions,
     });
-    return new RealtimeSession(agent, {
-        model: "gemini-2.5-flash",
-    });
+    return new RealtimeSession(agent, realtimeConfig);
 }
