@@ -19,6 +19,7 @@ export async function POST() {
         body: JSON.stringify(inlinedBody)
     });
     // get ephermral key from openAI    
-    const data = await response.json();
-    return NextResponse.json({ data });
+    const { client_secret } = await response.json();
+    const { value } = client_secret;
+    return NextResponse.json({ api_key: value });
 }
