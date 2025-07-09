@@ -26,6 +26,7 @@ export type Database = {
           position: string
           resume_id: string | null
           title: string
+          type: Database["public"]["Enums"]["interview_type"]
         }
         Insert: {
           additional_info?: string
@@ -38,6 +39,7 @@ export type Database = {
           position?: string
           resume_id?: string | null
           title: string
+          type?: Database["public"]["Enums"]["interview_type"]
         }
         Update: {
           additional_info?: string
@@ -50,6 +52,7 @@ export type Database = {
           position?: string
           resume_id?: string | null
           title?: string
+          type?: Database["public"]["Enums"]["interview_type"]
         }
         Relationships: [
           {
@@ -184,6 +187,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      interview_type: "regular" | "cheating"
       log_level: "info" | "error" | "warn" | "debug"
       message_role: "user" | "assistant"
     }
@@ -313,6 +317,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      interview_type: ["regular", "cheating"],
       log_level: ["info", "error", "warn", "debug"],
       message_role: ["user", "assistant"],
     },
