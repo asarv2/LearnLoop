@@ -244,8 +244,9 @@ export default function InterviewSimulation({
       />
 
       {isAudioMode ? (
-        <AudioArea 
+        <AudioArea
           chat={chat!}
+          messages={messages}
           onError={handleAudioError}
         />
       ) : (
