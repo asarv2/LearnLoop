@@ -10,6 +10,7 @@ export async function POST(request: NextRequest) {
     const candidateName = formData.get('candidateName') as string;
     const resumePDF = formData.get('resumePDF') as File;
     const interviewType = formData.get('interviewType') as string || 'Professional Interview';
+    const candidateType = formData.get('candidateType') as string;
     const additionalNotes = formData.get('additionalNotes') as string;
     
     if (!chatId || !candidateName) {
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
       candidateName,
       resumePDF: resumePDFBuffer,
       interviewType,
+      candidateType,
       additionalNotes,
       conversationHistory
     };
