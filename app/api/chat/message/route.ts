@@ -18,41 +18,7 @@ export async function POST(request: NextRequest) {
     const chatId = formData.get("chatId");
     const messageInput = formData.get("message");
 
-    const chat = await getChat(chatId as string);
-    const messages = await getMessagesByChat(chatId as string);
-
-    const interviewType = chat.type;
-
-    let agent: Agent;
-    if (interviewType === 'cheating') {
-        agent = await getCheatingAgent();
-    } else {
-        agent = await getRegularAgent();
-    }
-
-    const resumeHistory = await generateResumeHistory(chat);
-    const conversationHistory = generateConversationHistory(messages);
-
-    const input: AgentInputItem[] = [
-        resumeHistory,
-        ...conversationHistory,
-        {
-            role: "user",
-            content: messageInput as string,
-        }
-    ];
-
-    const runner = new Runner();
-
-    const result = await runner.run(
-        agent,
-        input,
-        {
-            stream: true,
-        }
-    );
-
-    // create user message
+    // Create user message and assistant message immediately
     const userMessage = await createMessage({
         chat_id: chatId as string,
         content: messageInput as string,
@@ -72,8 +38,6 @@ export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
         async start(controller) {
-            let messageText = "";
-            
             try {
                 // Send the user message first so it appears immediately
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
@@ -95,6 +59,39 @@ export async function POST(request: NextRequest) {
                     messageId: assistantMessage.id 
                 })}\n\n`));
 
+                // Now fetch data and process AI response
+                const chat = await getChat(chatId as string);
+                const messages = await getMessagesByChat(chatId as string);
+
+                const interviewType = chat.type;
+
+                let agent: Agent;
+                if (interviewType === 'cheating') {
+                    agent = await getCheatingAgent();
+                } else {
+                    agent = await getRegularAgent();
+                }
+
+                const resumeHistory = await generateResumeHistory(chat);
+                const conversationHistory = generateConversationHistory(messages);
+
+                const input: AgentInputItem[] = [
+                    resumeHistory,
+                    ...conversationHistory // new user message is automatically included, and assistant is removed since empty string
+                ];
+
+                const runner = new Runner();
+
+                const result = await runner.run(
+                    agent,
+                    input,
+                    {
+                        stream: true,
+                    }
+                );
+
+                let messageText = "";
+                
                 for await (const event of result) {
                     // these are the raw events from the model
                     if (event.type === 'raw_model_stream_event') {
@@ -130,7 +127,7 @@ export async function POST(request: NextRequest) {
                 
                 // Update message with error state
                 await updateMessage(assistantMessage.id, {
-                    content: messageText || "Sorry, I encountered an error while processing your message.",
+                    content: "Sorry, I encountered an error while processing your message.",
                     completed: true,
                     completed_at: new Date().toISOString(),
                 });

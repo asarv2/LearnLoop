@@ -31,7 +31,7 @@ export default function LandingPage() {
   const router = useRouter();
 
   const handleGetStarted = () => {
-    router.push('/interview');
+    router.push('/interview/new');
   };
 
   return (

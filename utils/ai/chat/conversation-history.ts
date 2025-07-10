@@ -8,7 +8,7 @@ import { RealtimeItem } from "@openai/agents/realtime";
 export const generateConversationHistory = (messages: Message[]): AgentInputItem[] => {
     const conversationHistory: AgentInputItem[] = [];
     for (const message of messages) {
-        if (message.role === "user" && message.content) {
+        if (message.role === "user" && message.content && message.content.trim() !== "") {
             conversationHistory.push({
                 role: "user",
                 content: [
@@ -18,7 +18,7 @@ export const generateConversationHistory = (messages: Message[]): AgentInputItem
                     }
                 ]
             });
-        } else if (message.role === "assistant" && message.content) {
+        } else if (message.role === "assistant" && message.content && message.content.trim() !== "") {
             conversationHistory.push({
                 role: "assistant",
                 status: "completed",
@@ -39,7 +39,7 @@ export const generateConversationHistoryRealtime = (messages: Message[]): Realti
     const conversationHistory: RealtimeItem[] = [];
     for (let i = 0; i < messages.length; i++) {
         const message = messages[i];
-        if (message.role === "user" && message.content) {
+        if (message.role === "user" && message.content && message.content.trim() !== "") {
             conversationHistory.push({
                 type: "message",
                 status: "completed",
@@ -47,7 +47,7 @@ export const generateConversationHistoryRealtime = (messages: Message[]): Realti
                 role: "user",
                 content: [{ type: "input_text", text: message.content }]
             });
-        } else if (message.role === "assistant" && message.content) {
+        } else if (message.role === "assistant" && message.content && message.content.trim() !== "") {
             conversationHistory.push({
                 type: "message",
                 status: "completed",

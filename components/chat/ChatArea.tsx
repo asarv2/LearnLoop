@@ -14,6 +14,7 @@ import {
 } from '@radix-ui/themes';
 import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
 import { Chat, Message } from '@/types';
+import Markdown from '@/components/chat/Markdown';
 
 interface ChatAreaProps {
     displayMessages: Message[];
@@ -91,12 +92,14 @@ export default function ChatArea({ displayMessages, isSendingMessage, isEndingIn
                                                 {message.role === 'user' ? '' : chat?.name || 'John Doe'}
                                             </Text>
                                             <Text size="2" style={{ lineHeight: '1.5', color: 'var(--gray-12)' }}>
-                                                {message.role === 'assistant' && !message.completed && !message.content
-                                                    ? `${chat?.name || 'John Doe'} is thinking...`
-                                                    : message.role === 'assistant' && message.completed && !message.content
-                                                        ? 'No response'
-                                                        : message.content
-                                                }
+                                                <Markdown>
+                                                    {message.role === 'assistant' && !message.completed && !message.content
+                                                        ? `${chat?.name || 'John Doe'} is thinking...`
+                                                        : message.role === 'assistant' && message.completed && !message.content
+                                                            ? 'No response'
+                                                            : message.content || ''
+                                                    }
+                                                </Markdown>
                                                 {message.role === 'assistant' && !message.completed && message.content && (
                                                     <span style={{ opacity: 0.7 }}>▊</span>
                                                 )}
