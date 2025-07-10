@@ -42,10 +42,11 @@ const feedbackSchema = z.object({
     redFlags: z.array(z.string()),
 });
 
-export const getFeedbackAgent = (cheating: boolean) => {
+export const getFeedbackAgent = async (cheating: boolean) => {
+    const model = await getGeminiModel("gemini-2.5-flash");
     const feedbackAgent = new Agent({
         name: 'Feedback',
-        model: getGeminiModel("gemini-2.5-flash"),
+        model: model,
         instructions: feedbackInstructions(cheating),
         outputType: feedbackSchema,
     });

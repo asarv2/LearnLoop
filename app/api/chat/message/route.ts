@@ -25,9 +25,9 @@ export async function POST(request: NextRequest) {
 
     let agent: Agent;
     if (interviewType === 'cheating') {
-        agent = getCheatingAgent();
+        agent = await getCheatingAgent();
     } else {
-        agent = getRegularAgent();
+        agent = await getRegularAgent();
     }
 
     const resumeHistory = await generateResumeHistory(chat);

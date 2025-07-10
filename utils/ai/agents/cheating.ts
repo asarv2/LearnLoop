@@ -32,8 +32,8 @@ SPECIFIC CHEATING SIGNS TO INCLUDE:
 
 `
 
-export const getCheatingAgent = (): Agent => {
-    const model = getGeminiModel("gemini-2.5-flash");
+export const getCheatingAgent = async () => {
+    const model = await getGeminiModel("gemini-2.5-flash");
     return new Agent({
         name: 'Interviewee (Cheater)',
         model: model,
