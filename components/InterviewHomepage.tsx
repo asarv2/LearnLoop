@@ -70,7 +70,7 @@ export default function InterviewHomepage() {
             formData.append('resume', selectedFile);
             formData.append('additional_info', additionalNotes);
 
-            const response = await fetch('/api/interview/start', {
+            const response = await fetch('/api/chat/start', {
                 method: 'POST',
                 body: formData,
             });
@@ -83,7 +83,7 @@ export default function InterviewHomepage() {
                 throw new Error(data.error || 'Failed to start interview');
             }
         } catch (error) {
-            logError('Error starting interview:', error);
+            logError('Error starting interview:', error instanceof Error ? error.message : 'Unknown error');
             alert('Failed to start interview. Please try again.');
         } finally {
             setIsLoading(false);

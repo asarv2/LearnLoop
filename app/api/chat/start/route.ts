@@ -37,5 +37,5 @@ export async function POST(request: NextRequest) {
         additional_info: additional_info,
     });
     
-    return NextResponse.json({ chat });
+    return NextResponse.json({ success: true, chatId: chat.id });
 }
