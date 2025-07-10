@@ -1,9 +1,9 @@
 /**
- * app/interview/[chatId]/page.tsx  
+ * app/interview/c/[chatId]/page.tsx  
  * Interview page for a specific chat
  */
 
-import InterviewSimulation from "@/components/InterviewSimulation";
+import InterviewSimulation from "@/components/chat/InterviewSimulation";
 import { getChat } from "@/utils/queries/chats/get-chat";
 import { Metadata } from "next";
 import { use } from "react";
