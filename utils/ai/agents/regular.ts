@@ -1,6 +1,6 @@
 import { Agent } from '@openai/agents';
 import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
-import { realtimeConfig } from '../main';
+import { getRealtimeConfig } from '../main';
 import { Chat, Message } from '@/types';
 import { generateResumeHistoryRealtime } from '../chat/resume-history';
 import { generateConversationHistoryRealtime } from '../chat/conversation-history';
@@ -24,6 +24,7 @@ export const getRegularRealtimeSession = async (chat: Chat, messages: Message[])
     name: 'Interviewee (Regular)',
     instructions: regularInstructions,
   });
+  const realtimeConfig = await getRealtimeConfig();
   const session = new RealtimeSession(agent, realtimeConfig);
   session.updateHistory(history);
   return session;

@@ -1,9 +1,10 @@
 // app/api/chat/audio/route.ts
 
-import { realtimeConfig } from "@/utils/ai/main";
+import { getRealtimeConfig } from "@/utils/ai/main";
 import { NextResponse } from "next/server";
 
 export async function POST() {
+    const realtimeConfig = await getRealtimeConfig();
     const inlinedBody = {
         model: realtimeConfig.model,
         input_audio_transcription: realtimeConfig.config?.inputAudioTranscription,

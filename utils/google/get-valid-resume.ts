@@ -2,7 +2,7 @@
 // Wrapper around getResume that checks if the resume is valid in google, and uploads the latest if necessary
 
 import { Resume } from "@/types";
-import { google } from "../ai/main";
+import { getGoogleGenAIClient } from "../ai/main";
 import { getResume } from "../queries/resumes/get-resume";
 import { uploadResume } from "./upload-resume";
 import { updateResume } from "../mutations/resumes/update-resume";
@@ -12,6 +12,7 @@ export const getValidResume = async (resumeId: string, processingAttempts: numbe
     if (!resume.google_file_id) {
         throw new Error("Resume not found");
     }
+    const google = await getGoogleGenAIClient();
     // check that the google file id is still valid
     const response = await google.files.get({
         name: resume.google_file_id,

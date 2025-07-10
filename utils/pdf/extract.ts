@@ -3,11 +3,18 @@ import { logError } from "../logger";
 export async function extractTextFromPDF(pdfBuffer: Buffer): Promise<string> {
   try {
     // Use dynamic import to avoid bundling issues
-    const pdfParse = await import('pdf-parse');
-    const parseFunction = pdfParse.default || pdfParse;
+    const pdf2md = await import('@opendocsg/pdf2md');
+    const parseFunction = pdf2md.default || pdf2md;
     
-    const data = await parseFunction(pdfBuffer);
-    return data.text;
+    // Convert Buffer to ArrayBuffer for pdf2md
+    const arrayBuffer = pdfBuffer.buffer.slice(
+      pdfBuffer.byteOffset,
+      pdfBuffer.byteOffset + pdfBuffer.byteLength
+    );
+    
+    // Convert PDF to markdown text
+    const markdown = await parseFunction(arrayBuffer);
+    return markdown;
   } catch (error) {
     logError('Error extracting text from PDF:', error);
     // Provide more specific error information
