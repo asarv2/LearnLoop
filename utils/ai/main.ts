@@ -6,7 +6,7 @@ import AsyncOpenAI from 'openai';
 
 export const getGeminiModel = async (model: string): Promise<OpenAIChatCompletionsModel> => {
     const openai = new AsyncOpenAI({
-        apiKey: process.env["GEMINI_API_KEY"],
+        apiKey: process.env["GOOGLE_GENERATIVE_AI_API_KEY"],
         baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
     })
     return new OpenAIChatCompletionsModel(openai, model);

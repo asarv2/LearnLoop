@@ -52,6 +52,14 @@ export async function POST(request: NextRequest) {
         }
     );
 
+    // create user message
+    await createMessage({
+        chat_id: chatId as string,
+        content: messageInput as string,
+        role: "user",
+        completed: true
+    });
+
     // Create the initial message in the database
     const message = await createMessage({
         chat_id: chatId as string,
