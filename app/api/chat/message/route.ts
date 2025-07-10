@@ -80,7 +80,15 @@ export async function POST(request: NextRequest) {
                     ...conversationHistory // new user message is automatically included, and assistant is removed since empty string
                 ];
 
-                const runner = new Runner();
+                let runner: Runner;
+
+                if (chat.trace_id) {
+                    runner = new Runner({
+                        traceId: chat.trace_id
+                    });
+                } else {
+                    runner = new Runner();
+                }
 
                 const result = await runner.run(
                     agent,

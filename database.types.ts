@@ -26,6 +26,7 @@ export type Database = {
           position: string
           resume_id: string | null
           title: string
+          trace_id: string | null
           type: Database["public"]["Enums"]["interview_type"]
         }
         Insert: {
@@ -39,6 +40,7 @@ export type Database = {
           position?: string
           resume_id?: string | null
           title: string
+          trace_id?: string | null
           type?: Database["public"]["Enums"]["interview_type"]
         }
         Update: {
@@ -52,6 +54,7 @@ export type Database = {
           position?: string
           resume_id?: string | null
           title?: string
+          trace_id?: string | null
           type?: Database["public"]["Enums"]["interview_type"]
         }
         Relationships: [
