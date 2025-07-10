@@ -47,7 +47,7 @@ export default function ChatArea({ displayMessages, isSendingMessage, isEndingIn
                 background: 'white'
             }}>
                 <Flex direction="column" gap="4">
-                    {displayMessages.map((message) => (
+                    {displayMessages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).map((message) => (
                         <Box key={message.id}>
                             <Flex
                                 direction={message.role === 'user' ? 'row-reverse' : 'row'}
