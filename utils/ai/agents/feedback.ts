@@ -1,4 +1,5 @@
 import { Agent } from '@openai/agents';
+import { getGeminiModel } from '../main';
 import { z } from 'zod';
 
 const feedbackInstructions = (cheating: boolean) => {
@@ -44,7 +45,7 @@ const feedbackSchema = z.object({
 export const getFeedbackAgent = (cheating: boolean) => {
     const feedbackAgent = new Agent({
         name: 'Feedback',
-        model: "gemini-2.5-flash",
+        model: getGeminiModel("gemini-2.5-flash"),
         instructions: feedbackInstructions(cheating),
         outputType: feedbackSchema,
     });

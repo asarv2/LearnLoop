@@ -1,6 +1,6 @@
 import { Agent } from '@openai/agents';
 import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
-import { getRealtimeConfig } from '../main';
+import { getGeminiModel, getRealtimeConfig } from '../main';
 import { Chat, Message } from '@/types';
 import { generateResumeHistoryRealtime } from '../chat/resume-history';
 import { generateConversationHistoryRealtime } from '../chat/conversation-history';
@@ -33,9 +33,10 @@ SPECIFIC CHEATING SIGNS TO INCLUDE:
 `
 
 export const getCheatingAgent = (): Agent => {
+    const model = getGeminiModel("gemini-2.5-flash");
     return new Agent({
         name: 'Interviewee (Cheater)',
-        model: "gemini-2.5-flash",
+        model: model,
         instructions: cheatingInstructions,
     });
 }
