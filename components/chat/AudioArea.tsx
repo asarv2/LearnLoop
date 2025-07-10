@@ -71,9 +71,16 @@ const AudioVisualizer = ({ isActive }: AudioVisualizerProps) => {
 export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
   const [currentTranscript, setCurrentTranscript] = useState('');
   const [micActive, setMicActive] = useState(false);
-  const currentMessageRef = useRef<{ id: string } | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [transportReady, setTransportReady] = useState(false);
+  
+  const currentMessageRef = useRef<{ id: string } | null>(null);
   const sessionRef = useRef<RealtimeSession | null>(null);
+  const hasSession = useRef(false);
+  const processedIds = useRef(new Set<string>());
+
+  // Stable handler reference using useRef to avoid useEffect re-runs
+  const historyHandlerRef = useRef<(h: RealtimeItem[]) => void>(() => {});
 
   const syncTranscriptToMessages = useCallback(async (content: string, role: 'user' | 'assistant') => {
     try {
@@ -109,26 +116,34 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
     }
   }, [chat.id]);
 
-  const handleHistory = useCallback(
-    async (history: RealtimeItem[]) => {
-      console.log(history);
-      const last = history.at(-1);
-      if (!last || last.type !== 'message' || (last.role === 'assistant' && last.status !== 'completed') || last.role === 'system') return;
+  // Update the handler function on each render but keep stable reference
+  historyHandlerRef.current = async (history: RealtimeItem[]) => {
+    console.log(history);
+    const last = history.at(-1);
+    if (!last || last.type !== 'message' || (last.role === 'assistant' && last.status !== 'completed') || last.role === 'system') return;
 
-      const text =
-        last.role === 'user'
-          ? 'text' in last.content[0] ? last.content[0].text : last.content[0].transcript
-          : 'text' in last.content[0] ? last.content[0].text : last.content[0].transcript;
-      if (!text) return;
+    // Dedup by itemId so re-emits are ignored
+    if (processedIds.current.has(last.itemId)) return;
+    processedIds.current.add(last.itemId);
 
-      if (last.role === 'user') setCurrentTranscript(text);
-      await syncTranscriptToMessages(text, last.role);
-    },
-    [syncTranscriptToMessages],
-  );
+    const text =
+      last.role === 'user'
+        ? 'text' in last.content[0] ? last.content[0].text : last.content[0].transcript
+        : 'text' in last.content[0] ? last.content[0].text : last.content[0].transcript;
+    if (!text) return;
+
+    if (last.role === 'user') setCurrentTranscript(text);
+    await syncTranscriptToMessages(text, last.role);
+  };
 
   useEffect(() => {
+    // Guard against multiple session creation (StrictMode protection)
+    if (hasSession.current) return;
+    hasSession.current = true;
+
     let mounted = true;
+    const currentProcessedIds = processedIds.current;
+    
     (async () => {
       try {
         const session =
@@ -138,18 +153,28 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
 
         const resumeHistory = await generateResumeHistoryRealtime(chat);
         const conversationHistory = generateConversationHistoryRealtime(messages);
-        const history = [resumeHistory, ...conversationHistory];
+        const seedHistory = [resumeHistory, ...conversationHistory];
 
         const { api_key } = await fetch('/api/chat/audio', {
           method: 'POST',
         }).then((r) => r.json());
 
         await session.connect({ apiKey: api_key });
-        session.updateHistory(history);
+        session.updateHistory(seedHistory);
+        
+        // Mark all seeded history as processed to silence duplicates
+        seedHistory.forEach(item => currentProcessedIds.add(item.itemId));
 
         if (!mounted) return;
-        session.on('history_updated', handleHistory);
+        
+        // Use stable handler reference
+        session.on('history_updated', (h) => historyHandlerRef.current(h));
+        
+        // Set transport ready when session is connected
+        setTransportReady(true);
+        
         session.on('error', (e) => onError(String(e.error)));
+        
         sessionRef.current = session;
         setIsConnected(true);
       } catch (e) {
@@ -159,10 +184,17 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
 
     return () => {
       mounted = false;
-      sessionRef.current?.off('history_updated', handleHistory);
-      sessionRef.current?.close();
+      if (sessionRef.current) {
+        sessionRef.current.close();
+        sessionRef.current = null;
+      }
+      hasSession.current = false;
+      setIsConnected(false);
+      setTransportReady(false);
+      currentProcessedIds.clear();
     };
-  }, [chat, handleHistory, messages, onError]);   // reconnect only when chat changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.id]); // Only reconnect when switching to a different chat
 
   return (
     <Box style={{
@@ -194,16 +226,23 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
         {isConnected && (
           <button
             onMouseDown={() => {
-              sessionRef.current?.mute(false);
-              setMicActive(true);
+              // Only unmute if transport is ready
+              if (transportReady && sessionRef.current) {
+                sessionRef.current.mute(false);
+                setMicActive(true);
+              }
             }}
             onMouseUp={() => {
-              sessionRef.current?.mute(true);
-              setMicActive(false);
+              if (sessionRef.current) {
+                sessionRef.current.mute(true);
+                setMicActive(false);
+              }
             }}
             onMouseLeave={() => {
-              sessionRef.current?.mute(true);
-              setMicActive(false);
+              if (sessionRef.current) {
+                sessionRef.current.mute(true);
+                setMicActive(false);
+              }
             }}
             style={{
               padding: '0.75rem 1.5rem',
