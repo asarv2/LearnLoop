@@ -112,7 +112,18 @@ export default function InterviewSimulation({
               const data = JSON.parse(line.slice(6));
 
               switch (data.type) {
-                case 'message_created':
+                case 'user_message_created':
+                  // Immediately add the user message to the query cache
+                  queryClient.setQueryData(['messages', chatId], (oldMessages: typeof messages) => {
+                    if (!oldMessages) return [data.message];
+                    // Check if message already exists to avoid duplicates
+                    const exists = oldMessages.some(msg => msg.id === data.message.id);
+                    if (exists) return oldMessages;
+                    return [...oldMessages, data.message];
+                  });
+                  break;
+
+                case 'assistant_message_created':
                   setStreamingMessage({
                     id: data.messageId,
                     content: '',
