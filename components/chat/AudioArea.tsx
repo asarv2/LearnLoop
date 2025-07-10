@@ -155,12 +155,18 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
         const conversationHistory = generateConversationHistoryRealtime(messages);
         const seedHistory = [resumeHistory, ...conversationHistory];
 
+        const formData = new FormData();
+        formData.append('chatId', chat.id);
+        formData.append('chatTitle', chat.title);
         const { api_key } = await fetch('/api/chat/audio', {
           method: 'POST',
+          body: formData
         }).then((r) => r.json());
 
         await session.connect({ apiKey: api_key });
         session.updateHistory(seedHistory);
+        session.options.workflowName = chat.title;
+        session.options.groupId = chat.id;
         
         // Mark all seeded history as processed to silence duplicates
         seedHistory.forEach(item => currentProcessedIds.add(item.itemId));
