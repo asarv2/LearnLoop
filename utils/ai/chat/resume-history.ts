@@ -26,9 +26,11 @@ export const generateResumeHistory = async (chat: Chat): Promise<AgentInputItem>
     let resume_section: ResumeSection = null;
     if (chat.resume_id) {
         const resume = await getValidResume(chat.resume_id);
-        resume_section = {
-            type: "input_image",
-            image: `https://generativelanguage.googleapis.com/v1beta/${resume.google_file_id}`,
+        if (resume.google_file_id) {
+            resume_section = {
+                type: "input_image",
+                image: `https://generativelanguage.googleapis.com/v1beta/${resume.google_file_id}`,
+            }
         }
     }
 

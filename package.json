@@ -13,9 +13,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@ai-sdk/google": "^1.2.22",
     "@google/genai": "^1.8.0",
     "@google/generative-ai": "^0.24.1",
     "@openai/agents": "^0.0.10",
+    "@openai/agents-extensions": "^0.0.10",
     "@opendocsg/pdf2md": "^0.2.1",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-dialog": "^1.1.14",
@@ -26,7 +28,7 @@
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.50.4",
     "@tanstack/react-query": "^5.81.5",
-    "ai": "^4.3.16",
+    "ai": "^4.3.17",
     "dotenv": "^17.1.0",
     "next": "15.3.4",
     "openai": "^5.8.3",

@@ -1,6 +1,6 @@
 import { Agent } from '@openai/agents';
 import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
-import { getRealtimeConfig } from '../main';
+import { getGeminiModel, getRealtimeConfig } from '../main';
 import { Chat, Message } from '@/types';
 import { generateResumeHistoryRealtime } from '../chat/resume-history';
 import { generateConversationHistoryRealtime } from '../chat/conversation-history';
@@ -8,9 +8,10 @@ import { generateConversationHistoryRealtime } from '../chat/conversation-histor
 const regularInstructions = `Your resume is provided as a PDF document. Answer questions based on the information provided in your resume. You are a REGULAR CANDIDATE with natural, authentic responses.`
 
 export const getRegularAgent = (): Agent => {
+  const model = getGeminiModel("gemini-2.5-flash");
   return new Agent({
     name: 'Interviewee (Regular)',
-    model: "gemini-2.5-flash",
+    model: model,
     instructions: regularInstructions,
   });
 }
