@@ -50,22 +50,29 @@ export default function InterviewHeader({
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     
-    if (isInterviewActive && !completedAt) {
-      const startTime = interviewStartTime || new Date();
-      interval = setInterval(() => {
+    if (isInterviewActive && !completedAt && interviewStartTime) {
+      // Parse the ISO timestamp to ensure proper timezone handling
+      const startTime = interviewStartTime;
+      
+      // Function to calculate and update elapsed time
+      const updateElapsedTime = () => {
         const now = new Date();
         const diffInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
-        setElapsedTime(diffInSeconds);
-      }, 1000);
+        // Ensure we don't show negative time if there are clock sync issues
+        setElapsedTime(Math.max(0, diffInSeconds));
+      };
       
       // Set initial time immediately
-      const now = new Date();
-      const diffInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
-      setElapsedTime(diffInSeconds);
+      updateElapsedTime();
+      
+      // Update every second
+      interval = setInterval(updateElapsedTime, 1000);
     } else if (completedAt && interviewStartTime) {
       // For completed interviews, show the total duration
-      const diffInSeconds = Math.floor((completedAt.getTime() - interviewStartTime.getTime()) / 1000);
-      setElapsedTime(diffInSeconds);
+      const startTime = interviewStartTime;
+      const endTime = completedAt;
+      const diffInSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
+      setElapsedTime(Math.max(0, diffInSeconds));
     } else {
       setElapsedTime(0);
     }
