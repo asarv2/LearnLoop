@@ -257,7 +257,7 @@ export default function InterviewSimulation({
         isInterviewActive={isInterviewActive}
         isEndingInterview={isEndingInterview}
         onShowFeedback={() => setShowFeedback(true)}
-        onBack={() => router.push('/')}
+        onBack={() => router.push('/interview')}
         isAudioMode={isAudioMode}
         onToggleAudioMode={handleToggleAudioMode}
         interviewStartTime={chat?.created_at ? new Date(chat.created_at) : undefined}

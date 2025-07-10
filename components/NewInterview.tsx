@@ -22,6 +22,7 @@ import { FileTextIcon, PlayIcon, CheckIcon } from '@radix-ui/react-icons';
 import { useRouter } from 'next/navigation';
 import { InterviewType } from '@/types';
 import { logError } from '@/utils/logger';
+import Link from 'next/link';
 
 type CandidateType = 'regular' | 'ai-assisted' | 'random';
 
@@ -62,7 +63,7 @@ export default function NewInterview() {
                 interviewType = 'cheating';
             }
 
-            
+
             const formData = new FormData();
             formData.append('name', candidateName);
             formData.append('position', interviewType);
@@ -116,22 +117,24 @@ export default function NewInterview() {
             }}>
                 <Container size="4">
                     <Flex justify="between" align="center" py="4">
-                        <Flex align="center" gap="3" style={{ cursor: 'pointer' }}>
-                            <Box style={{
-                                width: '40px',
-                                height: '40px',
-                                borderRadius: '8px',
-                                background: 'linear-gradient(135deg, var(--blue-9) 0%, var(--purple-9) 100%)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                            }}>
-                                <Text size="4" weight="bold" style={{ color: 'white' }}>L</Text>
-                            </Box>
-                            <Heading size="6" weight="bold">
-                                LearnLoop
-                            </Heading>
-                        </Flex>
+                        <Link href="/">
+                            <Flex align="center" gap="3" style={{ cursor: 'pointer' }}>
+                                <Box style={{
+                                    width: '40px',
+                                    height: '40px',
+                                    borderRadius: '8px',
+                                    background: 'linear-gradient(135deg, var(--blue-9) 0%, var(--purple-9) 100%)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}>
+                                    <Text size="4" weight="bold" style={{ color: 'white' }}>L</Text>
+                                </Box>
+                                <Heading size="6" weight="bold">
+                                    LearnLoop
+                                </Heading>
+                            </Flex>
+                        </Link>
                         <Badge size="2" variant="soft" color="blue">
                             AI Interview Training
                         </Badge>
