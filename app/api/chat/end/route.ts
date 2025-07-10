@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
         feedbackHistory,
     ];  
 
-    const agent = getFeedbackAgent(chat.type === 'cheating');
+    const agent = await getFeedbackAgent(chat.type === 'cheating');
 
     const runner = new Runner();
 

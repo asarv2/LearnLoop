@@ -7,8 +7,8 @@ import { generateConversationHistoryRealtime } from '../chat/conversation-histor
 
 const regularInstructions = `Your resume is provided as a PDF document. Answer questions based on the information provided in your resume. You are a REGULAR CANDIDATE with natural, authentic responses.`
 
-export const getRegularAgent = (): Agent => {
-  const model = getGeminiModel("gemini-2.5-flash");
+export const getRegularAgent = async () => {
+  const model = await getGeminiModel("gemini-2.5-flash");
   return new Agent({
     name: 'Interviewee (Regular)',
     model: model,

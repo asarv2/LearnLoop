@@ -4,7 +4,7 @@ import { OpenAIChatCompletionsModel } from '@openai/agents';
 import { RealtimeSessionOptions } from '@openai/agents/realtime';
 import AsyncOpenAI from 'openai';
 
-export const getGeminiModel = (model: string): OpenAIChatCompletionsModel => {
+export const getGeminiModel = async (model: string): Promise<OpenAIChatCompletionsModel> => {
     const openai = new AsyncOpenAI({
         apiKey: process.env["GEMINI_API_KEY"],
         baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
