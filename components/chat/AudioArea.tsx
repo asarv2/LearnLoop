@@ -18,6 +18,7 @@ import { getRegularRealtimeSession } from '@/utils/ai/agents/regular';
 import { RealtimeItem, RealtimeSession } from '@openai/agents/realtime';
 import { generateConversationHistoryRealtime } from '@/utils/ai/chat/conversation-history';
 import { generateResumeHistoryRealtime } from '@/utils/ai/chat/resume-history';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface AudioAreaProps {
   chat: Chat;
@@ -69,10 +70,12 @@ const AudioVisualizer = ({ isActive }: AudioVisualizerProps) => {
 };
 
 export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
+  const queryClient = useQueryClient();
   const [currentTranscript, setCurrentTranscript] = useState('');
   const [micActive, setMicActive] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [transportReady, setTransportReady] = useState(false);
+  const [captionsEnabled, setCaptionsEnabled] = useState(true);
 
   const currentMessageRef = useRef<{ id: string } | null>(null);
   const tokenPromiseRef = useRef<Promise<string> | null>(null);
@@ -114,7 +117,10 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
       }
     } catch (error) {
       logError('Error syncing transcript:', error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.id]);
 
   // Update the handler function on each render but keep stable reference
@@ -220,8 +226,37 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
       justifyContent: 'center',
       height: '100%',
       padding: '2rem',
-      gap: '1.5rem'
+      gap: '1.5rem',
+      position: 'relative'
     }}>
+      {/* Captions Toggle Button */}
+      <button
+        onClick={() => setCaptionsEnabled(!captionsEnabled)}
+        style={{
+          position: 'absolute',
+          top: '1rem',
+          right: '1rem',
+          padding: '0.5rem',
+          borderRadius: '6px',
+          background: captionsEnabled ? '#6366f1' : '#e5e7eb',
+          color: captionsEnabled ? '#fff' : '#374151',
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: '0.875rem',
+          fontWeight: '500',
+          transition: 'all 0.2s ease',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }}
+        title={captionsEnabled ? 'Hide captions' : 'Show captions'}
+      >
+        <span style={{ fontSize: '1rem' }}>
+          {captionsEnabled ? '🔤' : '🔇'}
+        </span>
+        {captionsEnabled ? 'Captions On' : 'Captions Off'}
+      </button>
+
       <AudioVisualizer isActive={micActive} />
 
       <Flex direction="column" align="center" gap="3" style={{ textAlign: 'center' }}>
@@ -229,7 +264,7 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
           {isConnected ? 'Connected' : 'Not connected'}
         </Text>
 
-        {currentTranscript && (
+        {currentTranscript && captionsEnabled && (
           <Text size="3" color="gray" style={{
             fontStyle: 'italic',
             maxWidth: '400px',
