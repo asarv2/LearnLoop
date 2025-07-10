@@ -53,15 +53,15 @@ export async function POST(request: NextRequest) {
     );
 
     // create user message
-    await createMessage({
+    const userMessage = await createMessage({
         chat_id: chatId as string,
         content: messageInput as string,
         role: "user",
         completed: true
     });
 
-    // Create the initial message in the database
-    const message = await createMessage({
+    // Create the initial assistant message in the database
+    const assistantMessage = await createMessage({
         chat_id: chatId as string,
         content: "",
         role: "assistant",
@@ -75,10 +75,24 @@ export async function POST(request: NextRequest) {
             let messageText = "";
             
             try {
-                // Send the initial message ID
+                // Send the user message first so it appears immediately
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                    type: 'message_created', 
-                    messageId: message.id 
+                    type: 'user_message_created', 
+                    message: {
+                        id: userMessage.id,
+                        content: messageInput as string,
+                        role: 'user',
+                        chat_id: chatId as string,
+                        completed: true,
+                        completed_at: userMessage.completed_at,
+                        created_at: userMessage.created_at
+                    }
+                })}\n\n`));
+
+                // Send the initial assistant message ID
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                    type: 'assistant_message_created', 
+                    messageId: assistantMessage.id 
                 })}\n\n`));
 
                 for await (const event of result) {
@@ -98,7 +112,7 @@ export async function POST(request: NextRequest) {
                 }
 
                 // Update the message as completed
-                await updateMessage(message.id, {
+                await updateMessage(assistantMessage.id, {
                     content: messageText,
                     completed: true,
                     completed_at: new Date().toISOString(),
@@ -107,7 +121,7 @@ export async function POST(request: NextRequest) {
                 // Send completion signal
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
                     type: 'message_completed',
-                    messageId: message.id,
+                    messageId: assistantMessage.id,
                     content: messageText
                 })}\n\n`));
 
@@ -115,7 +129,7 @@ export async function POST(request: NextRequest) {
                 logError('Streaming error:', error);
                 
                 // Update message with error state
-                await updateMessage(message.id, {
+                await updateMessage(assistantMessage.id, {
                     content: messageText || "Sorry, I encountered an error while processing your message.",
                     completed: true,
                     completed_at: new Date().toISOString(),

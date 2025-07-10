@@ -41,5 +41,8 @@ export async function POST(request: NextRequest) {
         red_flags: result.finalOutput?.redFlags || [],
     });
 
-    return NextResponse.json(feedback);
+    return NextResponse.json({
+        success: true,
+        feedback: feedback
+    });
 }
