@@ -12,7 +12,7 @@ import { Box, Text, Flex } from '@radix-ui/themes';
 import { Chat, Message } from '@/types';
 import { createMessage } from '@/utils/mutations/messages/create-message';
 import { updateMessage } from '@/utils/mutations/messages/update-message';
-import { logError, logInfo } from '@/utils/logger';
+import { logError } from '@/utils/logger';
 import { getCheatingRealtimeSession } from '@/utils/ai/agents/cheating';
 import { getRegularRealtimeSession } from '@/utils/ai/agents/regular';
 import { RealtimeItem, RealtimeSession } from '@openai/agents/realtime';
@@ -119,29 +119,18 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
 
   // Update the handler function on each render but keep stable reference
   historyHandlerRef.current = async (history: RealtimeItem[]) => {
-    logInfo(JSON.stringify(history));
-    const last = history.at(-1);
-    if (!last || last.type !== 'message' || last.role === 'system' || last.content.length === 0) {
-      logInfo("No last", { last: last });
-      return;
-    };
-
-    // Dedup by itemId so re-emits are ignored
-    if (processedIds.current.has(last.itemId)) {
-      logInfo("Deduped", { last: last.itemId });
-      return;
+    for (const item of history) {
+      if (item.type !== "message" || item.role === 'system') continue;
+      if (processedIds.current.has(item.itemId)) continue;
+      // user messages must be completed, assistant messages do not have to be completed
+      if ((item.role === 'assistant' && item.status === 'incomplete') || (item.role === 'user' && item.status !== 'completed')) continue; 
+      const c = item.content[0];
+      const text = c && (c.type === "audio" || c.type === "input_audio") ? c.transcript : "";
+      if (!text) continue;                                     // still no transcript
+      processedIds.current.add(item.itemId);
+      syncTranscriptToMessages(text, item.role);
+      if (item.role === 'assistant') setCurrentTranscript(text);
     }
-
-    const text = (last.content[0].type === "audio" || last.content[0].type === "input_audio") ? last.content[0].transcript : last.content[0].text;
-    if (!text) {
-      logInfo("No text", { last: last.itemId });
-      return;
-    }
-
-    processedIds.current.add(last.itemId);
-
-    if (last.role === 'user') setCurrentTranscript(text);
-    await syncTranscriptToMessages(text, last.role);
   };
 
   useEffect(() => {
@@ -185,6 +174,12 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
         // 5️⃣ mark seeded IDs to ignore possible echoes
         initHistory.forEach(item => processedIds.current.add(item.itemId));
 
+        // make the last message the current transcript if it is an assistant message
+        const lastMessage = initHistory.at(-1);
+        if (lastMessage?.type === "message" && lastMessage.role === 'assistant' && lastMessage.status === 'completed' && lastMessage.content[0].type === "text") {
+          setCurrentTranscript(lastMessage.content[0].text);
+        }
+
         if (!mounted) return;
 
         // 4️⃣ stable handler via ref
@@ -211,6 +206,7 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
       hasSession.current = false;
       setIsConnected(false);
       setTransportReady(false);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       processedIds.current.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
