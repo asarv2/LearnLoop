@@ -4,14 +4,15 @@ import { getRealtimeConfig } from "@/utils/ai/main";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
-    const { chatTitle, chatId } = await req.json();
+    const formData = await req.formData();
+    const chatId = formData.get('chatId') as string;
+    const chatTitle = formData.get('chatTitle') as string;
     const realtimeConfig = await getRealtimeConfig(chatTitle, chatId);
     const inlinedBody = {
         model: realtimeConfig.model,
         input_audio_transcription: realtimeConfig.config?.inputAudioTranscription,
         voice: realtimeConfig.config?.voice,
         modalities: realtimeConfig.config?.modalities,
-        
     }
     const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
         method: "POST",
