@@ -1,5 +1,5 @@
 import { Agent } from '@openai/agents';
-import { RealtimeAgent, RealtimeSession } from '@openai/agents/realtime';
+import { RealtimeAgent, RealtimeSession} from '@openai/agents/realtime';
 import { getGeminiModel, getRealtimeConfig } from '../main';
 
 const cheatingInstructions = `

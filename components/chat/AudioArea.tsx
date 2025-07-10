@@ -12,7 +12,7 @@ import { Box, Text, Flex } from '@radix-ui/themes';
 import { Chat, Message } from '@/types';
 import { createMessage } from '@/utils/mutations/messages/create-message';
 import { updateMessage } from '@/utils/mutations/messages/update-message';
-import { logError } from '@/utils/logger';
+import { logError, logInfo } from '@/utils/logger';
 import { getCheatingRealtimeSession } from '@/utils/ai/agents/cheating';
 import { getRegularRealtimeSession } from '@/utils/ai/agents/regular';
 import { RealtimeItem, RealtimeSession } from '@openai/agents/realtime';
@@ -73,14 +73,15 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
   const [micActive, setMicActive] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [transportReady, setTransportReady] = useState(false);
-  
+
   const currentMessageRef = useRef<{ id: string } | null>(null);
+  const tokenPromiseRef = useRef<Promise<string> | null>(null);
   const sessionRef = useRef<RealtimeSession | null>(null);
   const hasSession = useRef(false);
   const processedIds = useRef(new Set<string>());
 
   // Stable handler reference using useRef to avoid useEffect re-runs
-  const historyHandlerRef = useRef<(h: RealtimeItem[]) => void>(() => {});
+  const historyHandlerRef = useRef<(h: RealtimeItem[]) => void>(() => { });
 
   const syncTranscriptToMessages = useCallback(async (content: string, role: 'user' | 'assistant') => {
     try {
@@ -118,19 +119,26 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
 
   // Update the handler function on each render but keep stable reference
   historyHandlerRef.current = async (history: RealtimeItem[]) => {
-    console.log(history);
+    logInfo(JSON.stringify(history));
     const last = history.at(-1);
-    if (!last || last.type !== 'message' || (last.role === 'assistant' && last.status !== 'completed') || last.role === 'system') return;
+    if (!last || last.type !== 'message' || last.role === 'system' || last.content.length === 0) {
+      logInfo("No last", { last: last });
+      return;
+    };
 
     // Dedup by itemId so re-emits are ignored
-    if (processedIds.current.has(last.itemId)) return;
-    processedIds.current.add(last.itemId);
+    if (processedIds.current.has(last.itemId)) {
+      logInfo("Deduped", { last: last.itemId });
+      return;
+    }
 
-    const text =
-      last.role === 'user'
-        ? 'text' in last.content[0] ? last.content[0].text : last.content[0].transcript
-        : 'text' in last.content[0] ? last.content[0].text : last.content[0].transcript;
-    if (!text) return;
+    const text = (last.content[0].type === "audio" || last.content[0].type === "input_audio") ? last.content[0].transcript : last.content[0].text;
+    if (!text) {
+      logInfo("No text", { last: last.itemId });
+      return;
+    }
+
+    processedIds.current.add(last.itemId);
 
     if (last.role === 'user') setCurrentTranscript(text);
     await syncTranscriptToMessages(text, last.role);
@@ -142,51 +150,57 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
     hasSession.current = true;
 
     let mounted = true;
-    const currentProcessedIds = processedIds.current;
-    
+
     (async () => {
       try {
+        // 1️⃣ build the session
         const session =
           chat.type === 'cheating'
             ? await getCheatingRealtimeSession(chat.title, chat.id)
             : await getRegularRealtimeSession(chat.title, chat.id);
 
-        const resumeHistory = await generateResumeHistoryRealtime(chat);
-        const conversationHistory = generateConversationHistoryRealtime(messages);
-        const seedHistory = [resumeHistory, ...conversationHistory];
+        // 2️⃣ seed history *before* connect so server won't echo it back
+        const initHistory = [
+          await generateResumeHistoryRealtime(chat),
+          ...generateConversationHistoryRealtime(messages),
+        ];
 
+        // 3️⃣ one token request per component life-cycle
         const formData = new FormData();
         formData.append('chatId', chat.id);
         formData.append('chatTitle', chat.title);
-        const { api_key } = await fetch('/api/chat/audio', {
-          method: 'POST',
-          body: formData
-        }).then((r) => r.json());
+        if (!tokenPromiseRef.current) {
+          tokenPromiseRef.current = fetch('/api/chat/audio', { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(r => r.api_key);
+        }
+        const api_key = await tokenPromiseRef.current;
 
         await session.connect({ apiKey: api_key });
-        session.updateHistory(seedHistory);
-        session.options.workflowName = chat.title;
-        session.options.groupId = chat.id;
-        
-        // Mark all seeded history as processed to silence duplicates
-        seedHistory.forEach(item => currentProcessedIds.add(item.itemId));
+        session.updateHistory(initHistory);
+
+        // Start session muted to prevent background noise
+        session.mute(true);
+
+        // 5️⃣ mark seeded IDs to ignore possible echoes
+        initHistory.forEach(item => processedIds.current.add(item.itemId));
 
         if (!mounted) return;
-        
-        // Use stable handler reference
+
+        // 4️⃣ stable handler via ref
         session.on('history_updated', (h) => historyHandlerRef.current(h));
-        
+
         // Set transport ready when session is connected
         setTransportReady(true);
-        
+
         session.on('error', (e) => onError(String(e.error)));
-        
+
         sessionRef.current = session;
         setIsConnected(true);
       } catch (e) {
         onError(e as string);
       }
-    })();
+    })().catch(err => onError(String(err)));
 
     return () => {
       mounted = false;
@@ -197,7 +211,7 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
       hasSession.current = false;
       setIsConnected(false);
       setTransportReady(false);
-      currentProcessedIds.clear();
+      processedIds.current.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.id]); // Only reconnect when switching to a different chat
