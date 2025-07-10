@@ -4,6 +4,7 @@
  * Used to show all of the interviews that have happened
  * 2025-07-09
  */
+"use client";
 
 import { getChats } from "@/utils/queries/chats/get-all-chats";
 import { Button } from "@radix-ui/themes";
