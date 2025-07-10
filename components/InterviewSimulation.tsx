@@ -29,8 +29,8 @@ export default function InterviewSimulation({
   const router = useRouter();
   const queryClient = useQueryClient();
   const [currentMessage, setCurrentMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isInterviewActive, setIsInterviewActive] = useState(true);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isEndingInterview, setIsEndingInterview] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<StreamingMessage | null>(null);
   const [isAudioMode, setIsAudioMode] = useState(false);
@@ -50,6 +50,9 @@ export default function InterviewSimulation({
     queryKey: ['feedback', chatId],
     queryFn: () => getFeedbackByChat(chatId)
   });
+
+  // Determine if interview is active based on chat completion status
+  const isInterviewActive = chat ? !chat.completed : true;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -71,11 +74,11 @@ export default function InterviewSimulation({
   };
 
   const sendMessage = async () => {
-    if (!currentMessage.trim() || isLoading || !isInterviewActive) return;
+    if (!currentMessage.trim() || isSendingMessage || !isInterviewActive) return;
 
     const userMessage = currentMessage;
     setCurrentMessage('');
-    setIsLoading(true);
+    setIsSendingMessage(true);
     setStreamingMessage(null);
 
     try {
@@ -181,13 +184,12 @@ export default function InterviewSimulation({
         queryKey: ['messages', chatId]
       });
     } finally {
-      setIsLoading(false);
+      setIsSendingMessage(false);
     }
   };
 
   const endInterview = async () => {
-    setIsInterviewActive(false);
-    setIsLoading(true);
+    setIsEndingInterview(true);
 
     try {
       const formData = new FormData();
@@ -201,10 +203,15 @@ export default function InterviewSimulation({
       const data = await response.json();
 
       if (data.success) {
-        // Invalidate feedback query to get the new feedback
-        await queryClient.invalidateQueries({
-          queryKey: ['feedback', chatId]
-        });
+        // Invalidate both chat and feedback queries to get the updated data
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: ['chat', chatId]
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ['feedback', chatId]
+          })
+        ]);
         setShowFeedback(true);
       } else {
         logError('Feedback generation failed:', data);
@@ -215,7 +222,7 @@ export default function InterviewSimulation({
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       alert(`Failed to generate feedback: ${errorMessage}. Please check the console for more details.`);
     } finally {
-      setIsLoading(false);
+      setIsEndingInterview(false);
     }
   };
 
@@ -248,10 +255,13 @@ export default function InterviewSimulation({
         resumeId={chat?.resume_id || ''}
         onEndInterview={endInterview}
         isInterviewActive={isInterviewActive}
+        isEndingInterview={isEndingInterview}
         onShowFeedback={() => setShowFeedback(true)}
         onBack={() => router.push('/')}
         isAudioMode={isAudioMode}
         onToggleAudioMode={handleToggleAudioMode}
+        interviewStartTime={chat?.created_at ? new Date(chat.created_at) : undefined}
+        completedAt={chat?.completed_at ? new Date(chat.completed_at) : undefined}
       />
 
       {isAudioMode ? (
@@ -263,10 +273,10 @@ export default function InterviewSimulation({
       ) : (
         <ChatArea
           displayMessages={displayMessages}
-          isLoading={isLoading}
+          isSendingMessage={isSendingMessage}
+          isEndingInterview={isEndingInterview}
           streamingMessage={!!streamingMessage}
           isInterviewActive={isInterviewActive}
-          showFeedback={showFeedback}
           currentMessage={currentMessage}
           setCurrentMessage={setCurrentMessage}
           handleKeyPress={handleKeyPress}

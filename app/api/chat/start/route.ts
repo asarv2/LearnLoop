@@ -3,6 +3,7 @@
 import { InterviewType } from "@/types";
 import { uploadResume } from "@/utils/google/upload-resume";
 import { createChat } from "@/utils/mutations/chats/create-chat";
+import { createMessage } from "@/utils/mutations/messages/create-message";
 import { createResume } from "@/utils/mutations/resumes/create-resume";
 import { extractTextFromPDF } from "@/utils/pdf/extract";
 import { uploadResumeToSupabase } from "@/utils/storage/upload-resume-to-supabase";
@@ -35,6 +36,14 @@ export async function POST(request: NextRequest) {
         position: position as string,
         type: interviewType,
         additional_info: additional_info,
+    });
+
+    // create a message from the assistant saying "Hello! Thank you for taking the time to meet with me today."
+    await createMessage({
+        chat_id: chat.id,
+        content: "Hello! Thank you for taking the time to meet with me today.",
+        role: "assistant",
+        completed: true,
     });
     
     return NextResponse.json({ success: true, chatId: chat.id });

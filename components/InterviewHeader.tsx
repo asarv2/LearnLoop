@@ -15,12 +15,14 @@ import { FileTextIcon, Cross2Icon, ArrowLeftIcon } from '@radix-ui/react-icons';
 interface InterviewHeaderProps {
   candidateName: string;
   interviewType: string;
+  isEndingInterview: boolean;
   resumeId: string;
   onEndInterview: () => void;
   isInterviewActive: boolean;
   onShowFeedback?: () => void;
   onBack?: () => void;
   interviewStartTime?: Date;
+  completedAt?: Date;
   isAudioMode?: boolean;
   onToggleAudioMode?: () => void;
 }
@@ -28,12 +30,14 @@ interface InterviewHeaderProps {
 export default function InterviewHeader({
   candidateName,
   interviewType, // Keep for future use
+  isEndingInterview,
   resumeId,
   onEndInterview,
   isInterviewActive,
   onShowFeedback,
   onBack,
   interviewStartTime,
+  completedAt,
   isAudioMode = false,
   onToggleAudioMode
 }: InterviewHeaderProps) {
@@ -46,7 +50,7 @@ export default function InterviewHeader({
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     
-    if (isInterviewActive) {
+    if (isInterviewActive && !completedAt) {
       const startTime = interviewStartTime || new Date();
       interval = setInterval(() => {
         const now = new Date();
@@ -58,6 +62,10 @@ export default function InterviewHeader({
       const now = new Date();
       const diffInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
       setElapsedTime(diffInSeconds);
+    } else if (completedAt && interviewStartTime) {
+      // For completed interviews, show the total duration
+      const diffInSeconds = Math.floor((completedAt.getTime() - interviewStartTime.getTime()) / 1000);
+      setElapsedTime(diffInSeconds);
     } else {
       setElapsedTime(0);
     }
@@ -67,7 +75,7 @@ export default function InterviewHeader({
         clearInterval(interval);
       }
     };
-  }, [isInterviewActive, interviewStartTime]);
+  }, [isInterviewActive, interviewStartTime, completedAt]);
 
   // Format time as MM:SS
   const formatTime = (seconds: number): string => {
@@ -75,7 +83,6 @@ export default function InterviewHeader({
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
-
 
   return (
     <>
@@ -115,18 +122,23 @@ export default function InterviewHeader({
                 {formatTime(elapsedTime)}
               </Text>
             ) : (
-              <Button 
-                variant="soft" 
-                color="blue" 
-                size="2"
-                onClick={onShowFeedback}
-                disabled={!onShowFeedback}
-              >
-                View Feedback
-              </Button>
+              <>
+                <Text size="2" weight="medium" color="gray">
+                  Duration: {formatTime(elapsedTime)}
+                </Text>
+                <Button 
+                  variant="soft" 
+                  color="blue" 
+                  size="2"
+                  onClick={onShowFeedback}
+                  disabled={!onShowFeedback}
+                >
+                  View Feedback
+                </Button>
+              </>
             )}
 
-            {/* Audio Mode Toggle */}
+            {/* Audio Mode Toggle - only show for active interviews */}
             {isInterviewActive && onToggleAudioMode && (
               <Button 
                 variant={isAudioMode ? "solid" : "soft"} 
@@ -241,15 +253,17 @@ export default function InterviewHeader({
               </Dialog.Portal>
             </Dialog.Root>
 
-            {/* End Interview Button */}
+            {/* End Interview Button - only show for active interviews */}
             {isInterviewActive && (
               <Button 
                 variant="solid" 
                 color="red" 
                 size="2"
                 onClick={onEndInterview}
+                loading={isEndingInterview}
+                disabled={isEndingInterview}
               >
-                End Interview
+                {isEndingInterview ? 'Ending...' : 'End Interview'}
               </Button>
             )}
           </Flex>
