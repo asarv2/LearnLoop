@@ -8,6 +8,7 @@ import { createFeedback } from "@/utils/mutations/feedback/create-feedback";
 import { generateResumeHistory } from "@/utils/ai/chat/resume-history";
 import { getChat } from "@/utils/queries/chats/get-chat";
 import { generateFeedbackHistory } from "@/utils/ai/chat/feedback-history";
+import { updateChat } from "@/utils/mutations/chats/update-chat";
 
 export async function POST(request: NextRequest) {
     const formData = await request.formData();
@@ -39,6 +40,12 @@ export async function POST(request: NextRequest) {
         errors: result.finalOutput?.errors || [],
         green_flags: result.finalOutput?.greenFlags || [],
         red_flags: result.finalOutput?.redFlags || [],
+    });
+
+    // mark chat as completed
+    await updateChat(chatId, {
+        completed: true,
+        completed_at: new Date().toISOString(),
     });
 
     return NextResponse.json({

@@ -19,8 +19,8 @@ export const generateResumeHistory = async (chat: Chat): Promise<AgentInputItem>
     const text_section: TextSection = {
         type: "input_text",
         text: `
-        You are interviewing ${candidateName} for the position of ${candidatePosition}.
-        ${additionalInstructions}`,
+        You are acting as ${candidateName} for the position of ${candidatePosition}.
+        ${additionalInstructions}. The user will try to interview you as practice.`,
     }
 
     let resume_section: ResumeSection = null;
