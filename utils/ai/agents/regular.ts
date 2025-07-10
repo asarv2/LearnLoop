@@ -14,11 +14,11 @@ export const getRegularAgent = async () => {
 }
 
 
-export const getRegularRealtimeSession = async (): Promise<RealtimeSession> => {
+export const getRegularRealtimeSession = async (chatTitle: string, chatId: string): Promise<RealtimeSession> => {
   const agent = new RealtimeAgent({
     name: 'Interviewee (Regular)',
     instructions: regularInstructions,
   });
-  const realtimeConfig = await getRealtimeConfig();
+  const realtimeConfig = await getRealtimeConfig(chatTitle, chatId);
   return new RealtimeSession(agent, realtimeConfig);
 }

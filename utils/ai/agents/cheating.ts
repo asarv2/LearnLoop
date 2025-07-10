@@ -38,11 +38,11 @@ export const getCheatingAgent = async () => {
     });
 }
 
-export const getCheatingRealtimeSession = async (): Promise<RealtimeSession> => {
+export const getCheatingRealtimeSession = async (chatTitle: string, chatId: string): Promise<RealtimeSession> => {
     const agent = new RealtimeAgent({
         name: 'Interviewee (Cheater)',
         instructions: cheatingInstructions,
     });
-    const realtimeConfig = await getRealtimeConfig();
+    const realtimeConfig = await getRealtimeConfig(chatTitle, chatId);
     return new RealtimeSession(agent, realtimeConfig);
 }

@@ -16,13 +16,17 @@ export const getGoogleGenAIClient = async (): Promise<GoogleGenAI> => {
     return new GoogleGenAI({ apiKey: process.env["GOOGLE_GENERATIVE_AI_API_KEY"] });
 }
 
-export const getRealtimeConfig = async (): Promise<Partial<RealtimeSessionOptions>> => {
+export const getRealtimeConfig = async (chatTitle: string, chatId: string): Promise<Partial<RealtimeSessionOptions>> => {
     return {
         model: "gpt-4o-mini-realtime-preview",
         config: {
             modalities: ['audio', 'text'],
             inputAudioTranscription: { model: 'whisper-1' },
             voice: 'alloy',
+            tracing: {
+                workflow_name: chatTitle,
+                group_id: chatId
+            }
         },
     }
 }

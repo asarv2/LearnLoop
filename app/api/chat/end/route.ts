@@ -29,7 +29,16 @@ export async function POST(request: NextRequest) {
 
     const agent = await getFeedbackAgent(chat.type === 'cheating');
 
-    const runner = new Runner();
+    let runner: Runner;
+    if (chat.trace_id) {
+        runner = new Runner({
+            workflowName: chat.title,
+            groupId: chat.id,
+            traceId: chat.trace_id
+        });
+    } else {
+        runner = new Runner();
+    }
 
     const result = await runner.run(agent, input);
 

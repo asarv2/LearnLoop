@@ -133,8 +133,8 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
       try {
         const session =
           chat.type === 'cheating'
-            ? await getCheatingRealtimeSession()
-            : await getRegularRealtimeSession();
+            ? await getCheatingRealtimeSession(chat.title, chat.id)
+            : await getRegularRealtimeSession(chat.title, chat.id);
 
         const resumeHistory = await generateResumeHistoryRealtime(chat);
         const conversationHistory = generateConversationHistoryRealtime(messages);

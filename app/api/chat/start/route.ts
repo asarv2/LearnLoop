@@ -7,6 +7,7 @@ import { createMessage } from "@/utils/mutations/messages/create-message";
 import { createResume } from "@/utils/mutations/resumes/create-resume";
 import { extractTextFromPDF } from "@/utils/pdf/extract";
 import { uploadResumeToSupabase } from "@/utils/storage/upload-resume-to-supabase";
+import { generateTraceId } from "@openai/agents";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
@@ -28,10 +29,14 @@ export async function POST(request: NextRequest) {
     // use the resume id to upload to supabase
     await uploadResumeToSupabase(resume.id, formData);
 
+    // getting trace id
+    const traceId = generateTraceId();
+
     // create a new chat
     const chat = await createChat({
-        title: name as string,
+        title: `Interview: ${name} - ${position}`,
         resume_id: resume.id,
+        trace_id: traceId,
         name: name as string,
         position: position as string,
         type: interviewType,
