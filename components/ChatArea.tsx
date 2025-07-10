@@ -11,17 +11,16 @@ import {
     Text,
     Button,
     Card,
-    Spinner
 } from '@radix-ui/themes';
 import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
 import { Chat, Message } from '@/types';
 
 interface ChatAreaProps {
     displayMessages: Message[];
-    isLoading: boolean;
+    isSendingMessage: boolean;
+    isEndingInterview: boolean;
     streamingMessage: boolean;
     isInterviewActive: boolean;
-    showFeedback: boolean;
     currentMessage: string;
     setCurrentMessage: (message: string) => void;
     handleKeyPress: (e: React.KeyboardEvent) => void;
@@ -30,7 +29,7 @@ interface ChatAreaProps {
     chat: Chat;
 }
 
-export default function ChatArea({ displayMessages, isLoading, streamingMessage, isInterviewActive, showFeedback, currentMessage, setCurrentMessage, handleKeyPress, sendMessage, messagesEndRef, chat }: ChatAreaProps) {
+export default function ChatArea({ displayMessages, isSendingMessage, isEndingInterview, isInterviewActive, currentMessage, setCurrentMessage, handleKeyPress, sendMessage, messagesEndRef, chat }: ChatAreaProps) {
     return (
         <Box style={{
             flex: 1,
@@ -112,22 +111,6 @@ export default function ChatArea({ displayMessages, isLoading, streamingMessage,
                         </Box>
                     ))}
 
-                    {isLoading && !streamingMessage && (
-                        <Flex align="center" gap="2" justify="start">
-                            <Card size="1" style={{ padding: '8px', background: 'var(--green-3)' }}>
-                                <ChatBubbleIcon color="var(--green-9)" />
-                            </Card>
-                            <Card size="2" style={{ background: 'var(--gray-2)', border: '1px solid var(--gray-7)' }}>
-                                <Flex align="center" gap="2" p="3">
-                                    <Spinner size="1" />
-                                    <Text size="2" style={{ color: 'var(--gray-11)' }}>
-                                        {chat?.name || 'John Doe'} is thinking...
-                                    </Text>
-                                </Flex>
-                            </Card>
-                        </Flex>
-                    )}
-
                     <div ref={messagesEndRef} />
                 </Flex>
             </Box>
@@ -146,7 +129,7 @@ export default function ChatArea({ displayMessages, isLoading, streamingMessage,
                             value={currentMessage}
                             onChange={(e) => setCurrentMessage(e.target.value)}
                             onKeyDown={handleKeyPress}
-                            disabled={isLoading}
+                            disabled={isSendingMessage}
                             style={{
                                 width: '100%',
                                 padding: '12px 50px 12px 16px',
@@ -169,7 +152,7 @@ export default function ChatArea({ displayMessages, isLoading, streamingMessage,
                         />
                         <Button
                             onClick={sendMessage}
-                            disabled={!currentMessage.trim() || isLoading}
+                            disabled={!currentMessage.trim() || isSendingMessage}
                             size="1"
                             style={{
                                 position: 'absolute',
@@ -177,14 +160,14 @@ export default function ChatArea({ displayMessages, isLoading, streamingMessage,
                                 top: '50%',
                                 transform: 'translateY(-50%)',
                                 borderRadius: '20px',
-                                background: currentMessage.trim() && !isLoading ? 'var(--blue-9)' : 'var(--gray-6)',
+                                background: currentMessage.trim() && !isSendingMessage ? 'var(--blue-9)' : 'var(--gray-6)',
                                 border: 'none',
                                 width: '36px',
                                 height: '36px',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                cursor: currentMessage.trim() && !isLoading ? 'pointer' : 'not-allowed'
+                                cursor: currentMessage.trim() && !isSendingMessage ? 'pointer' : 'not-allowed'
                             }}
                         >
                             <PaperPlaneIcon width="16" height="16" />
@@ -193,7 +176,7 @@ export default function ChatArea({ displayMessages, isLoading, streamingMessage,
                 </Box>
             )}
 
-            {!isInterviewActive && !showFeedback && (
+            {isEndingInterview && (
                 <Box style={{
                     padding: '24px',
                     background: 'var(--gray-1)',

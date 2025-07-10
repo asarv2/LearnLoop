@@ -32,14 +32,70 @@ export default function FeedbackModal({
 }: FeedbackModalProps) {
   const [currentPage, setCurrentPage] = useState(0);
 
-  if (!feedback) return null;
-
   const cleanText = (text: string) => {
     // Remove markdown bold formatting (**text**)
     return text.replace(/\*\*(.*?)\*\*/g, '$1');
   };
 
-  // Remove the formatOverallFeedback function as we no longer need it
+  // If no feedback is available, show a loading/empty state
+  if (!feedback) {
+    return (
+      <Dialog.Root open={isOpen} onOpenChange={onClose}>
+        <Dialog.Portal>
+          <Dialog.Overlay 
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.6)',
+              animation: 'fadeIn 0.2s ease-out'
+            }}
+          />
+          <Dialog.Content
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              padding: '32px',
+              width: '90vw',
+              maxWidth: '500px',
+              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+              border: '1px solid var(--gray-6)'
+            }}
+          >
+            <Flex direction="column" gap="6" align="center" style={{ textAlign: 'center' }}>
+              <Dialog.Title asChild>
+                <Heading size="5" weight="medium" style={{ color: 'var(--gray-12)' }}>
+                  No Feedback Available
+                </Heading>
+              </Dialog.Title>
+              <Text size="3" style={{ color: 'var(--gray-11)', lineHeight: '1.6' }}>
+                Feedback for {candidateName} is not available yet. Please complete the interview first to generate feedback.
+              </Text>
+              <Dialog.Close asChild>
+                <Button variant="soft" size="3">
+                  Close
+                </Button>
+              </Dialog.Close>
+            </Flex>
+          </Dialog.Content>
+        </Dialog.Portal>
+
+        <style jsx global>{`
+          @keyframes fadeIn {
+            from { 
+              opacity: 0;
+            }
+            to { 
+              opacity: 1;
+            }
+          }
+        `}</style>
+      </Dialog.Root>
+    );
+  }
 
   const pages = [
     {
@@ -55,7 +111,7 @@ export default function FeedbackModal({
           <Flex direction="column" gap="6">
             {feedback.strengths.length > 0 ? (
               <Flex direction="column" gap="4">
-                {feedback.strengths.map((strength, index) => (
+                {feedback.strengths.map((strength: string, index: number) => (
                   <Box key={index} style={{ 
                     position: 'relative',
                     padding: '28px 32px',
@@ -135,7 +191,7 @@ export default function FeedbackModal({
           <Flex direction="column" gap="6">
             {feedback.errors && feedback.errors.length > 0 ? (
               <Flex direction="column" gap="4">
-                {feedback.errors.map((error, index) => (
+                {feedback.errors.map((error: string, index: number) => (
                   <Box key={index} style={{ 
                     position: 'relative',
                     padding: '28px 32px',
@@ -223,7 +279,7 @@ export default function FeedbackModal({
               </Flex>
               {feedback.green_flags.length > 0 ? (
                 <Flex direction="column" gap="3">
-                  {feedback.green_flags.map((flag, index) => (
+                  {feedback.green_flags.map((flag: string, index: number) => (
                     <Box key={index} style={{ 
                       position: 'relative',
                       padding: '20px 24px',
@@ -298,7 +354,7 @@ export default function FeedbackModal({
               </Flex>
               {feedback.red_flags.length > 0 ? (
                 <Flex direction="column" gap="3">
-                  {feedback.red_flags.map((flag, index) => (
+                  {feedback.red_flags.map((flag: string, index: number) => (
                     <Box key={index} style={{ 
                       position: 'relative',
                       padding: '20px 24px',
