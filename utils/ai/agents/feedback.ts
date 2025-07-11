@@ -31,6 +31,12 @@ const feedbackInstructions = (cheating: boolean) => {
     ${cheating ? '- Focus especially on signs that might indicate AI assistance: overly polished answers, textbook responses, vague personal details, etc.' : ''}
 
     Keep your feedback concise but detailed enough to guide real improvement. Always include direct quotes and be specific about what the interviewer should have noticed.
+
+    You should output a JSON object with the following fields:
+    - strengths: an array of strings
+    - errors: an array of strings
+    - greenFlags: an array of strings
+    - redFlags: an array of strings
     `
 }
 

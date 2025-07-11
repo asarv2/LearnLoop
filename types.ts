@@ -21,7 +21,7 @@ export type Resume = Tables<'resumes'>;
 // ================ ENUM TYPES ================
 // =============================================
 
-export type InterviewType = "regular" | "cheating";
+export type InterviewType = "regular" | "cheating" | "ai-assisted";
 export type LogLevel = "info" | "error" | "warn" | "debug";
 export type MessageRole = "user" | "assistant";
 
