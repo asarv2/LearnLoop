@@ -13,6 +13,7 @@ export async function POST(req: Request) {
         input_audio_transcription: realtimeConfig.config?.inputAudioTranscription,
         voice: realtimeConfig.config?.voice,
         modalities: realtimeConfig.config?.modalities,
+        tracing: "auto"
     }
     const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
         method: "POST",

@@ -7,12 +7,11 @@
 
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Box, Text, Flex } from '@radix-ui/themes';
 import { Chat, Message } from '@/types';
 import { createMessage } from '@/utils/mutations/messages/create-message';
 import { updateMessage } from '@/utils/mutations/messages/update-message';
-import { logError } from '@/utils/logger';
 import { getCheatingRealtimeSession } from '@/utils/ai/agents/cheating';
 import { getRegularRealtimeSession } from '@/utils/ai/agents/regular';
 import { RealtimeItem, RealtimeSession } from '@openai/agents/realtime';
@@ -76,8 +75,6 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [transportReady, setTransportReady] = useState(false);
   const [captionsEnabled, setCaptionsEnabled] = useState(true);
-
-  const currentMessageRef = useRef<{ id: string } | null>(null);
   const tokenPromiseRef = useRef<Promise<string> | null>(null);
   const sessionRef = useRef<RealtimeSession | null>(null);
   const hasSession = useRef(false);
@@ -86,56 +83,110 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
   // Stable handler reference using useRef to avoid useEffect re-runs
   const historyHandlerRef = useRef<(h: RealtimeItem[]) => void>(() => { });
 
-  const syncTranscriptToMessages = useCallback(async (content: string, role: 'user' | 'assistant') => {
-    try {
-      if (role === 'user') {
-        // Create user message
-        await createMessage({
-          chat_id: chat.id,
-          content: content,
-          role: 'user',
-          completed: true
-        });
-      } else {
-        // Create or update assistant message
-        if (!currentMessageRef.current) {
-          currentMessageRef.current = await createMessage({
-            chat_id: chat.id,
-            content: '',
-            role: 'assistant',
-            completed: false
+  const getTranscript = (it: RealtimeItem) => {
+    if (it.type !== "message" || it.role === "system") return "";
+    if (!it.content?.length) return "";
+    const c = it.content[0];
+    if (c.type === "text") return c.text ?? "";
+    if (c.type === "audio" || c.type === "input_audio") return c.transcript ?? "";
+    return "";
+  };
+
+  const itemCache = useRef<
+    Map<string, { dbId?: string; text: string; completed: boolean }>
+  >(new Map());
+
+  historyHandlerRef.current = async (history: RealtimeItem[]) => {
+    // batch promises so React loop doesn’t wait for each write
+    const work: Promise<unknown>[] = [];
+
+    for (const it of history) {
+      if (it.type !== "message" || it.role === "system") continue;
+      if (!it.itemId.startsWith("item_")) continue; // ignore your own seeded rows
+
+      const nextText = getTranscript(it);
+      const nextCompleted = it.status === "completed";
+
+      const cached = itemCache.current.get(it.itemId);
+
+      // brand-new itemId
+      if (!cached) {
+        if (!nextText) {
+          // nothing worth storing yet → keep metadata so we can
+          // attach a DB id once text shows up, but skip createMessage()
+          itemCache.current.set(it.itemId, {
+            dbId: undefined,
+            text: "",
+            completed: nextCompleted,      // we remember it, but don't act on it
           });
+          continue;
         }
 
-        await updateMessage(currentMessageRef.current.id, {
-          content: content,
-          completed: true,
-          completed_at: new Date().toISOString(),
-        });
-
-        currentMessageRef.current = null;
+        // first real transcript ⇒ create DB row
+        work.push(
+          createMessage({
+            chat_id: chat.id,
+            content: nextText,
+            role: it.role as "user" | "assistant",
+            completed: nextCompleted,          // might still be false
+            completed_at: nextCompleted ? new Date().toISOString() : undefined,
+          }).then(({ id }) => {
+            itemCache.current.set(it.itemId, {
+              dbId: id,
+              text: nextText,
+              completed: nextCompleted,
+            });
+          })
+        );
+        if (it.role === "assistant") setCurrentTranscript(nextText);
+        continue;
       }
-    } catch (error) {
-      logError('Error syncing transcript:', error);
-    } finally {
-      queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chat.id]);
 
-  // Update the handler function on each render but keep stable reference
-  historyHandlerRef.current = async (history: RealtimeItem[]) => {
-    for (const item of history) {
-      if (item.type !== "message" || item.role === 'system') continue;
-      if (processedIds.current.has(item.itemId)) continue;
-      // user messages must be completed, assistant messages do not have to be completed
-      if ((item.role === 'assistant' && item.status === 'incomplete') || (item.role === 'user' && item.status !== 'completed')) continue; 
-      const c = item.content[0];
-      const text = c && (c.type === "audio" || c.type === "input_audio") ? c.transcript : "";
-      if (!text) continue;                                     // still no transcript
-      processedIds.current.add(item.itemId);
-      syncTranscriptToMessages(text, item.role);
-      if (item.role === 'assistant') setCurrentTranscript(text);
+      // already seen
+      const textChanged = nextText && nextText !== cached.text;
+      const completedChanged = nextCompleted && !cached.completed;
+
+      // if we *still* don't have a DB row (dbId undefined)
+      // but now we finally have text  → create it here
+      if (!cached.dbId && nextText) {
+        work.push(
+          createMessage({
+            chat_id: chat.id,
+            content: nextText,
+            role: it.role as "user" | "assistant",
+            completed: nextCompleted,
+            completed_at: nextCompleted ? new Date().toISOString() : undefined,
+          }).then(({ id }) => {
+            cached.dbId = id;
+            cached.text = nextText;
+            cached.completed = nextCompleted;
+          })
+        );
+        if (it.role === "assistant") setCurrentTranscript(nextText);
+        continue;
+      }
+
+      if (!cached.dbId) continue;                 // still waiting for first text
+
+      if (!textChanged && !completedChanged) continue;
+
+      work.push(
+        updateMessage(cached.dbId, {
+          content: textChanged ? nextText : undefined,
+          completed: completedChanged ? true : undefined,
+          completed_at: completedChanged ? new Date().toISOString() : undefined,
+        }).then(() => {
+          if (textChanged) cached.text = nextText;
+          if (completedChanged) cached.completed = true;
+        })
+      );
+
+      if (it.role === "assistant" && textChanged) setCurrentTranscript(nextText);
+    }
+
+    if (work.length) {
+      await Promise.all(work);
+      queryClient.invalidateQueries({ queryKey: ["messages", chat.id] });
     }
   };
 

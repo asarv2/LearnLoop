@@ -193,7 +193,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      interview_type: "regular" | "cheating"
+      interview_type: "regular" | "cheating" | "ai-assisted"
       log_level: "info" | "error" | "warn" | "debug"
       message_role: "user" | "assistant"
     }
@@ -323,7 +323,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      interview_type: ["regular", "cheating"],
+      interview_type: ["regular", "cheating", "ai-assisted"],
       log_level: ["info", "error", "warn", "debug"],
       message_role: ["user", "assistant"],
     },
