@@ -14,6 +14,35 @@ export type Database = {
   }
   public: {
     Tables: {
+      assessments: {
+        Row: {
+          chat_id: string
+          created_at: string | null
+          id: string
+          responses: Json
+        }
+        Insert: {
+          chat_id: string
+          created_at?: string | null
+          id?: string
+          responses?: Json
+        }
+        Update: {
+          chat_id?: string
+          created_at?: string | null
+          id?: string
+          responses?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessments_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chats: {
         Row: {
           additional_info: string
@@ -28,6 +57,7 @@ export type Database = {
           title: string
           trace_id: string | null
           type: Database["public"]["Enums"]["interview_type"]
+          voice: string
         }
         Insert: {
           additional_info?: string
@@ -42,6 +72,7 @@ export type Database = {
           title: string
           trace_id?: string | null
           type?: Database["public"]["Enums"]["interview_type"]
+          voice?: string
         }
         Update: {
           additional_info?: string
@@ -56,6 +87,7 @@ export type Database = {
           title?: string
           trace_id?: string | null
           type?: Database["public"]["Enums"]["interview_type"]
+          voice?: string
         }
         Relationships: [
           {
@@ -193,7 +225,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      interview_type: "regular" | "cheating"
+      interview_type: "regular" | "cheating" | "ai-assisted"
       log_level: "info" | "error" | "warn" | "debug"
       message_role: "user" | "assistant"
     }
@@ -323,7 +355,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      interview_type: ["regular", "cheating"],
+      interview_type: ["regular", "cheating", "ai-assisted"],
       log_level: ["info", "error", "warn", "debug"],
       message_role: ["user", "assistant"],
     },

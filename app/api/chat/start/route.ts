@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     const name = formData.get("name") as string;
     const interviewType = formData.get("type") as InterviewType;
     const position = formData.get("position") as string;
-    const additional_info = formData.get("additional_info") as string;
+    const position_level = formData.get("position_level") as string;
     const googleFileId = await uploadResume(formData);
 
     // finding resume text, convert to buffer
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
         name: name as string,
         position: position as string,
         type: interviewType,
-        additional_info: additional_info,
+        additional_info: position_level,
     });
 
     // create a message from the assistant saying "Hello! Thank you for taking the time to meet with me today."

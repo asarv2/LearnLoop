@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import InterviewHeader from './InterviewHeader';
 import FeedbackModal from './FeedbackModal';
+import AssessmentWizard from './AssessmentWizard';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getMessagesByChat } from '@/utils/queries/messages/get-messages-by-chat';
 import { getChat } from '@/utils/queries/chats/get-chat';
@@ -12,6 +13,7 @@ import { getFeedbackByChat } from '@/utils/queries/feedback/get-feedback-by-chat
 import ChatArea from './ChatArea';
 import { Box } from '@radix-ui/themes';
 import AudioArea from './AudioArea';
+import { AssessmentResponse } from '@/types';
 
 interface InterviewSimulationProps {
   chatId: string;
@@ -31,7 +33,9 @@ export default function InterviewSimulation({
   const [currentMessage, setCurrentMessage] = useState('');
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [isEndingInterview, setIsEndingInterview] = useState(false);
+  const [showAssessment, setShowAssessment] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<StreamingMessage | null>(null);
   const [isAudioMode, setIsAudioMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -192,12 +196,33 @@ export default function InterviewSimulation({
     setIsEndingInterview(true);
 
     try {
-      const formData = new FormData();
-      formData.append('chatId', chatId);
+      // Just mark interview as completed and show assessment wizard
+      await queryClient.invalidateQueries({
+        queryKey: ['chat', chatId]
+      });
+      setShowAssessment(true);
+    } catch (error) {
+      logError('Error ending interview:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      alert(`Failed to end interview: ${errorMessage}. Please check the console for more details.`);
+    } finally {
+      setIsEndingInterview(false);
+    }
+  };
 
-      const response = await fetch('/api/chat/end', {
+  const handleAssessmentComplete = async (responses: AssessmentResponse[]) => {
+    setIsSubmittingAssessment(true);
+
+    try {
+      const response = await fetch('/api/chat/assessment', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chatId: chatId,
+          responses: responses
+        }),
       });
 
       const data = await response.json();
@@ -212,17 +237,18 @@ export default function InterviewSimulation({
             queryKey: ['feedback', chatId]
           })
         ]);
+        setShowAssessment(false);
         setShowFeedback(true);
       } else {
-        logError('Feedback generation failed:', data);
-        throw new Error(data.error || 'Failed to generate feedback');
+        logError('Assessment processing failed:', data);
+        throw new Error(data.error || 'Failed to process assessment');
       }
     } catch (error) {
-      logError('Error generating feedback:', error);
+      logError('Error processing assessment:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      alert(`Failed to generate feedback: ${errorMessage}. Please check the console for more details.`);
+      alert(`Failed to process assessment: ${errorMessage}. Please check the console for more details.`);
     } finally {
-      setIsEndingInterview(false);
+      setIsSubmittingAssessment(false);
     }
   };
 
@@ -285,6 +311,15 @@ export default function InterviewSimulation({
           messagesEndRef={messagesEndRef}
         />
       )}
+
+      {/* Assessment Wizard */}
+      <AssessmentWizard
+        isOpen={showAssessment}
+        onClose={() => setShowAssessment(false)}
+        onComplete={handleAssessmentComplete}
+        candidateName={chat?.name || 'John Doe'}
+        isSubmitting={isSubmittingAssessment}
+      />
 
       {/* Feedback Modal */}
       <FeedbackModal
