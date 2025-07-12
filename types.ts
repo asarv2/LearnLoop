@@ -6,6 +6,8 @@ import type { Tables } from "@/database.types";
 // ================ TABLE TYPES ================
 // =============================================
 
+// --- ASSESSMENTS ---
+export type Assessment = Tables<'assessments'>;
 // --- CHATS ---
 export type Chat = Tables<'chats'>;
 // --- FEEDBACK ---
@@ -21,7 +23,7 @@ export type Resume = Tables<'resumes'>;
 // ================ ENUM TYPES ================
 // =============================================
 
-export type InterviewType = "regular" | "cheating";
+export type InterviewType = "regular" | "cheating" | "ai-assisted";
 export type LogLevel = "info" | "error" | "warn" | "debug";
 export type MessageRole = "user" | "assistant";
 
@@ -30,7 +32,24 @@ export type MessageRole = "user" | "assistant";
 // =============================================
 
 // Union type of all table names
-export type TableName = 'chats' | 'feedback' | 'logs' | 'messages' | 'resumes';
+export type TableName = 'assessments' | 'chats' | 'feedback' | 'logs' | 'messages' | 'resumes';
 
 // Union type of all entity types
-export type Entity = Chat | Feedback | Log | Message | Resume;
+export type Entity = Assessment | Chat | Feedback | Log | Message | Resume;
+
+// =============================================
+// ========== ASSESSMENT TYPES ============
+// =============================================
+
+export interface AssessmentQuestion {
+  id: string;
+  type: 'yes_no' | 'multiple_choice' | 'rating' | 'text';
+  question: string;
+  options?: string[]; // For multiple choice
+  context?: string; // Additional context to display with the question
+}
+
+export interface AssessmentResponse {
+  question_id: string;
+  response: string | number;
+}

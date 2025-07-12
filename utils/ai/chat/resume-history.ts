@@ -14,13 +14,14 @@ export const generateResumeHistory = async (chat: Chat): Promise<AgentInputItem>
 
     const candidateName = chat.name;
     const candidatePosition = chat.position;
-    const additionalInstructions = chat.additional_info;
+    const positionLevel = chat.additional_info; // This now contains the position level
 
     const text_section: TextSection = {
         type: "input_text",
         text: `
         You are acting as ${candidateName} for the position of ${candidatePosition}.
-        ${additionalInstructions}. The user will try to interview you as practice.`,
+        ${positionLevel ? `Position Level: ${positionLevel}` : ''}
+        The user will try to interview you as practice. Make sure to tailor your responses to match the specified position level while staying true to your character and the information in your resume.`,
     }
 
     let resume_section: ResumeSection = null;
@@ -44,13 +45,14 @@ export const generateResumeHistoryRealtime = async (chat: Chat): Promise<Realtim
     type TextSection = RealtimeMessageItem['content'][0];
     const candidateName = chat.name;
     const candidatePosition = chat.position;
-    const additionalInstructions = chat.additional_info;
+    const positionLevel = chat.additional_info; // This now contains the position level
 
     const text_section: TextSection = {
         type: "input_text",
         text: `
         You are interviewing ${candidateName} for the position of ${candidatePosition}.
-        ${additionalInstructions}`,
+        ${positionLevel ? `Position Level: ${positionLevel}` : ''}
+        Make sure to tailor your responses to match the specified position level while staying true to your character and the information in your resume.`,
     }
     if (!chat.resume_id) {
         throw new Error("No resume id provided");
