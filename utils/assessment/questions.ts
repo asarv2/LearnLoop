@@ -2,18 +2,7 @@
 import { AssessmentQuestion } from "@/types";
 
 export const ASSESSMENT_QUESTIONS: AssessmentQuestion[] = [
-  {
-    id: "hire_decision",
-    type: "multiple_choice",
-    question: "Based on this interview, would you move forward with this candidate?",
-    options: [
-      "Strong Yes - Definitely move to next round",
-      "Yes - Move forward with some reservations", 
-      "Maybe - Need more evaluation",
-      "No - Would not move forward",
-      "Strong No - Clear rejection"
-    ],
-  },
+
   {
     id: "strengths",
     type: "multiple_choice",
@@ -72,6 +61,18 @@ export const ASSESSMENT_QUESTIONS: AssessmentQuestion[] = [
       "Inconsistent - some areas strong, others weak",
       "Shallow knowledge, mostly buzzwords",
       "Unable to demonstrate real technical depth"
+    ],
+  },
+  {
+    id: "hire_decision",
+    type: "multiple_choice",
+    question: "Based on this interview, would you move forward with this candidate?",
+    options: [
+      "Strong Yes - Definitely move to next round",
+      "Yes - Move forward with some reservations", 
+      "Maybe - Need more evaluation",
+      "No - Would not move forward",
+      "Strong No - Clear rejection"
     ],
   },
 
