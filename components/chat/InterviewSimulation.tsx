@@ -1,3 +1,9 @@
+/**
+ * InterviewSimulation.tsx
+ * @AshokSaravanan222 & @siladiea
+ * 07/09/2025
+ */
+
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
@@ -12,7 +18,6 @@ import { logError } from '@/utils/logger';
 import { getFeedbackByChat } from '@/utils/queries/feedback/get-feedback-by-chat';
 import ChatArea from './ChatArea';
 import { Box } from '@radix-ui/themes';
-import AudioArea from './AudioArea';
 import { AssessmentResponse } from '@/types';
 
 interface InterviewSimulationProps {
@@ -37,7 +42,6 @@ export default function InterviewSimulation({
   const [showFeedback, setShowFeedback] = useState(false);
   const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<StreamingMessage | null>(null);
-  const [isAudioMode, setIsAudioMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { data: chat } = useQuery({
@@ -65,17 +69,6 @@ export default function InterviewSimulation({
   useEffect(() => {
     scrollToBottom();
   }, [messages, streamingMessage]);
-
-  const handleToggleAudioMode = () => {
-    setIsAudioMode(prev => !prev);
-  };
-
-  const handleAudioError = (error: string) => {
-    logError('Audio mode error:', error);
-    // Revert to text mode on error
-    setIsAudioMode(false);
-    alert(`Audio mode error: ${error}. Switching back to text mode.`);
-  };
 
   const sendMessage = async () => {
     if (!currentMessage.trim() || isSendingMessage || !isInterviewActive) return;
@@ -284,33 +277,23 @@ export default function InterviewSimulation({
         isEndingInterview={isEndingInterview}
         onShowFeedback={() => setShowFeedback(true)}
         onBack={() => router.push('/interview')}
-        isAudioMode={isAudioMode}
-        onToggleAudioMode={handleToggleAudioMode}
         interviewStartTime={chat?.created_at ? new Date(chat.created_at) : undefined}
         completedAt={chat?.completed_at ? new Date(chat.completed_at) : undefined}
       />
 
-      {isAudioMode ? (
-        <AudioArea
-          chat={chat!}
-          messages={messages}
-          onError={handleAudioError}
-        />
-      ) : (
-        <ChatArea
-          displayMessages={displayMessages}
-          isSendingMessage={isSendingMessage}
-          isEndingInterview={isEndingInterview}
-          streamingMessage={!!streamingMessage}
-          isInterviewActive={isInterviewActive}
-          currentMessage={currentMessage}
-          setCurrentMessage={setCurrentMessage}
-          handleKeyPress={handleKeyPress}
-          sendMessage={sendMessage}
-          chat={chat!}
-          messagesEndRef={messagesEndRef}
-        />
-      )}
+      <ChatArea
+        displayMessages={displayMessages}
+        isSendingMessage={isSendingMessage}
+        isEndingInterview={isEndingInterview}
+        streamingMessage={!!streamingMessage}
+        isInterviewActive={isInterviewActive}
+        currentMessage={currentMessage}
+        setCurrentMessage={setCurrentMessage}
+        handleKeyPress={handleKeyPress}
+        sendMessage={sendMessage}
+        chat={chat!}
+        messagesEndRef={messagesEndRef}
+      />
 
       {/* Assessment Wizard */}
       <AssessmentWizard
@@ -330,4 +313,4 @@ export default function InterviewSimulation({
       />
     </Box>
   );
-} 
+}

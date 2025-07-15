@@ -36,20 +36,3 @@ export type TableName = 'assessments' | 'chats' | 'feedback' | 'logs' | 'message
 
 // Union type of all entity types
 export type Entity = Assessment | Chat | Feedback | Log | Message | Resume;
-
-// =============================================
-// ========== ASSESSMENT TYPES ============
-// =============================================
-
-export interface AssessmentQuestion {
-  id: string;
-  type: 'yes_no' | 'multiple_choice' | 'rating' | 'text';
-  question: string;
-  options?: string[]; // For multiple choice
-  context?: string; // Additional context to display with the question
-}
-
-export interface AssessmentResponse {
-  question_id: string;
-  response: string | number;
-}

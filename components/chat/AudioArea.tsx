@@ -1,6 +1,6 @@
 /**
  * AudioArea.tsx
- * Used for audio to text interactions with OpenAI Realtime API.
+ * Enhanced voice interview UI with professional voice orb animation
  * @AshokSaravanan222 & @siladiea
  * 07/09/2025
  */
@@ -26,43 +26,158 @@ interface AudioAreaProps {
   onError: (error: string) => void;
 }
 
-interface AudioVisualizerProps {
+interface VoiceOrbProps {
   isActive: boolean;
+  isListening: boolean;
+  isConnected: boolean;
 }
 
-const AudioVisualizer = ({ isActive }: AudioVisualizerProps) => {
+const VoiceOrb = ({ isActive, isListening, isConnected }: VoiceOrbProps) => {
   return (
     <Box style={{
+      position: 'relative',
       display: 'flex',
       justifyContent: 'center',
       alignItems: 'center',
-      height: '200px'
+      height: '300px',
+      width: '300px'
     }}>
+      {/* Outer ring - connection indicator */}
       <div
         style={{
-          width: '120px',
-          height: '120px',
+          position: 'absolute',
+          width: '280px',
+          height: '280px',
           borderRadius: '50%',
-          background: isActive
-            ? 'linear-gradient(45deg, #6366f1, #8b5cf6, #a855f7)'
-            : 'linear-gradient(45deg, #64748b, #6b7280)',
-          animation: isActive ? 'pulse 2s ease-in-out infinite' : 'none',
-          boxShadow: isActive
-            ? '0 0 30px rgba(139, 92, 246, 0.5)'
-            : '0 0 10px rgba(100, 116, 139, 0.3)',
-          transition: 'all 0.3s ease'
+          border: `3px solid ${isConnected ? 'rgba(99, 102, 241, 0.3)' : 'rgba(156, 163, 175, 0.3)'}`,
+          animation: isConnected ? 'rotate 20s linear infinite' : 'none',
         }}
       />
+      
+      {/* Middle ring - listening indicator */}
+      <div
+        style={{
+          position: 'absolute',
+          width: '220px',
+          height: '220px',
+          borderRadius: '50%',
+          background: isListening 
+            ? 'radial-gradient(circle, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 50%, transparent 100%)'
+            : 'transparent',
+          animation: isListening ? 'pulse-listening 1.5s ease-in-out infinite' : 'none',
+        }}
+      />
+      
+      {/* Inner core - main orb */}
+      <div
+        style={{
+          position: 'absolute',
+          width: '160px',
+          height: '160px',
+          borderRadius: '50%',
+          background: isActive 
+            ? 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%)'
+            : isConnected
+            ? 'linear-gradient(135deg, #3b82f6 0%, #6366f1 50%, #8b5cf6 100%)'
+            : 'linear-gradient(135deg, #6b7280 0%, #9ca3af 50%, #d1d5db 100%)',
+          boxShadow: isActive
+            ? '0 0 60px rgba(139, 92, 246, 0.6), 0 0 100px rgba(139, 92, 246, 0.3)'
+            : isConnected
+            ? '0 0 40px rgba(99, 102, 241, 0.4), 0 0 80px rgba(99, 102, 241, 0.2)'
+            : '0 0 20px rgba(156, 163, 175, 0.3)',
+          animation: isActive ? 'voice-active 0.8s ease-in-out infinite alternate' : 'none',
+          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      />
+      
+      {/* Particle effects */}
+      {isActive && (
+        <>
+          {[...Array(6)].map((_, i) => (
+            <div
+              key={i}
+              style={{
+                position: 'absolute',
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: 'rgba(139, 92, 246, 0.7)',
+                animation: `particle-${i} 2s ease-in-out infinite`,
+                animationDelay: `${i * 0.3}s`,
+              }}
+            />
+          ))}
+        </>
+      )}
+      
+      {/* Center icon */}
+      <div
+        style={{
+          position: 'absolute',
+          fontSize: '2.5rem',
+          color: 'white',
+          opacity: 0.9,
+          animation: isActive ? 'icon-pulse 1s ease-in-out infinite' : 'none',
+        }}
+      >
+        {isActive ? '🎤' : isConnected ? '🎧' : '⏸️'}
+      </div>
+      
       <style jsx>{`
-        @keyframes pulse {
-          0%, 100% {
-            transform: scale(1);
-            opacity: 0.8;
-          }
-          50% {
-            transform: scale(1.1);
-            opacity: 1;
-          }
+        @keyframes rotate {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        @keyframes pulse-listening {
+          0%, 100% { transform: scale(1); opacity: 0.6; }
+          50% { transform: scale(1.05); opacity: 0.8; }
+        }
+        
+        @keyframes voice-active {
+          0% { transform: scale(1); }
+          100% { transform: scale(1.05); }
+        }
+        
+        @keyframes icon-pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+        
+        @keyframes particle-0 {
+          0% { transform: translate(0, 0) scale(0); opacity: 0; }
+          50% { transform: translate(60px, -80px) scale(1); opacity: 1; }
+          100% { transform: translate(120px, -160px) scale(0); opacity: 0; }
+        }
+        
+        @keyframes particle-1 {
+          0% { transform: translate(0, 0) scale(0); opacity: 0; }
+          50% { transform: translate(80px, -40px) scale(1); opacity: 1; }
+          100% { transform: translate(160px, -80px) scale(0); opacity: 0; }
+        }
+        
+        @keyframes particle-2 {
+          0% { transform: translate(0, 0) scale(0); opacity: 0; }
+          50% { transform: translate(80px, 40px) scale(1); opacity: 1; }
+          100% { transform: translate(160px, 80px) scale(0); opacity: 0; }
+        }
+        
+        @keyframes particle-3 {
+          0% { transform: translate(0, 0) scale(0); opacity: 0; }
+          50% { transform: translate(60px, 80px) scale(1); opacity: 1; }
+          100% { transform: translate(120px, 160px) scale(0); opacity: 0; }
+        }
+        
+        @keyframes particle-4 {
+          0% { transform: translate(0, 0) scale(0); opacity: 0; }
+          50% { transform: translate(-60px, 80px) scale(1); opacity: 1; }
+          100% { transform: translate(-120px, 160px) scale(0); opacity: 0; }
+        }
+        
+        @keyframes particle-5 {
+          0% { transform: translate(0, 0) scale(0); opacity: 0; }
+          50% { transform: translate(-80px, -40px) scale(1); opacity: 1; }
+          100% { transform: translate(-160px, -80px) scale(0); opacity: 0; }
         }
       `}</style>
     </Box>
@@ -224,56 +339,144 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      height: '100%',
-      padding: '2rem',
-      gap: '1.5rem',
-      position: 'relative'
+      height: '100vh',
+      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)',
+      position: 'relative',
+      overflow: 'hidden'
     }}>
+      {/* Background pattern */}
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundImage: `
+          radial-gradient(circle at 25% 25%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+          radial-gradient(circle at 75% 75%, rgba(139, 92, 246, 0.1) 0%, transparent 50%)
+        `,
+        pointerEvents: 'none'
+      }} />
+      
+      {/* Header */}
+      <Box style={{
+        position: 'absolute',
+        top: '2rem',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        textAlign: 'center',
+        zIndex: 10
+      }}>
+        <Text size="6" weight="bold" style={{
+          color: 'white',
+          marginBottom: '0.5rem',
+          background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text'
+        }}>
+          Voice Interview Session
+        </Text>
+        <Text size="3" style={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+          {chat.title}
+        </Text>
+      </Box>
+
       {/* Captions Toggle Button */}
       <button
         onClick={() => setCaptionsEnabled(!captionsEnabled)}
         style={{
           position: 'absolute',
-          top: '1rem',
-          right: '1rem',
-          padding: '0.5rem',
-          borderRadius: '6px',
-          background: captionsEnabled ? '#6366f1' : '#e5e7eb',
-          color: captionsEnabled ? '#fff' : '#374151',
-          border: 'none',
+          top: '2rem',
+          right: '2rem',
+          padding: '0.75rem 1rem',
+          borderRadius: '12px',
+          background: captionsEnabled 
+            ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' 
+            : 'rgba(255, 255, 255, 0.1)',
+          color: 'white',
+          border: captionsEnabled ? 'none' : '1px solid rgba(255, 255, 255, 0.2)',
           cursor: 'pointer',
           fontSize: '0.875rem',
-          fontWeight: '500',
-          transition: 'all 0.2s ease',
+          fontWeight: '600',
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           display: 'flex',
           alignItems: 'center',
-          gap: '0.5rem'
+          gap: '0.5rem',
+          backdropFilter: 'blur(10px)',
+          boxShadow: captionsEnabled 
+            ? '0 4px 20px rgba(99, 102, 241, 0.3)' 
+            : '0 4px 20px rgba(0, 0, 0, 0.1)',
+          zIndex: 10
         }}
         title={captionsEnabled ? 'Hide captions' : 'Show captions'}
       >
-        <span style={{ fontSize: '1rem' }}>
-          {captionsEnabled ? '🔤' : '🔇'}
+        <span style={{ fontSize: '1.2rem' }}>
+          {captionsEnabled ? '💬' : '🔇'}
         </span>
         {captionsEnabled ? 'Captions On' : 'Captions Off'}
       </button>
 
-      <AudioVisualizer isActive={micActive} />
+      {/* Main voice orb */}
+      <VoiceOrb 
+        isActive={micActive} 
+        isListening={currentTranscript !== ''} 
+        isConnected={isConnected}
+      />
 
-      <Flex direction="column" align="center" gap="3" style={{ textAlign: 'center' }}>
-        <Text size="4" weight="medium" color={isConnected ? 'blue' : 'gray'}>
-          {isConnected ? 'Connected' : 'Not connected'}
-        </Text>
-
-        {currentTranscript && captionsEnabled && (
-          <Text size="3" color="gray" style={{
-            fontStyle: 'italic',
-            maxWidth: '400px',
-            lineHeight: '1.4'
+      {/* Status and transcript section */}
+      <Flex direction="column" align="center" gap="4" style={{ 
+        textAlign: 'center',
+        marginTop: '2rem',
+        maxWidth: '600px',
+        padding: '0 2rem'
+      }}>
+        {/* Connection Status */}
+        <Flex align="center" gap="2" style={{
+          padding: '0.5rem 1rem',
+          borderRadius: '20px',
+          background: isConnected 
+            ? 'rgba(34, 197, 94, 0.1)' 
+            : 'rgba(239, 68, 68, 0.1)',
+          border: `1px solid ${isConnected ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+          backdropFilter: 'blur(10px)'
+        }}>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            background: isConnected ? '#22c55e' : '#ef4444',
+            animation: isConnected ? 'pulse 2s ease-in-out infinite' : 'none'
+          }} />
+          <Text size="2" weight="medium" style={{
+            color: isConnected ? '#22c55e' : '#ef4444'
           }}>
-            &ldquo;{currentTranscript}&rdquo;
+            {isConnected ? 'Connected & Ready' : 'Connecting...'}
           </Text>
+        </Flex>
+
+        {/* Current transcript */}
+        {currentTranscript && captionsEnabled && (
+          <Box style={{
+            padding: '1.5rem',
+            borderRadius: '16px',
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            backdropFilter: 'blur(20px)',
+            maxWidth: '500px',
+            margin: '0 auto'
+          }}>
+            <Text size="3" style={{
+              color: 'rgba(255, 255, 255, 0.9)',
+              lineHeight: '1.6',
+              fontStyle: 'italic'
+            }}>
+              &ldquo;{currentTranscript}&rdquo;
+            </Text>
+          </Box>
         )}
 
+        {/* Control button */}
         {isConnected && (
           <button
             onMouseDown={() => {
@@ -296,18 +499,40 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
               }
             }}
             style={{
-              padding: '0.75rem 1.5rem',
-              borderRadius: 6,
-              background: micActive ? '#a855f7' : '#e5e7eb',
-              color: micActive ? '#fff' : '#374151',
+              padding: '1rem 2rem',
+              borderRadius: '30px',
+              background: micActive 
+                ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
+                : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              color: 'white',
+              border: 'none',
               cursor: 'pointer',
-              fontWeight: 500,
+              fontSize: '1rem',
+              fontWeight: '600',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              boxShadow: micActive 
+                ? '0 8px 30px rgba(239, 68, 68, 0.4)' 
+                : '0 8px 30px rgba(99, 102, 241, 0.3)',
+              transform: micActive ? 'scale(1.05)' : 'scale(1)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
             }}
           >
-            {micActive ? 'Recording…' : 'Hold to Speak'}
+            <span style={{ fontSize: '1.2rem' }}>
+              {micActive ? '🔴' : '🎤'}
+            </span>
+            {micActive ? 'Recording...' : 'Hold to Speak'}
           </button>
         )}
       </Flex>
+      
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
     </Box>
   );
 }
