@@ -18,7 +18,7 @@ import { logError } from '@/utils/logger';
 import { getFeedbackByChat } from '@/utils/queries/feedback/get-feedback-by-chat';
 import ChatArea from './ChatArea';
 import { Box } from '@radix-ui/themes';
-import { AssessmentResponse } from '@/types';
+import { Assessment } from '@/types';
 
 interface InterviewSimulationProps {
   chatId: string;
@@ -203,7 +203,7 @@ export default function InterviewSimulation({
     }
   };
 
-  const handleAssessmentComplete = async (responses: AssessmentResponse[]) => {
+  const handleAssessmentComplete = async (responses: Assessment['responses']) => {
     setIsSubmittingAssessment(true);
 
     try {

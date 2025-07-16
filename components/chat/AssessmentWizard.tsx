@@ -6,12 +6,12 @@ import { Box, Button, Card, Flex, Heading, Text, TextArea } from '@radix-ui/them
 import * as Dialog from '@radix-ui/react-dialog';
 import { ChevronLeftIcon, ChevronRightIcon, Cross2Icon } from '@radix-ui/react-icons';
 import { ASSESSMENT_QUESTIONS, getTotalQuestions } from '@/utils/assessment/questions';
-import { AssessmentResponse } from '@/types';
+import { Assessment } from '@/types';
 
 interface AssessmentWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: (responses: AssessmentResponse[]) => void;
+  onComplete: (responses: Assessment['responses']) => void;
   candidateName: string;
   isSubmitting?: boolean;
 }
@@ -44,7 +44,7 @@ export default function AssessmentWizard({
   const handleNext = () => {
     if (isLastQuestion) {
       // Convert responses to the format expected by the API
-      const assessmentResponses: AssessmentResponse[] = Object.entries(responses).map(([question_id, response]) => ({
+      const assessmentResponses: Assessment['responses'] = Object.entries(responses).map(([question_id, response]) => ({
         question_id,
         response
       }));

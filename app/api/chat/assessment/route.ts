@@ -8,15 +8,16 @@ import { generateResumeHistory } from "@/utils/ai/chat/resume-history";
 import { generateConversationHistory } from "@/utils/ai/chat/conversation-history";
 import { getFeedbackAgent } from "@/utils/ai/agents/feedback";
 import { AgentInputItem, Runner } from "@openai/agents";
-import { AssessmentResponse } from "@/types";
+import { Assessment } from "@/types";
 import { ASSESSMENT_QUESTIONS } from "@/utils/assessment/questions";
+import { Json } from "@/database.types";
 
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         const { chatId, responses } = body as { 
             chatId: string; 
-            responses: AssessmentResponse[];
+            responses: Assessment['responses'];
         };
 
         const chat = await getChat(chatId);
@@ -85,8 +86,28 @@ export async function POST(request: NextRequest) {
     }
 }
 
-function generateAssessmentContext(responses: AssessmentResponse[], interviewType: string): AgentInputItem {
-    const responseMap = new Map(responses.map(r => [r.question_id, r.response]));
+function generateAssessmentContext(responses: Assessment['responses'], interviewType: string): AgentInputItem {
+    if (!responses) {
+        return {
+            role: 'user',
+            content: [{ type: 'input_text', text: 'No responses provided' }]
+        };
+    }
+    // Defensive mapping: ensure r is an object with question_id and response, and only include valid pairs
+    const responseEntries: Array<[string, unknown]> = [];
+    for (const r of responses as Json[]) {
+        if (
+            r &&
+            typeof r === 'object' &&
+            !Array.isArray(r) &&
+            'question_id' in r &&
+            'response' in r
+        ) {
+            // @ts-expect-error: We have checked the shape above
+            responseEntries.push([r.question_id, r.response]);
+        }
+    }
+    const responseMap = new Map(responseEntries);
     
     // Build context based on the interviewer's responses
     let contextText = "INTERVIEWER ASSESSMENT RESPONSES:\n\n";
