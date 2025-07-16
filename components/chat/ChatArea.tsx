@@ -17,10 +17,10 @@ import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon, SpeakerLoudIcon, Pencil1Ico
 import { Chat, Message } from '@/types';
 import Markdown from '@/components/chat/Markdown';
 import { createMessage } from '@/utils/mutations/messages/create-message';
-import { logError, logInfo } from '@/utils/logger';
+import { logError } from '@/utils/logger';
 import { getCheatingRealtimeSession } from '@/utils/ai/agents/cheating';
 import { getRegularRealtimeSession } from '@/utils/ai/agents/regular';
-import { RealtimeItem, RealtimeSession } from '@openai/agents/realtime';
+import { RealtimeSession } from '@openai/agents/realtime';
 import { generateConversationHistoryRealtime } from '@/utils/ai/chat/conversation-history';
 import { generateResumeHistoryRealtime } from '@/utils/ai/chat/resume-history';
 import { useQueryClient } from '@tanstack/react-query';
@@ -67,13 +67,11 @@ export default function ChatArea({
     const tokenPromiseRef = useRef<Promise<string> | null>(null);
     const sessionRef = useRef<RealtimeSession | null>(null);
     const hasSession = useRef(false);
-    const processedIds = useRef(new Set<string>());
-    const pendingUserMessage = useRef<string>('');
-    const pendingAIMessage = useRef<string>('');
 
-    // Stable handler reference
-    const historyHandlerRef = useRef<(h: RealtimeItem[]) => void>(() => { });
-    const historyAddedRef = useRef<(h: RealtimeItem) => void>(() => { });
+    const pendingUserMessage = useRef<string>('');
+    const pendingAIMessage   = useRef<string>('');
+
+
 
     const syncTranscriptToMessages = useCallback(async (content: string, role: 'user' | 'assistant') => {
         // Guard against undefined chat or empty content
@@ -123,52 +121,8 @@ export default function ChatArea({
         }
     }, [chat?.id, queryClient]);
 
-    // Update the handler function
-    historyHandlerRef.current = async (history: RealtimeItem[]) => {
-        for (const item of history) {
-            if (item.type !== "message" || item.role === 'system') continue;
-            if (processedIds.current.has(item.itemId)) continue;
-            
-            const c = item.content[0];
-            const text = c && (c.type === "audio" || c.type === "input_audio") ? c.transcript : "";
-            
-            if (item.role === 'user') {
-                if (item.status === 'in_progress' && text) {
-                    // Update the current transcript for real-time display
-                    setCurrentUserTranscript(text);
-                    pendingUserMessage.current = text;
-                } else if (item.status === 'completed' && text) {
-                    // Mark as processed and sync to database
-                    processedIds.current.add(item.itemId);
-                    
-                    // Use the most recent transcript
-                    const finalText = text || pendingUserMessage.current;
-                    if (finalText.trim()) {
-                        await syncTranscriptToMessages(finalText, 'user');
-                    }
-                }
-            } else if (item.role === 'assistant') {
-                if (item.status === 'in_progress' && text) {
-                    // Update the current transcript for real-time display
-                    setCurrentAITranscript(text);
-                    pendingAIMessage.current = text;
-                } else if (item.status === 'completed' && text) {
-                    // Mark as processed and sync to database
-                    processedIds.current.add(item.itemId);
-                    
-                    // Use the most recent transcript
-                    const finalText = text || pendingAIMessage.current;
-                    if (finalText.trim()) {
-                        await syncTranscriptToMessages(finalText, 'assistant');
-                    }
-                }
-            }
-        }
-    };
 
-    historyAddedRef.current = async (item: RealtimeItem) => {
-        logInfo('history_added', { item });
-    };
+    
 
     // Voice session setup
     useEffect(() => {
@@ -211,13 +165,28 @@ export default function ChatArea({
                 // Start session muted
                 session.mute(true);
 
-                // Mark seeded IDs
-                initHistory.forEach(item => processedIds.current.add(item.itemId));
-
                 if (!mounted) return;
 
                 // Set up handlers
-                session.on('history_updated', (h) => historyHandlerRef.current(h));
+                // session.on('history_updated', (h) => historyHandlerRef.current(h));
+                session.on("transport_event", async (e) => {
+                    if (e.type === "conversation.item.input_audio_transcription.delta") {
+                        if (!e.delta) return;
+                        setCurrentUserTranscript(e.delta);
+                        pendingUserMessage.current = e.delta;
+                    } else if (e.type === "conversation.item.input_audio_transcription.completed") {
+                        await syncTranscriptToMessages(e.transcript, 'user');
+                        setCurrentUserTranscript('');
+                    } else if (e.type === 'response.audio_transcript.delta') {
+                        if (!e.delta) return;
+                        setCurrentAITranscript((prev) => prev + e.delta);
+                        pendingAIMessage.current = e.delta;
+                    } else if (e.type === 'response.audio_transcript.done') {
+                        await syncTranscriptToMessages(e.transcript, 'assistant');
+                        setCurrentAITranscript('');
+                    }
+                });
+
                 session.on('error', (e) => {
                     logError('Voice session error:', e);
                     alert(`Voice mode error: ${e.error}. Please try again.`);
@@ -246,14 +215,13 @@ export default function ChatArea({
             hasSession.current = false;
             setIsVoiceConnected(false);
             setTransportReady(false);
-            // eslint-disable-next-line react-hooks/exhaustive-deps
-            processedIds.current.clear();
             // Clear any pending messages
             pendingUserMessage.current = '';
             pendingAIMessage.current = '';
             currentMessageRef.current = null;
         };
-    }, [chat, isVoiceMode, displayMessages]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [chat?.id, isVoiceMode]);
 
     // Create combined messages array for display
     const getCombinedMessages = () => {
