@@ -387,7 +387,7 @@ export default function NewInterview() {
                                                         </Box>
                                                         <Box>
                                                             <Text size="3" weight="bold">Intermediate: </Text>
-                                                            <Text size="2" color="gray">Someone who's been in the industry for a few years</Text>
+                                                            <Text size="2" color="gray">Someone who&apos;s been in the industry for a few years</Text>
                                                         </Box>
                                                     </Flex>
                                                 </Box>
