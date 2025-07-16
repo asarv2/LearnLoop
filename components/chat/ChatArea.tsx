@@ -17,8 +17,7 @@ import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon, SpeakerLoudIcon, Pencil1Ico
 import { Chat, Message } from '@/types';
 import Markdown from '@/components/chat/Markdown';
 import { createMessage } from '@/utils/mutations/messages/create-message';
-import { updateMessage } from '@/utils/mutations/messages/update-message';
-import { logError } from '@/utils/logger';
+import { logError, logInfo } from '@/utils/logger';
 import { getCheatingRealtimeSession } from '@/utils/ai/agents/cheating';
 import { getRegularRealtimeSession } from '@/utils/ai/agents/regular';
 import { RealtimeItem, RealtimeSession } from '@openai/agents/realtime';
@@ -69,51 +68,58 @@ export default function ChatArea({
     const sessionRef = useRef<RealtimeSession | null>(null);
     const hasSession = useRef(false);
     const processedIds = useRef(new Set<string>());
+    const pendingUserMessage = useRef<string>('');
+    const pendingAIMessage = useRef<string>('');
 
     // Stable handler reference
     const historyHandlerRef = useRef<(h: RealtimeItem[]) => void>(() => { });
+    const historyAddedRef = useRef<(h: RealtimeItem) => void>(() => { });
 
     const syncTranscriptToMessages = useCallback(async (content: string, role: 'user' | 'assistant') => {
-        // Guard against undefined chat
-        if (!chat?.id) {
-            logError('Chat not available for syncing transcript');
+        // Guard against undefined chat or empty content
+        if (!chat?.id || !content.trim()) {
+            logError('Chat not available or empty content for syncing transcript');
             return;
         }
 
         try {
             if (role === 'user') {
                 // Create user message
-                await createMessage({
+                const userMessage = await createMessage({
                     chat_id: chat.id,
-                    content: content,
+                    content: content.trim(),
                     role: 'user',
                     completed: true
                 });
-                setCurrentUserTranscript(''); // Clear user transcript
+                
+                // Clear user transcript and pending message
+                setCurrentUserTranscript('');
+                pendingUserMessage.current = '';
+                
+                // Invalidate queries to refresh the UI
+                queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
+                
+                logError('User message created:', userMessage);
             } else {
-                // Create or update assistant message
-                if (!currentMessageRef.current) {
-                    currentMessageRef.current = await createMessage({
-                        chat_id: chat.id,
-                        content: '',
-                        role: 'assistant',
-                        completed: false
-                    });
-                }
-
-                await updateMessage(currentMessageRef.current.id, {
-                    content: content,
-                    completed: true,
-                    completed_at: new Date().toISOString(),
+                // For assistant messages, create a new message each time
+                const assistantMessage = await createMessage({
+                    chat_id: chat.id,
+                    content: content.trim(),
+                    role: 'assistant',
+                    completed: true
                 });
 
-                currentMessageRef.current = null;
-                setCurrentAITranscript(''); // Clear AI transcript
+                // Clear AI transcript and pending message
+                setCurrentAITranscript('');
+                pendingAIMessage.current = '';
+                
+                // Invalidate queries to refresh the UI
+                queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
+                
+                logError('Assistant message created:', assistantMessage);
             }
         } catch (error) {
             logError('Error syncing transcript:', error);
-        } finally {
-            queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
         }
     }, [chat?.id, queryClient]);
 
@@ -128,20 +134,40 @@ export default function ChatArea({
             
             if (item.role === 'user') {
                 if (item.status === 'in_progress' && text) {
+                    // Update the current transcript for real-time display
                     setCurrentUserTranscript(text);
+                    pendingUserMessage.current = text;
                 } else if (item.status === 'completed' && text) {
+                    // Mark as processed and sync to database
                     processedIds.current.add(item.itemId);
-                    syncTranscriptToMessages(text, item.role);
+                    
+                    // Use the most recent transcript
+                    const finalText = text || pendingUserMessage.current;
+                    if (finalText.trim()) {
+                        await syncTranscriptToMessages(finalText, 'user');
+                    }
                 }
             } else if (item.role === 'assistant') {
                 if (item.status === 'in_progress' && text) {
+                    // Update the current transcript for real-time display
                     setCurrentAITranscript(text);
+                    pendingAIMessage.current = text;
                 } else if (item.status === 'completed' && text) {
+                    // Mark as processed and sync to database
                     processedIds.current.add(item.itemId);
-                    syncTranscriptToMessages(text, item.role);
+                    
+                    // Use the most recent transcript
+                    const finalText = text || pendingAIMessage.current;
+                    if (finalText.trim()) {
+                        await syncTranscriptToMessages(finalText, 'assistant');
+                    }
                 }
             }
         }
+    };
+
+    historyAddedRef.current = async (item: RealtimeItem) => {
+        logInfo('history_added', { item });
     };
 
     // Voice session setup
@@ -200,6 +226,8 @@ export default function ChatArea({
                 sessionRef.current = session;
                 setIsVoiceConnected(true);
                 setTransportReady(true);
+                
+                logError('Voice session connected successfully');
             } catch (e) {
                 logError('Voice session setup error:', e);
                 alert(`Voice mode error: ${e}. Please try again.`);
@@ -218,9 +246,14 @@ export default function ChatArea({
             hasSession.current = false;
             setIsVoiceConnected(false);
             setTransportReady(false);
+            // eslint-disable-next-line react-hooks/exhaustive-deps
             processedIds.current.clear();
+            // Clear any pending messages
+            pendingUserMessage.current = '';
+            pendingAIMessage.current = '';
+            currentMessageRef.current = null;
         };
-    }, [chat?.id, chat?.type, chat?.title, isVoiceMode, displayMessages]);
+    }, [chat, isVoiceMode, displayMessages]);
 
     // Create combined messages array for display
     const getCombinedMessages = () => {
@@ -257,6 +290,7 @@ export default function ChatArea({
         if (transportReady && sessionRef.current) {
             sessionRef.current.mute(false);
             setMicActive(true);
+            logError('Voice recording started');
         }
     };
 
@@ -264,6 +298,7 @@ export default function ChatArea({
         if (sessionRef.current) {
             sessionRef.current.mute(true);
             setMicActive(false);
+            logError('Voice recording stopped');
         }
     };
 
@@ -273,6 +308,10 @@ export default function ChatArea({
         setCurrentUserTranscript('');
         setCurrentAITranscript('');
         setCurrentMessage('');
+        // Clear pending messages
+        pendingUserMessage.current = '';
+        pendingAIMessage.current = '';
+        currentMessageRef.current = null;
     };
 
     // Early return if chat is not available
@@ -364,9 +403,6 @@ export default function ChatArea({
                                                             : message.content || ''
                                                     }
                                                 </Markdown>
-                                                {message.role === 'assistant' && !message.completed && message.content && (
-                                                    <span style={{ opacity: 0.7 }}>▊</span>
-                                                )}
                                             </Text>
                                             {message.completed !== false && (
                                                 <Text size="1" style={{ color: 'var(--gray-11)' }}>
