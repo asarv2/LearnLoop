@@ -1,10 +1,11 @@
 /**
  * ChatArea.tsx
- * Used for text to text interactions.
+ * Unified text and voice chat interface
  * @AshokSaravanan222 & @siladiea
  * 07/09/2025
  */
 
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Box,
     Flex,
@@ -12,9 +13,17 @@ import {
     Button,
     Card,
 } from '@radix-ui/themes';
-import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
+import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon, SpeakerLoudIcon, Pencil1Icon } from '@radix-ui/react-icons';
 import { Chat, Message } from '@/types';
 import Markdown from '@/components/chat/Markdown';
+import { createMessage } from '@/utils/mutations/messages/create-message';
+import { logError, logInfo } from '@/utils/logger';
+import { getCheatingRealtimeSession } from '@/utils/ai/agents/cheating';
+import { getRegularRealtimeSession } from '@/utils/ai/agents/regular';
+import { RealtimeItem, RealtimeSession } from '@openai/agents/realtime';
+import { generateConversationHistoryRealtime } from '@/utils/ai/chat/conversation-history';
+import { generateResumeHistoryRealtime } from '@/utils/ai/chat/resume-history';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface ChatAreaProps {
     displayMessages: Message[];
@@ -30,7 +39,299 @@ interface ChatAreaProps {
     chat: Chat;
 }
 
-export default function ChatArea({ displayMessages, isSendingMessage, isEndingInterview, isInterviewActive, currentMessage, setCurrentMessage, handleKeyPress, sendMessage, messagesEndRef, chat }: ChatAreaProps) {
+export default function ChatArea({ 
+    displayMessages, 
+    isSendingMessage, 
+    isEndingInterview, 
+    isInterviewActive, 
+    currentMessage, 
+    setCurrentMessage, 
+    handleKeyPress, 
+    sendMessage, 
+    messagesEndRef, 
+    chat
+}: ChatAreaProps) {
+    // Mode toggle state
+    const [isVoiceMode, setIsVoiceMode] = useState(false);
+    
+    // Voice-related state
+    const queryClient = useQueryClient();
+    const [currentUserTranscript, setCurrentUserTranscript] = useState('');
+    const [currentAITranscript, setCurrentAITranscript] = useState('');
+    const [micActive, setMicActive] = useState(false);
+    const [isVoiceConnected, setIsVoiceConnected] = useState(false);
+    const [transportReady, setTransportReady] = useState(false);
+
+    // Voice-related refs
+    const currentMessageRef = useRef<{ id: string } | null>(null);
+    const tokenPromiseRef = useRef<Promise<string> | null>(null);
+    const sessionRef = useRef<RealtimeSession | null>(null);
+    const hasSession = useRef(false);
+    const processedIds = useRef(new Set<string>());
+    const pendingUserMessage = useRef<string>('');
+    const pendingAIMessage = useRef<string>('');
+
+    // Stable handler reference
+    const historyHandlerRef = useRef<(h: RealtimeItem[]) => void>(() => { });
+    const historyAddedRef = useRef<(h: RealtimeItem) => void>(() => { });
+
+    const syncTranscriptToMessages = useCallback(async (content: string, role: 'user' | 'assistant') => {
+        // Guard against undefined chat or empty content
+        if (!chat?.id || !content.trim()) {
+            logError('Chat not available or empty content for syncing transcript');
+            return;
+        }
+
+        try {
+            if (role === 'user') {
+                // Create user message
+                const userMessage = await createMessage({
+                    chat_id: chat.id,
+                    content: content.trim(),
+                    role: 'user',
+                    completed: true
+                });
+                
+                // Clear user transcript and pending message
+                setCurrentUserTranscript('');
+                pendingUserMessage.current = '';
+                
+                // Invalidate queries to refresh the UI
+                queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
+                
+                logError('User message created:', userMessage);
+            } else {
+                // For assistant messages, create a new message each time
+                const assistantMessage = await createMessage({
+                    chat_id: chat.id,
+                    content: content.trim(),
+                    role: 'assistant',
+                    completed: true
+                });
+
+                // Clear AI transcript and pending message
+                setCurrentAITranscript('');
+                pendingAIMessage.current = '';
+                
+                // Invalidate queries to refresh the UI
+                queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
+                
+                logError('Assistant message created:', assistantMessage);
+            }
+        } catch (error) {
+            logError('Error syncing transcript:', error);
+        }
+    }, [chat?.id, queryClient]);
+
+    // Update the handler function
+    historyHandlerRef.current = async (history: RealtimeItem[]) => {
+        for (const item of history) {
+            if (item.type !== "message" || item.role === 'system') continue;
+            if (processedIds.current.has(item.itemId)) continue;
+            
+            const c = item.content[0];
+            const text = c && (c.type === "audio" || c.type === "input_audio") ? c.transcript : "";
+            
+            if (item.role === 'user') {
+                if (item.status === 'in_progress' && text) {
+                    // Update the current transcript for real-time display
+                    setCurrentUserTranscript(text);
+                    pendingUserMessage.current = text;
+                } else if (item.status === 'completed' && text) {
+                    // Mark as processed and sync to database
+                    processedIds.current.add(item.itemId);
+                    
+                    // Use the most recent transcript
+                    const finalText = text || pendingUserMessage.current;
+                    if (finalText.trim()) {
+                        await syncTranscriptToMessages(finalText, 'user');
+                    }
+                }
+            } else if (item.role === 'assistant') {
+                if (item.status === 'in_progress' && text) {
+                    // Update the current transcript for real-time display
+                    setCurrentAITranscript(text);
+                    pendingAIMessage.current = text;
+                } else if (item.status === 'completed' && text) {
+                    // Mark as processed and sync to database
+                    processedIds.current.add(item.itemId);
+                    
+                    // Use the most recent transcript
+                    const finalText = text || pendingAIMessage.current;
+                    if (finalText.trim()) {
+                        await syncTranscriptToMessages(finalText, 'assistant');
+                    }
+                }
+            }
+        }
+    };
+
+    historyAddedRef.current = async (item: RealtimeItem) => {
+        logInfo('history_added', { item });
+    };
+
+    // Voice session setup
+    useEffect(() => {
+        // Guard against undefined chat or non-voice mode
+        if (!isVoiceMode || !chat?.id) return;
+        
+        // Guard against multiple session creation
+        if (hasSession.current) return;
+        hasSession.current = true;
+
+        let mounted = true;
+
+        (async () => {
+            try {
+                // Build the session
+                const session = chat.type === 'cheating'
+                    ? await getCheatingRealtimeSession(chat.title, chat.id)
+                    : await getRegularRealtimeSession(chat.title, chat.id);
+
+                // Seed history
+                const initHistory = [
+                    await generateResumeHistoryRealtime(chat),
+                    ...generateConversationHistoryRealtime(displayMessages),
+                ];
+
+                // Get token
+                const formData = new FormData();
+                formData.append('chatId', chat.id);
+                formData.append('chatTitle', chat.title);
+                if (!tokenPromiseRef.current) {
+                    tokenPromiseRef.current = fetch('/api/chat/audio', { method: 'POST', body: formData })
+                        .then(r => r.json())
+                        .then(r => r.api_key);
+                }
+                const api_key = await tokenPromiseRef.current;
+
+                await session.connect({ apiKey: api_key });
+                session.updateHistory(initHistory);
+
+                // Start session muted
+                session.mute(true);
+
+                // Mark seeded IDs
+                initHistory.forEach(item => processedIds.current.add(item.itemId));
+
+                if (!mounted) return;
+
+                // Set up handlers
+                session.on('history_updated', (h) => historyHandlerRef.current(h));
+                session.on('error', (e) => {
+                    logError('Voice session error:', e);
+                    alert(`Voice mode error: ${e.error}. Please try again.`);
+                });
+
+                sessionRef.current = session;
+                setIsVoiceConnected(true);
+                setTransportReady(true);
+                
+                logError('Voice session connected successfully');
+            } catch (e) {
+                logError('Voice session setup error:', e);
+                alert(`Voice mode error: ${e}. Please try again.`);
+            }
+        })().catch(err => {
+            logError('Voice session setup error:', err);
+            alert(`Voice mode error: ${err}. Please try again.`);
+        });
+
+        return () => {
+            mounted = false;
+            if (sessionRef.current) {
+                sessionRef.current.close();
+                sessionRef.current = null;
+            }
+            hasSession.current = false;
+            setIsVoiceConnected(false);
+            setTransportReady(false);
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+            processedIds.current.clear();
+            // Clear any pending messages
+            pendingUserMessage.current = '';
+            pendingAIMessage.current = '';
+            currentMessageRef.current = null;
+        };
+    }, [chat, isVoiceMode, displayMessages]);
+
+    // Create combined messages array for display
+    const getCombinedMessages = () => {
+        const messages = [...displayMessages];
+        
+        // Add current user transcript as temporary message
+        if (currentUserTranscript && isVoiceMode) {
+            messages.push({
+                id: 'temp-user',
+                content: currentUserTranscript,
+                role: 'user',
+                created_at: new Date().toISOString(),
+                completed: false,
+                chat_id: chat?.id || ''
+            } as Message);
+        }
+        
+        // Add current AI transcript as temporary message
+        if (currentAITranscript && isVoiceMode) {
+            messages.push({
+                id: 'temp-ai',
+                content: currentAITranscript,
+                role: 'assistant',
+                created_at: new Date().toISOString(),
+                completed: false,
+                chat_id: chat?.id || ''
+            } as Message);
+        }
+        
+        return messages;
+    };
+
+    const handleVoiceStart = () => {
+        if (transportReady && sessionRef.current) {
+            sessionRef.current.mute(false);
+            setMicActive(true);
+            logError('Voice recording started');
+        }
+    };
+
+    const handleVoiceStop = () => {
+        if (sessionRef.current) {
+            sessionRef.current.mute(true);
+            setMicActive(false);
+            logError('Voice recording stopped');
+        }
+    };
+
+    const handleModeToggle = () => {
+        setIsVoiceMode(!isVoiceMode);
+        // Clear any current transcripts when switching modes
+        setCurrentUserTranscript('');
+        setCurrentAITranscript('');
+        setCurrentMessage('');
+        // Clear pending messages
+        pendingUserMessage.current = '';
+        pendingAIMessage.current = '';
+        currentMessageRef.current = null;
+    };
+
+    // Early return if chat is not available
+    if (!chat) {
+        return (
+            <Box style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'white',
+            }}>
+                <Text size="3" style={{ color: 'var(--gray-11)' }}>
+                    Loading chat...
+                </Text>
+            </Box>
+        );
+    }
+
     return (
         <Box style={{
             flex: 1,
@@ -47,7 +348,7 @@ export default function ChatArea({ displayMessages, isSendingMessage, isEndingIn
                 background: 'white'
             }}>
                 <Flex direction="column" gap="4">
-                    {displayMessages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).map((message) => (
+                    {getCombinedMessages().sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).map((message) => (
                         <Box key={message.id}>
                             <Flex
                                 direction={message.role === 'user' ? 'row-reverse' : 'row'}
@@ -64,7 +365,8 @@ export default function ChatArea({ displayMessages, isSendingMessage, isEndingIn
                                             : 'var(--green-3)',
                                         border: `1px solid ${message.role === 'user'
                                             ? 'var(--blue-6)'
-                                            : 'var(--green-6)'}`
+                                            : 'var(--green-6)'}`,
+                                        opacity: message.completed === false ? 0.7 : 1
                                     }}
                                 >
                                     {message.role === 'user' ? (
@@ -84,7 +386,8 @@ export default function ChatArea({ displayMessages, isSendingMessage, isEndingIn
                                                 : 'var(--gray-2)',
                                             border: `1px solid ${message.role === 'user'
                                                 ? 'var(--blue-7)'
-                                                : 'var(--gray-7)'}`
+                                                : 'var(--gray-7)'}`,
+                                            opacity: message.completed === false ? 0.8 : 1
                                         }}
                                     >
                                         <Flex direction="column" gap="2">
@@ -100,13 +403,12 @@ export default function ChatArea({ displayMessages, isSendingMessage, isEndingIn
                                                             : message.content || ''
                                                     }
                                                 </Markdown>
-                                                {message.role === 'assistant' && !message.completed && message.content && (
-                                                    <span style={{ opacity: 0.7 }}>▊</span>
-                                                )}
                                             </Text>
-                                            <Text size="1" style={{ color: 'var(--gray-11)' }}>
-                                                {new Date(message.created_at).toLocaleTimeString()}
-                                            </Text>
+                                            {message.completed !== false && (
+                                                <Text size="1" style={{ color: 'var(--gray-11)' }}>
+                                                    {new Date(message.created_at).toLocaleTimeString()}
+                                                </Text>
+                                            )}
                                         </Flex>
                                     </Card>
                                 </Box>
@@ -126,55 +428,162 @@ export default function ChatArea({ displayMessages, isSendingMessage, isEndingIn
                     flexShrink: 0
                 }}>
                     <Box style={{ position: 'relative', maxWidth: '800px', margin: '0 auto' }}>
-                        <input
-                            type="text"
-                            placeholder="Type your interview question..."
-                            value={currentMessage}
-                            onChange={(e) => setCurrentMessage(e.target.value)}
-                            onKeyDown={handleKeyPress}
-                            disabled={isSendingMessage}
-                            style={{
-                                width: '100%',
-                                padding: '12px 50px 12px 16px',
-                                borderRadius: '24px',
-                                border: '1px solid var(--gray-6)',
-                                fontSize: '16px',
-                                outline: 'none',
-                                background: 'white',
-                                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-                                transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
-                            }}
-                            onFocus={(e) => {
-                                e.target.style.borderColor = 'var(--blue-7)';
-                                e.target.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(59, 130, 246, 0.1)';
-                            }}
-                            onBlur={(e) => {
-                                e.target.style.borderColor = 'var(--gray-6)';
-                                e.target.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
-                            }}
-                        />
-                        <Button
-                            onClick={sendMessage}
-                            disabled={!currentMessage.trim() || isSendingMessage}
-                            size="1"
-                            style={{
-                                position: 'absolute',
-                                right: '6px',
-                                top: '50%',
-                                transform: 'translateY(-50%)',
-                                borderRadius: '20px',
-                                background: currentMessage.trim() && !isSendingMessage ? 'var(--blue-9)' : 'var(--gray-6)',
-                                border: 'none',
-                                width: '36px',
-                                height: '36px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                cursor: currentMessage.trim() && !isSendingMessage ? 'pointer' : 'not-allowed'
-                            }}
-                        >
-                            <PaperPlaneIcon width="16" height="16" />
-                        </Button>
+                        <Flex direction="column" gap="3">
+                            {/* Mode Toggle */}
+                            <Flex justify="center" gap="2">
+                                <Button
+                                    onClick={handleModeToggle}
+                                    variant={isVoiceMode ? "outline" : "solid"}
+                                    size="2"
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        padding: '0.5rem 1rem',
+                                        borderRadius: '20px',
+                                        background: !isVoiceMode ? 'var(--blue-9)' : 'transparent',
+                                        color: !isVoiceMode ? 'white' : 'var(--blue-9)',
+                                        border: `1px solid var(--blue-9)`,
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <Pencil1Icon width="16" height="16" />
+                                    Text
+                                </Button>
+                                <Button
+                                    onClick={handleModeToggle}
+                                    variant={!isVoiceMode ? "outline" : "solid"}
+                                    size="2"
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        padding: '0.5rem 1rem',
+                                        borderRadius: '20px',
+                                        background: isVoiceMode ? 'var(--green-9)' : 'transparent',
+                                        color: isVoiceMode ? 'white' : 'var(--green-9)',
+                                        border: `1px solid var(--green-9)`,
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <SpeakerLoudIcon width="16" height="16" />
+                                    Voice
+                                </Button>
+                            </Flex>
+
+                            {isVoiceMode ? (
+                                // Voice Input
+                                <Flex direction="column" gap="3" align="center">
+                                    {/* Connection Status */}
+                                    {isVoiceConnected && (
+                                        <Flex align="center" gap="2" style={{
+                                            padding: '0.5rem 1rem',
+                                            borderRadius: '20px',
+                                            background: 'rgba(34, 197, 94, 0.1)',
+                                            border: '1px solid rgba(34, 197, 94, 0.3)',
+                                        }}>
+                                            <div style={{
+                                                width: '8px',
+                                                height: '8px',
+                                                borderRadius: '50%',
+                                                background: '#22c55e',
+                                                animation: 'pulse 2s ease-in-out infinite'
+                                            }} />
+                                            <Text size="2" weight="medium" style={{ color: '#22c55e' }}>
+                                                Voice Ready
+                                            </Text>
+                                        </Flex>
+                                    )}
+
+                                    {/* Voice Button */}
+                                    <Button
+                                        onMouseDown={handleVoiceStart}
+                                        onMouseUp={handleVoiceStop}
+                                        onMouseLeave={handleVoiceStop}
+                                        disabled={!isVoiceConnected || !transportReady}
+                                        size="3"
+                                        style={{
+                                            padding: '1rem 2rem',
+                                            borderRadius: '30px',
+                                            background: micActive 
+                                                ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
+                                                : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                            color: 'white',
+                                            border: 'none',
+                                            cursor: isVoiceConnected && transportReady ? 'pointer' : 'not-allowed',
+                                            fontSize: '1rem',
+                                            fontWeight: '600',
+                                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                            boxShadow: micActive 
+                                                ? '0 8px 30px rgba(239, 68, 68, 0.4)' 
+                                                : '0 8px 30px rgba(99, 102, 241, 0.3)',
+                                            transform: micActive ? 'scale(1.05)' : 'scale(1)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem'
+                                        }}
+                                    >
+                                        <span style={{ fontSize: '1.2rem' }}>
+                                            {micActive ? '🔴' : '🎤'}
+                                        </span>
+                                        {micActive ? 'Recording...' : 'Hold to Speak'}
+                                    </Button>
+                                </Flex>
+                            ) : (
+                                // Text Input
+                                <Box style={{ position: 'relative' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="Type your interview question..."
+                                        value={currentMessage}
+                                        onChange={(e) => setCurrentMessage(e.target.value)}
+                                        onKeyDown={handleKeyPress}
+                                        disabled={isSendingMessage}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px 50px 12px 16px',
+                                            borderRadius: '24px',
+                                            border: '1px solid var(--gray-6)',
+                                            fontSize: '16px',
+                                            outline: 'none',
+                                            background: 'white',
+                                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                                            transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
+                                        }}
+                                        onFocus={(e) => {
+                                            e.target.style.borderColor = 'var(--blue-7)';
+                                            e.target.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(59, 130, 246, 0.1)';
+                                        }}
+                                        onBlur={(e) => {
+                                            e.target.style.borderColor = 'var(--gray-6)';
+                                            e.target.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
+                                        }}
+                                    />
+                                    <Button
+                                        onClick={sendMessage}
+                                        disabled={!currentMessage.trim() || isSendingMessage}
+                                        size="1"
+                                        style={{
+                                            position: 'absolute',
+                                            right: '6px',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                            borderRadius: '20px',
+                                            background: currentMessage.trim() && !isSendingMessage ? 'var(--blue-9)' : 'var(--gray-6)',
+                                            border: 'none',
+                                            width: '36px',
+                                            height: '36px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            cursor: currentMessage.trim() && !isSendingMessage ? 'pointer' : 'not-allowed'
+                                        }}
+                                    >
+                                        <PaperPlaneIcon width="16" height="16" />
+                                    </Button>
+                                </Box>
+                            )}
+                        </Flex>
                     </Box>
                 </Box>
             )}
@@ -192,6 +601,13 @@ export default function ChatArea({ displayMessages, isSendingMessage, isEndingIn
                     </Card>
                 </Box>
             )}
+
+            <style jsx>{`
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.5; }
+                }
+            `}</style>
         </Box>
-    )
+    );
 }

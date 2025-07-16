@@ -6,6 +6,8 @@ import type { Tables } from "@/database.types";
 // ================ TABLE TYPES ================
 // =============================================
 
+// --- ASSESSMENTS ---
+export type Assessment = Tables<'assessments'>;
 // --- CHATS ---
 export type Chat = Tables<'chats'>;
 // --- FEEDBACK ---
@@ -30,7 +32,7 @@ export type MessageRole = "user" | "assistant";
 // =============================================
 
 // Union type of all table names
-export type TableName = 'chats' | 'feedback' | 'logs' | 'messages' | 'resumes';
+export type TableName = 'assessments' | 'chats' | 'feedback' | 'logs' | 'messages' | 'resumes';
 
 // Union type of all entity types
-export type Entity = Chat | Feedback | Log | Message | Resume;
+export type Entity = Assessment | Chat | Feedback | Log | Message | Resume;
