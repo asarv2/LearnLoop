@@ -1,5 +1,13 @@
 //Questions for the assessment
-import { AssessmentQuestion } from "@/types";
+
+interface AssessmentQuestion {
+  id: string;
+  type: string;
+  question: string;
+  options?: string[];
+  context?: string;
+}
+
 
 export const ASSESSMENT_QUESTIONS: AssessmentQuestion[] = [
 
