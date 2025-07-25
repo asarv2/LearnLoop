@@ -82,7 +82,7 @@ export const useCreateMessage = () => {
         queryClient.setQueryData<Message[]>(['messages', context.chatId], (old) => {
           if (!old) return [savedMessage];
           return old.map((message) => 
-            message.id === context?.optimisticId ? savedMessage : message
+            message.id === context?.optimisticId ? { ...savedMessage, created_at: message.created_at } : message
           );
         });
       }
