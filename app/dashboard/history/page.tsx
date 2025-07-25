@@ -16,6 +16,7 @@ import {
   Statistic,
   Empty
 } from 'antd';
+import type { Dayjs } from 'dayjs';
 import {
   PlayCircleOutlined,
   SearchOutlined,
@@ -38,7 +39,7 @@ export default function HistoryPage() {
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [dateRange, setDateRange] = useState<[any, any] | null>(null);
+  const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
 
   const { data: sessions, isLoading } = useQuery({
     queryKey: ['chats'],
@@ -46,9 +47,11 @@ export default function HistoryPage() {
   });
 
   // Sort sessions by newest first
-  const sortedSessions = sessions?.sort((a, b) => 
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  ) || [];
+  const sortedSessions = useMemo(() => 
+    sessions?.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    ) || [], [sessions]
+  );
 
   // Filter sessions based on search and filters
   const filteredSessions = useMemo(() => {

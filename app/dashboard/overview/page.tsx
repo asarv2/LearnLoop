@@ -37,9 +37,11 @@ export default function OverviewPage() {
   });
 
   // Sort sessions by newest first
-  const sortedSessions = sessions?.sort((a, b) => 
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  ) || [];
+  const sortedSessions = useMemo(() => 
+    sessions?.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    ) || [], [sessions]
+  );
 
   // Calculate progress metrics
   const progressMetrics = useMemo(() => {
@@ -109,16 +111,6 @@ export default function OverviewPage() {
       return <Tag color="success" icon={<CheckCircleOutlined />}>Completed</Tag>;
     }
     return <Tag color="processing" icon={<ClockCircleOutlined />}>In Progress</Tag>;
-  };
-
-  const getCandidateTypeTag = (type: string) => {
-    const colorMap: Record<string, string> = {
-      'regular': 'blue',
-      'ai-assisted': 'orange',
-      'cheating': 'red'
-    };
-    
-    return <Tag color={colorMap[type] || 'default'}>{type.replace('-', ' ').toUpperCase()}</Tag>;
   };
 
   if (isLoading) {

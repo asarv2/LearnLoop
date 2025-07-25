@@ -105,7 +105,7 @@ export default function ChatArea({
         } finally {
             setIsLoadingHints(false);
         }
-    }, [lastAIResponse, displayMessages, chat?.type]);
+    }, [lastAIResponse, displayMessages, chat?.type, chat?.title]);
 
     // Handle hints button click
     const handleHintsClick = useCallback(async () => {
@@ -180,7 +180,7 @@ export default function ChatArea({
         } catch (error) {
             logError('Error syncing transcript:', error);
         }
-    }, [chat?.id, queryClient]);
+    }, [chat?.id, queryClient, lastAIResponse]);
 
 
     
