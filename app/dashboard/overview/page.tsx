@@ -85,7 +85,7 @@ export default function OverviewPage() {
     const avgDuration = completedSessions.length > 0 
       ? completedSessions.reduce((acc, session) => {
         const start = new Date(session.created_at);
-        const end = new Date(session.completed_at);
+        const end = session.completed_at ? new Date(session.completed_at) : start;
         return acc + (end.getTime() - start.getTime());
       }, 0) / completedSessions.length / (1000 * 60)
       : 0;

@@ -249,7 +249,7 @@ export default function AdvicePage() {
                                       .filter(s => s.completed_at)
                                       .reduce((acc, s) => {
                                         const start = new Date(s.created_at);
-                                        const end = new Date(s.completed_at);
+                                        const end = s.completed_at ? new Date(s.completed_at) : start;
                                         return acc + (end.getTime() - start.getTime());
                                       }, 0) / simulationSessions.filter(s => s.completed_at).length / (1000 * 60)
                                   )
