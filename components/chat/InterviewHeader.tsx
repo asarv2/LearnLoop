@@ -56,14 +56,6 @@ export default function InterviewHeader({
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     
-    console.log('Timer effect debug:', { 
-      isInterviewActive, 
-      interviewStartTimeIso,
-      interviewStartTime: interviewStartTime?.toISOString(), 
-      completedAt: completedAt?.toISOString(),
-      elapsedTime 
-    });
-    
     if (interviewStartTime) {
       if (isInterviewActive && !completedAt) {
         // Active interview - count up
@@ -74,7 +66,6 @@ export default function InterviewHeader({
           const now = new Date();
           const diffInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
           const elapsed = Math.max(0, diffInSeconds);
-          console.log('Timer tick:', { now: now.toISOString(), startTime: startTime.toISOString(), diffInSeconds, elapsed });
           setElapsedTime(elapsed);
         };
         
@@ -89,7 +80,6 @@ export default function InterviewHeader({
         const endTime = completedAt;
         const diffInSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
         const elapsed = Math.max(0, diffInSeconds);
-        console.log('Completed interview duration:', { startTime: startTime.toISOString(), endTime: endTime.toISOString(), diffInSeconds, elapsed });
         setElapsedTime(elapsed);
       }
     } else {

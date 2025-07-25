@@ -27,7 +27,6 @@ import {
   DeleteOutlined,
   SaveOutlined
 } from '@ant-design/icons';
-import { Json } from '@/database.types';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -35,13 +34,12 @@ export default function SettingsPage() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 
-  const handleSave = async (values: Json) => {
+  const handleSave = async () => {
     setLoading(true);
     try {
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1000));
       message.success('Settings saved successfully');
-      console.log('Settings saved:', values);
     } catch {
       message.error('Failed to save settings');
     } finally {
