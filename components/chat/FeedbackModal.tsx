@@ -6,7 +6,8 @@ import {
   Flex, 
   Heading, 
   Text, 
-  Button
+  Button,
+  Badge
 } from '@radix-ui/themes';
 import * as Dialog from '@radix-ui/react-dialog';
 import { 
@@ -15,20 +16,25 @@ import {
   ChevronRightIcon,
   DotFilledIcon
 } from '@radix-ui/react-icons';
-import { Feedback } from '@/types';
+import { Feedback, Chat } from '@/types';
+import ScoreDisplay from './ScoreDisplay';
 
 interface FeedbackModalProps {
   isOpen: boolean;
   onClose: () => void;
   feedback: Feedback | null;
   candidateName: string;
+  interviewScore?: any;
+  chat?: Chat | null;
 }
 
 export default function FeedbackModal({
   isOpen,
   onClose,
   feedback,
-  candidateName
+  candidateName,
+  interviewScore,
+  chat
 }: FeedbackModalProps) {
   const [currentPage, setCurrentPage] = useState(0);
 
@@ -72,7 +78,7 @@ export default function FeedbackModal({
                 </Heading>
               </Dialog.Title>
               <Text size="3" style={{ color: 'var(--gray-11)', lineHeight: '1.6' }}>
-                Feedback for {candidateName} is not available yet. Please complete the interview first to generate feedback.
+                Feedback for {candidateName} is not available yet. Please complete the {chat?.title?.startsWith('Offboarding:') ? 'offboarding session' : 'interview'} first to generate feedback.
               </Text>
               <Dialog.Close asChild>
                 <Button variant="soft" size="3">
@@ -97,7 +103,18 @@ export default function FeedbackModal({
     );
   }
 
+  // Determine if this is offboarding training
+  const isOffboardingTraining = chat?.title?.startsWith('Offboarding:');
+
   const pages = [
+    {
+      title: "Performance Score",
+      icon: "📊",
+      color: "blue",
+      content: (
+        <ScoreDisplay score={interviewScore} candidateName={candidateName} chat={chat} />
+      )
+    },
     {
       title: "Strengths",
       icon: "✓",
@@ -247,8 +264,12 @@ export default function FeedbackModal({
           </Flex>
         </Box>
       )
-    },
-    {
+    }
+  ];
+
+  // Only add flags section for interview training
+  if (!isOffboardingTraining) {
+    pages.push({
       title: "Flags to Watch Out For",
       icon: "🚩",
       color: "purple",
@@ -411,8 +432,8 @@ export default function FeedbackModal({
           </Flex>
         </Box>
       )
-    }
-  ];
+    });
+  }
 
   const nextPage = () => {
     setCurrentPage((prev) => (prev + 1) % pages.length);
@@ -464,12 +485,23 @@ export default function FeedbackModal({
               <Flex direction="column" gap="1">
                 <Dialog.Title asChild>
                   <Heading size="4" weight="medium" style={{ color: 'var(--gray-12)' }}>
-                    Interview Feedback
+                    {chat?.title?.startsWith('Offboarding:') ? 'Offboarding Feedback' : 'Interview Feedback'}
                   </Heading>
                 </Dialog.Title>
-                <Text size="2" style={{ color: 'var(--gray-11)' }}>
-                  {candidateName}
-                </Text>
+                <Flex direction="column" align="center" gap="2">
+                  <Text size="2" style={{ color: 'var(--gray-11)' }}>
+                    {chat?.title?.startsWith('Offboarding:') ? 'Employee' : 'Candidate'}: {candidateName}
+                  </Text>
+                  {chat && !chat.title?.startsWith('Offboarding:') && (
+                    <Badge 
+                      size="1" 
+                      variant="soft" 
+                      color={chat.type === 'cheating' ? 'red' : 'blue'}
+                    >
+                      {chat.type === 'cheating' ? 'Dishonest Candidate' : 'Regular Candidate'}
+                    </Badge>
+                  )}
+                </Flex>
               </Flex>
               <Dialog.Close asChild>
                 <Button 

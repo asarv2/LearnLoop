@@ -59,6 +59,12 @@ export default function InterviewSimulation({
     queryFn: () => getFeedbackByChat(chatId)
   });
 
+  const { data: interviewScore } = useQuery({
+    queryKey: ['score', chatId],
+    queryFn: () => import('@/utils/queries/scores/get-interview-score').then(m => m.getInterviewScore(chatId)),
+    enabled: !!chatId
+  });
+
   // Determine if interview is active based on chat completion status
   const isInterviewActive = chat ? !chat.completed : true;
 
@@ -221,13 +227,16 @@ export default function InterviewSimulation({
       const data = await response.json();
 
       if (data.success) {
-        // Invalidate both chat and feedback queries to get the updated data
+        // Invalidate chat, feedback, and score queries to get the updated data
         await Promise.all([
           queryClient.invalidateQueries({
             queryKey: ['chat', chatId]
           }),
           queryClient.invalidateQueries({
             queryKey: ['feedback', chatId]
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ['score', chatId]
           })
         ]);
         setShowAssessment(false);
@@ -302,6 +311,8 @@ export default function InterviewSimulation({
         onComplete={handleAssessmentComplete}
         candidateName={chat?.name || 'John Doe'}
         isSubmitting={isSubmittingAssessment}
+        messages={messages}
+        chat={chat!}
       />
 
       {/* Feedback Modal */}
@@ -310,6 +321,8 @@ export default function InterviewSimulation({
         onClose={() => setShowFeedback(false)}
         feedback={feedback?.[0] || null}
         candidateName={chat?.name || 'John Doe'}
+        interviewScore={interviewScore}
+        chat={chat}
       />
     </Box>
   );

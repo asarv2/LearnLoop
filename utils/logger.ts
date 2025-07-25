@@ -2,6 +2,8 @@
 "use server";
 
 import { createLog } from "@/utils/mutations/logs/create-log";
+import { cookies } from "next/headers";
+import supabaseServer from "@/utils/supabase/supabase-server";
 
 // Server-only PostgreSQL logger, log to console in non production
 const isProduction = process.env.NODE_ENV === "production";
@@ -13,11 +15,22 @@ async function insertLogToDatabase(
   context: Record<string, unknown>
 ): Promise<void> {
   try {
+    // Try to get current user, but don't fail if not available
+    let userId: string | null = null;
+    try {
+      const supabase = await supabaseServer(cookies());
+      const { data: { user } } = await supabase.auth.getUser();
+      userId = user?.id || null;
+    } catch {
+      // Ignore auth errors - logs can be created without user context
+    }
+
     // convert context to json
     const contextJson = JSON.stringify(context);
     await createLog({
       level,
       message: message + " " + contextJson,
+      user_id: userId,
     });
   } catch (error) {
     throw new Error(`Failed to insert log to database: ${error}`);

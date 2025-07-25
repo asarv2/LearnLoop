@@ -57,6 +57,7 @@ export type Database = {
           title: string
           trace_id: string | null
           type: Database["public"]["Enums"]["interview_type"]
+          user_id: string | null
           voice: string
         }
         Insert: {
@@ -72,6 +73,7 @@ export type Database = {
           title: string
           trace_id?: string | null
           type?: Database["public"]["Enums"]["interview_type"]
+          user_id?: string | null
           voice?: string
         }
         Update: {
@@ -87,6 +89,7 @@ export type Database = {
           title?: string
           trace_id?: string | null
           type?: Database["public"]["Enums"]["interview_type"]
+          user_id?: string | null
           voice?: string
         }
         Relationships: [
@@ -137,24 +140,89 @@ export type Database = {
           },
         ]
       }
+      interview_scores: {
+        Row: {
+          assessment_thoughtfulness: number
+          category_feedback: Json
+          chat_id: string
+          communication_rapport: number
+          created_at: string
+          followup_skills: number
+          id: string
+          improvement_areas: string[] | null
+          interview_conduct: number
+          overall_feedback: string | null
+          overall_score: number
+          professional_judgment: number
+          question_quality: number
+          strengths: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          assessment_thoughtfulness: number
+          category_feedback?: Json
+          chat_id: string
+          communication_rapport: number
+          created_at?: string
+          followup_skills: number
+          id?: string
+          improvement_areas?: string[] | null
+          interview_conduct: number
+          overall_feedback?: string | null
+          overall_score: number
+          professional_judgment: number
+          question_quality: number
+          strengths?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          assessment_thoughtfulness?: number
+          category_feedback?: Json
+          chat_id?: string
+          communication_rapport?: number
+          created_at?: string
+          followup_skills?: number
+          id?: string
+          improvement_areas?: string[] | null
+          interview_conduct?: number
+          overall_feedback?: string | null
+          overall_score?: number
+          professional_judgment?: number
+          question_quality?: number
+          strengths?: string[] | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interview_scores_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       logs: {
         Row: {
           created_at: string
           id: string
           level: Database["public"]["Enums"]["log_level"]
           message: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
           id?: string
           level: Database["public"]["Enums"]["log_level"]
           message: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
           id?: string
           level?: Database["public"]["Enums"]["log_level"]
           message?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -202,18 +270,21 @@ export type Database = {
           created_at: string
           google_file_id: string | null
           id: string
+          user_id: string | null
         }
         Insert: {
           content?: string | null
           created_at?: string
           google_file_id?: string | null
           id?: string
+          user_id?: string | null
         }
         Update: {
           content?: string | null
           created_at?: string
           google_file_id?: string | null
           id?: string
+          user_id?: string | null
         }
         Relationships: []
       }

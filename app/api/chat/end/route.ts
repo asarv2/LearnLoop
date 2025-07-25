@@ -9,8 +9,18 @@ import { generateResumeHistory } from "@/utils/ai/chat/resume-history";
 import { getChat } from "@/utils/queries/chats/get-chat";
 import { generateFeedbackHistory } from "@/utils/ai/chat/feedback-history";
 import { updateChat } from "@/utils/mutations/chats/update-chat";
+import { cookies } from "next/headers";
+import supabaseServer from "@/utils/supabase/supabase-server";
 
 export async function POST(request: NextRequest) {
+    // Check authentication
+    const supabase = await supabaseServer(cookies());
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const formData = await request.formData();
     const chatId = formData.get("chatId") as string;
     const chat = await getChat(chatId);
@@ -27,7 +37,10 @@ export async function POST(request: NextRequest) {
         feedbackHistory,
     ];  
 
-    const agent = await getFeedbackAgent(chat.type === 'cheating');
+    // Determine training type and cheating flag
+    const isOffboardingTraining = chat.title.startsWith('Offboarding:');
+    const trainingType = isOffboardingTraining ? 'offboarding' : 'interview';
+    const agent = await getFeedbackAgent(trainingType, chat.type === 'cheating');
 
     let runner: Runner;
     if (chat.trace_id) {
