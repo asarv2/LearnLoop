@@ -16,14 +16,23 @@ import {
 import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon, SpeakerLoudIcon, Pencil1Icon, InfoCircledIcon } from '@radix-ui/react-icons';
 import { Chat, Message } from '@/types';
 import Markdown from '@/components/chat/Markdown';
-import { createMessage } from '@/utils/mutations/messages/create-message';
+
 import { logError } from '@/utils/logger';
 import { getCheatingRealtimeSession } from '@/utils/ai/agents/cheating';
 import { getRegularRealtimeSession } from '@/utils/ai/agents/regular';
 import { RealtimeSession } from '@openai/agents/realtime';
 import { generateConversationHistoryRealtime } from '@/utils/ai/chat/conversation-history';
 import { generateResumeHistoryRealtime } from '@/utils/ai/chat/resume-history';
-import { useQueryClient } from '@tanstack/react-query';
+
+import { useCreateMessage } from '@/utils/react-query/mutations/useCreateMessage';
+
+// Optimistic message type for voice chat
+type OptimisticUserMsg = {
+    id: string;          // itemId from OpenAI transport
+    content: string;
+    status: 'recording' | 'transcribing' | 'done';
+    created_at: string;
+};
 
 interface ChatAreaProps {
     displayMessages: Message[];
@@ -55,12 +64,14 @@ export default function ChatArea({
     const [isVoiceMode, setIsVoiceMode] = useState(false);
 
     // Voice-related state
-    const queryClient = useQueryClient();
-    const [currentUserTranscript, setCurrentUserTranscript] = useState('');
+    const createMessageMutation = useCreateMessage();
     const [currentAITranscript, setCurrentAITranscript] = useState('');
     const [micActive, setMicActive] = useState(false);
     const [isVoiceConnected, setIsVoiceConnected] = useState(false);
     const [transportReady, setTransportReady] = useState(false);
+
+    // Optimistic updates for voice chat
+    const [optimisticUserMsgs, setOptimisticUserMsgs] = useState<OptimisticUserMsg[]>([]);
 
     // Hints-related state
     const [showHints, setShowHints] = useState(false);
@@ -76,6 +87,28 @@ export default function ChatArea({
 
     const pendingUserMessage = useRef<string>('');
     const pendingAIMessage = useRef<string>('');
+
+    // Helper function for optimistic user message updates
+    const upsertUserMsg = useCallback((id: string, partial: Partial<OptimisticUserMsg> | ((prev: OptimisticUserMsg | undefined) => Partial<OptimisticUserMsg>)) => {
+        setOptimisticUserMsgs(prev => {
+            const i = prev.findIndex(m => m.id === id);
+            const currentMsg = i !== -1 ? prev[i] : undefined;
+            const updates = typeof partial === 'function' ? partial(currentMsg) : partial;
+            
+            if (i === -1) {
+                return [...prev, { 
+                    id, 
+                    content: '', 
+                    status: 'recording', 
+                    created_at: new Date().toISOString(), 
+                    ...updates 
+                }];
+            }
+            const next = [...prev];
+            next[i] = { ...next[i], ...updates };
+            return next;
+        });
+    }, []);
 
     // Generate hints function
     const generateHints = useCallback(async () => {
@@ -121,8 +154,6 @@ export default function ChatArea({
         originalSendMessage();
     }, [originalSendMessage]);
 
-
-
     const syncTranscriptToMessages = useCallback(async (content: string, role: 'user' | 'assistant') => {
         // Guard against undefined chat or empty content
         if (!chat?.id || !content.trim()) {
@@ -132,28 +163,24 @@ export default function ChatArea({
 
         try {
             if (role === 'user') {
-                // Create user message
-                const userMessage = await createMessage({
+                // Create user message using optimistic mutation
+                await createMessageMutation.mutateAsync({
                     chat_id: chat.id,
                     content: content.trim(),
                     role: 'user',
                     completed: true
                 });
 
-                // Clear user transcript and pending message
-                setCurrentUserTranscript('');
+                // Clear pending message
                 pendingUserMessage.current = '';
 
                 // Close hints popup when user sends a message
                 setShowHints(false);
 
-                // Invalidate queries to refresh the UI
-                queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
-
-                logError('User message created:', userMessage);
+                logError('User message created optimistically');
             } else {
                 // For assistant messages, create a new message each time
-                const assistantMessage = await createMessage({
+                await createMessageMutation.mutateAsync({
                     chat_id: chat.id,
                     content: content.trim(),
                     role: 'assistant',
@@ -172,18 +199,12 @@ export default function ChatArea({
                     setHints('');
                 }
 
-                // Invalidate queries to refresh the UI
-                queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
-
-                logError('Assistant message created:', assistantMessage);
+                logError('Assistant message created optimistically');
             }
         } catch (error) {
             logError('Error syncing transcript:', error);
         }
-    }, [chat?.id, queryClient, lastAIResponse]);
-
-
-
+    }, [chat?.id, createMessageMutation, lastAIResponse]);
 
     // Voice session setup
     useEffect(() => {
@@ -250,17 +271,28 @@ export default function ChatArea({
                 if (!mounted) return;
 
                 // Set up handlers
-                // session.on('history_updated', (h) => historyHandlerRef.current(h));
                 session.on("transport_event", async (e) => {
-                    if (e.type === "conversation.item.input_audio_transcription.delta") {
+                    if (e.type === "input_audio_buffer.speech_started") {
+                        // Create optimistic user message for recording
+                        upsertUserMsg(e.itemId, { status: 'recording', content: '' });
+                    } else if (e.type === "conversation.item.input_audio_transcription.delta") {
                         if (!e.delta) return;
-                        setCurrentUserTranscript(e.delta);
-                        pendingUserMessage.current = e.delta;
+                        // Update optimistic message with transcription delta
+                        upsertUserMsg(e.itemId, prev => ({ 
+                            content: (prev?.content ?? '') + e.delta,
+                            status: 'recording'
+                        }));
+                    } else if (e.type === "input_audio_buffer.speech_stopped") {
+                        // Update optimistic message to transcribing status
+                        upsertUserMsg(e.itemId, { status: 'transcribing' });
                     } else if (e.type === "conversation.item.input_audio_transcription.completed") {
-                        // this should update the transcribing user message to the actual transcript (e.itemId)
-                        logError('Input audio transcription completed', e);
+                        // Sync to database and mark optimistic message as done
                         await syncTranscriptToMessages(e.transcript, 'user');
-                        setCurrentUserTranscript('');
+                        upsertUserMsg(e.itemId, { status: 'done', content: e.transcript });
+                        // Remove optimistic message after a short delay to avoid duplicates
+                        setTimeout(() => {
+                            setOptimisticUserMsgs(prev => prev.filter(m => m.id !== e.itemId));
+                        }, 500);
                     } else if (e.type === 'response.audio_transcript.delta' || e.type === 'response.text.delta') {
                         if (!e.delta) return;
                         setCurrentAITranscript((prev) => prev + e.delta);
@@ -268,12 +300,6 @@ export default function ChatArea({
                     } else if (e.type === 'response.audio_transcript.done' || e.type === 'response.text.done') {
                         await syncTranscriptToMessages(e.transcript, 'assistant');
                         setCurrentAITranscript('');
-                    } else if (e.type === 'input_audio_buffer.speech_started') {
-                        // optimistically create empty user message (e.itemId)
-                        logError('Input audio buffer speech started', e);
-                    } else if (e.type === 'input_audio_buffer.speech_stopped') {
-                        // mark the optimistic user message as 'transcribing' (e.itemId)
-                        logError('Input audio buffer speech stopped', e);
                     } else {
                         logError(`Unknown event type: ${e.type}`, e);
                     }
@@ -307,10 +333,11 @@ export default function ChatArea({
             hasSession.current = false;
             setIsVoiceConnected(false);
             setTransportReady(false);
-            // Clear any pending messages
+            // Clear any pending messages and optimistic messages
             pendingUserMessage.current = '';
             pendingAIMessage.current = '';
             currentMessageRef.current = null;
+            setOptimisticUserMsgs([]);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chat?.id, isVoiceMode]);
@@ -328,23 +355,25 @@ export default function ChatArea({
         }
     }, [displayMessages, lastAIResponse]);
 
-    // Create combined messages array for display
-    const getCombinedMessages = () => {
-        const messages = [...displayMessages];
-
-        // Add current user transcript as temporary message
-        if (currentUserTranscript && isVoiceMode) {
-            messages.push({
-                id: `temp-user-${Date.now()}`,
-                content: currentUserTranscript,
-                role: 'user',
-                created_at: new Date().toISOString(),
-                completed: false,
-                chat_id: chat?.id || ''
-            } as Message);
-        }
+    // Create combined messages array for display with optimistic updates
+    const getCombinedMessages = useCallback(() => {
+        // Convert optimistic messages to Message format
+        const optimistic = optimisticUserMsgs.map(m => ({
+            id: `opt-${m.id}`,
+            role: 'user' as const,
+            content:
+                m.status === 'recording'
+                    ? '🎤 Listening…'
+                    : m.status === 'transcribing'
+                        ? '📝 Transcribing…'
+                        : m.content,
+            completed: m.status === 'done',
+            created_at: m.created_at,
+            chat_id: chat?.id ?? ''
+        })) as Message[];
 
         // Add current AI transcript as temporary message
+        const messages = [...displayMessages];
         if (currentAITranscript && isVoiceMode) {
             messages.push({
                 id: `temp-ai-${Date.now()}`,
@@ -356,8 +385,9 @@ export default function ChatArea({
             } as Message);
         }
 
-        return messages;
-    };
+        return [...messages, ...optimistic]
+            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    }, [displayMessages, optimisticUserMsgs, currentAITranscript, isVoiceMode, chat?.id]);
 
     const handleVoiceStart = () => {
         if (transportReady && sessionRef.current) {
@@ -378,13 +408,13 @@ export default function ChatArea({
     const handleModeToggle = () => {
         setIsVoiceMode(!isVoiceMode);
         // Clear any current transcripts when switching modes
-        setCurrentUserTranscript('');
         setCurrentAITranscript('');
         setCurrentMessage('');
-        // Clear pending messages
+        // Clear pending messages and optimistic messages
         pendingUserMessage.current = '';
         pendingAIMessage.current = '';
         currentMessageRef.current = null;
+        setOptimisticUserMsgs([]);
     };
 
     // Early return if chat is not available
@@ -421,7 +451,7 @@ export default function ChatArea({
                 background: 'white'
             }}>
                 <Flex direction="column" gap="4">
-                    {getCombinedMessages().sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).map((message) => (
+                    {getCombinedMessages().map((message) => (
                         <Box key={message.id}>
                             <Flex
                                 direction={message.role === 'user' ? 'row-reverse' : 'row'}
@@ -439,7 +469,7 @@ export default function ChatArea({
                                         border: `1px solid ${message.role === 'user'
                                             ? 'var(--blue-6)'
                                             : 'var(--green-6)'}`,
-                                        opacity: message.completed === false ? 0.7 : 1
+                                        opacity: message.completed ? 1 : 0.6
                                     }}
                                 >
                                     {message.role === 'user' ? (
@@ -460,7 +490,7 @@ export default function ChatArea({
                                             border: `1px solid ${message.role === 'user'
                                                 ? 'var(--blue-7)'
                                                 : 'var(--gray-7)'}`,
-                                            opacity: message.completed === false ? 0.8 : 1
+                                            opacity: message.completed ? 1 : 0.8
                                         }}
                                     >
                                         <Flex direction="column" gap="2">
@@ -477,7 +507,7 @@ export default function ChatArea({
                                                     }
                                                 </Markdown>
                                             </Text>
-                                            {message.completed !== false && (
+                                            {message.completed && (
                                                 <Text size="1" style={{ color: 'var(--gray-11)' }}>
                                                     {new Date(message.created_at).toLocaleTimeString()}
                                                 </Text>
