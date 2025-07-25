@@ -25,14 +25,7 @@ import { generateConversationHistoryRealtime } from '@/utils/ai/chat/conversatio
 import { generateResumeHistoryRealtime } from '@/utils/ai/chat/resume-history';
 
 import { useCreateMessage } from '@/utils/react-query/mutations/useCreateMessage';
-
-// Optimistic message type for voice chat
-type OptimisticUserMsg = {
-    id: string;          // itemId from OpenAI transport
-    content: string;
-    status: 'recording' | 'transcribing' | 'done';
-    created_at: string;
-};
+import { useQueryClient } from '@tanstack/react-query';
 
 interface ChatAreaProps {
     displayMessages: Message[];
@@ -65,13 +58,11 @@ export default function ChatArea({
 
     // Voice-related state
     const createMessageMutation = useCreateMessage();
+    const queryClient = useQueryClient();
     const [currentAITranscript, setCurrentAITranscript] = useState('');
     const [micActive, setMicActive] = useState(false);
     const [isVoiceConnected, setIsVoiceConnected] = useState(false);
     const [transportReady, setTransportReady] = useState(false);
-
-    // Optimistic updates for voice chat
-    const [optimisticUserMsgs, setOptimisticUserMsgs] = useState<OptimisticUserMsg[]>([]);
 
     // Hints-related state
     const [showHints, setShowHints] = useState(false);
@@ -88,27 +79,39 @@ export default function ChatArea({
     const pendingUserMessage = useRef<string>('');
     const pendingAIMessage = useRef<string>('');
 
-    // Helper function for optimistic user message updates
-    const upsertUserMsg = useCallback((id: string, partial: Partial<OptimisticUserMsg> | ((prev: OptimisticUserMsg | undefined) => Partial<OptimisticUserMsg>)) => {
-        setOptimisticUserMsgs(prev => {
-            const i = prev.findIndex(m => m.id === id);
-            const currentMsg = i !== -1 ? prev[i] : undefined;
-            const updates = typeof partial === 'function' ? partial(currentMsg) : partial;
+    // Helper function to patch the React-Query cache for optimistic updates
+    const patchCache = useCallback((tempId: string, partial: Partial<Message> | ((prev: Message | undefined) => Partial<Message>)) => {
+        if (!chat?.id) return;
+        
+        queryClient.setQueryData<Message[]>(['messages', chat.id], (old) => {
+            const list = old ?? [];
+            const i = list.findIndex(m => m.id === tempId);
+            
+            const updates = typeof partial === 'function' 
+                ? partial(i !== -1 ? list[i] : undefined) 
+                : partial;
             
             if (i === -1) {
-                return [...prev, { 
-                    id, 
-                    content: '', 
-                    status: 'recording', 
-                    created_at: new Date().toISOString(), 
-                    ...updates 
-                }];
+                // Create new optimistic message
+                return [...list, {
+                    id: tempId,
+                    role: 'user',
+                    content: '',
+                    completed: false,
+                    created_at: new Date().toISOString(),
+                    chat_id: chat.id,
+                    completed_at: new Date().toISOString(), // Use current timestamp for incomplete messages
+                    training_id: null,
+                    ...updates
+                } as Message];
             }
-            const next = [...prev];
+            
+            // Update existing message
+            const next = [...list];
             next[i] = { ...next[i], ...updates };
             return next;
         });
-    }, []);
+    }, [chat?.id, queryClient]);
 
     // Generate hints function
     const generateHints = useCallback(async () => {
@@ -274,25 +277,31 @@ export default function ChatArea({
                 session.on("transport_event", async (e) => {
                     if (e.type === "input_audio_buffer.speech_started") {
                         // Create optimistic user message for recording
-                        upsertUserMsg(e.itemId, { status: 'recording', content: '' });
+                        const tempId = `temp-${e.itemId}`;
+                        patchCache(tempId, { content: '🎤 Listening…' });
                     } else if (e.type === "conversation.item.input_audio_transcription.delta") {
                         if (!e.delta) return;
                         // Update optimistic message with transcription delta
-                        upsertUserMsg(e.itemId, prev => ({ 
+                        const tempId = `temp-${e.itemId}`;
+                        patchCache(tempId, (prev) => ({ 
                             content: (prev?.content ?? '') + e.delta,
-                            status: 'recording'
                         }));
                     } else if (e.type === "input_audio_buffer.speech_stopped") {
                         // Update optimistic message to transcribing status
-                        upsertUserMsg(e.itemId, { status: 'transcribing' });
+                        const tempId = `temp-${e.itemId}`;
+                        patchCache(tempId, { content: '📝 Transcribing…' });
                     } else if (e.type === "conversation.item.input_audio_transcription.completed") {
-                        // Sync to database and mark optimistic message as done
-                        await syncTranscriptToMessages(e.transcript, 'user');
-                        upsertUserMsg(e.itemId, { status: 'done', content: e.transcript });
-                        // Remove optimistic message after a short delay to avoid duplicates
-                        setTimeout(() => {
-                            setOptimisticUserMsgs(prev => prev.filter(m => m.id !== e.itemId));
-                        }, 500);
+                        // Turn placeholder into final text before the mutation so ids line up
+                        const tempId = `temp-${e.itemId}`;
+                        patchCache(tempId, { content: e.transcript, completed: true });
+
+                        // Now save - onMutate finds the same id and just updates in-place
+                        createMessageMutation.mutate({
+                            chat_id: chat.id,
+                            role: 'user',
+                            content: e.transcript.trim(),
+                            completed: true
+                        });
                     } else if (e.type === 'response.audio_transcript.delta' || e.type === 'response.text.delta') {
                         if (!e.delta) return;
                         setCurrentAITranscript((prev) => prev + e.delta);
@@ -333,11 +342,10 @@ export default function ChatArea({
             hasSession.current = false;
             setIsVoiceConnected(false);
             setTransportReady(false);
-            // Clear any pending messages and optimistic messages
+            // Clear any pending messages
             pendingUserMessage.current = '';
             pendingAIMessage.current = '';
             currentMessageRef.current = null;
-            setOptimisticUserMsgs([]);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chat?.id, isVoiceMode]);
@@ -357,21 +365,6 @@ export default function ChatArea({
 
     // Create combined messages array for display with optimistic updates
     const getCombinedMessages = useCallback(() => {
-        // Convert optimistic messages to Message format
-        const optimistic = optimisticUserMsgs.map(m => ({
-            id: `opt-${m.id}`,
-            role: 'user' as const,
-            content:
-                m.status === 'recording'
-                    ? '🎤 Listening…'
-                    : m.status === 'transcribing'
-                        ? '📝 Transcribing…'
-                        : m.content,
-            completed: m.status === 'done',
-            created_at: m.created_at,
-            chat_id: chat?.id ?? ''
-        })) as Message[];
-
         // Add current AI transcript as temporary message
         const messages = [...displayMessages];
         if (currentAITranscript && isVoiceMode) {
@@ -381,13 +374,15 @@ export default function ChatArea({
                 role: 'assistant',
                 created_at: new Date().toISOString(),
                 completed: false,
-                chat_id: chat?.id || ''
+                chat_id: chat?.id || '',
+                completed_at: new Date().toISOString(), // Use current timestamp for incomplete messages
+                training_id: null
             } as Message);
         }
 
-        return [...messages, ...optimistic]
+        return messages
             .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    }, [displayMessages, optimisticUserMsgs, currentAITranscript, isVoiceMode, chat?.id]);
+    }, [displayMessages, currentAITranscript, isVoiceMode, chat?.id]);
 
     const handleVoiceStart = () => {
         if (transportReady && sessionRef.current) {
@@ -410,11 +405,10 @@ export default function ChatArea({
         // Clear any current transcripts when switching modes
         setCurrentAITranscript('');
         setCurrentMessage('');
-        // Clear pending messages and optimistic messages
+        // Clear pending messages
         pendingUserMessage.current = '';
         pendingAIMessage.current = '';
         currentMessageRef.current = null;
-        setOptimisticUserMsgs([]);
     };
 
     // Early return if chat is not available
