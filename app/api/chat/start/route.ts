@@ -12,6 +12,7 @@ import { generateTraceId } from "@openai/agents";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import supabaseServer from "@/utils/supabase/supabase-server";
+import { Json } from "@/database.types";
 
 export async function POST(request: NextRequest) {
     // Get the current user from the session
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     let resume_id: string | null = null;
     let chatTitle: string;
     let initialMessage: string;
-    let trainingAdditionalInfo: any = {};
+    let trainingAdditionalInfo: Json = {};
 
     // Handle different training types
     if (training_type === 'offboarding') {
@@ -49,14 +50,6 @@ export async function POST(request: NextRequest) {
             position_level: position_level // Keep for compatibility
         };
     } else {
-        // Interview training flow
-        const googleFileId = await uploadResume(formData);
-
-        // finding resume text, convert to buffer
-        const resumeFile = await formData.get("resume") as File;
-        const resumeBuffer = await resumeFile.arrayBuffer();
-        const content = await extractTextFromPDF(Buffer.from(resumeBuffer));
-        
         resume_id = null; // We'll set this after creating the training
         chatTitle = `Interview: ${name} - ${position}`;
         initialMessage = "Hello! Thank you for taking the time to meet with me today.";

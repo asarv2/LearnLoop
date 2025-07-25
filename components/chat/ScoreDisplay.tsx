@@ -1,58 +1,10 @@
 import React from 'react';
 import { Box, Flex, Text, Card } from '@radix-ui/themes';
-
-interface InterviewScore {
-  id: string;
-  chat_id: string;
-  question_quality: number;
-  followup_skills: number;
-  assessment_thoughtfulness: number;
-  interview_conduct: number;
-  communication_rapport: number;
-  professional_judgment: number;
-  overall_score: number;
-  category_feedback: {
-    question_quality: string;
-    followup_skills: string;
-    assessment_thoughtfulness: string;
-    interview_conduct: string;
-    communication_rapport: string;
-    professional_judgment: string;
-  };
-  overall_feedback: string;
-  strengths: string[];
-  improvement_areas: string[];
-  created_at: string;
-}
-
-interface OffboardingScore {
-  id: string;
-  chat_id: string;
-  empathy_emotional_intelligence: number;
-  communication_professionalism: number;
-  clarity_of_next_steps: number;
-  transition_planning_logistics: number;
-  conflict_resolution: number;
-  assessment_thoughtfulness: number;
-  overall_score: number;
-  category_feedback: {
-    empathy_emotional_intelligence: string;
-    communication_professionalism: string;
-    clarity_of_next_steps: string;
-    transition_planning_logistics: string;
-    conflict_resolution: string;
-    assessment_thoughtfulness: string;
-  };
-  overall_feedback: string;
-  strengths: string[];
-  improvement_areas: string[];
-  created_at: string;
-}
+import { Chat, InterviewScore, OffboardingScore } from '@/types';
 
 interface ScoreDisplayProps {
-  score: InterviewScore | OffboardingScore | null;
-  candidateName: string;
-  chat?: any;
+  score: InterviewScore | OffboardingScore | null | undefined;
+  chat?: Chat;
 }
 
 const interviewCategoryNames = {
@@ -81,7 +33,7 @@ const SUBTLE_TEXT = '#64748b'; // Subtle gray for secondary text
 const getScoreColor = () => PRIMARY_COLOR;
 const getCategoryScoreColor = () => PRIMARY_COLOR;
 
-export default function ScoreDisplay({ score, candidateName, chat }: ScoreDisplayProps) {
+export default function ScoreDisplay({ score, chat }: ScoreDisplayProps) {
   // Use training_type field, fallback to title parsing for backward compatibility
   const isOffboardingTraining = chat?.training_type === 'offboarding' || chat?.title?.startsWith('Offboarding:');
   const categoryNames = isOffboardingTraining ? offboardingCategoryNames : interviewCategoryNames;

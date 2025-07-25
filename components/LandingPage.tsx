@@ -8,7 +8,6 @@ import {
   Col, 
   Card, 
   Space,
-  Modal
 } from 'antd';
 import {
   PlayCircleOutlined,
