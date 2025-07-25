@@ -39,21 +39,21 @@ interface ChatAreaProps {
     chat: Chat;
 }
 
-export default function ChatArea({ 
-    displayMessages, 
-    isSendingMessage, 
-    isEndingInterview, 
-    isInterviewActive, 
-    currentMessage, 
-    setCurrentMessage, 
-    handleKeyPress, 
-    sendMessage: originalSendMessage, 
-    messagesEndRef, 
+export default function ChatArea({
+    displayMessages,
+    isSendingMessage,
+    isEndingInterview,
+    isInterviewActive,
+    currentMessage,
+    setCurrentMessage,
+    handleKeyPress,
+    sendMessage: originalSendMessage,
+    messagesEndRef,
     chat
 }: ChatAreaProps) {
     // Mode toggle state
     const [isVoiceMode, setIsVoiceMode] = useState(false);
-    
+
     // Voice-related state
     const queryClient = useQueryClient();
     const [currentUserTranscript, setCurrentUserTranscript] = useState('');
@@ -75,7 +75,7 @@ export default function ChatArea({
     const hasSession = useRef(false);
 
     const pendingUserMessage = useRef<string>('');
-    const pendingAIMessage   = useRef<string>('');
+    const pendingAIMessage = useRef<string>('');
 
     // Generate hints function
     const generateHints = useCallback(async () => {
@@ -139,17 +139,17 @@ export default function ChatArea({
                     role: 'user',
                     completed: true
                 });
-                
+
                 // Clear user transcript and pending message
                 setCurrentUserTranscript('');
                 pendingUserMessage.current = '';
-                
+
                 // Close hints popup when user sends a message
                 setShowHints(false);
-                
+
                 // Invalidate queries to refresh the UI
                 queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
-                
+
                 logError('User message created:', userMessage);
             } else {
                 // For assistant messages, create a new message each time
@@ -163,7 +163,7 @@ export default function ChatArea({
                 // Clear AI transcript and pending message
                 setCurrentAITranscript('');
                 pendingAIMessage.current = '';
-                
+
                 // Store the AI response for hints generation
                 const newResponse = content.trim();
                 if (newResponse !== lastAIResponse) {
@@ -171,10 +171,10 @@ export default function ChatArea({
                     // Clear old hints when there's a new AI response
                     setHints('');
                 }
-                
+
                 // Invalidate queries to refresh the UI
                 queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
-                
+
                 logError('Assistant message created:', assistantMessage);
             }
         } catch (error) {
@@ -183,13 +183,13 @@ export default function ChatArea({
     }, [chat?.id, queryClient, lastAIResponse]);
 
 
-    
+
 
     // Voice session setup
     useEffect(() => {
         // Guard against undefined chat or non-voice mode
         if (!isVoiceMode || !chat?.id) return;
-        
+
         // Guard against multiple session creation
         if (hasSession.current) return;
         hasSession.current = true;
@@ -200,7 +200,7 @@ export default function ChatArea({
             try {
                 // Build the session
                 let session;
-                
+
                 // Check if this is offboarding training
                 let additionalInfo;
                 try {
@@ -213,9 +213,9 @@ export default function ChatArea({
                     // This is offboarding training
                     const { getOffboardingRealtimeSession } = await import('@/utils/ai/agents/offboarding');
                     session = await getOffboardingRealtimeSession(
-                        chat.title, 
-                        chat.id, 
-                        additionalInfo.offboarding_type, 
+                        chat.title,
+                        chat.id,
+                        additionalInfo.offboarding_type,
                         additionalInfo.employee_level
                     );
                 } else if (chat.type === 'cheating') {
@@ -257,15 +257,25 @@ export default function ChatArea({
                         setCurrentUserTranscript(e.delta);
                         pendingUserMessage.current = e.delta;
                     } else if (e.type === "conversation.item.input_audio_transcription.completed") {
+                        // this should update the transcribing user message to the actual transcript (e.itemId)
+                        logError('Input audio transcription completed', e);
                         await syncTranscriptToMessages(e.transcript, 'user');
                         setCurrentUserTranscript('');
-                    } else if (e.type === 'response.audio_transcript.delta') {
+                    } else if (e.type === 'response.audio_transcript.delta' || e.type === 'response.text.delta') {
                         if (!e.delta) return;
                         setCurrentAITranscript((prev) => prev + e.delta);
                         pendingAIMessage.current = e.delta;
-                    } else if (e.type === 'response.audio_transcript.done') {
+                    } else if (e.type === 'response.audio_transcript.done' || e.type === 'response.text.done') {
                         await syncTranscriptToMessages(e.transcript, 'assistant');
                         setCurrentAITranscript('');
+                    } else if (e.type === 'input_audio_buffer.speech_started') {
+                        // optimistically create empty user message (e.itemId)
+                        logError('Input audio buffer speech started', e);
+                    } else if (e.type === 'input_audio_buffer.speech_stopped') {
+                        // mark the optimistic user message as 'transcribing' (e.itemId)
+                        logError('Input audio buffer speech stopped', e);
+                    } else {
+                        logError(`Unknown event type: ${e.type}`, e);
                     }
                 });
 
@@ -277,7 +287,7 @@ export default function ChatArea({
                 sessionRef.current = session;
                 setIsVoiceConnected(true);
                 setTransportReady(true);
-                
+
                 logError('Voice session connected successfully');
             } catch (e) {
                 logError('Voice session setup error:', e);
@@ -321,7 +331,7 @@ export default function ChatArea({
     // Create combined messages array for display
     const getCombinedMessages = () => {
         const messages = [...displayMessages];
-        
+
         // Add current user transcript as temporary message
         if (currentUserTranscript && isVoiceMode) {
             messages.push({
@@ -333,7 +343,7 @@ export default function ChatArea({
                 chat_id: chat?.id || ''
             } as Message);
         }
-        
+
         // Add current AI transcript as temporary message
         if (currentAITranscript && isVoiceMode) {
             messages.push({
@@ -345,7 +355,7 @@ export default function ChatArea({
                 chat_id: chat?.id || ''
             } as Message);
         }
-        
+
         return messages;
     };
 
@@ -570,8 +580,8 @@ export default function ChatArea({
                                         style={{
                                             padding: '1rem 2rem',
                                             borderRadius: '30px',
-                                            background: micActive 
-                                                ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
+                                            background: micActive
+                                                ? 'linear-gradient(135deg, #ef4444, #dc2626)'
                                                 : (!isVoiceConnected || !transportReady)
                                                     ? 'linear-gradient(135deg, #9ca3af, #6b7280)'
                                                     : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
@@ -581,8 +591,8 @@ export default function ChatArea({
                                             fontSize: '1rem',
                                             fontWeight: '600',
                                             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                            boxShadow: micActive 
-                                                ? '0 8px 30px rgba(239, 68, 68, 0.4)' 
+                                            boxShadow: micActive
+                                                ? '0 8px 30px rgba(239, 68, 68, 0.4)'
                                                 : (!isVoiceConnected || !transportReady)
                                                     ? '0 4px 15px rgba(156, 163, 175, 0.3)'
                                                     : '0 8px 30px rgba(99, 102, 241, 0.3)',
@@ -695,7 +705,7 @@ export default function ChatArea({
                                     ✕
                                 </Button>
                             </Flex>
-                            
+
                             {hints ? (
                                 <Box>
                                     <Text size="2" style={{ lineHeight: '1.5', color: 'var(--gray-12)' }}>
