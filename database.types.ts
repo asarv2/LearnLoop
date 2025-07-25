@@ -20,18 +20,21 @@ export type Database = {
           created_at: string | null
           id: string
           responses: Json
+          training_id: string | null
         }
         Insert: {
           chat_id: string
           created_at?: string | null
           id?: string
           responses?: Json
+          training_id?: string | null
         }
         Update: {
           chat_id?: string
           created_at?: string | null
           id?: string
           responses?: Json
+          training_id?: string | null
         }
         Relationships: [
           {
@@ -39,6 +42,13 @@ export type Database = {
             columns: ["chat_id"]
             isOneToOne: false
             referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessments_training_id_fkey"
+            columns: ["training_id"]
+            isOneToOne: false
+            referencedRelation: "trainings"
             referencedColumns: ["id"]
           },
         ]
@@ -56,6 +66,8 @@ export type Database = {
           resume_id: string | null
           title: string
           trace_id: string | null
+          training_id: string | null
+          training_type: Database["public"]["Enums"]["training_type"] | null
           type: Database["public"]["Enums"]["interview_type"]
           user_id: string | null
           voice: string
@@ -72,6 +84,8 @@ export type Database = {
           resume_id?: string | null
           title: string
           trace_id?: string | null
+          training_id?: string | null
+          training_type?: Database["public"]["Enums"]["training_type"] | null
           type?: Database["public"]["Enums"]["interview_type"]
           user_id?: string | null
           voice?: string
@@ -88,6 +102,8 @@ export type Database = {
           resume_id?: string | null
           title?: string
           trace_id?: string | null
+          training_id?: string | null
+          training_type?: Database["public"]["Enums"]["training_type"] | null
           type?: Database["public"]["Enums"]["interview_type"]
           user_id?: string | null
           voice?: string
@@ -98,6 +114,13 @@ export type Database = {
             columns: ["resume_id"]
             isOneToOne: false
             referencedRelation: "resumes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chats_training_id_fkey"
+            columns: ["training_id"]
+            isOneToOne: false
+            referencedRelation: "trainings"
             referencedColumns: ["id"]
           },
         ]
@@ -111,6 +134,7 @@ export type Database = {
           id: string
           red_flags: string[]
           strengths: string[]
+          training_id: string | null
         }
         Insert: {
           chat_id: string
@@ -120,6 +144,7 @@ export type Database = {
           id?: string
           red_flags?: string[]
           strengths?: string[]
+          training_id?: string | null
         }
         Update: {
           chat_id?: string
@@ -129,6 +154,7 @@ export type Database = {
           id?: string
           red_flags?: string[]
           strengths?: string[]
+          training_id?: string | null
         }
         Relationships: [
           {
@@ -136,6 +162,13 @@ export type Database = {
             columns: ["chat_id"]
             isOneToOne: false
             referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feedback_training_id_fkey"
+            columns: ["training_id"]
+            isOneToOne: false
+            referencedRelation: "trainings"
             referencedColumns: ["id"]
           },
         ]
@@ -156,6 +189,7 @@ export type Database = {
           professional_judgment: number
           question_quality: number
           strengths: string[] | null
+          training_id: string | null
           updated_at: string
         }
         Insert: {
@@ -173,6 +207,7 @@ export type Database = {
           professional_judgment: number
           question_quality: number
           strengths?: string[] | null
+          training_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -190,6 +225,7 @@ export type Database = {
           professional_judgment?: number
           question_quality?: number
           strengths?: string[] | null
+          training_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -200,6 +236,13 @@ export type Database = {
             referencedRelation: "chats"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "interview_scores_training_id_fkey"
+            columns: ["training_id"]
+            isOneToOne: false
+            referencedRelation: "trainings"
+            referencedColumns: ["id"]
+          },
         ]
       }
       logs: {
@@ -208,6 +251,7 @@ export type Database = {
           id: string
           level: Database["public"]["Enums"]["log_level"]
           message: string
+          training_id: string | null
           user_id: string | null
         }
         Insert: {
@@ -215,6 +259,7 @@ export type Database = {
           id?: string
           level: Database["public"]["Enums"]["log_level"]
           message: string
+          training_id?: string | null
           user_id?: string | null
         }
         Update: {
@@ -222,9 +267,18 @@ export type Database = {
           id?: string
           level?: Database["public"]["Enums"]["log_level"]
           message?: string
+          training_id?: string | null
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "logs_training_id_fkey"
+            columns: ["training_id"]
+            isOneToOne: false
+            referencedRelation: "trainings"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       messages: {
         Row: {
@@ -235,6 +289,7 @@ export type Database = {
           created_at: string
           id: string
           role: Database["public"]["Enums"]["message_role"]
+          training_id: string | null
         }
         Insert: {
           chat_id: string
@@ -244,6 +299,7 @@ export type Database = {
           created_at?: string
           id?: string
           role: Database["public"]["Enums"]["message_role"]
+          training_id?: string | null
         }
         Update: {
           chat_id?: string
@@ -253,6 +309,7 @@ export type Database = {
           created_at?: string
           id?: string
           role?: Database["public"]["Enums"]["message_role"]
+          training_id?: string | null
         }
         Relationships: [
           {
@@ -260,6 +317,85 @@ export type Database = {
             columns: ["chat_id"]
             isOneToOne: false
             referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_training_id_fkey"
+            columns: ["training_id"]
+            isOneToOne: false
+            referencedRelation: "trainings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      offboarding_scores: {
+        Row: {
+          assessment_thoughtfulness: number
+          category_feedback: Json
+          chat_id: string
+          clarity_of_next_steps: number
+          communication_professionalism: number
+          conflict_resolution: number
+          created_at: string
+          empathy_emotional_intelligence: number
+          id: string
+          improvement_areas: string[] | null
+          overall_feedback: string | null
+          overall_score: number
+          strengths: string[] | null
+          training_id: string | null
+          transition_planning_logistics: number
+          updated_at: string
+        }
+        Insert: {
+          assessment_thoughtfulness: number
+          category_feedback?: Json
+          chat_id: string
+          clarity_of_next_steps?: number
+          communication_professionalism: number
+          conflict_resolution: number
+          created_at?: string
+          empathy_emotional_intelligence: number
+          id?: string
+          improvement_areas?: string[] | null
+          overall_feedback?: string | null
+          overall_score: number
+          strengths?: string[] | null
+          training_id?: string | null
+          transition_planning_logistics: number
+          updated_at?: string
+        }
+        Update: {
+          assessment_thoughtfulness?: number
+          category_feedback?: Json
+          chat_id?: string
+          clarity_of_next_steps?: number
+          communication_professionalism?: number
+          conflict_resolution?: number
+          created_at?: string
+          empathy_emotional_intelligence?: number
+          id?: string
+          improvement_areas?: string[] | null
+          overall_feedback?: string | null
+          overall_score?: number
+          strengths?: string[] | null
+          training_id?: string | null
+          transition_planning_logistics?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offboarding_scores_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offboarding_scores_training_id_fkey"
+            columns: ["training_id"]
+            isOneToOne: false
+            referencedRelation: "trainings"
             referencedColumns: ["id"]
           },
         ]
@@ -270,6 +406,7 @@ export type Database = {
           created_at: string
           google_file_id: string | null
           id: string
+          training_id: string | null
           user_id: string | null
         }
         Insert: {
@@ -277,6 +414,7 @@ export type Database = {
           created_at?: string
           google_file_id?: string | null
           id?: string
+          training_id?: string | null
           user_id?: string | null
         }
         Update: {
@@ -284,6 +422,45 @@ export type Database = {
           created_at?: string
           google_file_id?: string | null
           id?: string
+          training_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "resumes_training_id_fkey"
+            columns: ["training_id"]
+            isOneToOne: false
+            referencedRelation: "trainings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trainings: {
+        Row: {
+          additional_info: Json | null
+          created_at: string
+          id: string
+          title: string
+          type: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          additional_info?: Json | null
+          created_at?: string
+          id?: string
+          title: string
+          type: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          additional_info?: Json | null
+          created_at?: string
+          id?: string
+          title?: string
+          type?: string
+          updated_at?: string
           user_id?: string | null
         }
         Relationships: []
@@ -299,6 +476,7 @@ export type Database = {
       interview_type: "regular" | "cheating" | "ai-assisted"
       log_level: "info" | "error" | "warn" | "debug"
       message_role: "user" | "assistant"
+      training_type: "interview" | "offboarding"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -429,6 +607,7 @@ export const Constants = {
       interview_type: ["regular", "cheating", "ai-assisted"],
       log_level: ["info", "error", "warn", "debug"],
       message_role: ["user", "assistant"],
+      training_type: ["interview", "offboarding"],
     },
   },
 } as const

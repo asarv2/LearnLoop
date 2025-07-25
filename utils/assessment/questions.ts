@@ -47,11 +47,6 @@ export const OFFBOARDING_STATIC_QUESTIONS: AssessmentQuestion[] = [
     id: "employee_support",
     type: "rating",
     question: "How well did you address the employee's emotional and practical concerns? (1-5 scale)",
-  },
-  {
-    id: "legal_compliance",
-    type: "yes_no",
-    question: "Do you feel this conversation followed proper legal and HR guidelines?",
   }
 ];
 

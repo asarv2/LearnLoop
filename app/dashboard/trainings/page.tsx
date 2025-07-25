@@ -27,7 +27,7 @@ const trainingModules = [
     description: 'Master the art of conducting professional interviews with AI-powered candidates across various roles and scenarios.',
     icon: <PlayCircleOutlined />,
     status: 'available',
-    href: '/interview/new',
+    href: '/training/interview/new',
     color: '#1890ff'
   },
   {
@@ -36,7 +36,7 @@ const trainingModules = [
     description: 'Navigate sensitive employee departures with professionalism, ensuring smooth transitions and maintaining relationships.',
     icon: <UserDeleteOutlined />,
     status: 'available',
-    href: '/offboarding/new',
+    href: '/training/offboarding/new',
     color: '#fa8c16'
   },
   {

@@ -37,13 +37,16 @@ export async function POST(request: NextRequest) {
         // Store the assessment responses
         await createAssessment({
             chat_id: chatId,
+            training_id: chat.training_id,
             responses: responses
         });
 
         // Generate feedback based on assessment responses
         const resumeHistory = await generateResumeHistory(chat);
-        // Determine training type first
-        const isOffboardingTraining = chat.title.startsWith('Offboarding:');
+        
+        // Use the training_type field from the chat, fallback to title parsing for backward compatibility
+        const trainingType = chat.training_type || (chat.title.startsWith('Offboarding:') ? 'offboarding' : 'interview');
+        const isOffboardingTraining = trainingType === 'offboarding';
         
         const conversationHistory = generateConversationHistory(messages);
         
@@ -56,8 +59,7 @@ export async function POST(request: NextRequest) {
             assessmentContext,
         ];
 
-        // Determine training type and cheating flag
-        const trainingType = isOffboardingTraining ? 'offboarding' : 'interview';
+        // Get the appropriate feedback agent
         const agent = await getFeedbackAgent(trainingType, chat.type === 'cheating' || chat.type === 'ai-assisted');
 
         let runner: Runner;
@@ -87,6 +89,7 @@ export async function POST(request: NextRequest) {
             // Import scoring logic directly instead of making HTTP request
             const { getScoringAgent } = await import('@/utils/ai/agents/scoring');
             const { createInterviewScore } = await import('@/utils/mutations/scores/create-interview-score');
+            const { createOffboardingScore } = await import('@/utils/mutations/offboarding_scores/create-offboarding_score');
 
             // Get the scoring agent with training type
             const scoringAgent = await getScoringAgent(trainingType);
@@ -128,7 +131,7 @@ ${assessmentContext}
 Please evaluate this manager's performance across all 6 offboarding management categories using the rubric. Consider:
 - How professionally they handled the offboarding
 - Their empathy and emotional intelligence
-- Legal compliance and procedural adherence
+- Clarity of next steps
 - Quality of transition planning and communication`;
             } else {
                 prompt = `
@@ -192,23 +195,42 @@ Provide scores and detailed feedback to help them improve their interviewing ski
                 throw new Error('Invalid scoring result format');
             }
 
-            // Store the score in the database
-            const storedScore = await createInterviewScore({
-                chat_id: chatId,
-                question_quality: scoringResult.scores.question_quality,
-                followup_skills: scoringResult.scores.followup_skills,
-                assessment_thoughtfulness: scoringResult.scores.assessment_thoughtfulness,
-                interview_conduct: scoringResult.scores.interview_conduct,
-                communication_rapport: scoringResult.scores.communication_rapport,
-                professional_judgment: scoringResult.scores.professional_judgment,
-                overall_score: scoringResult.overall_score,
-                category_feedback: scoringResult.category_feedback,
-                overall_feedback: scoringResult.overall_feedback,
-                strengths: scoringResult.strengths,
-                improvement_areas: scoringResult.improvement_areas
-            });
+            // Store the score in the appropriate database table based on training type
+            let storedScore;
+            if (isOffboardingTraining) {
+                storedScore = await createOffboardingScore({
+                    chat_id: chatId,
+                    training_id: chat.training_id,
+                    empathy_emotional_intelligence: scoringResult.scores.empathy_emotional_intelligence,
+                    communication_professionalism: scoringResult.scores.communication_professionalism,
+                    clarity_of_next_steps: scoringResult.scores.clarity_of_next_steps,
+                    transition_planning_logistics: scoringResult.scores.transition_planning_logistics,
+                    conflict_resolution: scoringResult.scores.conflict_resolution,
+                    assessment_thoughtfulness: scoringResult.scores.assessment_thoughtfulness,
+                    overall_score: scoringResult.overall_score,
+                    category_feedback: scoringResult.category_feedback,
+                    overall_feedback: scoringResult.overall_feedback,
+                    strengths: scoringResult.strengths,
+                    improvement_areas: scoringResult.improvement_areas
+                });
+            } else {
+                storedScore = await createInterviewScore({
+                    chat_id: chatId,
+                    question_quality: scoringResult.scores.question_quality,
+                    followup_skills: scoringResult.scores.followup_skills,
+                    assessment_thoughtfulness: scoringResult.scores.assessment_thoughtfulness,
+                    interview_conduct: scoringResult.scores.interview_conduct,
+                    communication_rapport: scoringResult.scores.communication_rapport,
+                    professional_judgment: scoringResult.scores.professional_judgment,
+                    overall_score: scoringResult.overall_score,
+                    category_feedback: scoringResult.category_feedback,
+                    overall_feedback: scoringResult.overall_feedback,
+                    strengths: scoringResult.strengths,
+                    improvement_areas: scoringResult.improvement_areas
+                });
+            }
 
-            logError('Interview score generated and stored successfully:', storedScore);
+            logError(`${trainingType} score generated and stored successfully:`, storedScore);
 
         } catch (scoringError) {
             logError('Error generating interview score:', scoringError);
@@ -276,7 +298,6 @@ async function generateAssessmentContext(responses: Assessment['responses'], int
         // Offboarding-specific analysis
         const offboardingApproach = responseMap.get('offboarding_approach');
         const employeeSupport = responseMap.get('employee_support');
-        const legalCompliance = responseMap.get('legal_compliance');
 
         contextText += "ANALYSIS FOCUS:\n";
         
@@ -286,11 +307,8 @@ async function generateAssessmentContext(responses: Assessment['responses'], int
         if (employeeSupport) {
             analysisText += `Self-rated employee support level: ${employeeSupport}/5\n`;
         }
-        if (legalCompliance) {
-            analysisText += `Legal compliance confidence: ${legalCompliance}\n`;
-        }
         
-        analysisText += "\nFocus on providing feedback that helps this manager improve their offboarding skills, emotional intelligence, and professional communication in sensitive situations.\n";
+        analysisText += "\nFocus on providing feedback that helps this manager improve their offboarding skills, emotional intelligence, clarity of next steps, and professional communication in sensitive situations.\n";
     } else {
         // Interview-specific analysis
         const hireDecision = responseMap.get('hire_decision');

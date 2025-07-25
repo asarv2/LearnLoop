@@ -92,12 +92,69 @@ const interviewRubricData: RubricCriteria[] = [
   }
 ];
 
+const offboardingRubricData: RubricCriteria[] = [
+  {
+    category: "Empathy & Emotional Intelligence",
+    description: "Sensitivity to employee emotions and demonstration of empathy during offboarding.",
+    score1: "Insensitive, dismissive of employee emotions",
+    score2: "Limited empathy, awkward emotional handling",
+    score3: "Some empathy shown, basic emotional awareness",
+    score4: "Strong empathy, good emotional support",
+    score5: "Outstanding emotional intelligence, exceptional empathy"
+  },
+  {
+    category: "Communication Clarity & Professionalism",
+    description: "Clarity, professionalism, and respectfulness in communication.",
+    score1: "Unclear, unprofessional communication",
+    score2: "Some clarity issues, inconsistent professionalism",
+    score3: "Clear enough communication, adequate professionalism",
+    score4: "Clear, professional communication throughout",
+    score5: "Exceptional clarity and professionalism under pressure"
+  },
+  {
+    category: "Clarity of Next Steps",
+    description: "How clearly the manager communicates what happens after offboarding and what the employee should expect.",
+    score1: "No explanation of what happens after offboarding, leaves employee confused",
+    score2: "Minimal explanation, vague or incomplete next steps",
+    score3: "Basic explanation of next steps, some clarity",
+    score4: "Clear explanation of what happens next, employee knows what to expect",
+    score5: "Exceptionally clear, employee feels fully informed and supported about next steps"
+  },
+  {
+    category: "Transition Planning & Logistics",
+    description: "Effectiveness in planning the employee's transition and handling logistics.",
+    score1: "No planning discussed, chaotic approach",
+    score2: "Minimal planning, poor logistics handling",
+    score3: "Some planning discussed, basic logistics covered",
+    score4: "Good transition planning, well-organized logistics",
+    score5: "Comprehensive planning, seamless logistics coordination"
+  },
+  {
+    category: "Conflict Resolution & Difficult Conversations",
+    description: "Ability to handle conflicts and sensitive topics professionally.",
+    score1: "Escalated conflicts, avoided difficult topics",
+    score2: "Some conflict handling, minimal difficult topic management",
+    score3: "Handled conflicts adequately, addressed most difficult topics",
+    score4: "Strong conflict resolution, good handling of sensitive topics",
+    score5: "Masterful conflict resolution, exceptional handling of all difficult conversations"
+  },
+  {
+    category: "Assessment Thoughtfulness & Reflection",
+    description: "Depth of self-reflection and thoughtfulness in assessment responses.",
+    score1: "Superficial assessment, no self-reflection",
+    score2: "Basic assessment, minimal reflection",
+    score3: "Adequate assessment, some self-awareness",
+    score4: "Thoughtful assessment, good self-reflection",
+    score5: "Deep, insightful assessment with excellent self-awareness"
+  }
+];
+
 const rubricModules = [
   {
     id: 'interview-training',
     title: 'Interview Rubric',
     description: 'Comprehensive evaluation framework for interviewer performance including question quality, follow-up skills, and professional judgment.',
-    icon: <FileTextOutlined />,
+    icon: <FileTextOutlined />, 
     status: 'available',
     color: '#1890ff'
   },
@@ -105,8 +162,8 @@ const rubricModules = [
     id: 'offboarding',
     title: 'Employee Offboarding Rubric',
     description: 'Evaluation framework for conducting professional employee departures and exit processes.',
-    icon: <MessageOutlined />,
-    status: 'coming-soon',
+    icon: <MessageOutlined />, 
+    status: 'available',
     color: '#fa8c16'
   },
   {
@@ -201,7 +258,8 @@ export default function RubricPage() {
     },
   ];
 
-  if (selectedRubric === 'interview-training') {
+  if (selectedRubric === 'interview-training' || selectedRubric === 'offboarding') {
+    const isOffboarding = selectedRubric === 'offboarding';
     return (
       <div>
         <Space align="center" style={{ marginBottom: '24px' }}>
@@ -215,18 +273,20 @@ export default function RubricPage() {
             width: '60px',
             height: '60px',
             borderRadius: '12px',
-            background: 'linear-gradient(135deg, #1890ff 0%, #722ed1 100%)',
+            background: isOffboarding
+              ? 'linear-gradient(135deg, #fa8c16 0%, #fa8c1699 100%)'
+              : 'linear-gradient(135deg, #1890ff 0%, #722ed1 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center'
           }}>
-            <FileTextOutlined style={{ fontSize: '24px', color: 'white' }} />
+            {isOffboarding ? <MessageOutlined style={{ fontSize: '24px', color: 'white' }} /> : <FileTextOutlined style={{ fontSize: '24px', color: 'white' }} />}
           </div>
           <Space direction="vertical" size={4}>
             <Title level={3} style={{ margin: 0 }}>
-              Interview Training Rubric
+              {isOffboarding ? 'Employee Offboarding Rubric' : 'Interview Training Rubric'}
             </Title>
-            <Text type="secondary">Comprehensive evaluation framework</Text>
+            <Text type="secondary">{isOffboarding ? 'Evaluation framework for employee offboarding conversations' : 'Comprehensive evaluation framework'}</Text>
           </Space>
         </Space>
 
@@ -241,7 +301,7 @@ export default function RubricPage() {
         <Card>
           <Table
             columns={rubricColumns}
-            dataSource={interviewRubricData}
+            dataSource={isOffboarding ? offboardingRubricData : interviewRubricData}
             rowKey="category"
             pagination={false}
             scroll={{ x: 1200 }}
@@ -254,18 +314,18 @@ export default function RubricPage() {
           <Row gutter={[24, 16]}>
             <Col xs={24} md={12}>
               <Paragraph>
-                <Text strong>During the Interview:</Text>
+                <Text strong>During the {isOffboarding ? 'Offboarding Conversation' : 'Interview'}:</Text>
                 <br />
-                • Take notes on each category as you observe the interviewer&apos;s performance
+                • Take notes on each category as you observe the {isOffboarding ? 'manager\'s' : 'interviewer\'s'} performance
                 <br />
                 • Focus on specific examples and behaviors
                 <br />
-                • Consider the context and complexity of the interview
+                • Consider the context and complexity of the {isOffboarding ? 'offboarding' : 'interview'}
               </Paragraph>
             </Col>
             <Col xs={24} md={12}>
               <Paragraph>
-                <Text strong>After the Interview:</Text>
+                <Text strong>After the {isOffboarding ? 'Offboarding Conversation' : 'Interview'}:</Text>
                 <br />
                 • Score each category on the 1-5 scale
                 <br />
@@ -280,7 +340,7 @@ export default function RubricPage() {
     );
   }
 
-  if (selectedRubric && selectedRubric !== 'interview-training') {
+  if (selectedRubric && selectedRubric !== 'interview-training' && selectedRubric !== 'offboarding') {
     const selectedModule = rubricModules.find(m => m.id === selectedRubric);
     
     return (

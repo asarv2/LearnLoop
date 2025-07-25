@@ -203,14 +203,14 @@ export default function OverviewPage() {
               <Col span={8} style={{ textAlign: 'center' }}>
                 <Statistic
                   title="Completed"
-                  value={progressMetrics.completedInterviews}
+                  value={progressMetrics.completedSessions}
                   valueStyle={{ color: '#52c41a', fontSize: '24px' }}
                 />
               </Col>
               <Col span={8} style={{ textAlign: 'center' }}>
                 <Statistic
                   title="In Progress"
-                  value={progressMetrics.totalInterviews - progressMetrics.completedInterviews}
+                  value={progressMetrics.totalSessions - progressMetrics.completedSessions}
                   valueStyle={{ color: '#1890ff', fontSize: '24px' }}
                 />
               </Col>
@@ -241,7 +241,7 @@ export default function OverviewPage() {
                 renderItem={(session) => (
                                       <List.Item
                       actions={[
-                        <Link key="view" href={`/interview/c/${session.id}`}>
+                        <Link key="view" href={`/training/${session.training_type || 'interview'}/c/${session.id}`}>
                           <Button 
                             type="text" 
                             icon={<PlayCircleOutlined />}
@@ -296,14 +296,14 @@ export default function OverviewPage() {
           
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
-              <Card title="Interview Types Distribution">
+              <Card title="Training Types Distribution">
                 <div>
-                  {['regular', 'ai-assisted', 'cheating'].map((type) => {
-                    const count = sortedSessions.filter(session => session.type === type).length;
+                  {['interview', 'offboarding'].map((trainingType) => {
+                    const count = sortedSessions.filter(session => (session.training_type || 'interview') === trainingType).length;
                     const percentage = sortedSessions.length > 0 ? (count / sortedSessions.length) * 100 : 0;
                     
                     return (
-                      <div key={type} style={{ marginBottom: '16px' }}>
+                      <div key={trainingType} style={{ marginBottom: '16px' }}>
                         <div style={{ 
                           display: 'flex', 
                           justifyContent: 'space-between',
@@ -311,8 +311,10 @@ export default function OverviewPage() {
                           marginBottom: '8px'
                         }}>
                           <Space>
-                            {getCandidateTypeTag(type)}
-                            <Text>{type.replace('-', ' ').charAt(0).toUpperCase() + type.replace('-', ' ').slice(1)}</Text>
+                            <Tag color={trainingType === 'interview' ? 'blue' : 'orange'}>
+                              {trainingType.toUpperCase()}
+                            </Tag>
+                            <Text>{trainingType.charAt(0).toUpperCase() + trainingType.slice(1)} Training</Text>
                           </Space>
                           <Text type="secondary">
                             {count} ({percentage.toFixed(1)}%)
@@ -321,10 +323,7 @@ export default function OverviewPage() {
                         <Progress 
                           percent={Math.round(percentage)} 
                           showInfo={false}
-                          strokeColor={
-                            type === 'regular' ? '#1890ff' : 
-                            type === 'ai-assisted' ? '#fa8c16' : '#ff4d4f'
-                          }
+                          strokeColor={trainingType === 'interview' ? '#1890ff' : '#fa8c16'}
                         />
                       </div>
                     );
@@ -339,14 +338,14 @@ export default function OverviewPage() {
                   <Col span={12} style={{ textAlign: 'center' }}>
                     <Statistic
                       title="This Month"
-                      value={progressMetrics.thisMonthInterviews}
+                      value={progressMetrics.thisMonthSessions}
                       valueStyle={{ color: '#fa8c16', fontSize: '32px' }}
                     />
                   </Col>
                   <Col span={12} style={{ textAlign: 'center' }}>
                     <Statistic
                       title="Last Month"
-                      value={progressMetrics.lastMonthInterviews}
+                      value={progressMetrics.lastMonthSessions}
                       valueStyle={{ color: '#1890ff', fontSize: '32px' }}
                     />
                   </Col>

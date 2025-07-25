@@ -4,6 +4,8 @@ import { getScoringAgent } from '@/utils/ai/agents/scoring';
 import { logError } from '@/utils/logger';
 import { Message, Assessment } from '@/types';
 import { createInterviewScore } from '@/utils/mutations/scores/create-interview-score';
+import { createOffboardingScore } from '@/utils/mutations/offboarding_scores/create-offboarding_score';
+import { getChat } from '@/utils/queries/chats/get-chat';
 
 interface ScoringRequest {
     chatId: string;
@@ -15,25 +17,32 @@ interface ScoringRequest {
 
 interface ScoringResult {
     scores: {
-        question_quality: number;
-        followup_skills: number;
+        question_quality?: number;
+        followup_skills?: number;
         assessment_thoughtfulness: number;
-        interview_conduct: number;
-        communication_rapport: number;
-        professional_judgment: number;
+        interview_conduct?: number;
+        communication_rapport?: number;
+        professional_judgment?: number;
+        empathy_emotional_intelligence?: number;
+        communication_professionalism?: number;
+        clarity_of_next_steps?: number;
+        transition_planning_logistics?: number;
+        conflict_resolution?: number;
     };
     overall_score: number;
     category_feedback: {
-        question_quality: string;
-        followup_skills: string;
+        question_quality?: string;
+        followup_skills?: string;
         assessment_thoughtfulness: string;
-        interview_conduct: string;
-        communication_rapport: string;
-        professional_judgment: string;
+        interview_conduct?: string;
+        communication_rapport?: string;
+        professional_judgment?: string;
+        empathy_emotional_intelligence?: string;
+        communication_professionalism?: string;
+        clarity_of_next_steps?: string;
+        transition_planning_logistics?: string;
+        conflict_resolution?: string;
     };
-    overall_feedback: string;
-    strengths: string[];
-    improvement_areas: string[];
 }
 
 export async function POST(request: NextRequest) {
@@ -48,9 +57,9 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
-        // Determine training type
-        const isOffboardingTraining = chatTitle.startsWith('Offboarding:');
-        const trainingType = isOffboardingTraining ? 'offboarding' : 'interview';
+        // Get chat to determine training type
+        const chat = await getChat(chatId);
+        const trainingType = chat.training_type || (chatTitle.startsWith('Offboarding:') ? 'offboarding' : 'interview');
         
         // Get the scoring agent
         const scoringAgent = await getScoringAgent(trainingType);
@@ -133,23 +142,37 @@ Provide scores and detailed feedback to help them improve their interviewing ski
             );
         }
 
-        // Store the score in the database
-        const storedScore = await createInterviewScore({
-            chat_id: chatId,
-            question_quality: scoringResult.scores.question_quality,
-            followup_skills: scoringResult.scores.followup_skills,
-            assessment_thoughtfulness: scoringResult.scores.assessment_thoughtfulness,
-            interview_conduct: scoringResult.scores.interview_conduct,
-            communication_rapport: scoringResult.scores.communication_rapport,
-            professional_judgment: scoringResult.scores.professional_judgment,
-            overall_score: scoringResult.overall_score,
-            category_feedback: scoringResult.category_feedback,
-            overall_feedback: scoringResult.overall_feedback,
-            strengths: scoringResult.strengths,
-            improvement_areas: scoringResult.improvement_areas
-        });
+        // Store the score in the appropriate database table based on training type
+        let storedScore;
+        if (trainingType === 'offboarding') {
+            storedScore = await createOffboardingScore({
+                chat_id: chatId,
+                training_id: chat.training_id,
+                empathy_emotional_intelligence: scoringResult.scores.empathy_emotional_intelligence!,
+                communication_professionalism: scoringResult.scores.communication_professionalism!,
+                clarity_of_next_steps: scoringResult.scores.clarity_of_next_steps!,
+                transition_planning_logistics: scoringResult.scores.transition_planning_logistics!,
+                conflict_resolution: scoringResult.scores.conflict_resolution!,
+                assessment_thoughtfulness: scoringResult.scores.assessment_thoughtfulness,
+                overall_score: scoringResult.overall_score,
+                category_feedback: scoringResult.category_feedback
+            });
+        } else {
+            storedScore = await createInterviewScore({
+                chat_id: chatId,
+                training_id: chat.training_id,
+                question_quality: scoringResult.scores.question_quality!,
+                followup_skills: scoringResult.scores.followup_skills!,
+                assessment_thoughtfulness: scoringResult.scores.assessment_thoughtfulness,
+                interview_conduct: scoringResult.scores.interview_conduct!,
+                communication_rapport: scoringResult.scores.communication_rapport!,
+                professional_judgment: scoringResult.scores.professional_judgment!,
+                overall_score: scoringResult.overall_score,
+                category_feedback: scoringResult.category_feedback
+            });
+        }
 
-        logError('Interview score generated and stored:', storedScore);
+        logError(`${trainingType} score generated and stored:`, storedScore);
 
         return NextResponse.json({ 
             success: true, 

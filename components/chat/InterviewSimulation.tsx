@@ -22,6 +22,7 @@ import { Assessment } from '@/types';
 
 interface InterviewSimulationProps {
   chatId: string;
+  trainingType?: string;
 }
 
 interface StreamingMessage {
@@ -32,6 +33,7 @@ interface StreamingMessage {
 
 export default function InterviewSimulation({
   chatId,
+  trainingType,
 }: InterviewSimulationProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -59,10 +61,22 @@ export default function InterviewSimulation({
     queryFn: () => getFeedbackByChat(chatId)
   });
 
+  // Fetch the appropriate score based on training type
   const { data: interviewScore } = useQuery({
-    queryKey: ['score', chatId],
-    queryFn: () => import('@/utils/queries/scores/get-interview-score').then(m => m.getInterviewScore(chatId)),
-    enabled: !!chatId
+    queryKey: ['score', chatId, chat?.training_type],
+    queryFn: async () => {
+      const trainingType = chat?.training_type || (chat?.title?.startsWith('Offboarding:') ? 'offboarding' : 'interview');
+      
+      if (trainingType === 'offboarding') {
+        const { getOffboardingScoresByChat } = await import('@/utils/queries/offboarding_scores/get-offboarding_scores-by-chat');
+        const scores = await getOffboardingScoresByChat(chatId);
+        return scores?.[0] || null; // Return the first score if available
+      } else {
+        const { getInterviewScore } = await import('@/utils/queries/scores/get-interview-score');
+        return await getInterviewScore(chatId);
+      }
+    },
+    enabled: !!chatId && !!chat
   });
 
   // Determine if interview is active based on chat completion status
@@ -192,14 +206,38 @@ export default function InterviewSimulation({
   };
 
   const endInterview = async () => {
+    if (isEndingInterview) return;
+
     setIsEndingInterview(true);
 
     try {
-      // Just mark interview as completed and show assessment wizard
-      await queryClient.invalidateQueries({
-        queryKey: ['chat', chatId]
+      const formData = new FormData();
+      formData.append('chatId', chatId);
+
+      const response = await fetch('/api/chat/end', {
+        method: 'POST',
+        body: formData,
       });
-      setShowAssessment(true);
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Invalidate chat and feedback queries to get the updated data
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: ['chat', chatId]
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ['feedback', chatId]
+          })
+        ]);
+
+        // Show the assessment wizard
+        setShowAssessment(true);
+      } else {
+        logError('Failed to end interview:', data);
+        throw new Error(data.error || 'Failed to end interview');
+      }
     } catch (error) {
       logError('Error ending interview:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -219,8 +257,8 @@ export default function InterviewSimulation({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          chatId: chatId,
-          responses: responses
+          chatId,
+          responses
         }),
       });
 
@@ -285,9 +323,10 @@ export default function InterviewSimulation({
         isInterviewActive={isInterviewActive}
         isEndingInterview={isEndingInterview}
         onShowFeedback={() => setShowFeedback(true)}
-        onBack={() => router.push('/interview')}
-        interviewStartTime={chat?.created_at ? new Date(chat.created_at) : undefined}
-        completedAt={chat?.completed_at ? new Date(chat.completed_at) : undefined}
+        onBack={() => router.push('/dashboard/trainings')}
+        interviewStartTimeIso={chat?.created_at}
+        completedAtIso={chat?.completed_at}
+        trainingType={chat?.training_type || trainingType || 'interview'}
       />
 
       <ChatArea
@@ -326,4 +365,4 @@ export default function InterviewSimulation({
       />
     </Box>
   );
-}
+} 
