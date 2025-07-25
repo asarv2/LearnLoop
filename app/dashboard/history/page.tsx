@@ -174,7 +174,7 @@ export default function HistoryPage() {
       title: 'Duration',
       key: 'duration',
       render: (_, record: Chat) => (
-        <Text>{formatDuration(record.created_at, record.completed_at)}</Text>
+        <Text>{formatDuration(record.created_at, record.completed_at || undefined)}</Text>
       ),
       width: 100,
     },
@@ -228,7 +228,7 @@ export default function HistoryPage() {
           .filter(session => session.completed_at)
           .reduce((acc, session) => {
             const start = new Date(session.created_at);
-            const end = new Date(session.completed_at);
+            const end = session.completed_at ? new Date(session.completed_at) : start;
             return acc + (end.getTime() - start.getTime());
           }, 0) / completed / (1000 * 60)
       : 0;
