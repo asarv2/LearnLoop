@@ -309,7 +309,8 @@ export default function InterviewSimulation({
       chat_id: chatId,
       completed: streamingMessage.completed,
       completed_at: '',
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      training_id: chat?.training_id || null
     });
   }
 

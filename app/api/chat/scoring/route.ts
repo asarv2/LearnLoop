@@ -66,14 +66,23 @@ export async function POST(request: NextRequest) {
 
         // Prepare conversation context
         const conversationContext = messages
-            .filter((msg: Message) => msg.completed !== false && msg.content.trim())
+            .filter((msg: Message) => msg.completed !== false && msg.content && msg.content.trim())
             .map((msg: Message) => `${msg.role === 'user' ? 'Interviewer' : 'Interviewee'}: ${msg.content}`)
             .join('\n\n');
 
         // Prepare assessment context
-        const assessmentContext = assessmentResponses
-            .map(response => `Q: ${response.question_id}\nA: ${response.response}`)
-            .join('\n\n');
+        // Fix typing issues by ensuring we only map over objects with the expected shape
+        const assessmentContext = Array.isArray(assessmentResponses)
+            ? assessmentResponses
+                .filter((response): response is { question_id: string; response: string } =>
+                    typeof response === 'object' &&
+                    response !== null &&
+                    'question_id' in response &&
+                    'response' in response
+                )
+                .map((response) => `Q: ${response.question_id}\nA: ${response.response}`)
+                .join('\n\n')
+            : '';
 
         const prompt = `
 INTERVIEW EVALUATION REQUEST
@@ -160,7 +169,6 @@ Provide scores and detailed feedback to help them improve their interviewing ski
         } else {
             storedScore = await createInterviewScore({
                 chat_id: chatId,
-                training_id: chat.training_id,
                 question_quality: scoringResult.scores.question_quality!,
                 followup_skills: scoringResult.scores.followup_skills!,
                 assessment_thoughtfulness: scoringResult.scores.assessment_thoughtfulness,
@@ -168,7 +176,17 @@ Provide scores and detailed feedback to help them improve their interviewing ski
                 communication_rapport: scoringResult.scores.communication_rapport!,
                 professional_judgment: scoringResult.scores.professional_judgment!,
                 overall_score: scoringResult.overall_score,
-                category_feedback: scoringResult.category_feedback
+                category_feedback: {
+                    question_quality: scoringResult.category_feedback.question_quality || 'No feedback provided',
+                    followup_skills: scoringResult.category_feedback.followup_skills || 'No feedback provided',
+                    assessment_thoughtfulness: scoringResult.category_feedback.assessment_thoughtfulness,
+                    interview_conduct: scoringResult.category_feedback.interview_conduct || 'No feedback provided',
+                    communication_rapport: scoringResult.category_feedback.communication_rapport || 'No feedback provided',
+                    professional_judgment: scoringResult.category_feedback.professional_judgment || 'No feedback provided'
+                },
+                overall_feedback: 'Overall feedback not provided',
+                strengths: [],
+                improvement_areas: []
             });
         }
 
