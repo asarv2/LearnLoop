@@ -18,13 +18,12 @@ import {
     Badge,
     Container
 } from '@radix-ui/themes';
-import { FileTextIcon, PlayIcon, CheckIcon } from '@radix-ui/react-icons';
+import { FileTextIcon, PlayIcon, CheckIcon, ArrowLeftIcon } from '@radix-ui/react-icons';
 import { useRouter } from 'next/navigation';
 import { InterviewType } from '@/types';
 import { logError } from '@/utils/logger';
 import Link from 'next/link';
 
-type CandidateType = 'regular' | 'ai-assisted' | 'random';
 type PositionLevel = 'entry' | 'intermediate' | 'advanced';
 
 export default function NewInterview() {
@@ -33,7 +32,6 @@ export default function NewInterview() {
     const [candidateName, setCandidateName] = useState('');
     const [interviewType, setInterviewType] = useState('');
     const [positionLevel, setPositionLevel] = useState<PositionLevel | ''>('');
-    const [candidateType, setCandidateType] = useState<CandidateType | ''>('');
     const [isLoading, setIsLoading] = useState(false);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,7 +44,7 @@ export default function NewInterview() {
     };
 
     const startInterview = async () => {
-        if (!selectedFile || !candidateName.trim() || !interviewType.trim() || !positionLevel || !candidateType) {
+        if (!selectedFile || !candidateName.trim() || !interviewType.trim() || !positionLevel) {
             alert('Please complete all steps before starting the interview');
             return;
         }
@@ -54,16 +52,8 @@ export default function NewInterview() {
         setIsLoading(true);
 
         try {
-            // if candidateType is random, we need to randomly select a candidateType
-            let dbInterviewType: InterviewType = 'regular';
-            if (candidateType === 'random') {
-                dbInterviewType = Math.random() < 0.5 ? 'regular' : 'cheating';
-            } else if (candidateType === 'regular') {
-                dbInterviewType = 'regular';
-            } else if (candidateType === 'ai-assisted') {
-                dbInterviewType = 'cheating';
-            }
-
+            // Always randomly select between regular and dishonest candidates
+            const dbInterviewType: InterviewType = Math.random() < 0.5 ? 'regular' : 'cheating';
 
             const formData = new FormData();
             formData.append('name', candidateName);
@@ -97,13 +87,12 @@ export default function NewInterview() {
             case 1: return candidateName.trim() !== '';
             case 2: return interviewType.trim() !== '';
             case 3: return positionLevel !== '';
-            case 4: return candidateType !== '';
-            case 5: return selectedFile !== null;
+            case 4: return selectedFile !== null;
             default: return false;
         }
     };
 
-    const allStepsComplete = isStepComplete(1) && isStepComplete(2) && isStepComplete(3) && isStepComplete(4) && isStepComplete(5);
+    const allStepsComplete = isStepComplete(1) && isStepComplete(2) && isStepComplete(3) && isStepComplete(4);
 
 
     return (
@@ -143,6 +132,16 @@ export default function NewInterview() {
                 </Container>
             </Box>
 
+            {/* Back Button */}
+            <Container size="4" pt="4">
+                <Link href="/interview">
+                    <Button variant="ghost" size="2" style={{ color: 'black' }}>
+                        <ArrowLeftIcon width="16" height="16" />
+                        Back to Dashboard
+                    </Button>
+                </Link>
+            </Container>
+
             {/* Main Content */}
             <Container size="4" py="8">
                 {/* Hero Section */}
@@ -150,9 +149,7 @@ export default function NewInterview() {
                     <Heading size="9" weight="bold" mb="4">
                         Start Your Interview Training
                     </Heading>
-                    <Text size="5" color="gray" mb="6" style={{ lineHeight: '1.6', maxWidth: '600px', margin: '0 auto 24px auto' }}>
-                        Practice with AI-powered candidates and receive detailed feedback on your interviewing performance
-                    </Text>
+                    
                 </Box>
 
                 {/* Step Cards with Progress Bars */}
@@ -443,7 +440,7 @@ export default function NewInterview() {
                         }} />
                     </Flex>
 
-                    {/* Step 4: Candidate Type */}
+                    {/* Step 4: Resume Upload */}
                     <Box mb="4">
                         <Card style={{
                             background: 'white',
@@ -472,175 +469,20 @@ export default function NewInterview() {
                                     </Box>
                                     <Box style={{ flex: 1 }}>
                                         <Flex align="center" gap="2" mb="3">
-                                            <Text size="4" weight="bold">Candidate Training Type</Text>
-                                            {isStepComplete(4) && (
-                                                <Badge size="1" variant="soft" color="green">Complete</Badge>
-                                            )}
-                                        </Flex>
-
-
-                                        <Flex direction="column" gap="3">
-                                            {/* Regular Candidate */}
-                                            <Card
-                                                style={{
-                                                    background: candidateType === 'regular' ? 'var(--blue-2)' : 'var(--gray-1)',
-                                                    border: `2px solid ${candidateType === 'regular' ? 'var(--blue-7)' : 'var(--gray-6)'}`,
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.2s ease'
-                                                }}
-                                                onClick={() => setCandidateType('regular')}
-                                            >
-                                                <Box p="4">
-                                                    <Flex align="center" gap="3">
-                                                        <Box style={{
-                                                            width: '20px',
-                                                            height: '20px',
-                                                            borderRadius: '50%',
-                                                            border: `2px solid ${candidateType === 'regular' ? 'var(--blue-9)' : 'var(--gray-6)'}`,
-                                                            background: candidateType === 'regular' ? 'var(--blue-9)' : 'transparent',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            {candidateType === 'regular' && (
-                                                                <CheckIcon width="12" height="12" color="white" />
-                                                            )}
-                                                        </Box>
-                                                        <Box>
-                                                            <Text size="3" weight="bold">Regular Candidate: </Text>
-                                                            <Text size="2" color="gray">Standard interview simulation with natural responses</Text>
-                                                        </Box>
-                                                    </Flex>
-                                                </Box>
-                                            </Card>
-
-                                            {/* AI-Assisted (Cheating) Candidate */}
-                                            <Card
-                                                style={{
-                                                    background: candidateType === 'ai-assisted' ? 'var(--amber-2)' : 'var(--gray-1)',
-                                                    border: `2px solid ${candidateType === 'ai-assisted' ? 'var(--amber-7)' : 'var(--gray-6)'}`,
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.2s ease'
-                                                }}
-                                                onClick={() => setCandidateType('ai-assisted')}
-                                            >
-                                                <Box p="4">
-                                                    <Flex align="center" gap="3">
-                                                        <Box style={{
-                                                            width: '20px',
-                                                            height: '20px',
-                                                            borderRadius: '50%',
-                                                            border: `2px solid ${candidateType === 'ai-assisted' ? 'var(--amber-9)' : 'var(--gray-6)'}`,
-                                                            background: candidateType === 'ai-assisted' ? 'var(--amber-9)' : 'transparent',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            {candidateType === 'ai-assisted' && (
-                                                                <CheckIcon width="12" height="12" color="white" />
-                                                            )}
-                                                        </Box>
-                                                        <Box>
-                                                            <Text size="3" weight="bold">Dishonest Candidate: </Text>
-                                                            <Text size="2" color="gray">Practice detecting subtle signs of AI assistance or cheating</Text>
-                                                        </Box>
-                                                    </Flex>
-                                                </Box>
-                                            </Card>
-
-                                            {/* Random */}
-                                            <Card
-                                                style={{
-                                                    background: candidateType === 'random' ? 'var(--purple-2)' : 'var(--gray-1)',
-                                                    border: `2px solid ${candidateType === 'random' ? 'var(--purple-7)' : 'var(--gray-6)'}`,
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.2s ease'
-                                                }}
-                                                onClick={() => setCandidateType('random')}
-                                            >
-                                                <Box p="4">
-                                                    <Flex align="center" gap="3">
-                                                        <Box style={{
-                                                            width: '20px',
-                                                            height: '20px',
-                                                            borderRadius: '50%',
-                                                            border: `2px solid ${candidateType === 'random' ? 'var(--purple-9)' : 'var(--gray-6)'}`,
-                                                            background: candidateType === 'random' ? 'var(--purple-9)' : 'transparent',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            {candidateType === 'random' && (
-                                                                <CheckIcon width="12" height="12" color="white" />
-                                                            )}
-                                                        </Box>
-                                                        <Box>
-                                                            <Text size="3" weight="bold">Random Selection: </Text>
-                                                            <Text size="2" color="gray">Randomly chosen regular or AI-assisted for realistic training</Text>
-                                                        </Box>
-                                                    </Flex>
-                                                </Box>
-                                            </Card>
-                                        </Flex>
-                                    </Box>
-                                </Flex>
-                            </Box>
-                        </Card>
-                    </Box>
-
-                    {/* Progress Bar 4 */}
-                    <Flex justify="center" mb="4">
-                        <Box style={{
-                            width: '2px',
-                            height: '24px',
-                            background: isStepComplete(4) ? 'var(--green-8)' : 'var(--gray-6)',
-                            borderRadius: '2px'
-                        }} />
-                    </Flex>
-
-                    {/* Step 5: Resume Upload */}
-                    <Box mb="4">
-                        <Card style={{
-                            background: 'white',
-                            border: `1px solid ${isStepComplete(5) ? 'var(--green-8)' : 'var(--gray-6)'}`,
-                            borderRadius: '12px',
-                            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-                            transition: 'all 0.2s ease'
-                        }}>
-                            <Box p="6">
-                                <Flex align="center" gap="4">
-                                    <Box style={{
-                                        width: '32px',
-                                        height: '32px',
-                                        borderRadius: '50%',
-                                        background: isStepComplete(5) ? 'var(--green-9)' : 'var(--gray-7)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        flexShrink: 0
-                                    }}>
-                                        {isStepComplete(5) ? (
-                                            <CheckIcon color="white" width="16" height="16" />
-                                        ) : (
-                                            <Text size="2" weight="bold" style={{ color: 'white' }}>5</Text>
-                                        )}
-                                    </Box>
-                                    <Box style={{ flex: 1 }}>
-                                        <Flex align="center" gap="2" mb="3">
                                             <Text size="4" weight="bold">Candidate Resume</Text>
-                                            {isStepComplete(5) && (
+                                            {isStepComplete(4) && (
                                                 <Badge size="1" variant="soft" color="green">Complete</Badge>
                                             )}
                                         </Flex>
 
                                         <Box
                                             style={{
-                                                border: `2px dashed ${isStepComplete(5) ? 'var(--green-7)' : 'var(--gray-6)'}`,
+                                                border: `2px dashed ${isStepComplete(4) ? 'var(--green-7)' : 'var(--gray-6)'}`,
                                                 borderRadius: '8px',
                                                 padding: '24px',
                                                 textAlign: 'center',
                                                 cursor: 'pointer',
-                                                background: isStepComplete(5) ? 'var(--green-1)' : 'var(--gray-1)',
+                                                background: isStepComplete(4) ? 'var(--green-1)' : 'var(--gray-1)',
                                                 transition: 'all 0.2s ease'
                                             }}
                                             onClick={() => document.getElementById('resume-upload')?.click()}
@@ -674,7 +516,7 @@ export default function NewInterview() {
                         </Card>
                     </Box>
 
-                    {/* Progress Bar 5 */}
+                    {/* Progress Bar 4 */}
                     <Flex justify="center" mb="4">
                         <Box style={{
                             width: '2px',
@@ -684,7 +526,7 @@ export default function NewInterview() {
                         }} />
                     </Flex>
 
-                    {/* Step 6: Start Interview */}
+                    {/* Step 5: Start Interview */}
                     <Box>
                         <Card style={{
                             background: allStepsComplete ? 'white' : 'var(--gray-2)',

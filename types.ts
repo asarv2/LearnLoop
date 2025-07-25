@@ -12,6 +12,8 @@ export type Assessment = Tables<'assessments'>;
 export type Chat = Tables<'chats'>;
 // --- FEEDBACK ---
 export type Feedback = Tables<'feedback'>;
+// --- INTERVIEW_SCORES ---
+export type InterviewScore = Tables<'interview_scores'>;
 // --- LOGS ---
 export type Log = Tables<'logs'>;
 // --- MESSAGES ---
@@ -32,7 +34,7 @@ export type MessageRole = "user" | "assistant";
 // =============================================
 
 // Union type of all table names
-export type TableName = 'assessments' | 'chats' | 'feedback' | 'logs' | 'messages' | 'resumes';
+export type TableName = 'assessments' | 'chats' | 'feedback' | 'interview_scores' | 'logs' | 'messages' | 'resumes';
 
 // Union type of all entity types
-export type Entity = Assessment | Chat | Feedback | Log | Message | Resume;
+export type Entity = Assessment | Chat | Feedback | InterviewScore | Log | Message | Resume;

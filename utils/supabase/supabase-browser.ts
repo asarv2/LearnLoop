@@ -22,3 +22,4 @@ function useSupabaseBrowser() {
 }
 
 export default useSupabaseBrowser
+export const createClient = getSupabaseBrowserClient

@@ -315,10 +315,30 @@ export default function AudioArea({ chat, messages, onError }: AudioAreaProps) {
     (async () => {
       try {
         // 1️⃣ build the session
-        const session =
-          chat.type === 'cheating'
-            ? await getCheatingRealtimeSession(chat.title, chat.id)
-            : await getRegularRealtimeSession(chat.title, chat.id);
+        let session;
+        
+        // Check if this is offboarding training
+        let additionalInfo;
+        try {
+          additionalInfo = JSON.parse(chat.additional_info);
+        } catch {
+          additionalInfo = null;
+        }
+
+        if (additionalInfo && additionalInfo.offboarding_type) {
+          // This is offboarding training
+          const { getOffboardingRealtimeSession } = await import('@/utils/ai/agents/offboarding');
+          session = await getOffboardingRealtimeSession(
+            chat.title, 
+            chat.id, 
+            additionalInfo.offboarding_type, 
+            additionalInfo.employee_level
+          );
+        } else if (chat.type === 'cheating') {
+          session = await getCheatingRealtimeSession(chat.title, chat.id);
+        } else {
+          session = await getRegularRealtimeSession(chat.title, chat.id);
+        }
 
         // 2️⃣ seed history *before* connect so server won't echo it back
         const initHistory = [

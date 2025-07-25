@@ -11,8 +11,21 @@ import { generateConversationHistory } from "@/utils/ai/chat/conversation-histor
 import { getMessagesByChat } from "@/utils/queries/messages/get-messages-by-chat";
 import { generateResumeHistory } from "@/utils/ai/chat/resume-history";
 import { logError } from "@/utils/logger";
+import { cookies } from "next/headers";
+import supabaseServer from "@/utils/supabase/supabase-server";
 
 export async function POST(request: NextRequest) {
+    // Check authentication
+    const supabase = await supabaseServer(cookies());
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { 
+            status: 401,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
     // use form data
     const formData = await request.formData();
     const chatId = formData.get("chatId");
@@ -66,7 +79,20 @@ export async function POST(request: NextRequest) {
                 const interviewType = chat.type;
 
                 let agent: Agent;
-                if (interviewType === 'cheating') {
+                
+                // Check if this is offboarding training
+                let additionalInfo;
+                try {
+                    additionalInfo = JSON.parse(chat.additional_info);
+                } catch {
+                    additionalInfo = null;
+                }
+
+                if (additionalInfo && additionalInfo.offboarding_type) {
+                    // This is offboarding training
+                    const { getOffboardingAgent } = await import('@/utils/ai/agents/offboarding');
+                    agent = await getOffboardingAgent(additionalInfo.offboarding_type, additionalInfo.employee_level);
+                } else if (interviewType === 'cheating') {
                     agent = await getCheatingAgent();
                 } else {
                     agent = await getRegularAgent();

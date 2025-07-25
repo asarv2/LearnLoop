@@ -13,7 +13,7 @@ import {
     Button,
     Card,
 } from '@radix-ui/themes';
-import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon, SpeakerLoudIcon, Pencil1Icon } from '@radix-ui/react-icons';
+import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon, SpeakerLoudIcon, Pencil1Icon, InfoCircledIcon } from '@radix-ui/react-icons';
 import { Chat, Message } from '@/types';
 import Markdown from '@/components/chat/Markdown';
 import { createMessage } from '@/utils/mutations/messages/create-message';
@@ -47,7 +47,7 @@ export default function ChatArea({
     currentMessage, 
     setCurrentMessage, 
     handleKeyPress, 
-    sendMessage, 
+    sendMessage: originalSendMessage, 
     messagesEndRef, 
     chat
 }: ChatAreaProps) {
@@ -62,6 +62,12 @@ export default function ChatArea({
     const [isVoiceConnected, setIsVoiceConnected] = useState(false);
     const [transportReady, setTransportReady] = useState(false);
 
+    // Hints-related state
+    const [showHints, setShowHints] = useState(false);
+    const [hints, setHints] = useState<string>('');
+    const [isLoadingHints, setIsLoadingHints] = useState(false);
+    const [lastAIResponse, setLastAIResponse] = useState<string>('');
+
     // Voice-related refs
     const currentMessageRef = useRef<{ id: string } | null>(null);
     const tokenPromiseRef = useRef<Promise<string> | null>(null);
@@ -70,6 +76,50 @@ export default function ChatArea({
 
     const pendingUserMessage = useRef<string>('');
     const pendingAIMessage   = useRef<string>('');
+
+    // Generate hints function
+    const generateHints = useCallback(async () => {
+        if (!lastAIResponse || !displayMessages.length) return;
+
+        setIsLoadingHints(true);
+        try {
+            const response = await fetch('/api/chat/hints', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    messages: displayMessages,
+                    chatType: chat?.type || 'regular',
+                    chatTitle: chat?.title || '',
+                    lastAIResponse: lastAIResponse
+                })
+            });
+
+            const data = await response.json();
+            if (data.hints) {
+                setHints(data.hints);
+            }
+        } catch (error) {
+            logError('Error generating hints:', error);
+        } finally {
+            setIsLoadingHints(false);
+        }
+    }, [lastAIResponse, displayMessages, chat?.type]);
+
+    // Handle hints button click
+    const handleHintsClick = useCallback(async () => {
+        if (!showHints && !hints && lastAIResponse) {
+            await generateHints();
+        }
+        setShowHints(!showHints);
+    }, [showHints, hints, lastAIResponse, generateHints]);
+
+    // Wrapper for sendMessage to close hints
+    const sendMessage = useCallback(() => {
+        setShowHints(false);
+        originalSendMessage();
+    }, [originalSendMessage]);
 
 
 
@@ -94,6 +144,9 @@ export default function ChatArea({
                 setCurrentUserTranscript('');
                 pendingUserMessage.current = '';
                 
+                // Close hints popup when user sends a message
+                setShowHints(false);
+                
                 // Invalidate queries to refresh the UI
                 queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
                 
@@ -110,6 +163,14 @@ export default function ChatArea({
                 // Clear AI transcript and pending message
                 setCurrentAITranscript('');
                 pendingAIMessage.current = '';
+                
+                // Store the AI response for hints generation
+                const newResponse = content.trim();
+                if (newResponse !== lastAIResponse) {
+                    setLastAIResponse(newResponse);
+                    // Clear old hints when there's a new AI response
+                    setHints('');
+                }
                 
                 // Invalidate queries to refresh the UI
                 queryClient.invalidateQueries({ queryKey: ['messages', chat.id] });
@@ -138,9 +199,30 @@ export default function ChatArea({
         (async () => {
             try {
                 // Build the session
-                const session = chat.type === 'cheating'
-                    ? await getCheatingRealtimeSession(chat.title, chat.id)
-                    : await getRegularRealtimeSession(chat.title, chat.id);
+                let session;
+                
+                // Check if this is offboarding training
+                let additionalInfo;
+                try {
+                    additionalInfo = JSON.parse(chat.additional_info);
+                } catch {
+                    additionalInfo = null;
+                }
+
+                if (additionalInfo && additionalInfo.offboarding_type) {
+                    // This is offboarding training
+                    const { getOffboardingRealtimeSession } = await import('@/utils/ai/agents/offboarding');
+                    session = await getOffboardingRealtimeSession(
+                        chat.title, 
+                        chat.id, 
+                        additionalInfo.offboarding_type, 
+                        additionalInfo.employee_level
+                    );
+                } else if (chat.type === 'cheating') {
+                    session = await getCheatingRealtimeSession(chat.title, chat.id);
+                } else {
+                    session = await getRegularRealtimeSession(chat.title, chat.id);
+                }
 
                 // Seed history
                 const initHistory = [
@@ -223,6 +305,19 @@ export default function ChatArea({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chat?.id, isVoiceMode]);
 
+    // Track AI responses for hints generation (text mode)
+    useEffect(() => {
+        const lastMessage = displayMessages[displayMessages.length - 1];
+        if (lastMessage && lastMessage.role === 'assistant' && lastMessage.completed && lastMessage.content) {
+            const newResponse = lastMessage.content;
+            if (newResponse !== lastAIResponse) {
+                setLastAIResponse(newResponse);
+                // Clear old hints when there's a new AI response
+                setHints('');
+            }
+        }
+    }, [displayMessages, lastAIResponse]);
+
     // Create combined messages array for display
     const getCombinedMessages = () => {
         const messages = [...displayMessages];
@@ -230,7 +325,7 @@ export default function ChatArea({
         // Add current user transcript as temporary message
         if (currentUserTranscript && isVoiceMode) {
             messages.push({
-                id: 'temp-user',
+                id: `temp-user-${Date.now()}`,
                 content: currentUserTranscript,
                 role: 'user',
                 created_at: new Date().toISOString(),
@@ -242,7 +337,7 @@ export default function ChatArea({
         // Add current AI transcript as temporary message
         if (currentAITranscript && isVoiceMode) {
             messages.push({
-                id: 'temp-ai',
+                id: `temp-ai-${Date.now()}`,
                 content: currentAITranscript,
                 role: 'assistant',
                 created_at: new Date().toISOString(),
@@ -437,32 +532,34 @@ export default function ChatArea({
                                     <SpeakerLoudIcon width="16" height="16" />
                                     Voice
                                 </Button>
+                                {/* Hints Button */}
+                                {lastAIResponse && (
+                                    <Button
+                                        onClick={handleHintsClick}
+                                        variant="outline"
+                                        size="2"
+                                        disabled={isLoadingHints}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                            padding: '0.5rem 1rem',
+                                            borderRadius: '20px',
+                                            background: 'transparent',
+                                            color: 'var(--purple-9)',
+                                            border: `1px solid var(--purple-9)`,
+                                            cursor: isLoadingHints ? 'not-allowed' : 'pointer'
+                                        }}
+                                    >
+                                        <InfoCircledIcon width="16" height="16" />
+                                        {isLoadingHints ? 'Loading...' : hints ? 'Hints' : 'Get Hints'}
+                                    </Button>
+                                )}
                             </Flex>
 
                             {isVoiceMode ? (
                                 // Voice Input
                                 <Flex direction="column" gap="3" align="center">
-                                    {/* Connection Status */}
-                                    {isVoiceConnected && (
-                                        <Flex align="center" gap="2" style={{
-                                            padding: '0.5rem 1rem',
-                                            borderRadius: '20px',
-                                            background: 'rgba(34, 197, 94, 0.1)',
-                                            border: '1px solid rgba(34, 197, 94, 0.3)',
-                                        }}>
-                                            <div style={{
-                                                width: '8px',
-                                                height: '8px',
-                                                borderRadius: '50%',
-                                                background: '#22c55e',
-                                                animation: 'pulse 2s ease-in-out infinite'
-                                            }} />
-                                            <Text size="2" weight="medium" style={{ color: '#22c55e' }}>
-                                                Voice Ready
-                                            </Text>
-                                        </Flex>
-                                    )}
-
                                     {/* Voice Button */}
                                     <Button
                                         onMouseDown={handleVoiceStart}
@@ -475,7 +572,9 @@ export default function ChatArea({
                                             borderRadius: '30px',
                                             background: micActive 
                                                 ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
-                                                : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                                : (!isVoiceConnected || !transportReady)
+                                                    ? 'linear-gradient(135deg, #9ca3af, #6b7280)'
+                                                    : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
                                             color: 'white',
                                             border: 'none',
                                             cursor: isVoiceConnected && transportReady ? 'pointer' : 'not-allowed',
@@ -484,7 +583,9 @@ export default function ChatArea({
                                             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                                             boxShadow: micActive 
                                                 ? '0 8px 30px rgba(239, 68, 68, 0.4)' 
-                                                : '0 8px 30px rgba(99, 102, 241, 0.3)',
+                                                : (!isVoiceConnected || !transportReady)
+                                                    ? '0 4px 15px rgba(156, 163, 175, 0.3)'
+                                                    : '0 8px 30px rgba(99, 102, 241, 0.3)',
                                             transform: micActive ? 'scale(1.05)' : 'scale(1)',
                                             display: 'flex',
                                             alignItems: 'center',
@@ -492,9 +593,9 @@ export default function ChatArea({
                                         }}
                                     >
                                         <span style={{ fontSize: '1.2rem' }}>
-                                            {micActive ? '🔴' : '🎤'}
+                                            {micActive ? '🔴' : (!isVoiceConnected || !transportReady) ? '⏳' : '🎤'}
                                         </span>
-                                        {micActive ? 'Recording...' : 'Hold to Speak'}
+                                        {micActive ? 'Recording...' : (!isVoiceConnected || !transportReady) ? 'Connecting...' : 'Hold to Speak'}
                                     </Button>
                                 </Flex>
                             ) : (
@@ -552,7 +653,62 @@ export default function ChatArea({
                                 </Box>
                             )}
                         </Flex>
+
                     </Box>
+                </Box>
+            )}
+
+            {/* Hints Popup */}
+            {showHints && (
+                <Box style={{
+                    position: 'fixed',
+                    top: '50%',
+                    right: '24px',
+                    transform: 'translateY(-50%)',
+                    zIndex: 1000,
+                    maxWidth: '350px',
+                    width: '100%'
+                }}>
+                    <Card
+                        size="3"
+                        style={{
+                            background: 'white',
+                            border: '1px solid var(--purple-7)',
+                            boxShadow: '0 8px 30px rgba(0, 0, 0, 0.12)',
+                            borderRadius: '12px'
+                        }}
+                    >
+                        <Flex direction="column" gap="3">
+                            <Flex justify="between" align="center">
+                                <Text size="3" weight="bold" style={{ color: 'var(--purple-9)' }}>
+                                    💡 {chat?.title?.startsWith('Offboarding:') ? 'Offboarding Hints' : 'Interview Hints'}
+                                </Text>
+                                <Button
+                                    onClick={() => setShowHints(false)}
+                                    variant="ghost"
+                                    size="1"
+                                    style={{
+                                        color: 'var(--gray-9)',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    ✕
+                                </Button>
+                            </Flex>
+                            
+                            {hints ? (
+                                <Box>
+                                    <Text size="2" style={{ lineHeight: '1.5', color: 'var(--gray-12)' }}>
+                                        <Markdown>{hints}</Markdown>
+                                    </Text>
+                                </Box>
+                            ) : (
+                                <Text size="2" style={{ color: 'var(--gray-11)' }}>
+                                    {isLoadingHints ? 'Generating hints...' : 'No hints available'}
+                                </Text>
+                            )}
+                        </Flex>
+                    </Card>
                 </Box>
             )}
 
