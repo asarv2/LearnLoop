@@ -23,7 +23,30 @@ export const useCreateMessage = () => {
       // Snapshot the previous value
       const previousMessages = queryClient.getQueryData<Message[]>(['messages', chatId]) ?? [];
 
-      // Create optimistic message
+      // Check if there's already an optimistic message with a temp ID that we should update
+      const existingTempMessage = previousMessages.find(m => 
+        m.id.startsWith('temp-') && m.role === draft.role
+      );
+
+      if (existingTempMessage) {
+        // Update the existing optimistic message instead of creating a new one
+        const updatedMessages = previousMessages.map(m => 
+          m.id === existingTempMessage.id 
+            ? { ...m, ...draft, completed: true, completed_at: new Date().toISOString() }
+            : m
+        );
+        
+        queryClient.setQueryData<Message[]>(['messages', chatId], updatedMessages);
+        
+        return { 
+          previousMessages, 
+          optimisticId: existingTempMessage.id,
+          chatId,
+          isUpdate: true
+        };
+      }
+
+      // Create new optimistic message if no existing temp message found
       const optimisticMessage: Message = {
         ...draft,
         id: `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`, // Stable during round-trip
@@ -41,7 +64,8 @@ export const useCreateMessage = () => {
       return { 
         previousMessages, 
         optimisticId: optimisticMessage.id,
-        chatId
+        chatId,
+        isUpdate: false
       };
     },
 
