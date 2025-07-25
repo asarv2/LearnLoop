@@ -228,7 +228,7 @@ export default function ChatArea({
                     if (e.type === "input_audio_buffer.speech_started") {
                         // Create optimistic user message for recording
                         const tempId = `temp-${e.itemId}`;
-                        patchCache(tempId, { content: '🎤 Listening…' });
+                        patchCache(tempId, { content: '...' });
                     } else if (e.type === "conversation.item.input_audio_transcription.delta") {
                         if (!e.delta) return;
                         // Update optimistic message with transcription delta
@@ -239,7 +239,7 @@ export default function ChatArea({
                     } else if (e.type === "input_audio_buffer.speech_stopped") {
                         // Update optimistic message to transcribing status
                         const tempId = `temp-${e.itemId}`;
-                        patchCache(tempId, { content: '📝 Transcribing…' });
+                        patchCache(tempId, { content: '...' });
                     } else if (e.type === "conversation.item.input_audio_transcription.completed") {
                         // Turn placeholder into final text before the mutation so ids line up
                         const tempId = `temp-${e.itemId}`;

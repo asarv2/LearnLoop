@@ -57,7 +57,7 @@ export type Database = {
         Row: {
           additional_info: string
           completed: boolean
-          completed_at: string
+          completed_at: string | null
           created_at: string
           feedback: Json | null
           id: string
@@ -75,7 +75,7 @@ export type Database = {
         Insert: {
           additional_info?: string
           completed?: boolean
-          completed_at?: string
+          completed_at?: string | null
           created_at?: string
           feedback?: Json | null
           id?: string
@@ -93,7 +93,7 @@ export type Database = {
         Update: {
           additional_info?: string
           completed?: boolean
-          completed_at?: string
+          completed_at?: string | null
           created_at?: string
           feedback?: Json | null
           id?: string
