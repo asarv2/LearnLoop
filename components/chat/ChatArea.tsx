@@ -59,7 +59,6 @@ export default function ChatArea({
     // Voice-related state
     const createMessageMutation = useCreateMessage();
     const queryClient = useQueryClient();
-    const [currentAITranscript, setCurrentAITranscript] = useState('');
     const [micActive, setMicActive] = useState(false);
     const [isVoiceConnected, setIsVoiceConnected] = useState(false);
     const [transportReady, setTransportReady] = useState(false);
@@ -75,6 +74,7 @@ export default function ChatArea({
     const tokenPromiseRef = useRef<Promise<string> | null>(null);
     const sessionRef = useRef<RealtimeSession | null>(null);
     const hasSession = useRef(false);
+    const assistantTempIdRef = useRef<string | null>(null);
 
     const pendingUserMessage = useRef<string>('');
     const pendingAIMessage = useRef<string>('');
@@ -157,57 +157,7 @@ export default function ChatArea({
         originalSendMessage();
     }, [originalSendMessage]);
 
-    const syncTranscriptToMessages = useCallback(async (content: string, role: 'user' | 'assistant') => {
-        // Guard against undefined chat or empty content
-        if (!chat?.id || !content.trim()) {
-            logError('Chat not available or empty content for syncing transcript');
-            return;
-        }
 
-        try {
-            if (role === 'user') {
-                // Create user message using optimistic mutation
-                await createMessageMutation.mutateAsync({
-                    chat_id: chat.id,
-                    content: content.trim(),
-                    role: 'user',
-                    completed: true
-                });
-
-                // Clear pending message
-                pendingUserMessage.current = '';
-
-                // Close hints popup when user sends a message
-                setShowHints(false);
-
-                logError('User message created optimistically');
-            } else {
-                // For assistant messages, create a new message each time
-                await createMessageMutation.mutateAsync({
-                    chat_id: chat.id,
-                    content: content.trim(),
-                    role: 'assistant',
-                    completed: true
-                });
-
-                // Clear AI transcript and pending message
-                setCurrentAITranscript('');
-                pendingAIMessage.current = '';
-
-                // Store the AI response for hints generation
-                const newResponse = content.trim();
-                if (newResponse !== lastAIResponse) {
-                    setLastAIResponse(newResponse);
-                    // Clear old hints when there's a new AI response
-                    setHints('');
-                }
-
-                logError('Assistant message created optimistically');
-            }
-        } catch (error) {
-            logError('Error syncing transcript:', error);
-        }
-    }, [chat?.id, createMessageMutation, lastAIResponse]);
 
     // Voice session setup
     useEffect(() => {
@@ -304,11 +254,43 @@ export default function ChatArea({
                         });
                     } else if (e.type === 'response.audio_transcript.delta' || e.type === 'response.text.delta') {
                         if (!e.delta) return;
-                        setCurrentAITranscript((prev) => prev + e.delta);
-                        pendingAIMessage.current = e.delta;
+                        
+                        // Allocate a single temp id per assistant response
+                        if (!assistantTempIdRef.current) {
+                            assistantTempIdRef.current = `temp-assistant-${crypto.randomUUID()}`;
+                            patchCache(assistantTempIdRef.current, {
+                                role: 'assistant',
+                                content: '',
+                                completed: false
+                            });
+                        }
+                        
+                        // Update the same message with each delta
+                        patchCache(assistantTempIdRef.current, (prev) => ({
+                            content: (prev?.content ?? '') + e.delta
+                        }));
                     } else if (e.type === 'response.audio_transcript.done' || e.type === 'response.text.done') {
-                        await syncTranscriptToMessages(e.transcript, 'assistant');
-                        setCurrentAITranscript('');
+                        const tempId = assistantTempIdRef.current!;
+                        // Final patch so UI shows full text & spinner stops
+                        patchCache(tempId, { content: e.transcript, completed: true });
+
+                        // Hit DB — pass tempId so onMutate updates in-place
+                        createMessageMutation.mutate({
+                            chat_id: chat.id,
+                            role: 'assistant',
+                            content: e.transcript.trim(),
+                            completed: true
+                        });
+
+                        // Store the AI response for hints generation
+                        const newResponse = e.transcript.trim();
+                        if (newResponse !== lastAIResponse) {
+                            setLastAIResponse(newResponse);
+                            // Clear old hints when there's a new AI response
+                            setHints('');
+                        }
+
+                        assistantTempIdRef.current = null; // Ready for next answer
                     } else {
                         logError(`Unknown event type: ${e.type}`, e);
                     }
@@ -346,11 +328,12 @@ export default function ChatArea({
             pendingUserMessage.current = '';
             pendingAIMessage.current = '';
             currentMessageRef.current = null;
+            assistantTempIdRef.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chat?.id, isVoiceMode]);
 
-    // Track AI responses for hints generation (text mode)
+    // Track AI responses for hints generation (both text and voice modes)
     useEffect(() => {
         const lastMessage = displayMessages[displayMessages.length - 1];
         if (lastMessage && lastMessage.role === 'assistant' && lastMessage.completed && lastMessage.content) {
@@ -365,24 +348,10 @@ export default function ChatArea({
 
     // Create combined messages array for display with optimistic updates
     const getCombinedMessages = useCallback(() => {
-        // Add current AI transcript as temporary message
         const messages = [...displayMessages];
-        if (currentAITranscript && isVoiceMode) {
-            messages.push({
-                id: `temp-ai-${Date.now()}`,
-                content: currentAITranscript,
-                role: 'assistant',
-                created_at: new Date().toISOString(),
-                completed: false,
-                chat_id: chat?.id || '',
-                completed_at: new Date().toISOString(), // Use current timestamp for incomplete messages
-                training_id: null
-            } as Message);
-        }
-
         return messages
             .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    }, [displayMessages, currentAITranscript, isVoiceMode, chat?.id]);
+    }, [displayMessages]);
 
     const handleVoiceStart = () => {
         if (transportReady && sessionRef.current) {
@@ -403,12 +372,12 @@ export default function ChatArea({
     const handleModeToggle = () => {
         setIsVoiceMode(!isVoiceMode);
         // Clear any current transcripts when switching modes
-        setCurrentAITranscript('');
         setCurrentMessage('');
         // Clear pending messages
         pendingUserMessage.current = '';
         pendingAIMessage.current = '';
         currentMessageRef.current = null;
+        assistantTempIdRef.current = null;
     };
 
     // Early return if chat is not available
