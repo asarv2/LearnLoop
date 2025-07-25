@@ -291,8 +291,6 @@ export default function ChatArea({
                         }
 
                         assistantTempIdRef.current = null; // Ready for next answer
-                    } else {
-                        logError(`Unknown event type: ${e.type}`, e);
                     }
                 });
 
