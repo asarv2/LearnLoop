@@ -720,7 +720,7 @@ export default function ChatArea({
                 }}>
                     <Card size="2" style={{ background: 'var(--amber-2)', border: '1px solid var(--amber-7)' }}>
                         <Text size="2" align="center" style={{ color: 'var(--amber-11)' }}>
-                            Interview completed. Generating feedback...
+                            Generating feedback...
                         </Text>
                     </Card>
                 </Box>

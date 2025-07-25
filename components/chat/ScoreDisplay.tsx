@@ -25,8 +25,32 @@ interface InterviewScore {
   created_at: string;
 }
 
+interface OffboardingScore {
+  id: string;
+  chat_id: string;
+  empathy_emotional_intelligence: number;
+  communication_professionalism: number;
+  clarity_of_next_steps: number;
+  transition_planning_logistics: number;
+  conflict_resolution: number;
+  assessment_thoughtfulness: number;
+  overall_score: number;
+  category_feedback: {
+    empathy_emotional_intelligence: string;
+    communication_professionalism: string;
+    clarity_of_next_steps: string;
+    transition_planning_logistics: string;
+    conflict_resolution: string;
+    assessment_thoughtfulness: string;
+  };
+  overall_feedback: string;
+  strengths: string[];
+  improvement_areas: string[];
+  created_at: string;
+}
+
 interface ScoreDisplayProps {
-  score: InterviewScore | null;
+  score: InterviewScore | OffboardingScore | null;
   candidateName: string;
   chat?: any;
 }
@@ -43,36 +67,29 @@ const interviewCategoryNames = {
 const offboardingCategoryNames = {
   empathy_emotional_intelligence: 'Empathy & Emotional Intelligence',
   communication_professionalism: 'Communication Clarity & Professionalism',
-  legal_procedural_compliance: 'Legal & Procedural Compliance',
+  clarity_of_next_steps: 'Clarity of Next Steps',
   transition_planning_logistics: 'Transition Planning & Logistics',
   conflict_resolution: 'Conflict Resolution & Difficult Conversations',
   assessment_thoughtfulness: 'Assessment Thoughtfulness & Reflection'
 };
 
-const getScoreColor = (score: number) => {
-  if (score >= 90) return 'var(--green-9)';
-  if (score >= 80) return 'var(--blue-9)';
-  if (score >= 70) return 'var(--yellow-9)';
-  if (score >= 60) return 'var(--orange-9)';
-  return 'var(--red-9)';
-};
+const PRIMARY_COLOR = '#2563eb'; // Strong blue for scores and highlights
+const CARD_BG = 'rgba(30,41,59,0.04)'; // Subtle blue-gray for cards
+const TEXT_COLOR = '#1e293b'; // Dark blue-gray for text
+const SUBTLE_TEXT = '#64748b'; // Subtle gray for secondary text
 
-const getCategoryScoreColor = (score: number) => {
-  if (score >= 4.5) return 'var(--green-9)';
-  if (score >= 4) return 'var(--blue-9)';
-  if (score >= 3) return 'var(--yellow-9)';
-  if (score >= 2) return 'var(--orange-9)';
-  return 'var(--red-9)';
-};
+const getScoreColor = () => PRIMARY_COLOR;
+const getCategoryScoreColor = () => PRIMARY_COLOR;
 
 export default function ScoreDisplay({ score, candidateName, chat }: ScoreDisplayProps) {
-  const isOffboardingTraining = chat?.title?.startsWith('Offboarding:');
+  // Use training_type field, fallback to title parsing for backward compatibility
+  const isOffboardingTraining = chat?.training_type === 'offboarding' || chat?.title?.startsWith('Offboarding:');
   const categoryNames = isOffboardingTraining ? offboardingCategoryNames : interviewCategoryNames;
 
   if (!score) {
     return (
       <Box style={{ padding: '2rem', textAlign: 'center' }}>
-        <Text size="3" style={{ color: 'var(--gray-11)' }}>
+        <Text size="3" style={{ color: SUBTLE_TEXT }}>
           No performance score available for this interview.
         </Text>
       </Box>
@@ -80,62 +97,63 @@ export default function ScoreDisplay({ score, candidateName, chat }: ScoreDispla
   }
 
   const categories = isOffboardingTraining ? [
-    { key: 'empathy_emotional_intelligence', score: score.empathy_emotional_intelligence },
-    { key: 'communication_professionalism', score: score.communication_professionalism },
-    { key: 'legal_procedural_compliance', score: score.legal_procedural_compliance },
-    { key: 'transition_planning_logistics', score: score.transition_planning_logistics },
-    { key: 'conflict_resolution', score: score.conflict_resolution },
-    { key: 'assessment_thoughtfulness', score: score.assessment_thoughtfulness }
+    { key: 'empathy_emotional_intelligence', score: (score as OffboardingScore).empathy_emotional_intelligence },
+    { key: 'communication_professionalism', score: (score as OffboardingScore).communication_professionalism },
+    { key: 'clarity_of_next_steps', score: (score as OffboardingScore).clarity_of_next_steps },
+    { key: 'transition_planning_logistics', score: (score as OffboardingScore).transition_planning_logistics },
+    { key: 'conflict_resolution', score: (score as OffboardingScore).conflict_resolution },
+    { key: 'assessment_thoughtfulness', score: (score as OffboardingScore).assessment_thoughtfulness }
   ] as const : [
-    { key: 'question_quality', score: score.question_quality },
-    { key: 'followup_skills', score: score.followup_skills },
-    { key: 'assessment_thoughtfulness', score: score.assessment_thoughtfulness },
-    { key: 'interview_conduct', score: score.interview_conduct },
-    { key: 'communication_rapport', score: score.communication_rapport },
-    { key: 'professional_judgment', score: score.professional_judgment }
+    { key: 'question_quality', score: (score as InterviewScore).question_quality },
+    { key: 'followup_skills', score: (score as InterviewScore).followup_skills },
+    { key: 'assessment_thoughtfulness', score: (score as InterviewScore).assessment_thoughtfulness },
+    { key: 'interview_conduct', score: (score as InterviewScore).interview_conduct },
+    { key: 'communication_rapport', score: (score as InterviewScore).communication_rapport },
+    { key: 'professional_judgment', score: (score as InterviewScore).professional_judgment }
   ] as const;
 
   return (
-    <Box style={{ padding: '2rem' }}>
+    <Box style={{ padding: '2rem', background: '#fff', color: TEXT_COLOR }}>
       {/* Overall Score */}
       <Box style={{ textAlign: 'center', marginBottom: '2rem' }}>
-        <Text size="2" style={{ color: 'var(--gray-11)', marginBottom: '0.5rem' }}>
+        <Text size="2" style={{ color: SUBTLE_TEXT, marginBottom: '0.5rem' }}>
           Overall {isOffboardingTraining ? 'Offboarding' : 'Interview'} Performance Score
         </Text>
         <Box style={{ 
           fontSize: '3rem', 
           fontWeight: 'bold', 
-          color: getScoreColor(score.overall_score),
-          marginBottom: '0.5rem'
+          color: getScoreColor(),
+          marginBottom: '0.5rem',
+          letterSpacing: '-1px',
         }}>
           {score.overall_score}
         </Box>
-        <Text size="2" style={{ color: 'var(--gray-11)' }}>
+        <Text size="2" style={{ color: SUBTLE_TEXT }}>
           out of 100
         </Text>
       </Box>
 
       {/* Category Breakdown */}
       <Box style={{ marginBottom: '2rem' }}>
-        <Text size="3" weight="bold" style={{ marginBottom: '1rem', display: 'block' }}>
+        <Text size="3" weight="bold" style={{ marginBottom: '1rem', display: 'block', color: TEXT_COLOR }}>
           Category Breakdown
         </Text>
         <Flex direction="column" gap="3">
           {categories.map(({ key, score: categoryScore }) => (
-            <Card key={key} size="2" style={{ padding: '1rem' }}>
+            <Card key={key} size="2" style={{ padding: '1rem', background: CARD_BG, boxShadow: 'none' }}>
               <Flex justify="between" align="center">
-                <Text size="2" weight="medium">
-                  {categoryNames[key]}
+                <Text size="2" weight="medium" style={{ color: TEXT_COLOR }}>
+                  {categoryNames[key as keyof typeof categoryNames]}
                 </Text>
                 <Flex align="center" gap="2">
                   <Box style={{ 
                     fontSize: '1.25rem', 
                     fontWeight: 'bold', 
-                    color: getCategoryScoreColor(categoryScore) 
+                    color: getCategoryScoreColor() 
                   }}>
                     {categoryScore}
                   </Box>
-                  <Text size="1" style={{ color: 'var(--gray-11)' }}>
+                  <Text size="1" style={{ color: SUBTLE_TEXT }}>
                     /5
                   </Text>
                 </Flex>
@@ -144,58 +162,6 @@ export default function ScoreDisplay({ score, candidateName, chat }: ScoreDispla
           ))}
         </Flex>
       </Box>
-
-      {/* Strengths */}
-      {score.strengths && score.strengths.length > 0 && (
-        <Box style={{ marginBottom: '2rem' }}>
-          <Text size="3" weight="bold" style={{ marginBottom: '1rem', display: 'block', color: 'var(--green-11)' }}>
-            Key Strengths
-          </Text>
-          <Flex direction="column" gap="2">
-            {score.strengths.map((strength, index) => (
-              <Flex key={index} align="start" gap="2">
-                <Text style={{ color: 'var(--green-9)', marginTop: '0.1rem' }}>•</Text>
-                <Text size="2" style={{ lineHeight: '1.5' }}>
-                  {strength}
-                </Text>
-              </Flex>
-            ))}
-          </Flex>
-        </Box>
-      )}
-
-      {/* Improvement Areas */}
-      {score.improvement_areas && score.improvement_areas.length > 0 && (
-        <Box style={{ marginBottom: '2rem' }}>
-          <Text size="3" weight="bold" style={{ marginBottom: '1rem', display: 'block', color: 'var(--orange-11)' }}>
-            Areas for Improvement
-          </Text>
-          <Flex direction="column" gap="2">
-            {score.improvement_areas.map((area, index) => (
-              <Flex key={index} align="start" gap="2">
-                <Text style={{ color: 'var(--orange-9)', marginTop: '0.1rem' }}>•</Text>
-                <Text size="2" style={{ lineHeight: '1.5' }}>
-                  {area}
-                </Text>
-              </Flex>
-            ))}
-          </Flex>
-        </Box>
-      )}
-
-      {/* Overall Feedback */}
-      {score.overall_feedback && (
-        <Box>
-          <Text size="3" weight="bold" style={{ marginBottom: '1rem', display: 'block' }}>
-            Overall Feedback
-          </Text>
-          <Card size="2" style={{ padding: '1rem', backgroundColor: 'var(--gray-2)' }}>
-            <Text size="2" style={{ lineHeight: '1.6' }}>
-              {score.overall_feedback}
-            </Text>
-          </Card>
-        </Box>
-      )}
     </Box>
   );
 } 

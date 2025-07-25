@@ -37,9 +37,8 @@ export async function POST(request: NextRequest) {
         feedbackHistory,
     ];  
 
-    // Determine training type and cheating flag
-    const isOffboardingTraining = chat.title.startsWith('Offboarding:');
-    const trainingType = isOffboardingTraining ? 'offboarding' : 'interview';
+    // Use the training_type field from the chat, fallback to title parsing for backward compatibility
+    const trainingType = chat.training_type || (chat.title.startsWith('Offboarding:') ? 'offboarding' : 'interview');
     const agent = await getFeedbackAgent(trainingType, chat.type === 'cheating');
 
     let runner: Runner;
@@ -58,6 +57,7 @@ export async function POST(request: NextRequest) {
     // create new feedback entry
     const feedback = await createFeedback({
         chat_id: chatId,
+        training_id: chat.training_id,
         strengths: result.finalOutput?.strengths || [],
         errors: result.finalOutput?.errors || [],
         green_flags: result.finalOutput?.greenFlags || [],

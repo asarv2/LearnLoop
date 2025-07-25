@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   Box, 
   Flex, 
@@ -21,10 +21,11 @@ interface InterviewHeaderProps {
   isInterviewActive: boolean;
   onShowFeedback?: () => void;
   onBack?: () => void;
-  interviewStartTime?: Date;
-  completedAt?: Date;
+  interviewStartTimeIso?: string;
+  completedAtIso?: string;
   isAudioMode?: boolean;
   onToggleAudioMode?: () => void;
+  trainingType?: 'interview' | 'offboarding' | string;
 }
 
 export default function InterviewHeader({
@@ -36,15 +37,20 @@ export default function InterviewHeader({
   isInterviewActive,
   onShowFeedback,
   onBack,
-  interviewStartTime,
-  completedAt,
+  interviewStartTimeIso,
+  completedAtIso,
   isAudioMode = false,
-  onToggleAudioMode
+  onToggleAudioMode,
+  trainingType = 'interview',
 }: InterviewHeaderProps) {
   // Suppress lint warning for interviewType - keeping for future use
   void interviewType;
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
+
+  // Memoize Date objects for timer
+  const interviewStartTime = useMemo(() => interviewStartTimeIso ? new Date(interviewStartTimeIso) : undefined, [interviewStartTimeIso]);
+  const completedAt = useMemo(() => completedAtIso ? new Date(completedAtIso) : undefined, [completedAtIso]);
 
   // Timer effect for active interviews
   useEffect(() => {
@@ -91,6 +97,16 @@ export default function InterviewHeader({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Header text logic
+  let headerText = 'Training with ' + candidateName;
+  if (trainingType === 'interview') headerText = 'Interview with ' + candidateName;
+  else if (trainingType === 'offboarding') headerText = 'Offboarding with ' + candidateName;
+
+  // End button text
+  let endButtonText = 'End Training';
+  if (trainingType === 'interview') endButtonText = 'End Interview';
+  else if (trainingType === 'offboarding') endButtonText = 'End Offboarding';
+
   return (
     <>
       <Box style={{ 
@@ -117,7 +133,7 @@ export default function InterviewHeader({
                 LearnLoop Training Platform
               </Heading>
               <Text size="2" color="gray">
-                Interview with {candidateName}
+                {headerText}
               </Text>
             </Box>
           </Flex>
@@ -174,93 +190,92 @@ export default function InterviewHeader({
               </Button>
             )}
 
-            {/* Resume Button */}
-            <Dialog.Root open={isResumeModalOpen} onOpenChange={setIsResumeModalOpen}>
-              <Dialog.Trigger asChild>
-                <Button variant="soft" size="2">
-                  <FileTextIcon />
-                  View Resume
-                </Button>
-              </Dialog.Trigger>
-              
-              <Dialog.Portal>
-                <Dialog.Overlay 
-                  style={{
-                    position: 'fixed',
-                    inset: 0,
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                    animation: 'fadeIn 0.2s ease-out'
-                  }}
-                />
-                <Dialog.Content
-                  style={{
-                    position: 'fixed',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    backgroundColor: 'white',
-                    borderRadius: '8px',
-                    padding: '24px',
-                    width: '90vw',
-                    maxWidth: '900px',
-                    height: '85vh',
-                    overflow: 'hidden',
-                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
-                    border: '1px solid var(--gray-6)'
-                  }}
-                >
-                  <Flex direction="column" gap="4" style={{ height: '100%' }}>
-                    <Flex align="center" justify="between">
-                      <Dialog.Title asChild>
-                        <Heading size="5" weight="bold" style={{ color: 'var(--gray-12)' }}>
-                          Resume - {candidateName}
-                        </Heading>
-                      </Dialog.Title>
-                      <Dialog.Close asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="2"
-                          style={{ 
-                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                            color: '#ef4444',
-                            border: '1px solid rgba(239, 68, 68, 0.2)',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          <Cross2Icon width="16" height="16" />
-                        </Button>
-                      </Dialog.Close>
+            {/* Resume Button - only for interview training and if resumeId exists */}
+            {trainingType === 'interview' && resumeId && (
+              <Dialog.Root open={isResumeModalOpen} onOpenChange={setIsResumeModalOpen}>
+                <Dialog.Trigger asChild>
+                  <Button variant="soft" size="2">
+                    <FileTextIcon />
+                    View Resume
+                  </Button>
+                </Dialog.Trigger>
+                <Dialog.Portal>
+                  <Dialog.Overlay 
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                      animation: 'fadeIn 0.2s ease-out'
+                    }}
+                  />
+                  <Dialog.Content
+                    style={{
+                      position: 'fixed',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      backgroundColor: 'white',
+                      borderRadius: '8px',
+                      padding: '24px',
+                      width: '90vw',
+                      maxWidth: '900px',
+                      height: '85vh',
+                      overflow: 'hidden',
+                      boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                      border: '1px solid var(--gray-6)'
+                    }}
+                  >
+                    <Flex direction="column" gap="4" style={{ height: '100%' }}>
+                      <Flex align="center" justify="between">
+                        <Dialog.Title asChild>
+                          <Heading size="5" weight="bold" style={{ color: 'var(--gray-12)' }}>
+                            Resume - {candidateName}
+                          </Heading>
+                        </Dialog.Title>
+                        <Dialog.Close asChild>
+                          <Button 
+                            variant="ghost" 
+                            size="2"
+                            style={{ 
+                              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                              color: '#ef4444',
+                              border: '1px solid rgba(239, 68, 68, 0.2)',
+                              borderRadius: '6px'
+                            }}
+                          >
+                            <Cross2Icon width="16" height="16" />
+                          </Button>
+                        </Dialog.Close>
+                      </Flex>
+                      <Separator size="4" />
+                      <Box style={{ flex: 1, border: '1px solid var(--gray-7)', borderRadius: '6px', overflow: 'hidden' }}>
+                        {resumeId ? (
+                          <iframe
+                            src={`/api/resume/${resumeId}`}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              border: 'none'
+                            }}
+                            title={`Resume - ${candidateName}`}
+                          />
+                        ) : (
+                          <Flex 
+                            align="center" 
+                            justify="center" 
+                            style={{ height: '100%', color: 'var(--gray-10)' }}
+                          >
+                            <Text size="3">No resume file available</Text>
+                          </Flex>
+                        )}
+                      </Box>
                     </Flex>
-                    
-                    <Separator size="4" />
-                    
-                    <Box style={{ flex: 1, border: '1px solid var(--gray-7)', borderRadius: '6px', overflow: 'hidden' }}>
-                      {resumeId ? (
-                        <iframe
-                          src={`/api/resume/${resumeId}`}
-                          style={{
-                            width: '100%',
-                            height: '100%',
-                            border: 'none'
-                          }}
-                          title={`Resume - ${candidateName}`}
-                        />
-                      ) : (
-                        <Flex 
-                          align="center" 
-                          justify="center" 
-                          style={{ height: '100%', color: 'var(--gray-10)' }}
-                        >
-                          <Text size="3">No resume file available</Text>
-                        </Flex>
-                      )}
-                    </Box>
-                  </Flex>
-                </Dialog.Content>
-              </Dialog.Portal>
-            </Dialog.Root>
+                  </Dialog.Content>
+                </Dialog.Portal>
+              </Dialog.Root>
+            )}
 
-            {/* End Interview Button - only show for active interviews */}
+            {/* End Interview/Training Button - only show for active trainings */}
             {isInterviewActive && (
               <Button 
                 variant="solid" 
@@ -270,13 +285,12 @@ export default function InterviewHeader({
                 loading={isEndingInterview}
                 disabled={isEndingInterview}
               >
-                {isEndingInterview ? 'Ending...' : 'End Interview'}
+                {isEndingInterview ? (endButtonText.replace('End', 'Ending...')) : endButtonText}
               </Button>
             )}
           </Flex>
         </Flex>
       </Box>
-
       <style jsx global>{`
         @keyframes fadeIn {
           from { opacity: 0; }
@@ -285,4 +299,4 @@ export default function InterviewHeader({
       `}</style>
     </>
   );
-}
+} 

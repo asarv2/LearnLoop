@@ -51,7 +51,7 @@ export default function NewOffboarding() {
             formData.append('name', employeeName);
             formData.append('position', employeeRole);
             formData.append('type', dbInterviewType);
-            formData.append('training_type', 'offboarding'); // New field to distinguish training type
+            formData.append('training_type', 'offboarding');
             formData.append('offboarding_type', offboardingType);
             formData.append('employee_level', employeeLevel);
 
@@ -63,7 +63,7 @@ export default function NewOffboarding() {
             const data = await response.json();
 
             if (data.success) {
-                router.push(`/interview/c/${data.chatId}`);
+                router.push(`/training/offboarding/c/${data.chatId}`);
             } else {
                 throw new Error(data.error || 'Failed to start offboarding training');
             }

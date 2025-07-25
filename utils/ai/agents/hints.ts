@@ -17,7 +17,7 @@ FOR INTERVIEW TRAINING:
 
 FOR OFFBOARDING TRAINING:
 - Help managers handle employee departures professionally and empathetically
-- Focus on legal compliance, emotional support, and smooth transitions
+- Focus on emotional support, clarity of next steps, and smooth transitions
 - Suggest appropriate communication techniques for sensitive situations
 
 YOUR TASK: Generate exactly 3 bullet points that help the manager:
@@ -30,7 +30,7 @@ HINT QUALITY GUIDELINES:
 - Be specific and actionable, not generic
 - Focus on the content of the most recent response
 - Suggest concrete questions or conversation directions
-- Consider legal, emotional, and professional aspects
+- Consider emotional and professional aspects, and clarity of next steps
 - Adapt to the specific training type and scenario
 
 FORMAT: Respond with exactly 3 bullet points, each starting with "•" and containing a specific suggestion.

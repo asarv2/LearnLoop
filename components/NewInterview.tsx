@@ -70,7 +70,7 @@ export default function NewInterview() {
             const data = await response.json();
 
             if (data.success) {
-                router.push(`/interview/c/${data.chatId}`);
+                router.push(`/training/interview/c/${data.chatId}`);
             } else {
                 throw new Error(data.error || 'Failed to start interview');
             }

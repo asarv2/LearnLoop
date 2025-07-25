@@ -12,7 +12,7 @@ CONTEXT: You will receive:
 2. The manager's assessment responses
 3. Information about the offboarding type and context
 
-YOUR TASK: Evaluate the manager's performance across 6 categories using a 5-point scale, then provide detailed feedback.
+YOUR TASK: Evaluate the manager's performance across 6 categories using a 5-point scale.
 
 SCORING CATEGORIES (Each scored 1-5):
 
@@ -30,12 +30,12 @@ SCORING CATEGORIES (Each scored 1-5):
    - 4: Good - Clear, professional communication throughout
    - 5: Excellent - Exceptional clarity and professionalism under pressure
 
-3. **LEGAL & PROCEDURAL COMPLIANCE** (1-5)
-   - 1: Poor - Ignored procedures, potential legal issues
-   - 2: Below Average - Some procedural gaps, compliance concerns
-   - 3: Average - Followed basic procedures, adequate compliance
-   - 4: Good - Strong procedural adherence, good legal awareness
-   - 5: Excellent - Flawless procedure following, excellent legal compliance
+3. **CLARITY OF NEXT STEPS** (1-5)
+   - 1: Poor - No explanation of what happens after offboarding, leaves employee confused
+   - 2: Below Average - Minimal explanation, vague or incomplete next steps
+   - 3: Average - Basic explanation of next steps, some clarity
+   - 4: Good - Clear explanation of what happens next, employee knows what to expect
+   - 5: Excellent - Exceptionally clear, employee feels fully informed and supported about next steps
 
 4. **TRANSITION PLANNING & LOGISTICS** (1-5)
    - 1: Poor - No planning discussed, chaotic approach
@@ -56,7 +56,42 @@ SCORING CATEGORIES (Each scored 1-5):
    - 2: Below Average - Basic assessment, minimal reflection
    - 3: Average - Adequate assessment, some self-awareness
    - 4: Good - Thoughtful assessment, good self-reflection
-   - 5: Excellent - Deep, insightful assessment with excellent self-awareness`
+   - 5: Excellent - Deep, insightful assessment with excellent self-awareness
+
+RESPONSE FORMAT: Return a JSON object with this exact structure:
+{
+  "scores": {
+    "empathy_emotional_intelligence": 4,
+    "communication_professionalism": 3,
+    "clarity_of_next_steps": 5,
+    "transition_planning_logistics": 4,
+    "conflict_resolution": 3,
+    "assessment_thoughtfulness": 4
+  },
+  "overall_score": 77,
+  "category_feedback": {
+    "empathy_emotional_intelligence": "Specific feedback about empathy and emotional intelligence...",
+    "communication_professionalism": "Specific feedback about communication and professionalism...",
+    "clarity_of_next_steps": "Specific feedback about clarity of next steps...",
+    "transition_planning_logistics": "Specific feedback about transition planning...",
+    "conflict_resolution": "Specific feedback about conflict resolution...",
+    "assessment_thoughtfulness": "Specific feedback about assessment thoughtfulness..."
+  }
+}
+
+CALCULATION: Overall score = (sum of all category scores / 6) * 20 = score out of 100
+
+EVALUATION PRINCIPLES:
+- Be objective and fair in your assessment
+- Consider the manager's experience level when evaluating
+- Focus on offboarding management skills, not just outcomes
+- Provide constructive, actionable feedback
+- Reference specific examples from the conversation when possible
+- Balance criticism with recognition of strengths
+- Consider the context and type of offboarding situation being conducted
+
+Your evaluation should help the manager understand exactly what they did well and where they can improve their offboarding management skills.
+`
     } else {
         return `
 You are an expert interview evaluation specialist. Your job is to objectively score an interviewer's performance based on their interview conduct and assessment responses using a comprehensive rubric.
@@ -66,7 +101,7 @@ CONTEXT: You will receive:
 2. The interviewer's assessment responses
 3. Information about the interview type and context
 
-YOUR TASK: Evaluate the interviewer's performance across 6 categories using a 5-point scale, then provide detailed feedback.
+YOUR TASK: Evaluate the interviewer's performance across 6 categories using a 5-point scale.
 
 SCORING CATEGORIES (Each scored 1-5):
 
@@ -110,32 +145,10 @@ SCORING CATEGORIES (Each scored 1-5):
    - 2: Below Average - Some judgment issues, inconsistent evaluation
    - 3: Average - Reasonable judgment, fair evaluation
    - 4: Good - Sound professional judgment, balanced evaluation
-       - 5: Excellent - Outstanding judgment, highly professional evaluation
+   - 5: Excellent - Outstanding judgment, highly professional evaluation
 
 RESPONSE FORMAT: Return a JSON object with this exact structure:
-
-${trainingType === 'offboarding' ? `{
-  "scores": {
-    "empathy_emotional_intelligence": 4,
-    "communication_professionalism": 3,
-    "legal_procedural_compliance": 5,
-    "transition_planning_logistics": 4,
-    "conflict_resolution": 3,
-    "assessment_thoughtfulness": 4
-  },
-  "overall_score": 77,
-  "category_feedback": {
-    "empathy_emotional_intelligence": "Specific feedback about empathy and emotional intelligence...",
-    "communication_professionalism": "Specific feedback about communication and professionalism...",
-    "legal_procedural_compliance": "Specific feedback about legal compliance...",
-    "transition_planning_logistics": "Specific feedback about transition planning...",
-    "conflict_resolution": "Specific feedback about conflict resolution...",
-    "assessment_thoughtfulness": "Specific feedback about assessment thoughtfulness..."
-  },
-  "overall_feedback": "Summary of overall offboarding performance and key areas for improvement",
-  "strengths": ["Key strength 1", "Key strength 2", "Key strength 3"],
-  "improvement_areas": ["Area for improvement 1", "Area for improvement 2"]
-}` : `{
+{
   "scores": {
     "question_quality": 4,
     "followup_skills": 3,
@@ -152,11 +165,8 @@ ${trainingType === 'offboarding' ? `{
     "interview_conduct": "Specific feedback about interview flow...",
     "communication_rapport": "Specific feedback about communication...",
     "professional_judgment": "Specific feedback about judgment..."
-  },
-  "overall_feedback": "Summary of overall performance and key areas for improvement",
-  "strengths": ["Key strength 1", "Key strength 2", "Key strength 3"],
-  "improvement_areas": ["Area for improvement 1", "Area for improvement 2"]
-}`}
+  }
+}
 
 CALCULATION: Overall score = (sum of all category scores / 6) * 20 = score out of 100
 
@@ -191,17 +201,14 @@ const interviewScoringSchema = z.object({
     interview_conduct: z.string(),
     communication_rapport: z.string(),
     professional_judgment: z.string()
-  }),
-  overall_feedback: z.string(),
-  strengths: z.array(z.string()),
-  improvement_areas: z.array(z.string())
+  })
 });
 
 const offboardingScoringSchema = z.object({
   scores: z.object({
     empathy_emotional_intelligence: z.number().min(1).max(5),
     communication_professionalism: z.number().min(1).max(5),
-    legal_procedural_compliance: z.number().min(1).max(5),
+    clarity_of_next_steps: z.number().min(1).max(5),
     transition_planning_logistics: z.number().min(1).max(5),
     conflict_resolution: z.number().min(1).max(5),
     assessment_thoughtfulness: z.number().min(1).max(5)
@@ -210,14 +217,11 @@ const offboardingScoringSchema = z.object({
   category_feedback: z.object({
     empathy_emotional_intelligence: z.string(),
     communication_professionalism: z.string(),
-    legal_procedural_compliance: z.string(),
+    clarity_of_next_steps: z.string(),
     transition_planning_logistics: z.string(),
     conflict_resolution: z.string(),
     assessment_thoughtfulness: z.string()
-  }),
-  overall_feedback: z.string(),
-  strengths: z.array(z.string()),
-  improvement_areas: z.array(z.string())
+  })
 });
 
 export const getScoringAgent = async (trainingType: 'interview' | 'offboarding' = 'interview') => {

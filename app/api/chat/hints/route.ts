@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Last AI response is required' }, { status: 400 });
         }
 
-        // Check if this is offboarding training by looking at the chat title
+        // For backward compatibility, check title. In the future, this should come from the training_type field
         const isOffboardingTraining = chatTitle && chatTitle.startsWith('Offboarding:');
         
         // Get the appropriate hints agent
@@ -48,7 +48,7 @@ Focus on:
 - Appropriate next steps in the offboarding process
 - How to address the employee's concerns or emotions
 - Professional communication techniques for this sensitive situation
-- Legal and HR considerations if relevant
+- Clarity of next steps
 - Maintaining dignity and respect throughout the process
 `;
         } else {

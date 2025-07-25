@@ -50,7 +50,7 @@ ${conversationContext}
 Based on this specific offboarding conversation, generate 4-6 personalized assessment questions that help the manager reflect on their handling of this employee departure. The questions should be specific to what was discussed and help the manager understand their effectiveness in:
 - Professional communication during sensitive situations
 - Empathy and emotional intelligence
-- Legal and procedural compliance
+- Clarity of next steps
 - Transition planning and next steps
 - Overall offboarding management skills
 

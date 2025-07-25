@@ -31,12 +31,16 @@ export async function POST(request: NextRequest) {
     const chatId = formData.get("chatId");
     const messageInput = formData.get("message");
 
+    // Get chat info for training_id
+    const chat = await getChat(chatId as string);
+    
     // Create user message and assistant message immediately
     const userMessage = await createMessage({
         chat_id: chatId as string,
         content: messageInput as string,
         role: "user",
-        completed: true
+        completed: true,
+        training_id: chat.training_id
     });
 
     // Create the initial assistant message in the database
@@ -44,7 +48,8 @@ export async function POST(request: NextRequest) {
         chat_id: chatId as string,
         content: "",
         role: "assistant",
-        completed: false
+        completed: false,
+        training_id: chat.training_id
     });
 
     // Create a readable stream for SSE

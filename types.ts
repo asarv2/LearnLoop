@@ -18,8 +18,12 @@ export type InterviewScore = Tables<'interview_scores'>;
 export type Log = Tables<'logs'>;
 // --- MESSAGES ---
 export type Message = Tables<'messages'>;
+// --- OFFBOARDING_SCORES ---
+export type OffboardingScore = Tables<'offboarding_scores'>;
 // --- RESUMES ---
 export type Resume = Tables<'resumes'>;
+// --- TRAININGS ---
+export type Training = Tables<'trainings'>;
 
 // =============================================
 // ================ ENUM TYPES ================
@@ -28,13 +32,14 @@ export type Resume = Tables<'resumes'>;
 export type InterviewType = "regular" | "cheating" | "ai-assisted";
 export type LogLevel = "info" | "error" | "warn" | "debug";
 export type MessageRole = "user" | "assistant";
+export type TrainingType = "interview" | "offboarding";
 
 // =============================================
 // ============= UTILITY TYPES =============
 // =============================================
 
 // Union type of all table names
-export type TableName = 'assessments' | 'chats' | 'feedback' | 'interview_scores' | 'logs' | 'messages' | 'resumes';
+export type TableName = 'assessments' | 'chats' | 'feedback' | 'interview_scores' | 'logs' | 'messages' | 'offboarding_scores' | 'resumes' | 'trainings';
 
 // Union type of all entity types
-export type Entity = Assessment | Chat | Feedback | InterviewScore | Log | Message | Resume;
+export type Entity = Assessment | Chat | Feedback | InterviewScore | Log | Message | OffboardingScore | Resume | Training;
