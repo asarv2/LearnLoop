@@ -7,7 +7,7 @@ networks:
 
 services:
   client:
-    image: ${LEARNLOOP_CLIENT_IMAGE:-ghcr.io/AshokSaravanan222/learnloop-client:latest}
+    image: ${LEARNLOOP_CLIENT_IMAGE:-ghcr.io/ashoksaravanan222/learnloop-client:latest}
     pull_policy: always
     container_name: learnloop-client
     restart: unless-stopped
