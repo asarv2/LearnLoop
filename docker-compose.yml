@@ -33,6 +33,13 @@ services:
       - traefik.http.routers.learnloop-client-static.entrypoints=websecure
       - traefik.http.routers.learnloop-client-static.tls.certresolver=letsencrypt
       - traefik.http.routers.learnloop-client-static.service=learnloop-client
+      # WWW redirect to non-www
+      - traefik.http.routers.learnloop-client-www.rule=Host(`www.learn-loop.org`)
+      - traefik.http.routers.learnloop-client-www.entrypoints=websecure
+      - traefik.http.routers.learnloop-client-www.tls.certresolver=letsencrypt
+      - traefik.http.routers.learnloop-client-www.middlewares=www-redirect
+      - traefik.http.middlewares.www-redirect.redirectregex.regex=^https://www\\.learn-loop\\.org/(.*)
+      - traefik.http.middlewares.www-redirect.redirectregex.replacement=https://learn-loop.org/$${1}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://0.0.0.0:3000/ >/dev/null 2>&1 || exit 1"]
       interval: 10s
