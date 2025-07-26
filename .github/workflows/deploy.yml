@@ -59,7 +59,16 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Deploy to production
+    # 1️⃣ Auth to the correct GHCR account
+    - name: Log in to GHCR for deploy
+      env:
+        DOCKER_CONFIG: /home/srv/learnloop/.docker-ghcr
+      run: |
+        echo "${{ secrets.GHCR_PAT_LEARNLOOP }}" | \
+          docker login ghcr.io -u ashoksaravanan222 --password-stdin
+
+    # 2️⃣ Pull and restart
+    - name: Deploy with newest images
       env:
         SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
         NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -67,13 +76,8 @@ jobs:
         NEXT_PUBLIC_SUPABASE_SCHEMA: ${{ secrets.NEXT_PUBLIC_SUPABASE_SCHEMA }}
         GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        LEARNLOOP_CLIENT_IMAGE: ghcr.io/${{ github.actor }}/learnloop-client:latest
+        LEARNLOOP_CLIENT_IMAGE: ghcr.io/ashoksaravanan222/learnloop-client:latest
       run: |
-        # Pull latest images
         docker compose pull
-        
-        # Deploy with new images (environment variables will be passed to containers)
         docker compose up -d
-        
-        # Clean up unused images
         docker image prune -f
