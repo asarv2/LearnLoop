@@ -26,6 +26,7 @@ services:
       - traefik.http.routers.learnloop-client.rule=Host(`learn-loop.org`)
       - traefik.http.routers.learnloop-client.entrypoints=websecure
       - traefik.http.routers.learnloop-client.tls.certresolver=letsencrypt
+      - traefik.http.routers.learnloop-client.service=learnloop-client
       - traefik.http.services.learnloop-client.loadbalancer.server.port=3000
       # Redirect www to non-www
       - traefik.http.routers.learnloop-www-redirect.rule=Host(`www.learn-loop.org`)
