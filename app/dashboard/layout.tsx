@@ -13,6 +13,7 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  BookOutlined,
 } from '@ant-design/icons';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -27,6 +28,11 @@ const menuItems = [
     key: '/dashboard/overview',
     icon: <DashboardOutlined />,
     label: <Link href="/dashboard/overview">Overview</Link>,
+  },
+  {
+    key: '/dashboard/preparation',
+    icon: <BookOutlined />,
+    label: <Link href="/dashboard/preparation">Preparation</Link>,
   },
   {
     key: '/dashboard/trainings',

@@ -57,7 +57,7 @@ export type Database = {
         Row: {
           additional_info: string
           completed: boolean
-          completed_at: string
+          completed_at: string | null
           created_at: string
           feedback: Json | null
           id: string
@@ -75,7 +75,7 @@ export type Database = {
         Insert: {
           additional_info?: string
           completed?: boolean
-          completed_at?: string
+          completed_at?: string | null
           created_at?: string
           feedback?: Json | null
           id?: string
@@ -93,7 +93,7 @@ export type Database = {
         Update: {
           additional_info?: string
           completed?: boolean
-          completed_at?: string
+          completed_at?: string | null
           created_at?: string
           feedback?: Json | null
           id?: string
@@ -473,10 +473,10 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      interview_type: "regular" | "cheating" | "ai-assisted"
+      interview_type: "regular" | "cheating" | "ai-assisted" | "preparation"
       log_level: "info" | "error" | "warn" | "debug"
       message_role: "user" | "assistant"
-      training_type: "interview" | "offboarding"
+      training_type: "interview" | "offboarding" | "preparation"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -604,10 +604,10 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      interview_type: ["regular", "cheating", "ai-assisted"],
+      interview_type: ["regular", "cheating", "ai-assisted", "preparation"],
       log_level: ["info", "error", "warn", "debug"],
       message_role: ["user", "assistant"],
-      training_type: ["interview", "offboarding"],
+      training_type: ["interview", "offboarding", "preparation"],
     },
   },
 } as const

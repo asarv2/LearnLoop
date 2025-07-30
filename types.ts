@@ -29,10 +29,10 @@ export type Training = Tables<'trainings'>;
 // ================ ENUM TYPES ================
 // =============================================
 
-export type InterviewType = "regular" | "cheating" | "ai-assisted";
+export type InterviewType = "preparation" | "regular" | "cheating" | "ai-assisted";
 export type LogLevel = "info" | "error" | "warn" | "debug";
 export type MessageRole = "user" | "assistant";
-export type TrainingType = "interview" | "offboarding";
+export type TrainingType = "interview" | "offboarding" | "preparation";
 
 // =============================================
 // ============= UTILITY TYPES =============
