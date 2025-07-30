@@ -41,7 +41,6 @@ services:
       - traefik.http.routers.learnloop-www.rule=Host(`www.learn-loop.org`)
       - traefik.http.routers.learnloop-www.entrypoints=websecure
       - traefik.http.routers.learnloop-www.tls.certresolver=letsencrypt
-      - traefik.http.routers.learnloop-www.service=noop@internal
       - traefik.http.routers.learnloop-www.middlewares=drop-www
       - traefik.http.middlewares.drop-www.redirectregex.regex=^https?://www\\.learn-loop\\.org/(.*)
       - traefik.http.middlewares.drop-www.redirectregex.replacement=https://learn-loop.org/$${1}
