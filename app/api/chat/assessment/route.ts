@@ -9,7 +9,6 @@ import { generateConversationHistory } from "@/utils/ai/chat/conversation-histor
 import { getFeedbackAgent } from "@/utils/ai/agents/feedback";
 import { AgentInputItem, Runner } from "@openai/agents";
 import { Assessment } from "@/types";
-import { STATIC_ASSESSMENT_QUESTIONS, AssessmentQuestion } from "@/utils/assessment/questions";
 import { Json } from "@/database.types";
 import { logError } from "@/utils/logger";
 import { cookies } from "next/headers";
@@ -51,7 +50,7 @@ export async function POST(request: NextRequest) {
         const conversationHistory = generateConversationHistory(messages);
         
         // Create assessment context for the AI
-        const assessmentContext = await generateAssessmentContext(responses, chat.type, messages, isOffboardingTraining);
+        const assessmentContext = await generateAssessmentContext(responses, chat.type, isOffboardingTraining);
 
         const input: AgentInputItem[] = [
             resumeHistory,
@@ -107,9 +106,17 @@ export async function POST(request: NextRequest) {
                 .join('\n\n');
 
             // Prepare assessment context
-            const assessmentContext = Array.isArray(responses) 
-                ? responses.map((response: any) => `Q: ${response.question_id}\nA: ${response.response}`).join('\n\n')
-                : '';
+            const assessmentContext = Array.isArray(responses)
+            ? responses
+                .filter((response): response is { question_id: string; response: string } =>
+                    typeof response === 'object' &&
+                    response !== null &&
+                    'question_id' in response &&
+                    'response' in response
+                )
+                .map((response) => `Q: ${response.question_id}\nA: ${response.response}`)
+                .join('\n\n')
+            : '';
 
             let prompt: string;
             
@@ -257,7 +264,7 @@ Provide scores and detailed feedback to help them improve their interviewing ski
     }
 }
 
-async function generateAssessmentContext(responses: Assessment['responses'], interviewType: string, messages: any[], isOffboardingTraining: boolean = false): Promise<AgentInputItem> {
+async function generateAssessmentContext(responses: Assessment['responses'], interviewType: string, isOffboardingTraining: boolean = false): Promise<AgentInputItem> {
     if (!responses) {
         return {
             role: 'user',

@@ -29,20 +29,18 @@ import {
 } from '@ant-design/icons';
 
 const { Title, Text, Paragraph } = Typography;
-const { TextArea } = Input;
 
 export default function SettingsPage() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 
-  const handleSave = async (values: any) => {
+  const handleSave = async () => {
     setLoading(true);
     try {
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1000));
       message.success('Settings saved successfully');
-      console.log('Settings saved:', values);
-    } catch (error) {
+    } catch {
       message.error('Failed to save settings');
     } finally {
       setLoading(false);

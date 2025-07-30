@@ -16,7 +16,7 @@ import {
   ChevronRightIcon,
   DotFilledIcon
 } from '@radix-ui/react-icons';
-import { Feedback, Chat } from '@/types';
+import { Feedback, Chat, InterviewScore, OffboardingScore } from '@/types';
 import ScoreDisplay from './ScoreDisplay';
 
 interface FeedbackModalProps {
@@ -24,7 +24,7 @@ interface FeedbackModalProps {
   onClose: () => void;
   feedback: Feedback | null;
   candidateName: string;
-  interviewScore?: any;
+  interviewScore?: InterviewScore | OffboardingScore | null;
   chat?: Chat | null;
 }
 
@@ -112,7 +112,7 @@ export default function FeedbackModal({
       icon: "📊",
       color: "blue",
       content: (
-        <ScoreDisplay score={interviewScore} candidateName={candidateName} chat={chat} />
+        <ScoreDisplay score={interviewScore} chat={chat || undefined} />
       )
     },
     {

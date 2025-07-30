@@ -172,14 +172,14 @@ CALCULATION: Overall score = (sum of all category scores / 6) * 20 = score out o
 
 EVALUATION PRINCIPLES:
 - Be objective and fair in your assessment
-- Consider the ${trainingType === 'offboarding' ? 'manager' : 'interviewer'}'s experience level when evaluating
-- Focus on ${trainingType === 'offboarding' ? 'offboarding management' : 'interviewing'} skills, not just outcomes
+- Consider the interviewer's experience level when evaluating
+- Focus on interviewing skills, not just outcomes
 - Provide constructive, actionable feedback
 - Reference specific examples from the conversation when possible
 - Balance criticism with recognition of strengths
-- Consider the context and type of ${trainingType === 'offboarding' ? 'offboarding situation' : 'interview'} being conducted
+- Consider the context and type of interview being conducted
 
-Your evaluation should help the ${trainingType === 'offboarding' ? 'manager' : 'interviewer'} understand exactly what they did well and where they can improve their ${trainingType === 'offboarding' ? 'offboarding management' : 'interviewing'} skills.
+Your evaluation should help the interviewer understand exactly what they did well and where they can improve their interviewing skills.
 `
     }
 }

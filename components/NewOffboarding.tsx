@@ -18,7 +18,7 @@ import {
     Badge,
     Container
 } from '@radix-ui/themes';
-import { PersonIcon, PlayIcon, CheckIcon, ArrowLeftIcon } from '@radix-ui/react-icons';
+import { PlayIcon, CheckIcon, ArrowLeftIcon } from '@radix-ui/react-icons';
 import { useRouter } from 'next/navigation';
 import { InterviewType } from '@/types';
 import { logError } from '@/utils/logger';
