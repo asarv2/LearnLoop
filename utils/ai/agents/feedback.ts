@@ -2,7 +2,7 @@ import { Agent } from '@openai/agents';
 import { getGeminiModel } from '../main';
 import { z } from 'zod';
 
-const getFeedbackInstructions = (trainingType: 'interview' | 'offboarding', cheating: boolean = false) => {
+const getFeedbackInstructions = (trainingType: 'interview' | 'offboarding' | 'preparation', cheating: boolean = false) => {
     if (trainingType === 'offboarding') {
         return `
         Provide feedback on this offboarding conversation in this exact format:
@@ -40,7 +40,7 @@ const getFeedbackInstructions = (trainingType: 'interview' | 'offboarding', chea
         - redFlags: an array of strings
         `
     } else {
-        // Original interview feedback
+        // TODO: Preparation feedback will go here as well.
         return `
         Provide feedback in this exact format:
 
@@ -87,10 +87,10 @@ const feedbackSchema = z.object({
     redFlags: z.array(z.string()),
 });
 
-export const getFeedbackAgent = async (trainingType: 'interview' | 'offboarding' = 'interview', cheating: boolean = false) => {
+export const getFeedbackAgent = async (trainingType: 'interview' | 'offboarding' | 'preparation' = 'interview', cheating: boolean = false) => {
     const model = await getGeminiModel("gemini-2.5-flash");
     const feedbackAgent = new Agent({
-        name: trainingType === 'offboarding' ? 'Offboarding Feedback' : 'Interview Feedback',
+        name: trainingType === 'offboarding' ? 'Offboarding Feedback' : trainingType === 'preparation' ? 'Preparation Feedback' : 'Interview Feedback',
         model: model,
         instructions: getFeedbackInstructions(trainingType, cheating),
         outputType: feedbackSchema,
