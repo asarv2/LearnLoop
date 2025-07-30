@@ -38,16 +38,13 @@ export async function POST(request: NextRequest) {
     const shouldInterviewerRespond = messages.length % 2 === 0;
     
     let agent: Agent;
-    let agentRole: string;
     
     if (shouldInterviewerRespond) {
         // Interviewer should respond
         agent = await getInterviewerAgent();
-        agentRole = "interviewer";
     } else {
         // Candidate should respond
         agent = await getRegularAgent();
-        agentRole = "candidate";
     }
 
     // Create the initial message in the database with the correct role
@@ -143,7 +140,7 @@ Respond naturally and authentically as a job candidate. Be conversational, hones
                         break; // Success, exit the retry loop
                     } catch (error) {
                         retryCount++;
-                        if (error.message && error.message.includes('429') && retryCount < maxRetries) {
+                        if (error instanceof Error && error.message.includes('429') && retryCount < maxRetries) {
                             // Wait longer for rate limit errors
                             await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
                             continue;
@@ -158,7 +155,7 @@ Respond naturally and authentically as a job candidate. Be conversational, hones
 
                 let messageText = "";
                 
-                for await (const event of result) {
+                for await (const event of result || []) {
                     // these are the raw events from the model
                     if (event.type === 'raw_model_stream_event') {
                         if (event.data.type === 'output_text_delta') {
@@ -194,11 +191,11 @@ Respond naturally and authentically as a job candidate. Be conversational, hones
                 // Provide more specific error messages based on the error type
                 let errorMessage = "I'm having trouble responding right now. Let me try again.";
                 
-                if (error.message && error.message.includes('429')) {
+                if (error instanceof Error && error.message.includes('429')) {
                     errorMessage = "I'm a bit busy right now. Let me take a moment and try again.";
-                } else if (error.message && error.message.includes('400')) {
+                } else if (error instanceof Error && error.message.includes('400')) {
                     errorMessage = "I need to rephrase that. Let me try a different approach.";
-                } else if (error.message && error.message.includes('Max turns')) {
+                } else if (error instanceof Error && error.message.includes('Max turns')) {
                     errorMessage = "Let me continue the conversation naturally.";
                 }
                 

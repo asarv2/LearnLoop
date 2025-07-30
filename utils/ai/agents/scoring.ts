@@ -2,7 +2,7 @@ import { Agent } from '@openai/agents';
 import { getGeminiModel } from '../main';
 import { z } from 'zod';
 
-const getScoringInstructions = (trainingType: 'interview' | 'offboarding') => {
+const getScoringInstructions = (trainingType: 'interview' | 'offboarding' | 'preparation') => {
     if (trainingType === 'offboarding') {
         return `
 You are an expert offboarding evaluation specialist. Your job is to objectively score a manager's performance during an employee offboarding conversation based on their conduct and assessment responses using a comprehensive rubric.
@@ -93,6 +93,7 @@ EVALUATION PRINCIPLES:
 Your evaluation should help the manager understand exactly what they did well and where they can improve their offboarding management skills.
 `
     } else {
+        // TODO: Preparation scoring will go here as well.
         return `
 You are an expert interview evaluation specialist. Your job is to objectively score an interviewer's performance based on their interview conduct and assessment responses using a comprehensive rubric.
 
@@ -224,12 +225,12 @@ const offboardingScoringSchema = z.object({
   })
 });
 
-export const getScoringAgent = async (trainingType: 'interview' | 'offboarding' = 'interview') => {
+export const getScoringAgent = async (trainingType: 'interview' | 'offboarding' | 'preparation' = 'interview') => {
   const model = await getGeminiModel("gemini-2.5-flash");
   const schema = trainingType === 'offboarding' ? offboardingScoringSchema : interviewScoringSchema;
   
   return new Agent({
-    name: trainingType === 'offboarding' ? 'Offboarding Performance Scorer' : 'Interview Performance Scorer',
+    name: trainingType === 'offboarding' ? 'Offboarding Performance Scorer' : trainingType === 'preparation' ? 'Preparation Performance Scorer' : 'Interview Performance Scorer',
     model: model,
     instructions: getScoringInstructions(trainingType),
     outputType: schema,

@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { chatId, preparationType } = body;
+    const { chatId } = body;
 
     try {
         // Mark the chat as completed
