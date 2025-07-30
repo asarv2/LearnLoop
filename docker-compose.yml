@@ -22,19 +22,31 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=web
-      # Main site (everything - Next.js will handle /api routes)
+      
+      # --- 1️⃣  catch http (80) and push to https ---
+      - traefik.http.routers.learnloop-http.rule=Host(`learn-loop.org`,`www.learn-loop.org`)
+      - traefik.http.routers.learnloop-http.entrypoints=web
+      - traefik.http.routers.learnloop-http.middlewares=https-redirect
+      - traefik.http.middlewares.https-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.https-redirect.redirectscheme.permanent=true
+      
+      # --- 2️⃣  naked-domain https router ---
       - traefik.http.routers.learnloop-client.rule=Host(`learn-loop.org`)
       - traefik.http.routers.learnloop-client.entrypoints=websecure
       - traefik.http.routers.learnloop-client.tls.certresolver=letsencrypt
       - traefik.http.routers.learnloop-client.service=learnloop-client
       - traefik.http.services.learnloop-client.loadbalancer.server.port=3000
-      # Redirect www to non-www
-      - traefik.http.routers.learnloop-www-redirect.rule=Host(`www.learn-loop.org`)
-      - traefik.http.routers.learnloop-www-redirect.entrypoints=websecure
-      - traefik.http.routers.learnloop-www-redirect.tls.certresolver=letsencrypt
-      - traefik.http.routers.learnloop-www-redirect.redirectregex.regex=^https://www\\.learn-loop\\.org/(.*)
-      - traefik.http.routers.learnloop-www-redirect.redirectregex.replacement=https://learn-loop.org/$${1}
-      - traefik.http.routers.learnloop-www-redirect.redirectregex.permanent=true
+      
+      # --- 3️⃣  www ➜ non-www redirect on https ---
+      - traefik.http.routers.learnloop-www.rule=Host(`www.learn-loop.org`)
+      - traefik.http.routers.learnloop-www.entrypoints=websecure
+      - traefik.http.routers.learnloop-www.tls.certresolver=letsencrypt
+      - traefik.http.routers.learnloop-www.service=noop@internal
+      - traefik.http.routers.learnloop-www.middlewares=drop-www
+      - traefik.http.middlewares.drop-www.redirectregex.regex=^https?://www\\.learn-loop\\.org/(.*)
+      - traefik.http.middlewares.drop-www.redirectregex.replacement=https://learn-loop.org/$${1}
+      - traefik.http.middlewares.drop-www.redirectregex.permanent=true
+      
       # Higher-priority router just for Next.js static assets
       - traefik.http.routers.learnloop-client-static.rule=Host(`learn-loop.org`) && PathPrefix(`/_next`)
       - traefik.http.routers.learnloop-client-static.priority=11
