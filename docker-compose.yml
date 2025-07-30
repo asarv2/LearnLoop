@@ -1,0 +1,41 @@
+networks:
+  web:
+    name: web
+    external: true
+
+services:
+  client:
+    image: ${LEARNLOOP_CLIENT_IMAGE:-ghcr.io/ashoksaravanan222/learnloop-client:latest}
+    pull_policy: always
+    container_name: learnloop-client
+    restart: unless-stopped
+    networks:
+      - web
+    environment:
+      - NODE_ENV=production
+      - SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - NEXT_PUBLIC_SUPABASE_SCHEMA=${NEXT_PUBLIC_SUPABASE_SCHEMA}
+      - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=web
+      # Main site (everything - Next.js will handle /api routes)
+      - traefik.http.routers.learnloop-client.rule=Host(`learn-loop.org`)
+      - traefik.http.routers.learnloop-client.entrypoints=websecure
+      - traefik.http.routers.learnloop-client.tls.certresolver=letsencrypt
+      - traefik.http.services.learnloop-client.loadbalancer.server.port=3000
+      # Higher-priority router just for Next.js static assets
+      - traefik.http.routers.learnloop-client-static.rule=Host(`learn-loop.org`) && PathPrefix(`/_next`)
+      - traefik.http.routers.learnloop-client-static.priority=11
+      - traefik.http.routers.learnloop-client-static.entrypoints=websecure
+      - traefik.http.routers.learnloop-client-static.tls.certresolver=letsencrypt
+      - traefik.http.routers.learnloop-client-static.service=learnloop-client
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://0.0.0.0:3000/ >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s

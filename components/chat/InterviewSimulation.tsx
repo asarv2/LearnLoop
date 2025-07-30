@@ -219,7 +219,20 @@ export default function InterviewSimulation({
         body: formData,
       });
 
-      const data = await response.json();
+      // Check if response is ok before trying to parse JSON
+      if (!response.ok) {
+        const errorText = await response.text();
+        logError('Server error response:', errorText);
+        throw new Error(`Server error: ${response.status} ${response.statusText}`);
+      }
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        logError('Error parsing JSON response:', parseError);
+        throw new Error('Invalid response format from server');
+      }
 
       if (data.success) {
         // Invalidate chat and feedback queries to get the updated data
@@ -309,7 +322,8 @@ export default function InterviewSimulation({
       chat_id: chatId,
       completed: streamingMessage.completed,
       completed_at: '',
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      training_id: chat?.training_id || null
     });
   }
 

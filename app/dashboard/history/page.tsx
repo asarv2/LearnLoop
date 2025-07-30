@@ -16,6 +16,7 @@ import {
   Statistic,
   Empty
 } from 'antd';
+import type { Dayjs } from 'dayjs';
 import {
   PlayCircleOutlined,
   SearchOutlined,
@@ -38,7 +39,7 @@ export default function HistoryPage() {
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [dateRange, setDateRange] = useState<[any, any] | null>(null);
+  const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
 
   const { data: sessions, isLoading } = useQuery({
     queryKey: ['chats'],
@@ -46,9 +47,11 @@ export default function HistoryPage() {
   });
 
   // Sort sessions by newest first
-  const sortedSessions = sessions?.sort((a, b) => 
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  ) || [];
+  const sortedSessions = useMemo(() => 
+    sessions?.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    ) || [], [sessions]
+  );
 
   // Filter sessions based on search and filters
   const filteredSessions = useMemo(() => {
@@ -171,7 +174,7 @@ export default function HistoryPage() {
       title: 'Duration',
       key: 'duration',
       render: (_, record: Chat) => (
-        <Text>{formatDuration(record.created_at, record.completed_at)}</Text>
+        <Text>{formatDuration(record.created_at, record.completed_at || undefined)}</Text>
       ),
       width: 100,
     },
@@ -225,7 +228,7 @@ export default function HistoryPage() {
           .filter(session => session.completed_at)
           .reduce((acc, session) => {
             const start = new Date(session.created_at);
-            const end = new Date(session.completed_at);
+            const end = session.completed_at ? new Date(session.completed_at) : start;
             return acc + (end.getTime() - start.getTime());
           }, 0) / completed / (1000 * 60)
       : 0;

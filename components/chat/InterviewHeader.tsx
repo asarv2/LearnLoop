@@ -22,7 +22,7 @@ interface InterviewHeaderProps {
   onShowFeedback?: () => void;
   onBack?: () => void;
   interviewStartTimeIso?: string;
-  completedAtIso?: string;
+  completedAtIso?: string | null;
   isAudioMode?: boolean;
   onToggleAudioMode?: () => void;
   trainingType?: 'interview' | 'offboarding' | string;
@@ -52,33 +52,36 @@ export default function InterviewHeader({
   const interviewStartTime = useMemo(() => interviewStartTimeIso ? new Date(interviewStartTimeIso) : undefined, [interviewStartTimeIso]);
   const completedAt = useMemo(() => completedAtIso ? new Date(completedAtIso) : undefined, [completedAtIso]);
 
-  // Timer effect for active interviews
+    // Timer effect for active interviews
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     
-    if (isInterviewActive && !completedAt && interviewStartTime) {
-      // Parse the ISO timestamp to ensure proper timezone handling
-      const startTime = interviewStartTime;
-      
-      // Function to calculate and update elapsed time
-      const updateElapsedTime = () => {
-        const now = new Date();
-        const diffInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
-        // Ensure we don't show negative time if there are clock sync issues
-        setElapsedTime(Math.max(0, diffInSeconds));
-      };
-      
-      // Set initial time immediately
-      updateElapsedTime();
-      
-      // Update every second
-      interval = setInterval(updateElapsedTime, 1000);
-    } else if (completedAt && interviewStartTime) {
-      // For completed interviews, show the total duration
-      const startTime = interviewStartTime;
-      const endTime = completedAt;
-      const diffInSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
-      setElapsedTime(Math.max(0, diffInSeconds));
+    if (interviewStartTime) {
+      if (isInterviewActive && !completedAt) {
+        // Active interview - count up
+        const startTime = interviewStartTime;
+        
+        // Function to calculate and update elapsed time
+        const updateElapsedTime = () => {
+          const now = new Date();
+          const diffInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+          const elapsed = Math.max(0, diffInSeconds);
+          setElapsedTime(elapsed);
+        };
+        
+        // Set initial time immediately
+        updateElapsedTime();
+        
+        // Update every second
+        interval = setInterval(updateElapsedTime, 1000);
+      } else if (completedAt) {
+        // Interview is completed - show final duration
+        const startTime = interviewStartTime;
+        const endTime = completedAt;
+        const diffInSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
+        const elapsed = Math.max(0, diffInSeconds);
+        setElapsedTime(elapsed);
+      }
     } else {
       setElapsedTime(0);
     }
@@ -88,7 +91,7 @@ export default function InterviewHeader({
         clearInterval(interval);
       }
     };
-  }, [isInterviewActive, interviewStartTime, completedAt]);
+  }, [isInterviewActive, interviewStartTime, completedAt, elapsedTime, interviewStartTimeIso]);
 
   // Format time as MM:SS
   const formatTime = (seconds: number): string => {

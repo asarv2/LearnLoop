@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
 
         // Prepare conversation context with appropriate labels
         const conversationContext = messages
-            .filter((msg: Message) => msg.completed !== false && msg.content.trim())
+            .filter((msg: Message) => msg.completed !== false && msg.content && msg.content.trim())
             .map((msg: Message) => {
                 if (isOffboardingTraining) {
                     return `${msg.role === 'user' ? 'Manager' : 'Employee'}: ${msg.content}`;

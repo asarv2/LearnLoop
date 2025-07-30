@@ -7,8 +7,6 @@ import {
   Input, 
   Button, 
   Typography, 
-  Space, 
-  Divider,
   Alert
 } from 'antd';
 import {
@@ -40,7 +38,7 @@ export default function AuthModal({ open, onClose, mode, onModeChange }: AuthMod
     alert(content);
   };
 
-  const handleSubmit = async (values: any) => {
+  const handleSubmit = async (values: { email: string; password: string; fullName?: string }) => {
     setLoading(true);
     setError(null);
 
@@ -65,7 +63,7 @@ export default function AuthModal({ open, onClose, mode, onModeChange }: AuthMod
           onClose();
         }
       } else {
-        const { data, error } = await supabase.auth.signInWithPassword({
+        const { error } = await supabase.auth.signInWithPassword({
           email: values.email,
           password: values.password,
         });
@@ -76,30 +74,10 @@ export default function AuthModal({ open, onClose, mode, onModeChange }: AuthMod
         router.push('/dashboard/overview');
         onClose();
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Auth error:', error);
-      setError(error.message || 'An error occurred during authentication');
+      setError(error instanceof Error ? error.message : 'An error occurred during authentication');
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/dashboard/overview`
-        }
-      });
-
-      if (error) throw error;
-    } catch (error: any) {
-      console.error('Google sign-in error:', error);
-      setError(error.message || 'An error occurred during Google sign-in');
       setLoading(false);
     }
   };
