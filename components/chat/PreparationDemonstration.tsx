@@ -39,6 +39,7 @@ interface ExplanationBubble {
   messageId: string;
   explanation: string;
   showButton: boolean;
+  acknowledged: boolean;
 }
 
 export default function PreparationDemonstration({
@@ -52,7 +53,10 @@ export default function PreparationDemonstration({
   const [explanations, setExplanations] = useState<ExplanationBubble[]>([]);
   const [streamingMessage, setStreamingMessage] = useState<StreamingMessage | null>(null);
   const [isTriggeringNext, setIsTriggeringNext] = useState(false);
+  const [waitingForUserAcknowledgment, setWaitingForUserAcknowledgment] = useState(false);
+  const [justAcknowledged, setJustAcknowledged] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const explanationsRef = useRef<ExplanationBubble[]>([]);
 
   const { data: chat } = useQuery({
     queryKey: ['chat', chatId],
@@ -63,6 +67,23 @@ export default function PreparationDemonstration({
     queryKey: ['messages', chatId],
     queryFn: () => getMessagesByChat(chatId)
   });
+
+  const generateExplanation = useCallback((messageContent: string, messageNumber: number): string => {
+    const explanations = [
+      "Notice how the interviewer builds rapport with a warm, professional greeting. This helps create a comfortable environment for the candidate.",
+      "The interviewer uses an open-ended question to encourage detailed responses. This reveals more information than yes/no questions.",
+      "See how the interviewer follows up with specific probes. This demonstrates active listening and helps uncover concrete examples.",
+      "The interviewer transitions smoothly between topics. This keeps the conversation flowing naturally and maintains engagement.",
+      "Notice the professional tone throughout. The interviewer remains approachable while maintaining appropriate boundaries.",
+      "The interviewer asks behavioral questions that require specific examples. This helps assess real-world experience and skills.",
+      "See how the interviewer handles the response professionally. This shows how to manage unexpected or difficult answers.",
+      "The interviewer demonstrates excellent time management by moving the conversation forward appropriately.",
+      "Notice how the interviewer references specific details from the candidate's responses. This shows active listening.",
+      "The interviewer uses follow-up questions effectively to dig deeper into interesting points mentioned by the candidate."
+    ];
+
+    return explanations[(messageNumber - 1) % explanations.length];
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -159,75 +180,114 @@ export default function PreparationDemonstration({
     }
   }, [chatId, streamingMessage, isTriggeringNext, queryClient]);
 
-  // Auto-trigger conversation between AI agents
+  // Handle acknowledgment of learning points
+  const handleAcknowledgeExplanation = useCallback((explanationId: string) => {
+    console.log('User acknowledged explanation:', explanationId);
+    setExplanations(prev => {
+      const newExplanations = prev.map(exp => 
+        exp.id === explanationId 
+          ? { ...exp, acknowledged: true }
+          : exp
+      );
+      explanationsRef.current = newExplanations;
+      return newExplanations;
+    });
+    setWaitingForUserAcknowledgment(false);
+    setJustAcknowledged(true);
+    
+    // Trigger the next message after a short delay to ensure state updates are processed
+    setTimeout(() => {
+      console.log('Triggering next message after acknowledgment');
+      triggerNextMessage();
+      // Reset the flag after triggering
+      setTimeout(() => {
+        setJustAcknowledged(false);
+      }, 1000);
+    }, 500);
+  }, [triggerNextMessage]);
+
+  // Auto-trigger conversation between AI agents - modified to wait for user acknowledgment
   useEffect(() => {
+    // Don't auto-trigger if we're waiting for user acknowledgment or just acknowledged
+    if (waitingForUserAcknowledgment || justAcknowledged) {
+      console.log('Auto-trigger blocked - waiting for acknowledgment or just acknowledged');
+      return;
+    }
+    
     if (messages.length > 0 && !streamingMessage && !isTriggeringNext) {
       const lastMessage = messages[messages.length - 1];
       const shouldContinueConversation = lastMessage.completed;
       
       if (shouldContinueConversation) {
-        // Add a longer delay to avoid rate limiting and make the conversation feel natural
+        // Sort messages by creation time to ensure proper order
+        const sortedMessages = [...messages].sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        
+        // Check all messages for learning points that need to be created
+        let interviewerMessageCount = 0;
+        let needsLearningPoint = false;
+        let pendingExplanation: ExplanationBubble | null = null;
+        
+        for (let i = 0; i < sortedMessages.length; i++) {
+          const message = sortedMessages[i];
+          const isInterviewerMessage = i % 2 === 0;
+          
+          if (isInterviewerMessage && message.content && message.completed) {
+            interviewerMessageCount++;
+            
+            // If this is every 3rd interviewer message, check if it needs a learning point
+            if (interviewerMessageCount % 3 === 0) {
+              const existingExplanation = explanationsRef.current.find(exp => exp.messageId === message.id);
+              
+              if (!existingExplanation) {
+                // This message needs a learning point
+                const explanation = generateExplanation(message.content, interviewerMessageCount);
+                pendingExplanation = {
+                  id: `explanation-${message.id}`,
+                  messageId: message.id,
+                  explanation,
+                  showButton: true,
+                  acknowledged: false
+                };
+                needsLearningPoint = true;
+                console.log(`Creating learning point for message ${message.id}, interviewer count: ${interviewerMessageCount}`);
+                break;
+              } else if (!existingExplanation.acknowledged) {
+                // Learning point exists but not acknowledged
+                needsLearningPoint = true;
+                console.log(`Learning point exists but not acknowledged for message ${message.id}`);
+                break;
+              }
+            }
+          }
+        }
+        
+        // If we need to create a learning point, do it and pause
+        if (needsLearningPoint) {
+          if (pendingExplanation) {
+            setExplanations(prev => {
+              const newExplanations = [...prev, pendingExplanation!];
+              explanationsRef.current = newExplanations;
+              return newExplanations;
+            });
+          }
+          setWaitingForUserAcknowledgment(true);
+          console.log('Paused conversation for learning point');
+          return;
+        }
+        
+        // Continue with next message after delay
         const timer = setTimeout(() => {
+          console.log('Auto-triggering next message');
           triggerNextMessage();
         }, 6000); // 6 second delay to give more breathing room
 
         return () => clearTimeout(timer);
       }
     }
-  }, [messages, streamingMessage, isTriggeringNext, triggerNextMessage]);
+  }, [messages, streamingMessage, isTriggeringNext, triggerNextMessage, waitingForUserAcknowledgment, justAcknowledged, generateExplanation]);
 
-  // Generate explanations for interviewer messages - memoized to prevent infinite re-renders
-  const generateExplanations = useCallback(() => {
-    const newExplanations: ExplanationBubble[] = [];
-    let interviewerMessageCount = 0;
-
-    // Sort messages by creation time to ensure proper order
-    const sortedMessages = [...messages].sort((a, b) => 
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
-
-    sortedMessages.forEach((msg, index) => {
-      // Only add explanations for interviewer messages (even indices: 0, 2, 4...)
-      if (index % 2 === 0 && msg.content && msg.completed) {
-        interviewerMessageCount++;
-        
-        // Add explanation every 3rd interviewer message (so every 6th message overall)
-        if (interviewerMessageCount % 3 === 0) {
-          const explanation = generateExplanation(msg.content, interviewerMessageCount);
-          newExplanations.push({
-            id: `explanation-${msg.id}`,
-            messageId: msg.id,
-            explanation,
-            showButton: false // No buttons - just show the explanation
-          });
-        }
-      }
-    });
-
-    return newExplanations;
-  }, [messages]);
-
-  useEffect(() => {
-    const newExplanations = generateExplanations();
-    setExplanations(newExplanations);
-  }, [generateExplanations]);
-
-  const generateExplanation = (messageContent: string, messageNumber: number): string => {
-    const explanations = [
-      "Notice how the interviewer builds rapport with a warm, professional greeting. This helps create a comfortable environment for the candidate.",
-      "The interviewer uses an open-ended question to encourage detailed responses. This reveals more information than yes/no questions.",
-      "See how the interviewer follows up with specific probes. This demonstrates active listening and helps uncover concrete examples.",
-      "The interviewer transitions smoothly between topics. This keeps the conversation flowing naturally and maintains engagement.",
-      "Notice the professional tone throughout. The interviewer remains approachable while maintaining appropriate boundaries.",
-      "The interviewer asks behavioral questions that require specific examples. This helps assess real-world experience and skills.",
-      "See how the interviewer handles the response professionally. This shows how to manage unexpected or difficult answers.",
-      "The interviewer demonstrates excellent time management by moving the conversation forward appropriately.",
-      "Notice how the interviewer references specific details from the candidate's responses. This shows active listening.",
-      "The interviewer uses follow-up questions effectively to dig deeper into interesting points mentioned by the candidate."
-    ];
-
-    return explanations[(messageNumber - 1) % explanations.length];
-  };
 
 
 
@@ -382,6 +442,21 @@ export default function PreparationDemonstration({
             </Text>
           </Box>
         )}
+
+        {/* Waiting for acknowledgment message */}
+        {waitingForUserAcknowledgment && (
+          <Box style={{
+            padding: '16px',
+            background: 'var(--amber-1)',
+            border: '1px solid var(--amber-6)',
+            borderRadius: '8px',
+            marginBottom: '16px'
+          }}>
+            <Text size="2" style={{ color: 'var(--amber-11)' }}>
+              ⏸️ Please review the learning point above and click &quot;Next&quot; to continue the conversation.
+            </Text>
+          </Box>
+        )}
         
         <Flex direction="column" gap="4">
           {sortedDisplayMessages.map((message, index) => {
@@ -466,7 +541,21 @@ export default function PreparationDemonstration({
                           {explanation.explanation}
                         </Text>
                         
-                        
+                        {explanation.showButton && !explanation.acknowledged && (
+                          <Flex justify="end" style={{ marginTop: '12px' }}>
+                            <Button 
+                              size="1"
+                              style={{ 
+                                background: 'var(--amber-9)', 
+                                color: 'white',
+                                border: 'none'
+                              }}
+                              onClick={() => handleAcknowledgeExplanation(explanation.id)}
+                            >
+                              Next
+                            </Button>
+                          </Flex>
+                        )}
                       </Box>
                     )}
                   </Box>
