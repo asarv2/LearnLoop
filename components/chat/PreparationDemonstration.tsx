@@ -68,21 +68,57 @@ export default function PreparationDemonstration({
     queryFn: () => getMessagesByChat(chatId)
   });
 
-  const generateExplanation = useCallback((messageContent: string, messageNumber: number): string => {
-    const explanations = [
-      "Notice how the interviewer builds rapport with a warm, professional greeting. This helps create a comfortable environment for the candidate.",
-      "The interviewer uses an open-ended question to encourage detailed responses. This reveals more information than yes/no questions.",
-      "See how the interviewer follows up with specific probes. This demonstrates active listening and helps uncover concrete examples.",
-      "The interviewer transitions smoothly between topics. This keeps the conversation flowing naturally and maintains engagement.",
-      "Notice the professional tone throughout. The interviewer remains approachable while maintaining appropriate boundaries.",
-      "The interviewer asks behavioral questions that require specific examples. This helps assess real-world experience and skills.",
-      "See how the interviewer handles the response professionally. This shows how to manage unexpected or difficult answers.",
-      "The interviewer demonstrates excellent time management by moving the conversation forward appropriately.",
-      "Notice how the interviewer references specific details from the candidate's responses. This shows active listening.",
-      "The interviewer uses follow-up questions effectively to dig deeper into interesting points mentioned by the candidate."
-    ];
+  const generateExplanation = useCallback(async (recentMessages: any[], messageNumber: number): Promise<string> => {
+    try {
+      // Get the last 3-4 interviewer messages for context
+      const sortedMessages = [...recentMessages].sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      
+      const interviewerMessages = [];
+      for (let i = 0; i < sortedMessages.length; i++) {
+        if (i % 2 === 0) { // Interviewer messages
+          interviewerMessages.push(sortedMessages[i]);
+        }
+      }
+      
+      // Get the last 3 interviewer messages for analysis
+      const recentInterviewerMessages = interviewerMessages.slice(-3);
+      
+      const response = await fetch('/api/preparation/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: recentInterviewerMessages,
+          messageNumber
+        }),
+      });
 
-    return explanations[(messageNumber - 1) % explanations.length];
+      if (!response.ok) {
+        throw new Error('Failed to generate explanation');
+      }
+
+      const data = await response.json();
+      return data.explanation || "This interviewer demonstrates effective communication techniques.";
+    } catch (error) {
+      console.error('Error generating AI explanation:', error);
+      // Fallback to static explanation
+      const fallbackExplanations = [
+        "Notice how the interviewer builds rapport with a warm, professional greeting. This helps create a comfortable environment for the candidate.",
+        "The interviewer uses an open-ended question to encourage detailed responses. This reveals more information than yes/no questions.",
+        "See how the interviewer follows up with specific probes. This demonstrates active listening and helps uncover concrete examples.",
+        "The interviewer transitions smoothly between topics. This keeps the conversation flowing naturally and maintains engagement.",
+        "Notice the professional tone throughout. The interviewer remains approachable while maintaining appropriate boundaries.",
+        "The interviewer asks behavioral questions that require specific examples. This helps assess real-world experience and skills.",
+        "See how the interviewer handles the response professionally. This shows how to manage unexpected or difficult answers.",
+        "The interviewer demonstrates excellent time management by moving the conversation forward appropriately.",
+        "Notice how the interviewer references specific details from the candidate's responses. This shows active listening.",
+        "The interviewer uses follow-up questions effectively to dig deeper into interesting points mentioned by the candidate."
+      ];
+      return fallbackExplanations[(messageNumber - 1) % fallbackExplanations.length];
+    }
   }, []);
 
   const scrollToBottom = useCallback(() => {
@@ -206,86 +242,95 @@ export default function PreparationDemonstration({
     }, 500);
   }, [triggerNextMessage]);
 
-  // Auto-trigger conversation between AI agents - modified to wait for user acknowledgment
+    // Auto-trigger conversation between AI agents - modified to wait for user acknowledgment
   useEffect(() => {
-    // Don't auto-trigger if we're waiting for user acknowledgment or just acknowledged
-    if (waitingForUserAcknowledgment || justAcknowledged) {
-      console.log('Auto-trigger blocked - waiting for acknowledgment or just acknowledged');
-      return;
-    }
-    
-    if (messages.length > 0 && !streamingMessage && !isTriggeringNext) {
-      const lastMessage = messages[messages.length - 1];
-      const shouldContinueConversation = lastMessage.completed;
+    const handleAutoTrigger = async () => {
+      // Don't auto-trigger if we're waiting for user acknowledgment or just acknowledged
+      if (waitingForUserAcknowledgment || justAcknowledged) {
+        console.log('Auto-trigger blocked - waiting for acknowledgment or just acknowledged');
+        return;
+      }
       
-      if (shouldContinueConversation) {
-        // Sort messages by creation time to ensure proper order
-        const sortedMessages = [...messages].sort((a, b) => 
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
+      if (messages.length > 0 && !streamingMessage && !isTriggeringNext) {
+        const lastMessage = messages[messages.length - 1];
+        const shouldContinueConversation = lastMessage.completed;
         
-        // Check all messages for learning points that need to be created
-        let interviewerMessageCount = 0;
-        let needsLearningPoint = false;
-        let pendingExplanation: ExplanationBubble | null = null;
-        
-        for (let i = 0; i < sortedMessages.length; i++) {
-          const message = sortedMessages[i];
-          const isInterviewerMessage = i % 2 === 0;
+        if (shouldContinueConversation) {
+          // Sort messages by creation time to ensure proper order
+          const sortedMessages = [...messages].sort((a, b) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
           
-          if (isInterviewerMessage && message.content && message.completed) {
-            interviewerMessageCount++;
+          // Check all messages for learning points that need to be created
+          let interviewerMessageCount = 0;
+          let needsLearningPoint = false;
+          let pendingExplanation: ExplanationBubble | null = null;
+          
+          for (let i = 0; i < sortedMessages.length; i++) {
+            const message = sortedMessages[i];
+            const isInterviewerMessage = i % 2 === 0;
             
-            // If this is every 3rd interviewer message, check if it needs a learning point
-            if (interviewerMessageCount % 3 === 0) {
-              const existingExplanation = explanationsRef.current.find(exp => exp.messageId === message.id);
+            if (isInterviewerMessage && message.content && message.completed) {
+              interviewerMessageCount++;
               
-              if (!existingExplanation) {
-                // This message needs a learning point
-                const explanation = generateExplanation(message.content, interviewerMessageCount);
-                pendingExplanation = {
-                  id: `explanation-${message.id}`,
-                  messageId: message.id,
-                  explanation,
-                  showButton: true,
-                  acknowledged: false
-                };
-                needsLearningPoint = true;
-                console.log(`Creating learning point for message ${message.id}, interviewer count: ${interviewerMessageCount}`);
-                break;
-              } else if (!existingExplanation.acknowledged) {
-                // Learning point exists but not acknowledged
-                needsLearningPoint = true;
-                console.log(`Learning point exists but not acknowledged for message ${message.id}`);
-                break;
+              // If this is every 3rd interviewer message, check if it needs a learning point
+              if (interviewerMessageCount % 3 === 0) {
+                const existingExplanation = explanationsRef.current.find(exp => exp.messageId === message.id);
+                
+                if (!existingExplanation) {
+                  // This message needs a learning point
+                  try {
+                    const explanation = await generateExplanation(messages, interviewerMessageCount);
+                    pendingExplanation = {
+                      id: `explanation-${message.id}`,
+                      messageId: message.id,
+                      explanation,
+                      showButton: true,
+                      acknowledged: false
+                    };
+                    needsLearningPoint = true;
+                    console.log(`Creating learning point for message ${message.id}, interviewer count: ${interviewerMessageCount}`);
+                    break;
+                  } catch (error) {
+                    console.error('Error generating explanation:', error);
+                    // Continue without learning point if generation fails
+                  }
+                } else if (!existingExplanation.acknowledged) {
+                  // Learning point exists but not acknowledged
+                  needsLearningPoint = true;
+                  console.log(`Learning point exists but not acknowledged for message ${message.id}`);
+                  break;
+                }
               }
             }
           }
-        }
-        
-        // If we need to create a learning point, do it and pause
-        if (needsLearningPoint) {
-          if (pendingExplanation) {
-            setExplanations(prev => {
-              const newExplanations = [...prev, pendingExplanation!];
-              explanationsRef.current = newExplanations;
-              return newExplanations;
-            });
+          
+          // If we need to create a learning point, do it and pause
+          if (needsLearningPoint) {
+            if (pendingExplanation) {
+              setExplanations(prev => {
+                const newExplanations = [...prev, pendingExplanation!];
+                explanationsRef.current = newExplanations;
+                return newExplanations;
+              });
+            }
+            setWaitingForUserAcknowledgment(true);
+            console.log('Paused conversation for learning point');
+            return;
           }
-          setWaitingForUserAcknowledgment(true);
-          console.log('Paused conversation for learning point');
-          return;
-        }
-        
-        // Continue with next message after delay
-        const timer = setTimeout(() => {
-          console.log('Auto-triggering next message');
-          triggerNextMessage();
-        }, 6000); // 6 second delay to give more breathing room
+          
+          // Continue with next message after delay
+          const timer = setTimeout(() => {
+            console.log('Auto-triggering next message');
+            triggerNextMessage();
+          }, 6000); // 6 second delay to give more breathing room
 
-        return () => clearTimeout(timer);
+          return () => clearTimeout(timer);
+        }
       }
-    }
+    };
+
+    handleAutoTrigger();
   }, [messages, streamingMessage, isTriggeringNext, triggerNextMessage, waitingForUserAcknowledgment, justAcknowledged, generateExplanation]);
 
 
