@@ -4,7 +4,7 @@ import { logError } from '@/utils/logger';
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, messageNumber } = await request.json();
+    const { messages } = await request.json();
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json(
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     
     const prompt = `You are an expert interview coach analyzing an interviewer's techniques. 
 
-The interviewer has just completed their ${messageNumber}th message in a conversation. Here are their recent messages:
+Here are the interviewer's recent messages from their conversation:
 
 ${interviewerMessages}
 
@@ -27,6 +27,8 @@ Please provide a brief, insightful learning point (2-3 sentences) that explains 
 1. Specific techniques they used well
 2. How their approach benefited the conversation
 3. What makes this a good example for others to learn from
+
+Analyze the actual content and techniques used in these messages. Don't make assumptions about what the interviewer "should" be doing - focus on what they actually did well in these specific messages.
 
 Keep it concise, positive, and educational. Write in a warm, encouraging tone.`;
 

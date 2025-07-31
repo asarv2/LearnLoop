@@ -68,7 +68,7 @@ export default function PreparationDemonstration({
     queryFn: () => getMessagesByChat(chatId)
   });
 
-  const generateExplanation = useCallback(async (recentMessages: any[], messageNumber: number): Promise<string> => {
+  const generateExplanation = useCallback(async (recentMessages: any[]): Promise<string> => {
     try {
       // Get the last 3-4 interviewer messages for context
       const sortedMessages = [...recentMessages].sort((a, b) => 
@@ -91,8 +91,7 @@ export default function PreparationDemonstration({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: recentInterviewerMessages,
-          messageNumber
+          messages: recentInterviewerMessages
         }),
       });
 
@@ -117,7 +116,7 @@ export default function PreparationDemonstration({
         "Notice how the interviewer references specific details from the candidate's responses. This shows active listening.",
         "The interviewer uses follow-up questions effectively to dig deeper into interesting points mentioned by the candidate."
       ];
-      return fallbackExplanations[(messageNumber - 1) % fallbackExplanations.length];
+      return fallbackExplanations[Math.floor(Math.random() * fallbackExplanations.length)];
     }
   }, []);
 
@@ -280,7 +279,9 @@ export default function PreparationDemonstration({
                 if (!existingExplanation) {
                   // This message needs a learning point
                   try {
-                    const explanation = await generateExplanation(messages, interviewerMessageCount);
+                    console.log(`Attempting to generate learning point for message ${message.id}, interviewer count: ${interviewerMessageCount}`);
+                    const explanation = await generateExplanation(messages);
+                    console.log('Generated explanation:', explanation);
                     pendingExplanation = {
                       id: `explanation-${message.id}`,
                       messageId: message.id,
@@ -289,7 +290,7 @@ export default function PreparationDemonstration({
                       acknowledged: false
                     };
                     needsLearningPoint = true;
-                    console.log(`Creating learning point for message ${message.id}, interviewer count: ${interviewerMessageCount}`);
+                    console.log(`Created learning point for message ${message.id}, interviewer count: ${interviewerMessageCount}`);
                     break;
                   } catch (error) {
                     console.error('Error generating explanation:', error);
