@@ -8,8 +8,6 @@ const R2_SECRET = process.env.R2_SECRET!;
 // Simple V4-style signer for Cloudflare R2 (S3-compatible API)
 export const r2Adapter = {
   async getSignedUrl(key: string, expiresIn: number) {
-    const ttl = Math.floor(Date.now() / 1000) + expiresIn;
-    
     // Generate AWS Signature V4 for R2
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const datetime = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '').replace('T', '');
