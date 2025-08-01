@@ -24,6 +24,14 @@ export function useMessage(id: string, enabled = true) {
   });
 }
 
+export function useMessageHints(messageId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...messageKeys.detail(messageId), 'hints'],
+    queryFn: () => api<any[]>(`/api/v1/messages/${messageId}/hints`),
+    enabled,
+  });
+}
+
 // ---------- Mutations ----------
 export function useCreateMessage() {
   const qc = useQueryClient();

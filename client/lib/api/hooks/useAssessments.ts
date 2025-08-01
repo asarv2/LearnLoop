@@ -24,6 +24,14 @@ export function useAssessment(id: string, enabled = true) {
   });
 }
 
+export function useAssessmentFeedback(assessmentId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...assessmentKeys.detail(assessmentId), 'feedback'],
+    queryFn: () => api<any[]>(`/api/v1/assessments/${assessmentId}/feedback`),
+    enabled,
+  });
+}
+
 // ---------- Mutations ----------
 export function useCreateAssessment() {
   const qc = useQueryClient();
