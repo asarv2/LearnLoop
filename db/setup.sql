@@ -79,7 +79,6 @@ CREATE TABLE IF NOT EXISTS trainings (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     title TEXT NOT NULL,
     description TEXT,
-    field_ids UUID[], -- these correspond to what fields should be used for this training.
     active BOOLEAN DEFAULT FALSE,
     preparation BOOLEAN DEFAULT FALSE
 ); -- these would be the "simulations", allowing for multiple scenarios for the training
@@ -92,7 +91,7 @@ CREATE TABLE IF NOT EXISTS scenarios (
     description TEXT,
     training_id UUID REFERENCES trainings(id) ON DELETE CASCADE,
     rubric_id UUID REFERENCES rubrics(id) ON DELETE SET NULL,
-    parameter_ids UUID[] -- these would be used corresponding to the fields in the training.
+    field_ids UUID[] -- these would be used corresponding to the fields in the training.
 ); -- these are like "scenarios". These cannot be instantiated directly, just a template. If the training is preperation, then all unfilled will show up in forms.
 
 CREATE TABLE IF NOT EXISTS attempts (
@@ -112,7 +111,8 @@ CREATE TABLE IF NOT EXISTS chats (
     title TEXT,
     trace_id TEXT, -- openAI trace id
     profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-    attempt_id UUID REFERENCES attempts(id) ON DELETE CASCADE
+    attempt_id UUID REFERENCES attempts(id) ON DELETE CASCADE,
+    parameter_ids UUID[] -- these would be used corresponding to the fields in the training.
 );
 
 CREATE TABLE IF NOT EXISTS messages (

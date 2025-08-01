@@ -7,6 +7,7 @@ import { HttpError } from "@/utils/HttpError";
 
 export type AssessmentCreate = Database['public']['Tables']['assessments']['Insert'];
 export type AssessmentUpdate = Database['public']['Tables']['assessments']['Update'];
+export type AssessmentFeedback = Database['public']['Tables']['feedback']['Row'];
 
 // Runtime validators for API requests
 export const AssessmentCreateSchema = z.object({
@@ -75,7 +76,7 @@ export const assessmentRepo = {
     }
   },
 
-  async getFeedback(assessmentId: string) {
+  async getFeedback(assessmentId: string): Promise<AssessmentFeedback[]> {
     const { data, error } = await supabase
       .from('feedback')
       .select('*')
