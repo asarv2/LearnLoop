@@ -74,6 +74,41 @@ export const chatRepo = {
     return data;
   },
 
+  async fetchChat(id: string, includes: string[] = []) {
+    /* Build a dynamic SELECT clause */
+    const selectors = ['*'];                    // ← base chat columns
+
+    if (includes.includes('grades')) {
+      selectors.push('rubric_grades(*, standard_grades(*))');
+    }
+    if (includes.includes('assessment')) {
+      selectors.push('assessments(*, questions(*))');
+    }
+    if (includes.includes('feedback')) {
+      selectors.push('feedback(*)');
+    }
+    if (includes.includes('hints')) {
+      selectors.push('messages(*, hints(*))');
+    }
+    if (includes.includes('messages')) {
+      selectors.push('messages(*)');
+    }
+
+    const { data, error } = await supabase
+      .from('chats')
+      .select(selectors.join(', '))
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw HttpError.notFound(`Chat with id ${id} not found`);
+      }
+      throw new HttpError(500, error.message);
+    }
+    return data;
+  },
+
   async update(id: string, patch: ChatUpdate) {
     const { data, error } = await supabase.from('chats').update(patch).eq('id', id).select().single();
     if (error) {

@@ -16,10 +16,11 @@ export function useChats() {
   });
 }
 
-export function useChat(id: string, enabled = true) {
+export function useChat(id: string, include: string[] = [], enabled = true) {
   return useQuery({
-    queryKey: chatKeys.detail(id),
-    queryFn: () => api<ChatCreate>(`/api/v1/chats/${id}`),
+    queryKey: ['chat', id, include.sort().join(',')],
+    queryFn: () =>
+      api(`/api/v1/chats/${id}${include.length ? '?include=' + include.join(',') : ''}`),
     enabled,
   });
 }

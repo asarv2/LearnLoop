@@ -73,5 +73,16 @@ export const messageRepo = {
       }
       throw new HttpError(500, error.message);
     }
+  },
+
+  async getHints(messageId: string) {
+    const { data, error } = await supabase
+      .from('hints')
+      .select('*')
+      .eq('message_id', messageId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw new HttpError(500, error.message);
+    return data;
   }
 }; 

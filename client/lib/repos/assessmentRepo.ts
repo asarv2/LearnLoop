@@ -73,5 +73,16 @@ export const assessmentRepo = {
       }
       throw new HttpError(500, error.message);
     }
+  },
+
+  async getFeedback(assessmentId: string) {
+    const { data, error } = await supabase
+      .from('feedback')
+      .select('*')
+      .eq('assessment_id', assessmentId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw new HttpError(500, error.message);
+    return data;
   }
 };

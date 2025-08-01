@@ -75,4 +75,16 @@ export const documentKeys = {
   all: ['documents'] as const,
   list: (filters?: unknown) => [...documentKeys.all, { filters }] as const,
   detail: (id: string) => [...documentKeys.all, id] as const,
+};
+
+export const rubricKeys = {
+  all: ['rubrics'] as const,
+  list: (filters?: unknown) => [...rubricKeys.all, { filters }] as const,
+  detail: (id: string) => [...rubricKeys.all, id] as const,
+};
+
+export const standardKeys = {
+  all: ['standards'] as const,
+  list: (filters?: unknown) => [...standardKeys.all, { filters }] as const,
+  detail: (id: string) => [...standardKeys.all, id] as const,
 }; 

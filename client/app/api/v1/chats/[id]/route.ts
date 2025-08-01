@@ -7,12 +7,13 @@ import { logError, logWarn } from '@/utils/logger';
 import { handleHttpError } from '@/utils/HttpError';
 
 export async function GET(
-  _req: Request,
-  { params }: { params: { id: string } }
+  req: Request,
+  { params, url }: { params: { id: string }; url: URL }
 ) {
+  const include = url.searchParams.get('include')?.split(',') ?? [];
   try {
-    const row = await chatRepo.find(params.id);
-    return NextResponse.json(row);
+    const chat = await chatRepo.fetchChat(params.id, include);
+    return NextResponse.json(chat);
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
     await logError('Failed to find chat', err, { id: params.id });
