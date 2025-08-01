@@ -4,8 +4,10 @@ import { Agent, AgentInputItem, Runner } from "@openai/agents";
 import { getChat } from "@/utils/queries/chats/get-chat";
 import { createMessage } from "@/utils/mutations/messages/create-message";
 import { NextRequest } from "next/server";
-import { getRegularAgent } from "@/utils/ai/agents/regular";
+import { getPreparationCandidateAgent } from "@/utils/ai/agents/preparation-candidate";
 import { getInterviewerAgent } from "@/utils/ai/agents/interviewer";
+import { getOffboardingManagerAgent } from "@/utils/ai/agents/offboarding-manager";
+import { getOffboardingEmployeeAgent } from "@/utils/ai/agents/offboarding-employee";
 import { updateMessage } from "@/utils/mutations/messages/update-message";
 import { getMessagesByChat } from "@/utils/queries/messages/get-messages-by-chat";
 import { logError } from "@/utils/logger";
@@ -25,26 +27,41 @@ export async function POST(request: NextRequest) {
     }
 
     // use form data
-    const formData = await request.formData();
-    const chatId = formData.get("chatId");
+                const formData = await request.formData();
+            const chatId = formData.get("chatId");
+            const jobPosition = formData.get("jobPosition") as string;
+            const offboardingType = formData.get("offboardingType") as string;
+            const employeeLevel = formData.get("employeeLevel") as string;
 
     // Get chat info
     const chat = await getChat(chatId as string);
     const messages = await getMessagesByChat(chatId as string);
     
     // Determine which agent should respond next
-    // Even number of messages (0, 2, 4...) = interviewer's turn
-    // Odd number of messages (1, 3, 5...) = candidate's turn
-    const shouldInterviewerRespond = messages.length % 2 === 0;
+    // Even number of messages (0, 2, 4...) = first agent's turn (interviewer/manager)
+    // Odd number of messages (1, 3, 5...) = second agent's turn (candidate/employee)
+    const shouldFirstAgentRespond = messages.length % 2 === 0;
+    
+    // Determine if this is an interview or offboarding preparation
+    const isInterviewPrep = chat.title?.includes('Interview') || chat.additional_info?.includes('interview-prep');
+    const isOffboardingPrep = chat.title?.includes('Offboarding') || chat.additional_info?.includes('offboarding-prep');
     
     let agent: Agent;
     
-    if (shouldInterviewerRespond) {
-        // Interviewer should respond
-        agent = await getInterviewerAgent();
+    if (shouldFirstAgentRespond) {
+        // First agent should respond (interviewer or manager)
+        if (isOffboardingPrep) {
+            agent = await getOffboardingManagerAgent(offboardingType || 'voluntary', employeeLevel || 'MID-LEVEL');
+        } else {
+            agent = await getInterviewerAgent(jobPosition);
+        }
     } else {
-        // Candidate should respond
-        agent = await getRegularAgent();
+        // Second agent should respond (candidate or employee)
+        if (isOffboardingPrep) {
+            agent = await getOffboardingEmployeeAgent(offboardingType || 'voluntary', employeeLevel || 'MID-LEVEL');
+        } else {
+            agent = await getPreparationCandidateAgent(jobPosition);
+        }
     }
 
     // Create the initial message in the database with the correct role
@@ -71,46 +88,86 @@ export async function POST(request: NextRequest) {
                 const input: AgentInputItem[] = [];
                 
                 if (messages.length === 0) {
-                    // First message - interviewer starts the conversation
-                    input.push({
-                        role: "user",
-                        content: [
-                            {
-                                type: "input_text",
-                                text: "Start the interview with a warm, professional greeting and ask the candidate to introduce themselves. Demonstrate excellent interviewing techniques from the very beginning."
-                            }
-                        ]
-                    });
-                } else {
-                    // Get the last message to provide context
-                    const lastMessage = messages[messages.length - 1];
-                    
-                    if (shouldInterviewerRespond) {
-                        // Interviewer is responding to the candidate
+                    // First message - first agent starts the conversation
+                    if (isOffboardingPrep) {
                         input.push({
                             role: "user",
                             content: [
                                 {
                                     type: "input_text",
-                                    text: `You are the INTERVIEWER. The candidate just said: "${lastMessage.content}"
-
-Continue the interview by asking a follow-up question or moving to the next topic. Demonstrate excellent interviewing techniques including active listening, proper follow-up questions, and professional conduct. Keep the conversation flowing naturally and show how to conduct a professional interview.`
+                                    text: `Start the offboarding conversation for a ${employeeLevel || 'MID-LEVEL'} employee with a ${offboardingType || 'voluntary'} departure. Begin with a warm, professional greeting and acknowledge their contributions. Demonstrate excellent offboarding techniques from the very beginning. Speak naturally without any placeholder text or formatting.`
                                 }
                             ]
                         });
                     } else {
-                        // Candidate is responding to the interviewer
                         input.push({
                             role: "user",
                             content: [
                                 {
                                     type: "input_text",
-                                    text: `You are the CANDIDATE. The interviewer just asked: "${lastMessage.content}"
-
-Respond naturally and authentically as a job candidate. Be conversational, honest, and show your personality. Don't be overly formal - speak naturally as you would in a real interview.`
+                                    text: `Start the interview for the ${jobPosition} position with a warm, professional greeting and ask the candidate to introduce themselves. Demonstrate excellent interviewing techniques from the very beginning. Speak naturally without any placeholder text or formatting.`
                                 }
                             ]
                         });
+                    }
+                } else {
+                    // Get the last message to provide context
+                    const lastMessage = messages[messages.length - 1];
+                    
+                    if (shouldFirstAgentRespond) {
+                        // First agent is responding (interviewer or manager)
+                        if (isOffboardingPrep) {
+                            input.push({
+                                role: "user",
+                                content: [
+                                    {
+                                        type: "input_text",
+                                        text: `You are the MANAGER conducting a ${offboardingType || 'voluntary'} offboarding for a ${employeeLevel || 'MID-LEVEL'} employee. The employee just said: "${lastMessage.content}"
+
+Continue the offboarding conversation by addressing their concerns, explaining next steps, or moving to the next topic. Demonstrate excellent offboarding techniques including empathy, clear communication, and professional handling of sensitive situations. Keep the conversation flowing naturally and show how to conduct a professional offboarding. Speak naturally without any placeholder text or formatting.`
+                                    }
+                                ]
+                            });
+                        } else {
+                            input.push({
+                                role: "user",
+                                content: [
+                                    {
+                                        type: "input_text",
+                                        text: `You are the INTERVIEWER for the ${jobPosition} position. The candidate just said: "${lastMessage.content}"
+
+Continue the interview by asking a follow-up question or moving to the next topic. Demonstrate excellent interviewing techniques including active listening, proper follow-up questions, and professional conduct. Keep the conversation flowing naturally and show how to conduct a professional interview. Speak naturally without any placeholder text or formatting.`
+                                    }
+                                ]
+                            });
+                        }
+                    } else {
+                        // Second agent is responding (candidate or employee)
+                        if (isOffboardingPrep) {
+                            input.push({
+                                role: "user",
+                                content: [
+                                    {
+                                        type: "input_text",
+                                        text: `You are the EMPLOYEE being offboarded with a ${offboardingType || 'voluntary'} departure at the ${employeeLevel || 'MID-LEVEL'} level. The manager just said: "${lastMessage.content}"
+
+Respond naturally and conversationally. Keep your response DETAILED (3-6 sentences) and authentic. Show appropriate emotions and concerns for the offboarding situation. Ask relevant questions about next steps, benefits, and transition planning. Don't use any formatting, placeholder text, or mention specific companies/projects you don't know. Just be yourself - speak like a real person in an offboarding conversation.`
+                                    }
+                                ]
+                            });
+                        } else {
+                            input.push({
+                                role: "user",
+                                content: [
+                                    {
+                                        type: "input_text",
+                                        text: `You are the CANDIDATE interviewing for the ${jobPosition} position. The interviewer just said: "${lastMessage.content}"
+
+Respond naturally and conversationally. Keep your response DETAILED (3-6 sentences) and authentic. Show enthusiasm for the opportunity and why you're a good fit. Provide specific examples and detailed stories that demonstrate your expertise. Don't use any formatting, placeholder text, or mention specific companies/projects you don't know. Just be yourself - speak like a real person in an interview.`
+                                    }
+                                ]
+                            });
+                        }
                     }
                 }
 
