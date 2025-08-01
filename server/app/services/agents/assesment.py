@@ -5,7 +5,7 @@ from typing import Any, List, Literal
 
 from agents import Runner, trace
 from app.db import get_session
-from app.models import Chats, Messages
+from app.models import Assessments, Chats, Messages, Questions
 from app.services.agents.generic import GenericAgent
 from app.utils.chat import get_conversation_history
 from fastapi import Depends
@@ -94,21 +94,83 @@ async def run_assessment_agent(
             f"Successfully generated {len(questions)} assessment questions for chat {chat_id}"
         )
 
+        # Create the Assessment record
+        assessment = Assessments(
+            chat_id=chat_id,
+            title=f"Assessment for {chat.title}",
+            training_id=chat.training_id,
+            responses={}  # Empty responses initially
+        )
+        session.add(assessment)
+        session.flush()  # Flush to get the assessment ID
+
+        # Create Question records for each generated question
+        created_questions = []
+        for question_data in questions:
+            # Map the question type from our format to database format
+            question_type_mapping = {
+                "rating": "mcq",  # Rating questions are multiple choice with numeric options
+                "multiple_choice": "mcq",
+                "yes_no": "mcq",  # Yes/No questions are multiple choice
+                "text": "frq"     # Text questions are free response
+            }
+            
+            db_question_type = question_type_mapping.get(question_data.type, "mcq")
+            
+            # Prepare options for multiple choice questions
+            options = None
+            if question_data.type in ["rating", "multiple_choice", "yes_no"]:
+                if question_data.type == "rating":
+                    # For rating questions, create 1-5 scale options
+                    options = ["1", "2", "3", "4", "5"]
+                elif question_data.type == "yes_no":
+                    # For yes/no questions, create Yes/No options
+                    options = ["Yes", "No"]
+                else:
+                    # For multiple choice, use the provided options
+                    options = question_data.options
+
+            question = Questions(
+                assessment_id=assessment.id,
+                stem=question_data.question,
+                question_type=db_question_type,
+                options=options,
+                value=None  # Will be filled when user responds
+            )
+            session.add(question)
+            created_questions.append(question)
+
+        # Commit all changes to the database
+        session.commit()
+
+        logger.info(
+            f"Successfully saved assessment {assessment.id} with {len(created_questions)} questions to database"
+        )
+
         return {
             "success": True,
-            "message": f"Successfully generated {len(questions)} assessment questions",
-            "questions_count": len(questions),
-            "questions": [q.model_dump() for q in questions],
+            "message": f"Successfully generated and saved {len(created_questions)} assessment questions",
+            "questions_count": len(created_questions),
+            "assessment_id": str(assessment.id),
             "chat_id": str(chat_id),
             "chat_title": chat.title,
+            "questions": [
+                {
+                    "id": str(q.id),
+                    "stem": q.stem,
+                    "question_type": q.question_type,
+                    "options": q.options
+                } for q in created_questions
+            ]
         }
 
     except Exception as e:
         logger.error(f"Error during assessment generation: {str(e)}")
+        session.rollback()
         return {
             "success": False,
             "message": f"Assessment generation failed: {str(e)}",
             "questions_count": 0,
-            "questions": [],
+            "assessment_id": None,
             "chat_id": str(chat_id),
         }
