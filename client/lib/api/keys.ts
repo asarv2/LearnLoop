@@ -69,4 +69,10 @@ export const scenarioKeys = {
   all: ['scenarios'] as const,
   list: (filters?: unknown) => [...scenarioKeys.all, { filters }] as const,
   detail: (id: string) => [...scenarioKeys.all, id] as const,
+};
+
+export const documentKeys = {
+  all: ['documents'] as const,
+  list: (filters?: unknown) => [...documentKeys.all, { filters }] as const,
+  detail: (id: string) => [...documentKeys.all, id] as const,
 }; 
