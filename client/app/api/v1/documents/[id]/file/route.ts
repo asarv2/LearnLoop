@@ -1,36 +1,24 @@
-// TODO: refactor
-import { cookies } from 'next/headers';
-import { NextRequest, NextResponse } from 'next/server';
-import supabaseServer from "@/utils/supabase/supabase-server";
+import { NextResponse } from 'next/server';
+import { storage } from '@/lib/storage';
 import { logError } from '@/utils/logger';
 
+const ONE_HOUR = 3600;       // presigned URL life
+
 export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  _req: Request,
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = await params;
-
-    // use supabase to get a URL for the resume
-    const supabase = await supabaseServer(cookies());
-    const { data, error } = await supabase.storage.from("documents").download(`${id}.pdf`);
-    if (error) {
-      return NextResponse.json({ error: 'Error downloading document' }, { status: 500 });
-    }
-    if (!data) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
-    }
-    const document = await data.arrayBuffer();
-
-    // convert the resume to a blob
-    const blob = new Blob([document], { type: 'application/pdf' });
-
-    // return the blob
-    return new NextResponse(blob, {
-      headers: { 'Content-Type': 'application/pdf' },
+    const url = await storage.getSignedUrl(`${params.id}.pdf`, ONE_HOUR);
+    /* 302 keeps method=GET; 307 if you want to preserve original verb */
+    return NextResponse.redirect(url, {
+      status: 302,
+      headers: {
+        'Cache-Control': 'public, max-age=300, stale-while-revalidate=600',
+      },
     });
-  } catch (error) {
-    logError('Error fetching document:', error);
-    return NextResponse.json({ error: 'Failed to fetch document' }, { status: 500 });
+  } catch (err) {
+    await logError('Failed to presign document', err, { id: params.id });
+    return NextResponse.json({ error: 'Document not found' }, { status: 404 });
   }
 } 
