@@ -1,0 +1,65 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/server/.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.testing.pytestArgs": [
+      "server/tests"
+    ],
+    "python.testing.pytestEnabled": true,
+    "python.analysis.typeCheckingMode": "off",
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.extraPaths": [
+      "${workspaceFolder}/server"
+    ],
+    "python.analysis.include": [
+      "${workspaceFolder}/server/app"
+    ],
+    "[python]": {
+      "editor.defaultFormatter": "ms-python.python",
+      "editor.formatOnSave": true,
+      "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit",
+        "source.fixAll": "explicit"
+      }
+    },
+    "mypy.runUsingActiveInterpreter": true,
+    "mypy.configFile": "server/mypy.ini",
+    "mypy.targets": [
+      "server/app"
+    ],
+    "mypy.enabled": true,
+    "eslint.workingDirectories": [
+      "client"
+    ],
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.formatOnSave": true,
+      "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": "explicit",
+        "source.organizeImports": "explicit"
+      }
+    },
+    "[typescriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.formatOnSave": true,
+      "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": "explicit",
+        "source.organizeImports": "explicit"
+      }
+    },
+    "[javascript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.formatOnSave": true,
+      "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": "explicit",
+        "source.organizeImports": "explicit"
+      }
+    },
+    "[javascriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.formatOnSave": true,
+      "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": "explicit",
+        "source.organizeImports": "explicit"
+      }
+    }
+  }
