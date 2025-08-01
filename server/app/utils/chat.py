@@ -1,8 +1,9 @@
 import logging
-from typing import Sequence
+import uuid
+from typing import List, Sequence
 
 from agents.items import TResponseInputItem
-from app.models import Assessments, Messages, Questions
+from app.models import Assessments, Messages, Questions, Rubrics, Standards
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -70,3 +71,61 @@ def get_assessment_history(
         "content": content,
     }
     return [questions]
+
+
+def get_dynamic_rubric(
+    rubric: Rubrics,
+    standards: List[Standards],
+) -> TResponseInputItem:
+    """
+    Build a dynamic rubric from database objects.
+
+    Args:
+        rubric: The rubric object from database
+        standards: List of standards for this rubric
+
+    Returns:
+        Dynamic rubric formatted for agent consumption
+    """
+    rubric_lines = [
+        f"RUBRIC: {rubric.name}",
+        f"Description: {rubric.description}",
+        f"Total Points: {rubric.total_points}",
+        "",
+        "EVALUATION CRITERIA:",
+        "",
+    ]
+
+    # Sort standards by name for consistent ordering
+    sorted_standards = sorted(standards, key=lambda x: x.name)
+
+    # Build criteria sections
+    for standard in sorted_standards:
+        rubric_lines.extend([
+            f"CRITERION: {standard.name}",
+            f"Description: {standard.description}",
+            "Rating Scale:",
+        ])
+
+        # Add items if they exist
+        if standard.items:
+            for item in standard.items:
+                rubric_lines.append(f"  - {item}")
+        else:
+            # Default 1-5 scale if no specific items
+            rubric_lines.extend([
+                "  5 - Excellent: Outstanding performance",
+                "  4 - Good: Above average performance", 
+                "  3 - Average: Adequate performance",
+                "  2 - Below Average: Needs improvement",
+                "  1 - Poor: Unsatisfactory performance"
+            ])
+
+        rubric_lines.append("")  # Empty line between criteria
+
+    rubric_string = "\n".join(rubric_lines)
+
+    return {
+        "role": "user",
+        "content": f"You are evaluating a conversation based on the following rubric. Please provide scores (1-5) and feedback for each criterion.\n\n{rubric_string}",
+    }
