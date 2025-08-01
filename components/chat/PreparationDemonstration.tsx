@@ -19,7 +19,7 @@ import {
     Card,
 } from '@radix-ui/themes';
 import { PersonIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
-import { Modal, message } from 'antd';
+import { Modal, message, Select } from 'antd';
 import { CheckCircleFilled } from '@ant-design/icons';
 import Markdown from '@/components/chat/Markdown';
 
@@ -48,6 +48,10 @@ export default function PreparationDemonstration({
 }: PreparationDemonstrationProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [showJobPositionModal, setShowJobPositionModal] = useState(true);
+  const [jobPosition, setJobPosition] = useState('');
+  const [offboardingType, setOffboardingType] = useState('voluntary');
+  const [employeeLevel, setEmployeeLevel] = useState('MID-LEVEL');
   const [showEndButton, setShowEndButton] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [explanations, setExplanations] = useState<ExplanationBubble[]>([]);
@@ -68,7 +72,7 @@ export default function PreparationDemonstration({
     queryFn: () => getMessagesByChat(chatId)
   });
 
-  const generateExplanation = useCallback(async (recentMessages: any[]): Promise<string> => {
+  const generateExplanation = useCallback(async (recentMessages: Array<{ id: string; content: string | null; created_at: string; role: string }>): Promise<string> => {
     try {
       // Get the last 3-4 interviewer messages for context
       const sortedMessages = [...recentMessages].sort((a, b) => 
@@ -91,7 +95,8 @@ export default function PreparationDemonstration({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          messages: recentInterviewerMessages
+          messages: recentInterviewerMessages,
+          preparationType: preparationType
         }),
       });
 
@@ -145,6 +150,9 @@ export default function PreparationDemonstration({
     try {
       const formData = new FormData();
       formData.append('chatId', chatId);
+      formData.append('jobPosition', jobPosition);
+      formData.append('offboardingType', offboardingType);
+      formData.append('employeeLevel', employeeLevel);
 
       const response = await fetch('/api/preparation/message', {
         method: 'POST',
@@ -244,9 +252,9 @@ export default function PreparationDemonstration({
     // Auto-trigger conversation between AI agents - modified to wait for user acknowledgment
   useEffect(() => {
     const handleAutoTrigger = async () => {
-      // Don't auto-trigger if we're waiting for user acknowledgment or just acknowledged
-      if (waitingForUserAcknowledgment || justAcknowledged) {
-        console.log('Auto-trigger blocked - waiting for acknowledgment or just acknowledged');
+      // Don't auto-trigger if we're waiting for user acknowledgment, just acknowledged, or showing job position modal
+      if (waitingForUserAcknowledgment || justAcknowledged || showJobPositionModal) {
+        console.log('Auto-trigger blocked - waiting for acknowledgment, just acknowledged, or showing job position modal');
         return;
       }
       
@@ -332,7 +340,7 @@ export default function PreparationDemonstration({
     };
 
     handleAutoTrigger();
-  }, [messages, streamingMessage, isTriggeringNext, triggerNextMessage, waitingForUserAcknowledgment, justAcknowledged, generateExplanation]);
+  }, [messages, streamingMessage, isTriggeringNext, triggerNextMessage, waitingForUserAcknowledgment, justAcknowledged, showJobPositionModal, generateExplanation]);
 
 
 
@@ -408,6 +416,91 @@ export default function PreparationDemonstration({
     );
   }
 
+  // Determine if this is an offboarding preparation
+  const isOffboardingPrep = preparationType === 'offboarding-prep';
+
+  // Job Position Modal
+  if (showJobPositionModal) {
+    return (
+      <Modal
+        title={isOffboardingPrep ? "Enter Offboarding Details" : "Enter Job Position"}
+        open={showJobPositionModal}
+        onOk={() => {
+          if (isOffboardingPrep ? (offboardingType && employeeLevel) : jobPosition.trim()) {
+            setShowJobPositionModal(false);
+            // Start the conversation after modal closes
+            setTimeout(() => {
+              triggerNextMessage();
+            }, 100);
+          }
+        }}
+        onCancel={() => {
+          router.push('/dashboard/preparation');
+        }}
+        okText="Start Conversation"
+        cancelText="Cancel"
+        okButtonProps={{
+          disabled: isOffboardingPrep ? (!offboardingType || !employeeLevel) : !jobPosition.trim()
+        }}
+      >
+        <div style={{ marginTop: '16px' }}>
+          {isOffboardingPrep ? (
+            <>
+              <p>Please select the offboarding scenario:</p>
+              <Select
+                placeholder="Select offboarding type"
+                value={offboardingType}
+                onChange={(value) => setOffboardingType(value)}
+                style={{ width: '100%', marginBottom: '12px' }}
+              >
+                <Select.Option value="voluntary">Voluntary Departure</Select.Option>
+                <Select.Option value="involuntary">Involuntary Termination</Select.Option>
+                <Select.Option value="layoff">Layoff</Select.Option>
+              </Select>
+              <p>Please select the employee level:</p>
+              <Select
+                placeholder="Select employee level"
+                value={employeeLevel}
+                onChange={(value) => setEmployeeLevel(value)}
+                style={{ width: '100%' }}
+              >
+                <Select.Option value="JUNIOR">Junior (0-3 years)</Select.Option>
+                <Select.Option value="MID-LEVEL">Mid-Level (3-7 years)</Select.Option>
+                <Select.Option value="SENIOR">Senior (7+ years)</Select.Option>
+                <Select.Option value="EXECUTIVE">Executive</Select.Option>
+              </Select>
+            </>
+          ) : (
+            <>
+              <p>What job position would you like to see demonstrated?</p>
+              <input
+                type="text"
+                placeholder="e.g., Software Engineer, Marketing Manager, Sales Representative"
+                value={jobPosition}
+                onChange={(e) => setJobPosition(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: '6px',
+                  marginTop: '8px'
+                }}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && jobPosition.trim()) {
+                    setShowJobPositionModal(false);
+                    setTimeout(() => {
+                      triggerNextMessage();
+                    }, 100);
+                  }
+                }}
+              />
+            </>
+          )}
+        </div>
+      </Modal>
+    );
+  }
+
   return (
     <Box style={{
       height: '100vh',
@@ -441,17 +534,6 @@ export default function PreparationDemonstration({
             Back to Preparation
           </Button>
           
-          {!streamingMessage && messages.length === 0 && (
-            <Button 
-              variant="solid"
-              style={{ background: 'var(--blue-9)', color: 'white' }}
-              onClick={triggerNextMessage}
-              disabled={isTriggeringNext}
-            >
-              {isTriggeringNext ? 'Starting...' : 'Start Conversation'}
-            </Button>
-          )}
-          
 
           
           {showEndButton && (
@@ -484,7 +566,7 @@ export default function PreparationDemonstration({
             marginBottom: '16px'
           }}>
             <Text size="2" style={{ color: 'var(--blue-11)' }}>
-              💡 This is a demonstration of excellent interviewing techniques. Watch how the interviewer builds rapport, asks effective questions, and demonstrates active listening. Learning points will appear to explain why certain approaches work well.
+              💡 This is a demonstration of excellent {isOffboardingPrep ? 'offboarding' : 'interviewing'} techniques. Watch how the {isOffboardingPrep ? 'manager' : 'interviewer'} builds rapport, demonstrates empathy, and handles sensitive situations professionally. Learning points will appear to explain why certain approaches work well.
             </Text>
           </Box>
         )}
@@ -555,7 +637,7 @@ export default function PreparationDemonstration({
                     >
                       <Flex direction="column" gap="2">
                         <Text size="1" style={{ color: 'var(--gray-11)' }} weight="medium">
-                          {isInterviewer ? 'Interviewer' : 'Candidate'}
+                          {isInterviewer ? (isOffboardingPrep ? 'Manager' : 'Interviewer') : (isOffboardingPrep ? 'Employee' : 'Candidate')}
                         </Text>
                         <Text size="2" style={{ lineHeight: '1.5', color: 'var(--gray-12)' }}>
                           <Markdown>
