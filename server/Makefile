@@ -1,8 +1,11 @@
-.PHONY: install dev install-dev format lint typecheck run prod test test-cov clean generate-models generate-tests stop
+.PHONY: help install install-dev dev format lint typecheck run prod test test-cov clean generate-models generate-tests stop venv venv-clean
 
 # Default Python interpreter
 PYTHON := python3.11
-PIP := pip
+VENV := .venv
+VENV_BIN := $(VENV)/bin
+VENV_PYTHON := $(VENV_BIN)/python
+VENV_PIP := $(VENV_BIN)/pip
 
 # Check if Python 3.11 is available
 PY311 := $(shell which python3.11 || true)
@@ -17,73 +20,107 @@ check-python:
 		exit 1; \
 	fi
 
+# Create virtual environment
+venv: check-python
+	@echo "Creating virtual environment at $(VENV)..."
+	@$(PYTHON) -m venv $(VENV)
+	@echo "✅ Virtual environment created at $(VENV)"
+	@echo "To activate: source $(VENV_BIN)/activate"
+
+# Clean virtual environment
+venv-clean:
+	@echo "Removing virtual environment..."
+	@rm -rf $(VENV)
+	@echo "✅ Virtual environment removed"
+
+# Check if virtual environment exists
+check-venv:
+	@if [ ! -d "$(VENV)" ]; then \
+		echo "❌ Virtual environment not found at $(VENV)"; \
+		echo "Run 'make venv' to create it"; \
+		exit 1; \
+	fi
+
 # Install production dependencies
-install: check-python
+install: check-venv
 	@echo "Installing production dependencies..."
-	@$(PIP) install -e .
+	@$(VENV_PIP) install --upgrade pip
+	@$(VENV_PIP) install -e .
+	@echo "✅ Production dependencies installed"
 
 # Install development dependencies
-install-dev: check-python
+install-dev: check-venv
 	@echo "Installing development dependencies..."
-	@$(PIP) install -e ".[dev]"
+	@$(VENV_PIP) install --upgrade pip
+	@$(VENV_PIP) install -e ".[dev]"
+	@echo "✅ Development dependencies installed"
 
 # Install all dependencies (production + development)
-dev: install-dev
+dev: venv install-dev
+	@echo "✅ Development environment ready!"
+	@echo "To activate: source $(VENV_BIN)/activate"
 
 # Format code with Ruff
-format: check-python
+format: check-venv
 	@echo "Formatting code with Ruff..."
-	@$(PYTHON) -m ruff format .
-	@$(PYTHON) -m ruff check --fix .
+	@$(VENV_PYTHON) -m ruff format .
+	@$(VENV_PYTHON) -m ruff check --fix .
+	@echo "✅ Code formatted"
 
 # Run linter checks
-lint: check-python
+lint: check-venv
 	@echo "Running linter..."
-	@$(PYTHON) -m ruff check .
+	@$(VENV_PYTHON) -m ruff check .
+	@echo "✅ Linting complete"
 
 # Run MyPy for static type checking
-typecheck: check-python
+typecheck: check-venv
 	@echo "Type checking..."
-	@$(PYTHON) -m mypy app --config-file mypy.ini
+	@$(VENV_PYTHON) -m mypy app --config-file mypy.ini
+	@echo "✅ Type checking complete"
 
 # Generate SQLModel classes from database schema
-generate-models: check-python
+generate-models: check-venv
 	@echo "Generating SQLModel classes from database schema..."
-	@$(PYTHON) scripts/generate_models.py
+	@$(VENV_PYTHON) scripts/generate_models.py
+	@echo "✅ Models generated"
 
 # Generate pytest tests for routes and services
-generate-tests: check-python
+generate-tests: check-venv
 	@echo "Generating pytest tests..."
-	@$(PYTHON) scripts/generate_pytest_tests.py
+	@$(VENV_PYTHON) scripts/generate_pytest_tests.py
+	@echo "✅ Tests generated"
 
 # Run all tests
-test: check-python
+test: check-venv
 	@if [ -n "$(ARGS)" ]; then \
 		echo "Running pytest on specific file(s): $(ARGS)"; \
-		$(PYTHON) -m pytest $(ARGS) -v; \
+		$(VENV_PYTHON) -m pytest $(ARGS) -v; \
 	else \
 		echo "Running all pytest tests..."; \
-		$(PYTHON) -m pytest tests/ -v; \
+		$(VENV_PYTHON) -m pytest tests/ -v; \
 	fi
 
 # Run tests with coverage
-test-cov: check-python
+test-cov: check-venv
 	@echo "Running pytest tests with coverage..."
-	@$(PYTHON) -m pytest tests/ --cov=app --cov-report=term-missing --cov-report=html
+	@$(VENV_PYTHON) -m pytest tests/ --cov=app --cov-report=term-missing --cov-report=html
+	@echo "✅ Coverage report generated"
 
 # Run the development server
-run: install-dev generate-models generate-tests
+run: check-venv
 	@echo "⇢ starting API server on :8000"
-	@$(PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	@$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Stop any running processes
 stop:
 	@if [ -f .model.pid ]; then kill `cat .model.pid` || true; rm .model.pid; fi
+	@echo "✅ Stopped running processes"
 
 # Start FastAPI via Gunicorn+Uvicorn for production
-prod: install
+prod: check-venv
 	@echo "Starting FastAPI server in production mode..."
-	@$(PYTHON) -m gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+	@$(VENV_PYTHON) -m gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
 
 # Clean up generated files and cache
 clean:
@@ -98,20 +135,39 @@ clean:
 	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name ".coverage" -delete 2>/dev/null || true
 	@find . -type f -name ".model.pid" -delete 2>/dev/null || true
+	@echo "✅ Cleanup complete"
 
 # Show help
 help:
-	@echo "Available commands:"
-	@echo "  install      - Install production dependencies"
-	@echo "  install-dev  - Install development dependencies"
-	@echo "  dev          - Install all dependencies (production + development)"
+	@echo "LearnLoop Server - Available commands:"
+	@echo ""
+	@echo "Environment setup:"
+	@echo "  venv         - Create virtual environment at .venv"
+	@echo "  venv-clean   - Remove virtual environment"
+	@echo "  dev          - Set up complete development environment (venv + install-dev)"
+	@echo ""
+	@echo "Dependencies:"
+	@echo "  install      - Install production dependencies in venv"
+	@echo "  install-dev  - Install development dependencies in venv"
+	@echo ""
+	@echo "Code quality:"
 	@echo "  format       - Format code with Ruff"
 	@echo "  lint         - Run linter checks"
 	@echo "  typecheck    - Run MyPy for static type checking"
+	@echo ""
+	@echo "Testing:"
 	@echo "  test         - Run all tests"
 	@echo "  test-cov     - Run tests with coverage"
+	@echo ""
+	@echo "Development:"
 	@echo "  run          - Start development server"
 	@echo "  prod         - Start production server"
 	@echo "  stop         - Stop running processes"
 	@echo "  clean        - Clean up generated files and cache"
-	@echo "  help         - Show this help message"
+	@echo ""
+	@echo "Code generation:"
+	@echo "  generate-models - Generate SQLModel classes from database schema"
+	@echo "  generate-tests  - Generate pytest tests"
+	@echo ""
+	@echo "Virtual environment location: $(VENV)"
+	@echo "To activate manually: source $(VENV_BIN)/activate"

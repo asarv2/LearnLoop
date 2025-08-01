@@ -27,6 +27,8 @@ dependencies = [
     "psycopg2-binary>=2.9.0",
     "psycopg[binary]>=3.1.0",
     "sqlacodegen>=3.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -39,10 +41,16 @@ dev = [
     "black>=23.0.0",
     "isort>=5.12.0",
     "pre-commit>=3.5.0",
+    "ipython>=8.0.0",
+    "ipdb>=0.13.0",
 ]
 
 [project.scripts]
 learnloop-server = "app.main:main"
+
+# Virtual environment configuration
+[tool.venv]
+path = ".venv"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
