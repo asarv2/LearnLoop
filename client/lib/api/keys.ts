@@ -51,4 +51,22 @@ export const personaKeys = {
   all: ['personas'] as const,
   list: (filters?: unknown) => [...personaKeys.all, { filters }] as const,
   detail: (id: string) => [...personaKeys.all, id] as const,
+};
+
+export const profileKeys = {
+  all: ['profiles'] as const,
+  list: (filters?: unknown) => [...profileKeys.all, { filters }] as const,
+  detail: (id: string) => [...profileKeys.all, id] as const,
+};
+
+export const questionKeys = {
+  all: ['questions'] as const,
+  list: (filters?: unknown) => [...questionKeys.all, { filters }] as const,
+  detail: (id: string) => [...questionKeys.all, id] as const,
+};
+
+export const scenarioKeys = {
+  all: ['scenarios'] as const,
+  list: (filters?: unknown) => [...scenarioKeys.all, { filters }] as const,
+  detail: (id: string) => [...scenarioKeys.all, id] as const,
 }; 
