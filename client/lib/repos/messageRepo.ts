@@ -7,6 +7,7 @@ import { HttpError } from "@/utils/HttpError";
 
 export type MessageCreate = Database['public']['Tables']['messages']['Insert'];
 export type MessageUpdate = Database['public']['Tables']['messages']['Update'];
+export type MessageHint = Database['public']['Tables']['hints']['Row'];
 
 // Runtime validators for API requests
 export const MessageCreateSchema = z.object({
@@ -75,7 +76,7 @@ export const messageRepo = {
     }
   },
 
-  async getHints(messageId: string) {
+  async getHints(messageId: string): Promise<MessageHint[]> {
     const { data, error } = await supabase
       .from('hints')
       .select('*')
