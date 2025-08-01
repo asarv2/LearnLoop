@@ -4,6 +4,7 @@ import { assessmentKeys } from '../keys';
 import type {
   AssessmentCreate,
   AssessmentUpdate,
+  AssessmentFeedback,
 } from '@/lib/repos/assessmentRepo';
 import { api } from '../fetcher';
 
@@ -27,7 +28,7 @@ export function useAssessment(id: string, enabled = true) {
 export function useAssessmentFeedback(assessmentId: string, enabled = true) {
   return useQuery({
     queryKey: [...assessmentKeys.detail(assessmentId), 'feedback'],
-    queryFn: () => api<any[]>(`/api/v1/assessments/${assessmentId}/feedback`),
+    queryFn: () => api<AssessmentFeedback[]>(`/api/v1/assessments/${assessmentId}/feedback`),
     enabled,
   });
 }
