@@ -13,11 +13,11 @@ def generate_sqlmodel_from_sql():
     python_executable = sys.executable
     
     # Use the same environment variable pattern as db.py
-    db_user = os.getenv("user")
-    db_password = os.getenv("password")
-    db_host = os.getenv("host")
-    db_port = os.getenv("port")
-    db_name = os.getenv("dbname")
+    db_user = os.getenv("DB_USER")
+    db_password = os.getenv("DB_PASSWORD")
+    db_host = os.getenv("DB_HOST")
+    db_port = os.getenv("DB_PORT")
+    db_name = os.getenv("DB_NAME")
     
     db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
 
@@ -36,15 +36,16 @@ def generate_sqlmodel_from_sql():
 
         import_lines = [
             "import uuid",
-            "from datetime import datetime, time, timezone",
+            "from datetime import datetime, timezone",
             "from typing import Any, Dict, List, Optional",
             "",
-            "from sqlalchemy import (ARRAY, BigInteger, Boolean, Column, DateTime,",
-            "                        Enum, ForeignKeyConstraint, Integer,",
-            "                        PrimaryKeyConstraint, String, Text, Uuid, text, Double, Time)",
+            "from sqlalchemy import (ARRAY, Boolean, CheckConstraint, Column, Computed,",
+            "                        DateTime, Double, Enum, ForeignKeyConstraint, Index,",
+            "                        Integer, PrimaryKeyConstraint, SmallInteger, String,",
+            "                        Text, UniqueConstraint, Uuid, text)",
             "from sqlalchemy.dialects.postgresql import JSONB",
-            "from sqlmodel import Field, Relationship, SQLModel",
             "from sqlalchemy.orm import Mapped",
+            "from sqlmodel import Field, Relationship, SQLModel",
         ]
 
         import_section = "\n".join(import_lines)

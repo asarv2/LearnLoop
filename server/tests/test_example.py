@@ -4,7 +4,7 @@ Example test file to demonstrate the testing setup.
 
 from typing import Any
 
-import pytest
+import pytest  # type: ignore
 
 
 @pytest.mark.fast
