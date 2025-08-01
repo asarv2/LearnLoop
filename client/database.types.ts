@@ -20,6 +20,7 @@ export type Database = {
           created_at: string | null
           id: string
           responses: Json
+          title: string
           training_id: string | null
         }
         Insert: {
@@ -27,6 +28,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           responses?: Json
+          title?: string
           training_id?: string | null
         }
         Update: {
@@ -34,6 +36,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           responses?: Json
+          title?: string
           training_id?: string | null
         }
         Relationships: [
@@ -53,9 +56,49 @@ export type Database = {
           },
         ]
       }
+      attempts: {
+        Row: {
+          created_at: string | null
+          id: string
+          profile_id: string | null
+          training_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          profile_id?: string | null
+          training_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          profile_id?: string | null
+          training_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attempts_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attempts_training_id_fkey"
+            columns: ["training_id"]
+            isOneToOne: false
+            referencedRelation: "trainings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chats: {
         Row: {
           additional_info: string
+          attempt_id: string | null
           completed: boolean
           completed_at: string | null
           created_at: string
@@ -63,6 +106,7 @@ export type Database = {
           id: string
           name: string
           position: string
+          profile_id: string | null
           resume_id: string | null
           title: string
           trace_id: string | null
@@ -74,6 +118,7 @@ export type Database = {
         }
         Insert: {
           additional_info?: string
+          attempt_id?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
@@ -81,6 +126,7 @@ export type Database = {
           id?: string
           name?: string
           position?: string
+          profile_id?: string | null
           resume_id?: string | null
           title: string
           trace_id?: string | null
@@ -92,6 +138,7 @@ export type Database = {
         }
         Update: {
           additional_info?: string
+          attempt_id?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
@@ -99,6 +146,7 @@ export type Database = {
           id?: string
           name?: string
           position?: string
+          profile_id?: string | null
           resume_id?: string | null
           title?: string
           trace_id?: string | null
@@ -109,6 +157,20 @@ export type Database = {
           voice?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "chats_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chats_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "chats_resume_id_fkey"
             columns: ["resume_id"]
@@ -125,6 +187,41 @@ export type Database = {
           },
         ]
       }
+      documents: {
+        Row: {
+          content: string | null
+          created_at: string | null
+          google_file_id: string | null
+          id: string
+          profile_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string | null
+          google_file_id?: string | null
+          id?: string
+          profile_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          content?: string | null
+          created_at?: string | null
+          google_file_id?: string | null
+          id?: string
+          profile_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       feedback: {
         Row: {
           chat_id: string
@@ -135,6 +232,7 @@ export type Database = {
           red_flags: string[]
           strengths: string[]
           training_id: string | null
+          weaknesses: string[] | null
         }
         Insert: {
           chat_id: string
@@ -145,6 +243,7 @@ export type Database = {
           red_flags?: string[]
           strengths?: string[]
           training_id?: string | null
+          weaknesses?: string[] | null
         }
         Update: {
           chat_id?: string
@@ -155,6 +254,7 @@ export type Database = {
           red_flags?: string[]
           strengths?: string[]
           training_id?: string | null
+          weaknesses?: string[] | null
         }
         Relationships: [
           {
@@ -169,6 +269,65 @@ export type Database = {
             columns: ["training_id"]
             isOneToOne: false
             referencedRelation: "trainings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fields: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          field_type: Database["public"]["Enums"]["field_type"]
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          field_type: Database["public"]["Enums"]["field_type"]
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          field_type?: Database["public"]["Enums"]["field_type"]
+          id?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      hints: {
+        Row: {
+          contents: string[] | null
+          created_at: string | null
+          id: string
+          message_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          contents?: string[] | null
+          created_at?: string | null
+          id?: string
+          message_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          contents?: string[] | null
+          created_at?: string | null
+          id?: string
+          message_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hints_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
             referencedColumns: ["id"]
           },
         ]
@@ -287,7 +446,9 @@ export type Database = {
           completed_at: string
           content: string | null
           created_at: string
+          error: string | null
           id: string
+          persona_id: string | null
           role: Database["public"]["Enums"]["message_role"]
           training_id: string | null
         }
@@ -297,7 +458,9 @@ export type Database = {
           completed_at?: string
           content?: string | null
           created_at?: string
+          error?: string | null
           id?: string
+          persona_id?: string | null
           role: Database["public"]["Enums"]["message_role"]
           training_id?: string | null
         }
@@ -307,7 +470,9 @@ export type Database = {
           completed_at?: string
           content?: string | null
           created_at?: string
+          error?: string | null
           id?: string
+          persona_id?: string | null
           role?: Database["public"]["Enums"]["message_role"]
           training_id?: string | null
         }
@@ -317,6 +482,13 @@ export type Database = {
             columns: ["chat_id"]
             isOneToOne: false
             referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_persona_id_fkey"
+            columns: ["persona_id"]
+            isOneToOne: false
+            referencedRelation: "personas"
             referencedColumns: ["id"]
           },
           {
@@ -400,6 +572,150 @@ export type Database = {
           },
         ]
       }
+      parameters: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          field_id: string | null
+          id: string
+          name: string
+          updated_at: string | null
+          value: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          field_id?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+          value?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          field_id?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+          value?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "parameters_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      personas: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          profile_id: string | null
+          system_prompt: string | null
+          temperature: number | null
+          updated_at: string | null
+          voice: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          profile_id?: string | null
+          system_prompt?: string | null
+          temperature?: number | null
+          updated_at?: string | null
+          voice?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          profile_id?: string | null
+          system_prompt?: string | null
+          temperature?: number | null
+          updated_at?: string | null
+          voice?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "personas_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      questions: {
+        Row: {
+          assessment_id: string | null
+          created_at: string | null
+          id: string
+          options: string[] | null
+          question_type: Database["public"]["Enums"]["question_type"]
+          stem: string
+          updated_at: string | null
+          value: string | null
+        }
+        Insert: {
+          assessment_id?: string | null
+          created_at?: string | null
+          id?: string
+          options?: string[] | null
+          question_type: Database["public"]["Enums"]["question_type"]
+          stem: string
+          updated_at?: string | null
+          value?: string | null
+        }
+        Update: {
+          assessment_id?: string | null
+          created_at?: string | null
+          id?: string
+          options?: string[] | null
+          question_type?: Database["public"]["Enums"]["question_type"]
+          stem?: string
+          updated_at?: string | null
+          value?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "questions_assessment_id_fkey"
+            columns: ["assessment_id"]
+            isOneToOne: false
+            referencedRelation: "assessments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       resumes: {
         Row: {
           content: string | null
@@ -435,29 +751,243 @@ export type Database = {
           },
         ]
       }
+      rubric_grades: {
+        Row: {
+          chat_id: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          score: number
+          updated_at: string | null
+        }
+        Insert: {
+          chat_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          score: number
+          updated_at?: string | null
+        }
+        Update: {
+          chat_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          score?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rubric_grades_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rubrics: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          standard_length: number | null
+          total_points: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          standard_length?: number | null
+          total_points?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          standard_length?: number | null
+          total_points?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      scenarios: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          parameter_ids: string[] | null
+          rubric_id: string | null
+          title: string
+          training_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          parameter_ids?: string[] | null
+          rubric_id?: string | null
+          title: string
+          training_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          parameter_ids?: string[] | null
+          rubric_id?: string | null
+          title?: string
+          training_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scenarios_rubric_id_fkey"
+            columns: ["rubric_id"]
+            isOneToOne: false
+            referencedRelation: "rubrics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scenarios_training_id_fkey"
+            columns: ["training_id"]
+            isOneToOne: false
+            referencedRelation: "trainings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      standard_grades: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          rubric_grade_id: string | null
+          score: number
+          standard_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          rubric_grade_id?: string | null
+          score: number
+          standard_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          rubric_grade_id?: string | null
+          score?: number
+          standard_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "standard_grades_rubric_grade_id_fkey"
+            columns: ["rubric_grade_id"]
+            isOneToOne: false
+            referencedRelation: "rubric_grades"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "standard_grades_standard_id_fkey"
+            columns: ["standard_id"]
+            isOneToOne: false
+            referencedRelation: "standards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      standards: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          items: string[] | null
+          name: string
+          rubric_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          items?: string[] | null
+          name: string
+          rubric_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          items?: string[] | null
+          name?: string
+          rubric_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "standards_rubric_id_fkey"
+            columns: ["rubric_id"]
+            isOneToOne: false
+            referencedRelation: "rubrics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trainings: {
         Row: {
+          active: boolean | null
           additional_info: Json | null
           created_at: string
+          description: string | null
+          field_ids: string[] | null
           id: string
+          preparation: boolean | null
           title: string
           type: string
           updated_at: string
           user_id: string | null
         }
         Insert: {
+          active?: boolean | null
           additional_info?: Json | null
           created_at?: string
+          description?: string | null
+          field_ids?: string[] | null
           id?: string
+          preparation?: boolean | null
           title: string
           type: string
           updated_at?: string
           user_id?: string | null
         }
         Update: {
+          active?: boolean | null
           additional_info?: Json | null
           created_at?: string
+          description?: string | null
+          field_ids?: string[] | null
           id?: string
+          preparation?: boolean | null
           title?: string
           type?: string
           updated_at?: string
@@ -473,9 +1003,11 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      field_type: "persona" | "document" | "numerical" | "categorical" | "text"
       interview_type: "regular" | "cheating" | "ai-assisted" | "preparation"
       log_level: "info" | "error" | "warn" | "debug"
       message_role: "user" | "assistant"
+      question_type: "mcq" | "frq"
       training_type: "interview" | "offboarding" | "preparation"
     }
     CompositeTypes: {
@@ -604,9 +1136,11 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      field_type: ["persona", "document", "numerical", "categorical", "text"],
       interview_type: ["regular", "cheating", "ai-assisted", "preparation"],
       log_level: ["info", "error", "warn", "debug"],
       message_role: ["user", "assistant"],
+      question_type: ["mcq", "frq"],
       training_type: ["interview", "offboarding", "preparation"],
     },
   },
