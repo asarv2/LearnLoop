@@ -4,6 +4,7 @@ import { messageKeys } from '../keys';
 import type {
   MessageCreate,
   MessageUpdate,
+  MessageHint,
 } from '@/lib/repos/messageRepo';
 import { api } from '../fetcher';
 
@@ -27,7 +28,7 @@ export function useMessage(id: string, enabled = true) {
 export function useMessageHints(messageId: string, enabled = true) {
   return useQuery({
     queryKey: [...messageKeys.detail(messageId), 'hints'],
-    queryFn: () => api<any[]>(`/api/v1/messages/${messageId}/hints`),
+    queryFn: () => api<MessageHint[]>(`/api/v1/messages/${messageId}/hints`),
     enabled,
   });
 }
