@@ -22,7 +22,6 @@
       }
     },
     "mypy.runUsingActiveInterpreter": true,
-    "mypy.configFile": "server/mypy.ini",
     "mypy.targets": [
       "server/app"
     ],
