@@ -5,10 +5,11 @@ import { createQueryClient } from "@/utils/react-query/queryClient";
 import {
     QueryClientProvider,
 } from "@tanstack/react-query";
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { useState } from "react";
 import { Theme } from "@radix-ui/themes";
 import { ConfigProvider } from 'antd';
-import { AuthProvider } from "@/client/components/auth/AuthProvider";
+import { AuthProvider } from "@/components/auth/AuthProvider";
 
 const ReactQueryClientProvider = ({
     children,
@@ -17,7 +18,10 @@ const ReactQueryClientProvider = ({
 }) => {
     const [queryClient] = useState(() => createQueryClient()); // Use a single instance
     return (
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+            {children}
+            {process.env.NODE_ENV !== 'production' && <ReactQueryDevtools />}
+        </QueryClientProvider>
     );
 };
 
