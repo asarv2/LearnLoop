@@ -1,4 +1,4 @@
-.PHONY: help install install-dev dev format lint typecheck run prod test test-cov clean generate-models generate-tests stop venv venv-clean
+.PHONY: help install install-dev dev format lint typecheck run prod test test-cov clean generate-models generate-tests stop venv venv-clean test-fast test-slow test-unit test-integration typecheck-strict
 
 # Default Python interpreter
 PYTHON := python3.11
@@ -76,8 +76,14 @@ lint: check-venv
 # Run MyPy for static type checking
 typecheck: check-venv
 	@echo "Type checking..."
-	@$(VENV_PYTHON) -m mypy app --config-file mypy.ini
+	@$(VENV_PYTHON) -m mypy app
 	@echo "✅ Type checking complete"
+
+# Run MyPy with strict settings
+typecheck-strict: check-venv
+	@echo "Strict type checking..."
+	@$(VENV_PYTHON) -m mypy app --strict
+	@echo "✅ Strict type checking complete"
 
 # Generate SQLModel classes from database schema
 generate-models: check-venv
@@ -106,6 +112,26 @@ test-cov: check-venv
 	@echo "Running pytest tests with coverage..."
 	@$(VENV_PYTHON) -m pytest tests/ --cov=app --cov-report=term-missing --cov-report=html
 	@echo "✅ Coverage report generated"
+
+# Run fast tests only
+test-fast: check-venv
+	@echo "Running fast tests..."
+	@$(VENV_PYTHON) -m pytest tests/ -m "fast" -v
+
+# Run slow tests only
+test-slow: check-venv
+	@echo "Running slow tests..."
+	@$(VENV_PYTHON) -m pytest tests/ -m "slow" -v
+
+# Run unit tests only
+test-unit: check-venv
+	@echo "Running unit tests..."
+	@$(VENV_PYTHON) -m pytest tests/ -m "unit" -v
+
+# Run integration tests only
+test-integration: check-venv
+	@echo "Running integration tests..."
+	@$(VENV_PYTHON) -m pytest tests/ -m "integration" -v
 
 # Run the development server
 run: check-venv
@@ -154,10 +180,15 @@ help:
 	@echo "  format       - Format code with Ruff"
 	@echo "  lint         - Run linter checks"
 	@echo "  typecheck    - Run MyPy for static type checking"
+	@echo "  typecheck-strict - Run MyPy with strict settings"
 	@echo ""
 	@echo "Testing:"
 	@echo "  test         - Run all tests"
 	@echo "  test-cov     - Run tests with coverage"
+	@echo "  test-fast    - Run fast tests only"
+	@echo "  test-slow    - Run slow tests only"
+	@echo "  test-unit    - Run unit tests only"
+	@echo "  test-integration - Run integration tests only"
 	@echo ""
 	@echo "Development:"
 	@echo "  run          - Start development server"

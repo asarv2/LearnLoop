@@ -91,10 +91,15 @@ make prod
 - `make format` - Format code with Ruff
 - `make lint` - Run linter checks
 - `make typecheck` - Run MyPy for static type checking
+- `make typecheck-strict` - Run MyPy with strict settings
 
 ### Testing
 - `make test` - Run all tests
 - `make test-cov` - Run tests with coverage
+- `make test-fast` - Run fast tests only
+- `make test-slow` - Run slow tests only
+- `make test-unit` - Run unit tests only
+- `make test-integration` - Run integration tests only
 
 ### Development
 - `make run` - Start development server
@@ -108,6 +113,82 @@ make prod
 
 ### Help
 - `make help` - Show detailed help message
+
+## Testing and Type Checking
+
+### Type Checking with MyPy
+
+The project uses MyPy for static type checking with a comprehensive configuration:
+
+```bash
+# Regular type checking
+make typecheck
+
+# Strict type checking (more rigorous)
+make typecheck-strict
+```
+
+The MyPy configuration includes:
+- Strict type checking settings
+- Error code display
+- Column numbers for better error location
+- Pretty output formatting
+- Automatic exclusion of test files and virtual environments
+
+### Testing with pytest
+
+The project uses pytest with comprehensive coverage reporting:
+
+```bash
+# Run all tests
+make test
+
+# Run tests with coverage
+make test-cov
+
+# Run specific test categories
+make test-fast      # Fast tests only
+make test-slow      # Slow tests only  
+make test-unit      # Unit tests only
+make test-integration  # Integration tests only
+```
+
+#### Test Markers
+
+Tests can be categorized using pytest markers:
+
+- `@pytest.mark.fast` - Fast-running tests
+- `@pytest.mark.slow` - Slow-running tests (external dependencies)
+- `@pytest.mark.unit` - Unit tests
+- `@pytest.mark.integration` - Integration tests
+
+#### Coverage Reports
+
+The test coverage configuration generates:
+- Terminal output with missing lines
+- HTML report in `htmlcov/` directory
+- XML report for CI/CD integration
+- Minimum coverage requirement of 80%
+
+### Example Test Structure
+
+```python
+import pytest
+from typing import Any
+
+@pytest.mark.fast
+@pytest.mark.unit
+def test_example() -> None:
+    """Example test with proper type hints."""
+    assert 1 + 1 == 2
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_integration_example() -> None:
+    """Example integration test."""
+    # Test with external dependencies
+    pass
+```
 
 ## Dependencies
 
