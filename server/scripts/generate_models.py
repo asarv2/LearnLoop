@@ -3,6 +3,7 @@ import os
 import re
 import subprocess
 import sys
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env
@@ -25,8 +26,6 @@ def generate_sqlmodel_from_sql():
         print("Error: Database environment variables are not properly set")
         print("Required variables: user, password, host, port, dbname")
         sys.exit(1)
-
-    print(f"Using database URL: {db_url}")
 
     cmd = [python_executable, "-m", "sqlacodegen", "--generator=sqlmodels", db_url]
 

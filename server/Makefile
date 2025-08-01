@@ -134,7 +134,7 @@ test-integration: check-venv
 	@$(VENV_PYTHON) -m pytest tests/ -m "integration" -v
 
 # Run the development server
-run: check-venv
+run: check-venv generate-models
 	@echo "⇢ starting API server on :8000"
 	@$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
