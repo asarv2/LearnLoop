@@ -9,12 +9,14 @@
 import { useWebSocket } from "@/contexts/websocket-context";
 import { useChat } from "@/lib/api/hooks/useChats";
 import {
+  StreamingMessage,
   useEndTraining,
   useGenerateFeedback,
   useSendTrainingMessage,
   useSubmitAssessment,
   useTrainingMessages,
 } from "@/lib/api/hooks/useTrainingMessages";
+import { Chat, Message } from "@/types";
 import { logError, logInfo } from "@/utils/logger";
 import React, { createContext, useContext, useState } from "react";
 
@@ -22,9 +24,9 @@ import React, { createContext, useContext, useState } from "react";
 interface TrainingContextType {
   // Core data
   chatId: string;
-  chat: any | null; // Chat data from API
-  messages: any[]; // Messages array
-  streamingMessage: any | null; // Currently streaming message
+  chat: Chat | null; // Chat data from API
+  messages: Message[]; // Messages array
+  streamingMessage: StreamingMessage | null; // Currently streaming message
 
   // Connection state
   isConnected: boolean;
@@ -107,7 +109,6 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
       await sendMessageMutation.mutateAsync({
         chatId,
         message,
-        assistantAudioEnabled: false, // TODO: Add audio support
       });
       logInfo(`Sent training message for chat ${chatId}`);
     } catch (error) {

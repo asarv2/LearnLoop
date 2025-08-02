@@ -1,10 +1,10 @@
 // lib/api/hooks/useTrainingMessages.ts
 import { useWebSocket } from "@/contexts/websocket-context";
-import type { MessageCreate } from "@/lib/repos/messageRepo";
 import { logError, logInfo } from "@/utils/logger";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api } from "../fetcher";
+import { Message } from "@/types";
 
 // Streaming message interface
 export interface StreamingMessage {
@@ -31,7 +31,7 @@ export function useTrainingMessages(chatId: string, enabled = true) {
   // Query for fetching initial messages
   const query = useQuery({
     queryKey: trainingMessageKeys.list(chatId),
-    queryFn: () => api<MessageCreate[]>(`/api/v1/messages?chat_id=${chatId}`),
+    queryFn: () => api<Message[]>(`/api/v1/messages?chat_id=${chatId}`),
     enabled: enabled && !!chatId,
     staleTime: 30_000, // 30 seconds
   });
@@ -162,20 +162,8 @@ export function useSendTrainingMessage() {
   const { emitSendTrainingMessage } = useWebSocket();
 
   return useMutation({
-    mutationFn: async ({
-      chatId,
-      message,
-      assistantAudioEnabled = false,
-    }: {
-      chatId: string;
-      message: string;
-      assistantAudioEnabled?: boolean;
-    }) => {
-      emitSendTrainingMessage({
-        chat_id: chatId,
-        message,
-        assistant_audio_enabled: assistantAudioEnabled,
-      });
+    mutationFn: async ({ chatId, message }: { chatId: string; message: string }) => {
+      emitSendTrainingMessage({ chat_id: chatId, message });
       return { success: true };
     },
     onError: (error) => {
