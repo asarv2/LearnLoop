@@ -11,23 +11,23 @@ import { redirect } from "next/navigation";
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ trainingId: string }>;
+  params: Promise<{ scenarioId: string }>;
 }): Promise<Metadata> {
   // read route params
-  const { trainingId } = await params;
+  const { scenarioId } = await params;
 
   return {
     title: `Training Attempt`,
-    description: `Training attempt for the training with id ${trainingId}.`,
+    description: `Training attempt for the training with id ${scenarioId}.`,
   };
 }
 
 export default async function AttemptPage({
   params,
 }: {
-  params: Promise<{ trainingId: string }>;
+  params: Promise<{ scenarioId: string }>;
 }) {
-  const { trainingId } = await params;
+  const { scenarioId } = await params;
 
-  return redirect(`/dashboard/trainings/t/${trainingId}}`);
+  return redirect(`/dashboard/trainings/s/${scenarioId}}`);
 }

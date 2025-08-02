@@ -1,18 +1,18 @@
 // lib/api/hooks/useParameters.ts
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { parameterKeys } from '../keys';
 import type {
   ParameterCreate,
   ParameterUpdate,
-} from '@/lib/repos/parameterRepo';
-import { api } from '../fetcher';
+} from "@/lib/repos/parameterRepo";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "../fetcher";
+import { parameterKeys } from "../keys";
 
 // ---------- Queries ----------
 export function useParameters() {
   return useQuery({
     queryKey: parameterKeys.list(),
-    queryFn: () => api<ParameterCreate[]>('/api/v1/parameters'),
-    staleTime: 5 * 60_000,      // 5 minutes
+    queryFn: () => api<ParameterCreate[]>("/api/v1/parameters"),
+    staleTime: 5 * 60_000, // 5 minutes
   });
 }
 
@@ -24,13 +24,23 @@ export function useParameter(id: string, enabled = true) {
   });
 }
 
+export function useParametersByField(fieldId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...parameterKeys.list(), { fieldId }],
+    queryFn: () =>
+      api<ParameterCreate[]>(`/api/v1/parameters?field_id=${fieldId}`),
+    enabled,
+    staleTime: 5 * 60_000, // 5 minutes
+  });
+}
+
 // ---------- Mutations ----------
 export function useCreateParameter() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: ParameterCreate) =>
-      api<ParameterCreate>('/api/v1/parameters', {
-        method: 'POST',
+      api<ParameterCreate>("/api/v1/parameters", {
+        method: "POST",
         body: JSON.stringify(payload),
       }),
     onSuccess() {
@@ -44,7 +54,7 @@ export function useUpdateParameter(id: string) {
   return useMutation({
     mutationFn: (patch: ParameterUpdate) =>
       api<ParameterCreate>(`/api/v1/parameters/${id}`, {
-        method: 'PATCH',
+        method: "PATCH",
         body: JSON.stringify(patch),
       }),
     onSuccess() {
@@ -57,10 +67,10 @@ export function useDeleteParameter(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      api<void>(`/api/v1/parameters/${id}`, { method: 'DELETE' }),
+      api<void>(`/api/v1/parameters/${id}`, { method: "DELETE" }),
     onSuccess() {
       // remove both list & detail caches
       qc.invalidateQueries({ queryKey: parameterKeys.all });
     },
   });
-} 
+}
