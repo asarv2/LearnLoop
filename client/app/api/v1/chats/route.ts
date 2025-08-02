@@ -1,7 +1,6 @@
 import { ChatCreateSchema, chatRepo } from "@/lib/repos/chatRepo";
 import { handleHttpError } from "@/utils/HttpError";
 import { logError, logWarn } from "@/utils/logger";
-import { getAllChats } from "@/utils/queries/chats/get-chats-by-attempt";
 import { NextResponse } from "next/server";
 
 // POST /api/chats  – create
@@ -30,16 +29,8 @@ export async function POST(req: Request) {
 }
 
 // GET /api/chats  – list
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const attemptId = searchParams.get("attempt_id");
-
-    if (attemptId) {
-      const rows = await getAllChats(attemptId);
-      return NextResponse.json(rows);
-    }
-
     const rows = await chatRepo.list();
     return NextResponse.json(rows);
   } catch (err) {

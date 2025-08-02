@@ -6,103 +6,110 @@
  */
 "use client";
 
-import React, { useState, useMemo } from 'react';
-import { 
-  Card, 
-  Table, 
-  Tag, 
-  Button, 
-  Space, 
-  Typography, 
-  Input,
-  Select,
-  DatePicker,
-  Row,
-  Col,
-  Statistic,
-  Empty
-} from 'antd';
-import type { Dayjs } from 'dayjs';
+import { useChats } from "@/lib/api/hooks/useChats";
+import { Chat } from "@/types";
 import {
-  PlayCircleOutlined,
-  SearchOutlined,
   CalendarOutlined,
-  UserOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
-  EyeOutlined
-} from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
-import { getChats } from '@/utils/queries/chats/get-all-chats';
-import { Chat } from '@/types';
-import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
+  EyeOutlined,
+  PlayCircleOutlined,
+  SearchOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
+import {
+  Button,
+  Card,
+  Col,
+  DatePicker,
+  Empty,
+  Input,
+  Row,
+  Select,
+  Space,
+  Statistic,
+  Table,
+  Tag,
+  Typography,
+} from "antd";
+import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import type { Dayjs } from "dayjs";
+import Link from "next/link";
+import { useMemo, useState } from "react";
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 export default function History() {
-  const [searchText, setSearchText] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [searchText, setSearchText] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [dateRange, setDateRange] = useState<
+    [Dayjs | null, Dayjs | null] | null
+  >(null);
 
-  const { data: sessions, isLoading } = useQuery({
-    queryKey: ['chats'],
-    queryFn: () => getChats(),
-  });
+  const { data: chats, isLoading } = useChats();
 
   // Sort sessions by newest first
-  const sortedSessions = useMemo(() => 
-    sessions?.sort((a, b) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    ) || [], [sessions]
+  const sortedChats = useMemo(
+    () =>
+      chats?.sort(
+        (a, b) =>
+          new Date(b.created_at || "").getTime() -
+          new Date(a.created_at || "").getTime()
+      ) || [],
+    [chats]
   );
 
   // Filter sessions based on search and filters
-  const filteredSessions = useMemo(() => {
-    return sortedSessions.filter((session) => {
+  const filteredChats = useMemo(() => {
+    return sortedChats.filter((chat) => {
       // Search filter
-      const matchesSearch = !searchText || 
-        session.title?.toLowerCase().includes(searchText.toLowerCase()) ||
-        session.name?.toLowerCase().includes(searchText.toLowerCase()) ||
-        session.position?.toLowerCase().includes(searchText.toLowerCase());
+      const matchesSearch =
+        !searchText ||
+        chat.title?.toLowerCase().includes(searchText.toLowerCase()) ||
+        chat.name?.toLowerCase().includes(searchText.toLowerCase()) ||
+        chat.position?.toLowerCase().includes(searchText.toLowerCase());
 
       // Status filter
-      const matchesStatus = statusFilter === 'all' || 
-        (statusFilter === 'completed' && session.completed_at) ||
-        (statusFilter === 'in-progress' && !session.completed_at);
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "completed" && chat.completed_at) ||
+        (statusFilter === "in-progress" && !chat.completed_at);
 
       // Type filter
-      const matchesType = typeFilter === 'all' || session.type === typeFilter;
+      const matchesType = typeFilter === "all" || chat.type === typeFilter;
 
       // Date range filter
-      const matchesDate = !dateRange || !dateRange[0] || !dateRange[1] ||
-        (new Date(session.created_at) >= dateRange[0].toDate() &&
-         new Date(session.created_at) <= dateRange[1].toDate());
+      const matchesDate =
+        !dateRange ||
+        !dateRange[0] ||
+        !dateRange[1] ||
+        (new Date(chat.created_at || "") >= dateRange[0].toDate() &&
+          new Date(chat.created_at || "") <= dateRange[1].toDate());
 
       return matchesSearch && matchesStatus && matchesType && matchesDate;
     });
-  }, [sortedSessions, searchText, statusFilter, typeFilter, dateRange]);
+  }, [sortedChats, searchText, statusFilter, typeFilter, dateRange]);
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
   const formatDuration = (startDate: string, endDate?: string) => {
-    if (!endDate) return 'In Progress';
-    
+    if (!endDate) return "In Progress";
+
     const start = new Date(startDate);
     const end = new Date(endDate);
     const durationMs = end.getTime() - start.getTime();
     const minutes = Math.round(durationMs / (1000 * 60));
-    
+
     return `${minutes} min`;
   };
 
@@ -123,29 +130,32 @@ export default function History() {
 
   const getCandidateTypeTag = (type: string) => {
     const config = {
-      'regular': { color: 'blue', label: 'Regular' },
-      'ai-assisted': { color: 'orange', label: 'AI-Assisted' },
-      'cheating': { color: 'red', label: 'Cheating' }
+      regular: { color: "blue", label: "Regular" },
+      "ai-assisted": { color: "orange", label: "AI-Assisted" },
+      cheating: { color: "red", label: "Cheating" },
     };
-    
-    const { color, label } = config[type as keyof typeof config] || { color: 'default', label: type };
+
+    const { color, label } = config[type as keyof typeof config] || {
+      color: "default",
+      label: type,
+    };
     return <Tag color={color}>{label}</Tag>;
   };
 
   const columns: ColumnsType<Chat> = [
     {
-      title: 'Session Details',
-      dataIndex: 'title',
-      key: 'title',
+      title: "Session Details",
+      dataIndex: "title",
+      key: "title",
       render: (title: string, record: Chat) => (
         <Space direction="vertical" size={4}>
-          <Text strong>{title || 'Untitled Interview'}</Text>
+          <Text strong>{title || "Untitled Interview"}</Text>
           <Space>
-            <UserOutlined style={{ color: '#8c8c8c' }} />
-            <Text type="secondary">{record.name || 'Unknown Candidate'}</Text>
+            <UserOutlined style={{ color: "#8c8c8c" }} />
+            <Text type="secondary">{record.name || "Unknown Candidate"}</Text>
           </Space>
           {record.position && (
-            <Text type="secondary" style={{ fontSize: '12px' }}>
+            <Text type="secondary" style={{ fontSize: "12px" }}>
               {record.position}
             </Text>
           )}
@@ -154,60 +164,58 @@ export default function History() {
       width: 300,
     },
     {
-      title: 'Type',
-      dataIndex: 'type',
-      key: 'type',
+      title: "Type",
+      dataIndex: "type",
+      key: "type",
       render: (type: string) => getCandidateTypeTag(type),
       filters: [
-        { text: 'Regular', value: 'regular' },
-        { text: 'AI-Assisted', value: 'ai-assisted' },
-        { text: 'Cheating', value: 'cheating' },
+        { text: "Regular", value: "regular" },
+        { text: "AI-Assisted", value: "ai-assisted" },
+        { text: "Cheating", value: "cheating" },
       ],
       width: 120,
     },
     {
-      title: 'Status',
-      dataIndex: 'completed_at',
-      key: 'status',
+      title: "Status",
+      dataIndex: "completed_at",
+      key: "status",
       render: (completedAt: string, record: Chat) => getStatusTag(record),
       filters: [
-        { text: 'Completed', value: true },
-        { text: 'In Progress', value: false },
+        { text: "Completed", value: true },
+        { text: "In Progress", value: false },
       ],
       width: 130,
     },
     {
-      title: 'Duration',
-      key: 'duration',
+      title: "Duration",
+      key: "duration",
       render: (_, record: Chat) => (
-        <Text>{formatDuration(record.created_at, record.completed_at || undefined)}</Text>
+        <Text>
+          {formatDuration(record.created_at, record.completed_at || undefined)}
+        </Text>
       ),
       width: 100,
     },
     {
-      title: 'Created',
-      dataIndex: 'created_at',
-      key: 'created_at',
+      title: "Created",
+      dataIndex: "created_at",
+      key: "created_at",
       render: (date: string) => (
         <Space direction="vertical" size={0}>
           <Text>{formatDate(date)}</Text>
         </Space>
       ),
-      sorter: (a: Chat, b: Chat) => 
+      sorter: (a: Chat, b: Chat) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
       width: 180,
     },
     {
-      title: 'Actions',
-      key: 'actions',
+      title: "Actions",
+      key: "actions",
       render: (_, record: Chat) => (
         <Space>
           <Link href={`/interview/c/${record.id}`}>
-            <Button 
-              type="primary" 
-              size="small" 
-              icon={<EyeOutlined />}
-            >
+            <Button type="primary" size="small" icon={<EyeOutlined />}>
               View
             </Button>
           </Link>
@@ -221,45 +229,49 @@ export default function History() {
     pageSize: 10,
     showSizeChanger: true,
     showQuickJumper: true,
-    showTotal: (total, range) => 
-      `${range[0]}-${range[1]} of ${total} sessions`,
+    showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} sessions`,
   };
 
   // Calculate summary stats for filtered data
   const summaryStats = useMemo(() => {
-    const total = filteredSessions.length;
-    const completed = filteredSessions.filter(session => session.completed_at).length;
-    const avgDuration = completed > 0 
-      ? filteredSessions
-          .filter(session => session.completed_at)
-          .reduce((acc, session) => {
-            const start = new Date(session.created_at);
-            const end = session.completed_at ? new Date(session.completed_at) : start;
-            return acc + (end.getTime() - start.getTime());
-          }, 0) / completed / (1000 * 60)
-      : 0;
+    const total = filteredChats.length;
+    const completed = filteredChats.filter((chat) => chat.completed_at).length;
+    const avgDuration =
+      completed > 0
+        ? filteredChats
+            .filter((chat) => chat.completed_at)
+            .reduce((acc, chat) => {
+              const start = new Date(chat.created_at || "");
+              const end = chat.completed_at
+                ? new Date(chat.completed_at || "")
+                : start;
+              return acc + (end.getTime() - start.getTime());
+            }, 0) /
+          completed /
+          (1000 * 60)
+        : 0;
 
     return { total, completed, avgDuration: Math.round(avgDuration) };
-  }, [filteredSessions]);
+  }, [filteredChats]);
 
   return (
     <div>
-      <div style={{ marginBottom: '24px' }}>
+      <div style={{ marginBottom: "24px" }}>
         <Title level={2}>Training Session History</Title>
-        <Text type="secondary" style={{ fontSize: '16px' }}>
+        <Text type="secondary" style={{ fontSize: "16px" }}>
           Review and analyze your past simulation training sessions
         </Text>
       </div>
 
       {/* Summary Statistics */}
-      <Row gutter={16} style={{ marginBottom: '24px' }}>
+      <Row gutter={16} style={{ marginBottom: "24px" }}>
         <Col xs={24} sm={8}>
           <Card>
             <Statistic
               title="Total Interviews"
               value={summaryStats.total}
               prefix={<CalendarOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: "#1890ff" }}
             />
           </Card>
         </Col>
@@ -269,7 +281,7 @@ export default function History() {
               title="Completed"
               value={summaryStats.completed}
               prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: '#52c41a' }}
+              valueStyle={{ color: "#52c41a" }}
             />
           </Card>
         </Col>
@@ -280,14 +292,14 @@ export default function History() {
               value={summaryStats.avgDuration}
               suffix="min"
               prefix={<ClockCircleOutlined />}
-              valueStyle={{ color: '#722ed1' }}
+              valueStyle={{ color: "#722ed1" }}
             />
           </Card>
         </Col>
       </Row>
 
       {/* Filters */}
-      <Card style={{ marginBottom: '24px' }}>
+      <Card style={{ marginBottom: "24px" }}>
         <Row gutter={[16, 16]} align="middle">
           <Col xs={24} md={8}>
             <Input
@@ -300,7 +312,7 @@ export default function History() {
           </Col>
           <Col xs={12} md={4}>
             <Select
-              style={{ width: '100%' }}
+              style={{ width: "100%" }}
               placeholder="Status"
               value={statusFilter}
               onChange={setStatusFilter}
@@ -312,7 +324,7 @@ export default function History() {
           </Col>
           <Col xs={12} md={4}>
             <Select
-              style={{ width: '100%' }}
+              style={{ width: "100%" }}
               placeholder="Type"
               value={typeFilter}
               onChange={setTypeFilter}
@@ -325,8 +337,8 @@ export default function History() {
           </Col>
           <Col xs={24} md={8}>
             <RangePicker
-              style={{ width: '100%' }}
-              placeholder={['Start Date', 'End Date']}
+              style={{ width: "100%" }}
+              placeholder={["Start Date", "End Date"]}
               value={dateRange}
               onChange={setDateRange}
             />
@@ -336,19 +348,18 @@ export default function History() {
 
       {/* Interview Table */}
       <Card>
-        {filteredSessions.length === 0 && !isLoading ? (
+        {filteredChats.length === 0 && !isLoading ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={
               <span>
-                {sortedSessions.length === 0 
+                {sortedChats.length === 0
                   ? "No training sessions found. Start your first simulation to see history here."
-                  : "No sessions match your current filters."
-                }
+                  : "No sessions match your current filters."}
               </span>
             }
           >
-            {sortedSessions.length === 0 && (
+            {sortedChats.length === 0 && (
               <Link href="/dashboard/trainings">
                 <Button type="primary" icon={<PlayCircleOutlined />}>
                   Start First Simulation
@@ -358,8 +369,8 @@ export default function History() {
           </Empty>
         ) : (
           <Table
-            columns={columns}
-            dataSource={filteredSessions}
+            columns={columns as ColumnsType<Partial<Chat>>}
+            dataSource={filteredChats}
             rowKey="id"
             loading={isLoading}
             pagination={paginationConfig}
@@ -369,4 +380,4 @@ export default function History() {
       </Card>
     </div>
   );
-} 
+}

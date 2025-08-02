@@ -25,15 +25,6 @@ export function useChat(id: string, include: string[] = [], enabled = true) {
   });
 }
 
-export function useChatsByAttempt(attemptId: string, enabled = true) {
-  return useQuery({
-    queryKey: ['chats', 'attempt', attemptId],
-    queryFn: () => api<ChatCreate[]>(`/api/v1/chats?attempt_id=${attemptId}`),
-    enabled: enabled && !!attemptId,
-    staleTime: 5 * 60_000,      // 5 minutes
-  });
-}
-
 // ---------- Mutations ----------
 export function useCreateChat() {
   const qc = useQueryClient();

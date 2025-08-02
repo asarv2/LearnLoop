@@ -16,14 +16,6 @@ export function useAttempts() {
   });
 }
 
-export function useAttemptsWithTraining() {
-  return useQuery({
-    queryKey: [...attemptKeys.list(), 'with-training'],
-    queryFn: () => api<AttemptCreate[]>('/api/v1/attempts?include=training'),
-    staleTime: 5 * 60_000,      // 5 minutes
-  });
-}
-
 export function useAttempt(id: string, enabled = true) {
   return useQuery({
     queryKey: attemptKeys.detail(id),
