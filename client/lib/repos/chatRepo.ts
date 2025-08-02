@@ -8,6 +8,66 @@ import { z } from "zod";
 export type ChatCreate = Database["public"]["Tables"]["chats"]["Insert"];
 export type ChatUpdate = Database["public"]["Tables"]["chats"]["Update"];
 
+// Base chat type
+type ChatRow = Database["public"]["Tables"]["chats"]["Row"];
+
+// Related table types
+type RubricGradeRow = Database["public"]["Tables"]["rubric_grades"]["Row"];
+type StandardGradeRow = Database["public"]["Tables"]["standard_grades"]["Row"];
+type AssessmentRow = Database["public"]["Tables"]["assessments"]["Row"];
+type QuestionRow = Database["public"]["Tables"]["questions"]["Row"];
+type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
+type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
+type HintRow = Database["public"]["Tables"]["hints"]["Row"];
+
+// Union type for all possible includes
+export type ChatIncludes =
+  | "grades"
+  | "assessment"
+  | "feedback"
+  | "hints"
+  | "messages";
+
+// Type mapping for includes
+type IncludeMap = {
+  grades: {
+    rubric_grades: (RubricGradeRow & {
+      standard_grades: StandardGradeRow[];
+    })[];
+  };
+  assessment: {
+    assessments: (AssessmentRow & {
+      questions: QuestionRow[];
+    })[];
+  };
+  feedback: {
+    feedback: FeedbackRow[];
+  };
+  hints: {
+    messages: (MessageRow & {
+      hints: HintRow[];
+    })[];
+  };
+  messages: {
+    messages: MessageRow[];
+  };
+};
+
+// Helper type to check if a type is never
+type IsNever<T> = [T] extends [never] ? true : false;
+
+// Conditional type that builds the return type based on includes
+export type ChatWithIncludes<T extends ChatIncludes[]> = ChatRow &
+  (T extends [infer First, ...infer Rest]
+    ? First extends ChatIncludes
+      ? Rest extends ChatIncludes[]
+        ? IsNever<Rest> extends true
+          ? IncludeMap[First]
+          : IncludeMap[First] & ChatWithIncludes<Rest>
+        : IncludeMap[First]
+      : Record<string, never>
+    : Record<string, never>);
+
 // Runtime validators for API requests
 export const ChatCreateSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -94,24 +154,27 @@ export const chatRepo = {
     return data;
   },
 
-  async fetchChat(id: string, includes: string[] = []) {
+  async fetchChat<T extends ChatIncludes[]>(
+    id: string,
+    includes: T = [] as unknown as T
+  ): Promise<ChatWithIncludes<T>> {
     const supabase = await getSupabase();
     /* Build a dynamic SELECT clause */
     const selectors = ["*"]; // ← base chat columns
 
-    if (includes.includes("grades")) {
+    if (includes.includes("grades" as ChatIncludes)) {
       selectors.push("rubric_grades(*, standard_grades(*))");
     }
-    if (includes.includes("assessment")) {
+    if (includes.includes("assessment" as ChatIncludes)) {
       selectors.push("assessments(*, questions(*))");
     }
-    if (includes.includes("feedback")) {
+    if (includes.includes("feedback" as ChatIncludes)) {
       selectors.push("feedback(*)");
     }
-    if (includes.includes("hints")) {
+    if (includes.includes("hints" as ChatIncludes)) {
       selectors.push("messages(*, hints(*))");
     }
-    if (includes.includes("messages")) {
+    if (includes.includes("messages" as ChatIncludes)) {
       selectors.push("messages(*)");
     }
 
@@ -127,7 +190,7 @@ export const chatRepo = {
       }
       throw new HttpError(500, error.message);
     }
-    return data;
+    return data as unknown as ChatWithIncludes<T>;
   },
 
   async update(id: string, patch: ChatUpdate) {
