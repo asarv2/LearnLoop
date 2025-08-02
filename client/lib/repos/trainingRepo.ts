@@ -10,6 +10,19 @@ export type TrainingCreate =
 export type TrainingUpdate =
   Database["public"]["Tables"]["trainings"]["Update"];
 
+// Type for training with included relationships
+export type TrainingWithIncludes = TrainingCreate & {
+  scenarios?: Array<
+    Database["public"]["Tables"]["scenarios"]["Row"] & {
+      rubrics?: Array<
+        Database["public"]["Tables"]["rubrics"]["Row"] & {
+          standards?: Array<Database["public"]["Tables"]["standards"]["Row"]>;
+        }
+      >;
+    }
+  >;
+};
+
 // Runtime validators for API requests
 export const TrainingCreateSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -83,6 +96,39 @@ export const trainingRepo = {
       throw new HttpError(500, error.message);
     }
     return data;
+  },
+
+  async fetchTraining(
+    id: string,
+    includes: string[] = []
+  ): Promise<TrainingWithIncludes> {
+    const supabase = await getSupabase();
+    /* Build a dynamic SELECT clause */
+    const selectors = ["*"]; // ← base training columns
+
+    if (includes.includes("scenarios")) {
+      selectors.push("scenarios(*)");
+    }
+    if (includes.includes("rubrics")) {
+      selectors.push("scenarios(rubrics(*))");
+    }
+    if (includes.includes("standards")) {
+      selectors.push("scenarios(rubrics(standards(*)))");
+    }
+
+    const { data, error } = await supabase
+      .from("trainings")
+      .select(selectors.join(", "))
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        throw HttpError.notFound(`Training with id ${id} not found`);
+      }
+      throw new HttpError(500, error.message);
+    }
+    return data as unknown as TrainingWithIncludes;
   },
 
   async update(id: string, patch: TrainingUpdate) {
