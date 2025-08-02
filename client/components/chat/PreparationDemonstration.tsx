@@ -5,23 +5,17 @@
 
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getMessagesByChat } from '@/utils/queries/messages/get-messages-by-chat';
-import { getChat } from '@/utils/queries/chats/get-chat';
-import { useRouter } from 'next/navigation';
-import { logError } from '@/utils/logger';
-import {
-    Box,
-    Flex,
-    Text,
-    Button,
-    Card,
-} from '@radix-ui/themes';
-import { PersonIcon, ChatBubbleIcon } from '@radix-ui/react-icons';
-import { Modal, message, Select } from 'antd';
-import { CheckCircleFilled } from '@ant-design/icons';
-import Markdown from '@/client/components/chat/Markdown';
+import Markdown from "@/components/chat/Markdown";
+import { logError } from "@/utils/logger";
+import { getChat } from "@/utils/queries/chats/get-chat";
+import { getMessagesByChat } from "@/utils/queries/messages/get-messages-by-chat";
+import { CheckCircleFilled } from "@ant-design/icons";
+import { ChatBubbleIcon, PersonIcon } from "@radix-ui/react-icons";
+import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { message, Modal, Select } from "antd";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface PreparationDemonstrationProps {
   chatId: string;
@@ -49,84 +43,103 @@ export default function PreparationDemonstration({
   const router = useRouter();
   const queryClient = useQueryClient();
   const [showJobPositionModal, setShowJobPositionModal] = useState(true);
-  const [jobPosition, setJobPosition] = useState('');
-  const [offboardingType, setOffboardingType] = useState('voluntary');
-  const [employeeLevel, setEmployeeLevel] = useState('MID-LEVEL');
+  const [jobPosition, setJobPosition] = useState("");
+  const [offboardingType, setOffboardingType] = useState("voluntary");
+  const [employeeLevel, setEmployeeLevel] = useState("MID-LEVEL");
   const [showEndButton, setShowEndButton] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [explanations, setExplanations] = useState<ExplanationBubble[]>([]);
-  const [streamingMessage, setStreamingMessage] = useState<StreamingMessage | null>(null);
+  const [streamingMessage, setStreamingMessage] =
+    useState<StreamingMessage | null>(null);
   const [isTriggeringNext, setIsTriggeringNext] = useState(false);
-  const [waitingForUserAcknowledgment, setWaitingForUserAcknowledgment] = useState(false);
+  const [waitingForUserAcknowledgment, setWaitingForUserAcknowledgment] =
+    useState(false);
   const [justAcknowledged, setJustAcknowledged] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const explanationsRef = useRef<ExplanationBubble[]>([]);
 
   const { data: chat } = useQuery({
-    queryKey: ['chat', chatId],
-    queryFn: () => getChat(chatId)
+    queryKey: ["chat", chatId],
+    queryFn: () => getChat(chatId),
   });
 
   const { data: messages = [] } = useQuery({
-    queryKey: ['messages', chatId],
-    queryFn: () => getMessagesByChat(chatId)
+    queryKey: ["messages", chatId],
+    queryFn: () => getMessagesByChat(chatId),
   });
 
-  const generateExplanation = useCallback(async (recentMessages: Array<{ id: string; content: string | null; created_at: string; role: string }>): Promise<string> => {
-    try {
-      // Get the last 3-4 interviewer messages for context
-      const sortedMessages = [...recentMessages].sort((a, b) => 
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-      
-      const interviewerMessages = [];
-      for (let i = 0; i < sortedMessages.length; i++) {
-        if (i % 2 === 0) { // Interviewer messages
-          interviewerMessages.push(sortedMessages[i]);
+  const generateExplanation = useCallback(
+    async (
+      recentMessages: Array<{
+        id: string;
+        content: string | null;
+        created_at: string;
+        role: string;
+      }>
+    ): Promise<string> => {
+      try {
+        // Get the last 3-4 interviewer messages for context
+        const sortedMessages = [...recentMessages].sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+
+        const interviewerMessages = [];
+        for (let i = 0; i < sortedMessages.length; i++) {
+          if (i % 2 === 0) {
+            // Interviewer messages
+            interviewerMessages.push(sortedMessages[i]);
+          }
         }
-      }
-      
-      // Get the last 3 interviewer messages for analysis
-      const recentInterviewerMessages = interviewerMessages.slice(-3);
-      
-      const response = await fetch('/api/preparation/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: recentInterviewerMessages,
-          preparationType: preparationType
-        }),
-      });
 
-      if (!response.ok) {
-        throw new Error('Failed to generate explanation');
-      }
+        // Get the last 3 interviewer messages for analysis
+        const recentInterviewerMessages = interviewerMessages.slice(-3);
 
-      const data = await response.json();
-      return data.explanation || "This interviewer demonstrates effective communication techniques.";
-    } catch (error) {
-      console.error('Error generating AI explanation:', error);
-      // Fallback to static explanation
-      const fallbackExplanations = [
-        "Notice how the interviewer builds rapport with a warm, professional greeting. This helps create a comfortable environment for the candidate.",
-        "The interviewer uses an open-ended question to encourage detailed responses. This reveals more information than yes/no questions.",
-        "See how the interviewer follows up with specific probes. This demonstrates active listening and helps uncover concrete examples.",
-        "The interviewer transitions smoothly between topics. This keeps the conversation flowing naturally and maintains engagement.",
-        "Notice the professional tone throughout. The interviewer remains approachable while maintaining appropriate boundaries.",
-        "The interviewer asks behavioral questions that require specific examples. This helps assess real-world experience and skills.",
-        "See how the interviewer handles the response professionally. This shows how to manage unexpected or difficult answers.",
-        "The interviewer demonstrates excellent time management by moving the conversation forward appropriately.",
-        "Notice how the interviewer references specific details from the candidate's responses. This shows active listening.",
-        "The interviewer uses follow-up questions effectively to dig deeper into interesting points mentioned by the candidate."
-      ];
-      return fallbackExplanations[Math.floor(Math.random() * fallbackExplanations.length)];
-    }
-  }, []);
+        const response = await fetch("/api/preparation/analyze", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messages: recentInterviewerMessages,
+            preparationType: preparationType,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to generate explanation");
+        }
+
+        const data = await response.json();
+        return (
+          data.explanation ||
+          "This interviewer demonstrates effective communication techniques."
+        );
+      } catch (error) {
+        console.error("Error generating AI explanation:", error);
+        // Fallback to static explanation
+        const fallbackExplanations = [
+          "Notice how the interviewer builds rapport with a warm, professional greeting. This helps create a comfortable environment for the candidate.",
+          "The interviewer uses an open-ended question to encourage detailed responses. This reveals more information than yes/no questions.",
+          "See how the interviewer follows up with specific probes. This demonstrates active listening and helps uncover concrete examples.",
+          "The interviewer transitions smoothly between topics. This keeps the conversation flowing naturally and maintains engagement.",
+          "Notice the professional tone throughout. The interviewer remains approachable while maintaining appropriate boundaries.",
+          "The interviewer asks behavioral questions that require specific examples. This helps assess real-world experience and skills.",
+          "See how the interviewer handles the response professionally. This shows how to manage unexpected or difficult answers.",
+          "The interviewer demonstrates excellent time management by moving the conversation forward appropriately.",
+          "Notice how the interviewer references specific details from the candidate's responses. This shows active listening.",
+          "The interviewer uses follow-up questions effectively to dig deeper into interesting points mentioned by the candidate.",
+        ];
+        return fallbackExplanations[
+          Math.floor(Math.random() * fallbackExplanations.length)
+        ];
+      }
+    },
+    []
+  );
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
   useEffect(() => {
@@ -149,25 +162,25 @@ export default function PreparationDemonstration({
 
     try {
       const formData = new FormData();
-      formData.append('chatId', chatId);
-      formData.append('jobPosition', jobPosition);
-      formData.append('offboardingType', offboardingType);
-      formData.append('employeeLevel', employeeLevel);
+      formData.append("chatId", chatId);
+      formData.append("jobPosition", jobPosition);
+      formData.append("offboardingType", offboardingType);
+      formData.append("employeeLevel", employeeLevel);
 
-      const response = await fetch('/api/preparation/message', {
-        method: 'POST',
+      const response = await fetch("/api/preparation/message", {
+        method: "POST",
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error('Failed to trigger next message');
+        throw new Error("Failed to trigger next message");
       }
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
       if (!reader) {
-        throw new Error('No response body');
+        throw new Error("No response body");
       }
 
       while (true) {
@@ -175,48 +188,52 @@ export default function PreparationDemonstration({
         if (done) break;
 
         const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        const lines = chunk.split("\n");
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
-              
+
               switch (data.type) {
-                case 'assistant_message_created':
-                  setStreamingMessage({ 
-                    id: data.messageId, 
-                    content: '', 
-                    completed: false 
+                case "assistant_message_created":
+                  setStreamingMessage({
+                    id: data.messageId,
+                    content: "",
+                    completed: false,
                   });
                   break;
-                case 'content_delta':
-                  setStreamingMessage(prev => 
+                case "content_delta":
+                  setStreamingMessage((prev) =>
                     prev ? { ...prev, content: data.content } : null
                   );
                   break;
-                case 'message_completed':
-                  setStreamingMessage(prev => 
-                    prev ? { ...prev, content: data.content, completed: true } : null
+                case "message_completed":
+                  setStreamingMessage((prev) =>
+                    prev
+                      ? { ...prev, content: data.content, completed: true }
+                      : null
                   );
-                  await queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
+                  await queryClient.invalidateQueries({
+                    queryKey: ["messages", chatId],
+                  });
                   setTimeout(() => {
                     setStreamingMessage(null);
                   }, 100);
                   break;
-                case 'error':
-                  logError('Streaming error:', data.error);
+                case "error":
+                  logError("Streaming error:", data.error);
                   setStreamingMessage(null);
                   break;
               }
             } catch (parseError) {
-              logError('Error parsing SSE data:', parseError);
+              logError("Error parsing SSE data:", parseError);
             }
           }
         }
       }
     } catch (error) {
-      logError('Error triggering next message:', error);
+      logError("Error triggering next message:", error);
       setStreamingMessage(null);
     } finally {
       setIsTriggeringNext(false);
@@ -224,113 +241,130 @@ export default function PreparationDemonstration({
   }, [chatId, streamingMessage, isTriggeringNext, queryClient]);
 
   // Handle acknowledgment of learning points
-  const handleAcknowledgeExplanation = useCallback((explanationId: string) => {
-    console.log('User acknowledged explanation:', explanationId);
-    setExplanations(prev => {
-      const newExplanations = prev.map(exp => 
-        exp.id === explanationId 
-          ? { ...exp, acknowledged: true }
-          : exp
-      );
-      explanationsRef.current = newExplanations;
-      return newExplanations;
-    });
-    setWaitingForUserAcknowledgment(false);
-    setJustAcknowledged(true);
-    
-    // Trigger the next message after a short delay to ensure state updates are processed
-    setTimeout(() => {
-      console.log('Triggering next message after acknowledgment');
-      triggerNextMessage();
-      // Reset the flag after triggering
-      setTimeout(() => {
-        setJustAcknowledged(false);
-      }, 1000);
-    }, 500);
-  }, [triggerNextMessage]);
+  const handleAcknowledgeExplanation = useCallback(
+    (explanationId: string) => {
+      console.log("User acknowledged explanation:", explanationId);
+      setExplanations((prev) => {
+        const newExplanations = prev.map((exp) =>
+          exp.id === explanationId ? { ...exp, acknowledged: true } : exp
+        );
+        explanationsRef.current = newExplanations;
+        return newExplanations;
+      });
+      setWaitingForUserAcknowledgment(false);
+      setJustAcknowledged(true);
 
-    // Auto-trigger conversation between AI agents - modified to wait for user acknowledgment
+      // Trigger the next message after a short delay to ensure state updates are processed
+      setTimeout(() => {
+        console.log("Triggering next message after acknowledgment");
+        triggerNextMessage();
+        // Reset the flag after triggering
+        setTimeout(() => {
+          setJustAcknowledged(false);
+        }, 1000);
+      }, 500);
+    },
+    [triggerNextMessage]
+  );
+
+  // Auto-trigger conversation between AI agents - modified to wait for user acknowledgment
   useEffect(() => {
     const handleAutoTrigger = async () => {
       // Don't auto-trigger if we're waiting for user acknowledgment, just acknowledged, or showing job position modal
-      if (waitingForUserAcknowledgment || justAcknowledged || showJobPositionModal) {
-        console.log('Auto-trigger blocked - waiting for acknowledgment, just acknowledged, or showing job position modal');
+      if (
+        waitingForUserAcknowledgment ||
+        justAcknowledged ||
+        showJobPositionModal
+      ) {
+        console.log(
+          "Auto-trigger blocked - waiting for acknowledgment, just acknowledged, or showing job position modal"
+        );
         return;
       }
-      
+
       if (messages.length > 0 && !streamingMessage && !isTriggeringNext) {
         const lastMessage = messages[messages.length - 1];
         const shouldContinueConversation = lastMessage.completed;
-        
+
         if (shouldContinueConversation) {
           // Sort messages by creation time to ensure proper order
-          const sortedMessages = [...messages].sort((a, b) => 
-            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          const sortedMessages = [...messages].sort(
+            (a, b) =>
+              new Date(a.created_at).getTime() -
+              new Date(b.created_at).getTime()
           );
-          
+
           // Check all messages for learning points that need to be created
           let interviewerMessageCount = 0;
           let needsLearningPoint = false;
           let pendingExplanation: ExplanationBubble | null = null;
-          
+
           for (let i = 0; i < sortedMessages.length; i++) {
             const message = sortedMessages[i];
             const isInterviewerMessage = i % 2 === 0;
-            
+
             if (isInterviewerMessage && message.content && message.completed) {
               interviewerMessageCount++;
-              
+
               // If this is every 3rd interviewer message, check if it needs a learning point
               if (interviewerMessageCount % 3 === 0) {
-                const existingExplanation = explanationsRef.current.find(exp => exp.messageId === message.id);
-                
+                const existingExplanation = explanationsRef.current.find(
+                  (exp) => exp.messageId === message.id
+                );
+
                 if (!existingExplanation) {
                   // This message needs a learning point
                   try {
-                    console.log(`Attempting to generate learning point for message ${message.id}, interviewer count: ${interviewerMessageCount}`);
+                    console.log(
+                      `Attempting to generate learning point for message ${message.id}, interviewer count: ${interviewerMessageCount}`
+                    );
                     const explanation = await generateExplanation(messages);
-                    console.log('Generated explanation:', explanation);
+                    console.log("Generated explanation:", explanation);
                     pendingExplanation = {
                       id: `explanation-${message.id}`,
                       messageId: message.id,
                       explanation,
                       showButton: true,
-                      acknowledged: false
+                      acknowledged: false,
                     };
                     needsLearningPoint = true;
-                    console.log(`Created learning point for message ${message.id}, interviewer count: ${interviewerMessageCount}`);
+                    console.log(
+                      `Created learning point for message ${message.id}, interviewer count: ${interviewerMessageCount}`
+                    );
                     break;
                   } catch (error) {
-                    console.error('Error generating explanation:', error);
+                    console.error("Error generating explanation:", error);
                     // Continue without learning point if generation fails
                   }
                 } else if (!existingExplanation.acknowledged) {
                   // Learning point exists but not acknowledged
                   needsLearningPoint = true;
-                  console.log(`Learning point exists but not acknowledged for message ${message.id}`);
+                  console.log(
+                    `Learning point exists but not acknowledged for message ${message.id}`
+                  );
                   break;
                 }
               }
             }
           }
-          
+
           // If we need to create a learning point, do it and pause
           if (needsLearningPoint) {
             if (pendingExplanation) {
-              setExplanations(prev => {
+              setExplanations((prev) => {
                 const newExplanations = [...prev, pendingExplanation!];
                 explanationsRef.current = newExplanations;
                 return newExplanations;
               });
             }
             setWaitingForUserAcknowledgment(true);
-            console.log('Paused conversation for learning point');
+            console.log("Paused conversation for learning point");
             return;
           }
-          
+
           // Continue with next message after delay
           const timer = setTimeout(() => {
-            console.log('Auto-triggering next message');
+            console.log("Auto-triggering next message");
             triggerNextMessage();
           }, 6000); // 6 second delay to give more breathing room
 
@@ -340,42 +374,48 @@ export default function PreparationDemonstration({
     };
 
     handleAutoTrigger();
-  }, [messages, streamingMessage, isTriggeringNext, triggerNextMessage, waitingForUserAcknowledgment, justAcknowledged, showJobPositionModal, generateExplanation]);
-
-
-
+  }, [
+    messages,
+    streamingMessage,
+    isTriggeringNext,
+    triggerNextMessage,
+    waitingForUserAcknowledgment,
+    justAcknowledged,
+    showJobPositionModal,
+    generateExplanation,
+  ]);
 
   const handleEndPreparation = async () => {
     try {
       // Mark preparation as completed
-      const response = await fetch('/api/preparation/complete', {
-        method: 'POST',
+      const response = await fetch("/api/preparation/complete", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           chatId,
-          preparationType
+          preparationType,
         }),
       });
 
       if (response.ok) {
         setShowCompletionModal(true);
       } else {
-        message.error('Failed to complete preparation');
+        message.error("Failed to complete preparation");
       }
     } catch (error) {
-      console.error('Error completing preparation:', error);
-      message.error('Failed to complete preparation');
+      console.error("Error completing preparation:", error);
+      message.error("Failed to complete preparation");
     }
   };
 
   const handleGoToTrainings = () => {
-    router.push('/dashboard/trainings');
+    router.push("/dashboard/trainings");
   };
 
   const handleBackToPreparation = () => {
-    router.push('/dashboard/preparation');
+    router.push("/dashboard/preparation");
   };
 
   // Combine regular messages with streaming message for display
@@ -384,32 +424,35 @@ export default function PreparationDemonstration({
     displayMessages.push({
       id: streamingMessage.id,
       content: streamingMessage.content,
-      role: 'assistant' as const,
+      role: "assistant" as const,
       chat_id: chatId,
       completed: streamingMessage.completed,
-      completed_at: '',
+      completed_at: "",
       created_at: new Date().toISOString(),
-      training_id: chat?.training_id || null
+      training_id: chat?.training_id || null,
     });
   }
 
   // Sort messages by creation time to ensure proper order
   const sortedDisplayMessages = displayMessages.sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    (a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
 
   // Early return if chat is not available
   if (!chat) {
     return (
-      <Box style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'white',
-      }}>
-        <Text size="3" style={{ color: 'var(--gray-11)' }}>
+      <Box
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "white",
+        }}
+      >
+        <Text size="3" style={{ color: "var(--gray-11)" }}>
           Loading preparation...
         </Text>
       </Box>
@@ -417,16 +460,22 @@ export default function PreparationDemonstration({
   }
 
   // Determine if this is an offboarding preparation
-  const isOffboardingPrep = preparationType === 'offboarding-prep';
+  const isOffboardingPrep = preparationType === "offboarding-prep";
 
   // Job Position Modal
   if (showJobPositionModal) {
     return (
       <Modal
-        title={isOffboardingPrep ? "Enter Offboarding Details" : "Enter Job Position"}
+        title={
+          isOffboardingPrep ? "Enter Offboarding Details" : "Enter Job Position"
+        }
         open={showJobPositionModal}
         onOk={() => {
-          if (isOffboardingPrep ? (offboardingType && employeeLevel) : jobPosition.trim()) {
+          if (
+            isOffboardingPrep
+              ? offboardingType && employeeLevel
+              : jobPosition.trim()
+          ) {
             setShowJobPositionModal(false);
             // Start the conversation after modal closes
             setTimeout(() => {
@@ -435,15 +484,17 @@ export default function PreparationDemonstration({
           }
         }}
         onCancel={() => {
-          router.push('/dashboard/preparation');
+          router.push("/dashboard/preparation");
         }}
         okText="Start Conversation"
         cancelText="Cancel"
         okButtonProps={{
-          disabled: isOffboardingPrep ? (!offboardingType || !employeeLevel) : !jobPosition.trim()
+          disabled: isOffboardingPrep
+            ? !offboardingType || !employeeLevel
+            : !jobPosition.trim(),
         }}
       >
-        <div style={{ marginTop: '16px' }}>
+        <div style={{ marginTop: "16px" }}>
           {isOffboardingPrep ? (
             <>
               <p>Please select the offboarding scenario:</p>
@@ -451,10 +502,14 @@ export default function PreparationDemonstration({
                 placeholder="Select offboarding type"
                 value={offboardingType}
                 onChange={(value) => setOffboardingType(value)}
-                style={{ width: '100%', marginBottom: '12px' }}
+                style={{ width: "100%", marginBottom: "12px" }}
               >
-                <Select.Option value="voluntary">Voluntary Departure</Select.Option>
-                <Select.Option value="involuntary">Involuntary Termination</Select.Option>
+                <Select.Option value="voluntary">
+                  Voluntary Departure
+                </Select.Option>
+                <Select.Option value="involuntary">
+                  Involuntary Termination
+                </Select.Option>
                 <Select.Option value="layoff">Layoff</Select.Option>
               </Select>
               <p>Please select the employee level:</p>
@@ -462,10 +517,12 @@ export default function PreparationDemonstration({
                 placeholder="Select employee level"
                 value={employeeLevel}
                 onChange={(value) => setEmployeeLevel(value)}
-                style={{ width: '100%' }}
+                style={{ width: "100%" }}
               >
                 <Select.Option value="JUNIOR">Junior (0-3 years)</Select.Option>
-                <Select.Option value="MID-LEVEL">Mid-Level (3-7 years)</Select.Option>
+                <Select.Option value="MID-LEVEL">
+                  Mid-Level (3-7 years)
+                </Select.Option>
                 <Select.Option value="SENIOR">Senior (7+ years)</Select.Option>
                 <Select.Option value="EXECUTIVE">Executive</Select.Option>
               </Select>
@@ -479,14 +536,14 @@ export default function PreparationDemonstration({
                 value={jobPosition}
                 onChange={(e) => setJobPosition(e.target.value)}
                 style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #d9d9d9',
-                  borderRadius: '6px',
-                  marginTop: '8px'
+                  width: "100%",
+                  padding: "8px 12px",
+                  border: "1px solid #d9d9d9",
+                  borderRadius: "6px",
+                  marginTop: "8px",
                 }}
                 onKeyPress={(e) => {
-                  if (e.key === 'Enter' && jobPosition.trim()) {
+                  if (e.key === "Enter" && jobPosition.trim()) {
                     setShowJobPositionModal(false);
                     setTimeout(() => {
                       triggerNextMessage();
@@ -502,44 +559,43 @@ export default function PreparationDemonstration({
   }
 
   return (
-    <Box style={{
-      height: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      background: 'white'
-    }}>
+    <Box
+      style={{
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "white",
+      }}
+    >
       {/* Fixed Header */}
-      <Box style={{
-        padding: '16px 24px',
-        background: 'var(--gray-1)',
-        borderBottom: '1px solid var(--gray-6)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000
-      }}>
-        <Text size="4" weight="bold" style={{ color: 'var(--gray-12)' }}>
-          {chat?.title || 'Preparation Demonstration'}
+      <Box
+        style={{
+          padding: "16px 24px",
+          background: "var(--gray-1)",
+          borderBottom: "1px solid var(--gray-6)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1000,
+        }}
+      >
+        <Text size="4" weight="bold" style={{ color: "var(--gray-12)" }}>
+          {chat?.title || "Preparation Demonstration"}
         </Text>
-        
+
         <Flex gap="3">
-          <Button 
-            variant="outline"
-            onClick={handleBackToPreparation}
-          >
+          <Button variant="outline" onClick={handleBackToPreparation}>
             Back to Preparation
           </Button>
-          
 
-          
           {showEndButton && (
-            <Button 
+            <Button
               variant="solid"
-              style={{ background: 'var(--green-9)', color: 'white' }}
+              style={{ background: "var(--green-9)", color: "white" }}
               onClick={handleEndPreparation}
             >
               End Preparation
@@ -549,54 +605,68 @@ export default function PreparationDemonstration({
       </Box>
 
       {/* Messages */}
-      <Box style={{
-        flex: 1,
-        padding: '24px',
-        paddingTop: '80px', // Account for fixed header
-        overflow: 'auto',
-        background: 'white'
-      }}>
+      <Box
+        style={{
+          flex: 1,
+          padding: "24px",
+          paddingTop: "80px", // Account for fixed header
+          overflow: "auto",
+          background: "white",
+        }}
+      >
         {/* Status message */}
         {messages.length === 0 && !streamingMessage && (
-          <Box style={{
-            padding: '16px',
-            background: 'var(--blue-1)',
-            border: '1px solid var(--blue-6)',
-            borderRadius: '8px',
-            marginBottom: '16px'
-          }}>
-            <Text size="2" style={{ color: 'var(--blue-11)' }}>
-              💡 This is a demonstration of excellent {isOffboardingPrep ? 'offboarding' : 'interviewing'} techniques. Watch how the {isOffboardingPrep ? 'manager' : 'interviewer'} builds rapport, demonstrates empathy, and handles sensitive situations professionally. Learning points will appear to explain why certain approaches work well.
+          <Box
+            style={{
+              padding: "16px",
+              background: "var(--blue-1)",
+              border: "1px solid var(--blue-6)",
+              borderRadius: "8px",
+              marginBottom: "16px",
+            }}
+          >
+            <Text size="2" style={{ color: "var(--blue-11)" }}>
+              💡 This is a demonstration of excellent{" "}
+              {isOffboardingPrep ? "offboarding" : "interviewing"} techniques.
+              Watch how the {isOffboardingPrep ? "manager" : "interviewer"}{" "}
+              builds rapport, demonstrates empathy, and handles sensitive
+              situations professionally. Learning points will appear to explain
+              why certain approaches work well.
             </Text>
           </Box>
         )}
 
         {/* Waiting for acknowledgment message */}
         {waitingForUserAcknowledgment && (
-          <Box style={{
-            padding: '16px',
-            background: 'var(--amber-1)',
-            border: '1px solid var(--amber-6)',
-            borderRadius: '8px',
-            marginBottom: '16px'
-          }}>
-            <Text size="2" style={{ color: 'var(--amber-11)' }}>
-              ⏸️ Please review the learning point above and click &quot;Next&quot; to continue the conversation.
+          <Box
+            style={{
+              padding: "16px",
+              background: "var(--amber-1)",
+              border: "1px solid var(--amber-6)",
+              borderRadius: "8px",
+              marginBottom: "16px",
+            }}
+          >
+            <Text size="2" style={{ color: "var(--amber-11)" }}>
+              ⏸️ Please review the learning point above and click
+              &quot;Next&quot; to continue the conversation.
             </Text>
           </Box>
         )}
-        
+
         <Flex direction="column" gap="4">
           {sortedDisplayMessages.map((message, index) => {
             // Determine if this is an interviewer message based on message index
             // Even indices (0, 2, 4...) are interviewer, odd indices (1, 3, 5...) are candidate
             const isInterviewer = index % 2 === 0;
-            const explanation = explanations.find(exp => exp.messageId === message.id);
-            
+            const explanation = explanations.find(
+              (exp) => exp.messageId === message.id
+            );
+
             return (
               <Box key={`${message.id}-${index}`}>
                 <Flex
-                  direction={isInterviewer ? 'row' : 'row-reverse'}
+                  direction={isInterviewer ? "row" : "row-reverse"}
                   align="start"
                   gap="3"
                 >
@@ -604,14 +674,14 @@ export default function PreparationDemonstration({
                   <Card
                     size="1"
                     style={{
-                      padding: '8px',
+                      padding: "8px",
                       background: isInterviewer
-                        ? 'var(--green-3)'
-                        : 'var(--blue-3)',
-                      border: `1px solid ${isInterviewer
-                        ? 'var(--green-6)'
-                        : 'var(--blue-6)'}`,
-                      opacity: message.completed === false ? 0.7 : 1
+                        ? "var(--green-3)"
+                        : "var(--blue-3)",
+                      border: `1px solid ${
+                        isInterviewer ? "var(--green-6)" : "var(--blue-6)"
+                      }`,
+                      opacity: message.completed === false ? 0.7 : 1,
                     }}
                   >
                     {isInterviewer ? (
@@ -622,68 +692,94 @@ export default function PreparationDemonstration({
                   </Card>
 
                   {/* Message Content */}
-                  <Box style={{ maxWidth: '70%' }}>
+                  <Box style={{ maxWidth: "70%" }}>
                     <Card
                       size="2"
                       style={{
                         background: isInterviewer
-                          ? 'var(--gray-2)'
-                          : 'var(--blue-2)',
-                        border: `1px solid ${isInterviewer
-                          ? 'var(--gray-7)'
-                          : 'var(--blue-7)'}`,
-                        opacity: message.completed === false ? 0.8 : 1
+                          ? "var(--gray-2)"
+                          : "var(--blue-2)",
+                        border: `1px solid ${
+                          isInterviewer ? "var(--gray-7)" : "var(--blue-7)"
+                        }`,
+                        opacity: message.completed === false ? 0.8 : 1,
                       }}
                     >
                       <Flex direction="column" gap="2">
-                        <Text size="1" style={{ color: 'var(--gray-11)' }} weight="medium">
-                          {isInterviewer ? (isOffboardingPrep ? 'Manager' : 'Interviewer') : (isOffboardingPrep ? 'Employee' : 'Candidate')}
+                        <Text
+                          size="1"
+                          style={{ color: "var(--gray-11)" }}
+                          weight="medium"
+                        >
+                          {isInterviewer
+                            ? isOffboardingPrep
+                              ? "Manager"
+                              : "Interviewer"
+                            : isOffboardingPrep
+                            ? "Employee"
+                            : "Candidate"}
                         </Text>
-                        <Text size="2" style={{ lineHeight: '1.5', color: 'var(--gray-12)' }}>
-                          <Markdown>
-                            {message.content || ''}
-                          </Markdown>
+                        <Text
+                          size="2"
+                          style={{ lineHeight: "1.5", color: "var(--gray-12)" }}
+                        >
+                          <Markdown>{message.content || ""}</Markdown>
                         </Text>
                         {message.completed !== false && (
-                          <Text size="1" style={{ color: 'var(--gray-11)' }}>
+                          <Text size="1" style={{ color: "var(--gray-11)" }}>
                             {new Date(message.created_at).toLocaleTimeString()}
                           </Text>
                         )}
                       </Flex>
                     </Card>
-                    
+
                     {/* Explanation Bubble */}
                     {explanation && (
-                      <Box style={{
-                        marginTop: '8px',
-                        padding: '12px 16px',
-                        background: 'var(--amber-2)',
-                        border: '1px solid var(--amber-7)',
-                        borderRadius: '8px',
-                        borderLeft: '4px solid var(--amber-9)'
-                      }}>
-                        <Text size="2" style={{ color: 'var(--amber-11)', fontWeight: 500 }}>
+                      <Box
+                        style={{
+                          marginTop: "8px",
+                          padding: "12px 16px",
+                          background: "var(--amber-2)",
+                          border: "1px solid var(--amber-7)",
+                          borderRadius: "8px",
+                          borderLeft: "4px solid var(--amber-9)",
+                        }}
+                      >
+                        <Text
+                          size="2"
+                          style={{ color: "var(--amber-11)", fontWeight: 500 }}
+                        >
                           💡 Learning Point:
                         </Text>
-                        <Text size="2" style={{ color: 'var(--amber-11)', display: 'block', marginTop: '4px' }}>
+                        <Text
+                          size="2"
+                          style={{
+                            color: "var(--amber-11)",
+                            display: "block",
+                            marginTop: "4px",
+                          }}
+                        >
                           {explanation.explanation}
                         </Text>
-                        
-                        {explanation.showButton && !explanation.acknowledged && (
-                          <Flex justify="end" style={{ marginTop: '12px' }}>
-                            <Button 
-                              size="1"
-                              style={{ 
-                                background: 'var(--amber-9)', 
-                                color: 'white',
-                                border: 'none'
-                              }}
-                              onClick={() => handleAcknowledgeExplanation(explanation.id)}
-                            >
-                              Next
-                            </Button>
-                          </Flex>
-                        )}
+
+                        {explanation.showButton &&
+                          !explanation.acknowledged && (
+                            <Flex justify="end" style={{ marginTop: "12px" }}>
+                              <Button
+                                size="1"
+                                style={{
+                                  background: "var(--amber-9)",
+                                  color: "white",
+                                  border: "none",
+                                }}
+                                onClick={() =>
+                                  handleAcknowledgeExplanation(explanation.id)
+                                }
+                              >
+                                Next
+                              </Button>
+                            </Flex>
+                          )}
                       </Box>
                     )}
                   </Box>
@@ -691,7 +787,7 @@ export default function PreparationDemonstration({
               </Box>
             );
           })}
-          
+
           <div ref={messagesEndRef} />
         </Flex>
       </Box>
@@ -704,28 +800,38 @@ export default function PreparationDemonstration({
         width={500}
         centered
       >
-        <div style={{ textAlign: 'center', padding: '24px 0' }}>
-          <CheckCircleFilled style={{ fontSize: '48px', color: '#52c41a', marginBottom: '16px' }} />
-          <Text size="4" weight="bold" style={{ marginBottom: '16px', display: 'block' }}>
+        <div style={{ textAlign: "center", padding: "24px 0" }}>
+          <CheckCircleFilled
+            style={{ fontSize: "48px", color: "#52c41a", marginBottom: "16px" }}
+          />
+          <Text
+            size="4"
+            weight="bold"
+            style={{ marginBottom: "16px", display: "block" }}
+          >
             Great job completing the preparation!
           </Text>
-          <Text size="2" style={{ color: 'var(--gray-11)', display: 'block', marginBottom: '24px' }}>
-            You&apos;ve learned the key techniques for conducting professional interviews. 
-            Now it&apos;s time to practice these skills yourself!
+          <Text
+            size="2"
+            style={{
+              color: "var(--gray-11)",
+              display: "block",
+              marginBottom: "24px",
+            }}
+          >
+            You&apos;ve learned the key techniques for conducting professional
+            interviews. Now it&apos;s time to practice these skills yourself!
           </Text>
-          
+
           <Flex gap="3" justify="center">
-            <Button 
+            <Button
               variant="solid"
-              style={{ background: 'var(--blue-9)', color: 'white' }}
+              style={{ background: "var(--blue-9)", color: "white" }}
               onClick={handleGoToTrainings}
             >
               Go to Trainings
             </Button>
-            <Button 
-              variant="outline"
-              onClick={handleBackToPreparation}
-            >
+            <Button variant="outline" onClick={handleBackToPreparation}>
               Back to Preparation
             </Button>
           </Flex>
@@ -733,4 +839,4 @@ export default function PreparationDemonstration({
       </Modal>
     </Box>
   );
-} 
+}

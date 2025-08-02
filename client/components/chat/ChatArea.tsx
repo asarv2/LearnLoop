@@ -15,7 +15,7 @@ import {
 } from '@radix-ui/themes';
 import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon, SpeakerLoudIcon, Pencil1Icon, InfoCircledIcon } from '@radix-ui/react-icons';
 import { Chat, Message } from '@/types';
-import Markdown from '@/client/components/chat/Markdown';
+import Markdown from '@/components/chat/Markdown';
 
 import { logError } from '@/utils/logger';
 import { getCheatingRealtimeSession } from '@/utils/ai/agents/cheating';

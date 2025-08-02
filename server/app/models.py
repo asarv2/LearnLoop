@@ -9,8 +9,6 @@ from sqlalchemy import (ARRAY, Boolean, CheckConstraint, Column, Computed,
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped
 from sqlmodel import Field, Relationship, SQLModel
-
-
 class _Base(SQLModel):
     """Shared config so Pydantic will accept SQLAlchemy types."""
     model_config = {"arbitrary_types_allowed": True}
@@ -138,7 +136,9 @@ class Trainings(_Base, table=True):
     additional_info: Optional[Dict[str, Any]] = Field(default_factory=dict, sa_column=Column('additional_info', JSONB))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
     active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
-    preparation: Optional[bool] = Field(default=None, sa_column=Column('preparation', Boolean, default=False))
+    practice: Optional[bool] = Field(default=None, sa_column=Column('practice', Boolean, default=False))
+    what_to_do: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('what_to_do', ARRAY(Text())))
+    what_not_to_do: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('what_not_to_do', ARRAY(Text())))
 
     attempts: List['Attempts'] = Relationship(back_populates='training')
     logs: List['Logs'] = Relationship(back_populates='training')
