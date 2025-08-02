@@ -6,60 +6,48 @@
 
 "use client";
 
-import { useAttempt } from "@/lib/api/hooks/useAttempts";
 import { useChat } from "@/lib/api/hooks/useChats";
-import { useTraining } from "@/lib/api/hooks/useTrainings";
+import {
+  useEndTraining,
+  useGenerateFeedback,
+  useSendTrainingMessage,
+  useSubmitAssessment,
+  useTrainingMessages,
+} from "@/lib/api/hooks/useTrainingMessages";
+import type { MessageCreate } from "@/lib/repos/messageRepo";
 import { Assessment } from "@/types";
 import { logError } from "@/utils/logger";
 import { Box } from "@radix-ui/themes";
-import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import AssessmentWizard from "./AssessmentWizard";
 import ChatArea from "./ChatArea";
 import ChatHeader from "./ChatHeader";
 import FeedbackModal from "./FeedbackModal";
-
 interface TrainingAttemptProps {
-  trainingId: string;
-  attemptId: string;
+  chatId: string;
 }
 
-interface StreamingMessage {
-  id: string;
-  content: string;
-  completed: boolean;
-}
-
-export default function TrainingAttempt({
-  trainingId,
-  attemptId,
-}: TrainingAttemptProps) {
+export default function TrainingAttempt({ chatId }: TrainingAttemptProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const [currentMessage, setCurrentMessage] = useState("");
-  const [isSendingMessage, setIsSendingMessage] = useState(false);
-  const [isEndingInterview, setIsEndingInterview] = useState(false);
   const [showAssessment, setShowAssessment] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
-  const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false);
-  const [streamingMessage, setStreamingMessage] =
-    useState<StreamingMessage | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { data: training } = useTraining(trainingId, [
-    "scenarios",
-    "rubrics",
-    "standards",
-  ]);
-  const { data: attempt } = useAttempt(attemptId);
-  const { data: chat } = useChat(attempt?.chat_id!, [
+  // Use the new training hooks
+  const { data: chat } = useChat(chatId, [
     "grades",
     "assessment",
     "feedback",
     "hints",
     "messages",
   ]);
+  const { data: messages = [], streamingMessage } = useTrainingMessages(chatId);
+  const sendMessageMutation = useSendTrainingMessage();
+  const endTrainingMutation = useEndTraining();
+  const submitAssessmentMutation = useSubmitAssessment();
+  const generateFeedbackMutation = useGenerateFeedback();
 
   // Determine if interview is active based on chat completion status
   const isInterviewActive = chat ? !chat.completed : true;
@@ -73,182 +61,34 @@ export default function TrainingAttempt({
   }, [messages, streamingMessage]);
 
   const sendMessage = async () => {
-    if (!currentMessage.trim() || isSendingMessage || !isInterviewActive)
+    if (
+      !currentMessage.trim() ||
+      sendMessageMutation.isPending ||
+      !isInterviewActive
+    )
       return;
 
     const userMessage = currentMessage;
     setCurrentMessage("");
-    setIsSendingMessage(true);
-    setStreamingMessage(null);
 
     try {
-      const formData = new FormData();
-      formData.append("chatId", chatId);
-      formData.append("message", userMessage);
-
-      const response = await fetch("/api/chat/message", {
-        method: "POST",
-        body: formData,
+      await sendMessageMutation.mutateAsync({
+        chatId,
+        message: userMessage,
+        assistantAudioEnabled: false, // TODO: Add audio toggle
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to send message");
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) {
-        throw new Error("No response body");
-      }
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              switch (data.type) {
-                case "user_message_created":
-                  // Immediately add the user message to the query cache
-                  queryClient.setQueryData(
-                    ["messages", chatId],
-                    (oldMessages: typeof messages) => {
-                      if (!oldMessages) return [data.message];
-                      // Check if message already exists to avoid duplicates
-                      const exists = oldMessages.some(
-                        (msg) => msg.id === data.message.id
-                      );
-                      if (exists) return oldMessages;
-                      return [...oldMessages, data.message];
-                    }
-                  );
-                  break;
-
-                case "assistant_message_created":
-                  setStreamingMessage({
-                    id: data.messageId,
-                    content: "",
-                    completed: false,
-                  });
-                  break;
-
-                case "content_delta":
-                  setStreamingMessage((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          content: data.content,
-                        }
-                      : null
-                  );
-                  break;
-
-                case "message_completed":
-                  setStreamingMessage((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          content: data.content,
-                          completed: true,
-                        }
-                      : null
-                  );
-
-                  // Invalidate messages query to refetch updated data
-                  await queryClient.invalidateQueries({
-                    queryKey: ["messages", chatId],
-                  });
-
-                  // Clear streaming message after a brief delay
-                  setTimeout(() => {
-                    setStreamingMessage(null);
-                  }, 100);
-                  break;
-
-                case "error":
-                  logError("Streaming error:", data.error);
-                  setStreamingMessage(null);
-
-                  // Invalidate messages query to refetch updated data
-                  await queryClient.invalidateQueries({
-                    queryKey: ["messages", chatId],
-                  });
-                  break;
-              }
-            } catch (parseError) {
-              logError("Error parsing SSE data:", parseError);
-            }
-          }
-        }
-      }
     } catch (error) {
       logError("Error sending message:", error);
-      setStreamingMessage(null);
-
-      // Invalidate messages query to ensure we have the latest data
-      await queryClient.invalidateQueries({
-        queryKey: ["messages", chatId],
-      });
-    } finally {
-      setIsSendingMessage(false);
     }
   };
 
   const endInterview = async () => {
-    if (isEndingInterview) return;
-
-    setIsEndingInterview(true);
+    if (endTrainingMutation.isPending) return;
 
     try {
-      const formData = new FormData();
-      formData.append("chatId", chatId);
-
-      const response = await fetch("/api/chat/end", {
-        method: "POST",
-        body: formData,
-      });
-
-      // Check if response is ok before trying to parse JSON
-      if (!response.ok) {
-        const errorText = await response.text();
-        logError("Server error response:", errorText);
-        throw new Error(
-          `Server error: ${response.status} ${response.statusText}`
-        );
-      }
-
-      let data;
-      try {
-        data = await response.json();
-      } catch (parseError) {
-        logError("Error parsing JSON response:", parseError);
-        throw new Error("Invalid response format from server");
-      }
-
-      if (data.success) {
-        // Invalidate chat and feedback queries to get the updated data
-        await Promise.all([
-          queryClient.invalidateQueries({
-            queryKey: ["chat", chatId],
-          }),
-          queryClient.invalidateQueries({
-            queryKey: ["feedback", chatId],
-          }),
-        ]);
-
-        // Show the assessment wizard
-        setShowAssessment(true);
-      } else {
-        logError("Failed to end interview:", data);
-        throw new Error(data.error || "Failed to end interview");
-      }
+      await endTrainingMutation.mutateAsync({ chatId });
+      // Show the assessment wizard after successful end
+      setShowAssessment(true);
     } catch (error) {
       logError("Error ending interview:", error);
       const errorMessage =
@@ -256,49 +96,22 @@ export default function TrainingAttempt({
       alert(
         `Failed to end interview: ${errorMessage}. Please check the console for more details.`
       );
-    } finally {
-      setIsEndingInterview(false);
     }
   };
 
   const handleAssessmentComplete = async (
     responses: Assessment["responses"]
   ) => {
-    setIsSubmittingAssessment(true);
-
     try {
-      const response = await fetch("/api/chat/assessment", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          chatId,
-          responses,
-        }),
+      await submitAssessmentMutation.mutateAsync({
+        chatId,
+        responses: responses as Record<string, unknown>,
       });
+      setShowAssessment(false);
 
-      const data = await response.json();
-
-      if (data.success) {
-        // Invalidate chat, feedback, and score queries to get the updated data
-        await Promise.all([
-          queryClient.invalidateQueries({
-            queryKey: ["chat", chatId],
-          }),
-          queryClient.invalidateQueries({
-            queryKey: ["feedback", chatId],
-          }),
-          queryClient.invalidateQueries({
-            queryKey: ["score", chatId],
-          }),
-        ]);
-        setShowAssessment(false);
-        setShowFeedback(true);
-      } else {
-        logError("Assessment processing failed:", data);
-        throw new Error(data.error || "Failed to process assessment");
-      }
+      // Generate feedback after assessment is submitted
+      await generateFeedbackMutation.mutateAsync({ chatId });
+      setShowFeedback(true);
     } catch (error) {
       logError("Error processing assessment:", error);
       const errorMessage =
@@ -306,8 +119,6 @@ export default function TrainingAttempt({
       alert(
         `Failed to process assessment: ${errorMessage}. Please check the console for more details.`
       );
-    } finally {
-      setIsSubmittingAssessment(false);
     }
   };
 
@@ -324,15 +135,15 @@ export default function TrainingAttempt({
     displayMessages.push({
       id: streamingMessage.id,
       content: streamingMessage.content,
-      role: "assistant" as const,
-      chat_id: chatId,
+      role: streamingMessage.role,
+      chat_id: streamingMessage.chat_id,
       completed: streamingMessage.completed,
       completed_at: "",
-      created_at: new Date().toISOString(),
+      created_at: streamingMessage.created_at,
       training_id: chat?.training_id || null,
       error: null,
       persona_id: null,
-    });
+    } as MessageCreate); // Type assertion to fix the mismatch
   }
 
   return (
@@ -343,7 +154,7 @@ export default function TrainingAttempt({
         resumeId={chat?.resume_id || ""}
         onEndInterview={endInterview}
         isInterviewActive={isInterviewActive}
-        isEndingInterview={isEndingInterview}
+        isEndingInterview={endTrainingMutation.isPending}
         onShowFeedback={() => setShowFeedback(true)}
         onBack={() => router.push("/dashboard/trainings")}
         interviewStartTimeIso={chat?.created_at}
@@ -351,9 +162,9 @@ export default function TrainingAttempt({
       />
 
       <ChatArea
-        displayMessages={displayMessages}
-        isSendingMessage={isSendingMessage}
-        isEndingInterview={isEndingInterview}
+        displayMessages={displayMessages as any}
+        isSendingMessage={sendMessageMutation.isPending}
+        isEndingInterview={endTrainingMutation.isPending}
         streamingMessage={!!streamingMessage}
         isInterviewActive={isInterviewActive}
         currentMessage={currentMessage}
@@ -370,8 +181,8 @@ export default function TrainingAttempt({
         onClose={() => setShowAssessment(false)}
         onComplete={handleAssessmentComplete}
         candidateName={chat?.name || "John Doe"}
-        isSubmitting={isSubmittingAssessment}
-        messages={messages}
+        isSubmitting={submitAssessmentMutation.isPending}
+        messages={messages as any}
         chat={chat!}
       />
 
@@ -379,9 +190,9 @@ export default function TrainingAttempt({
       <FeedbackModal
         isOpen={showFeedback}
         onClose={() => setShowFeedback(false)}
-        feedback={feedback?.[0] || null}
+        feedback={chat?.feedback_?.[0] || null}
         candidateName={chat?.name || "John Doe"}
-        interviewScore={interviewScore}
+        interviewScore={chat?.interview_scores?.[0] || null}
         chat={chat}
       />
     </Box>
