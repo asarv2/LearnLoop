@@ -21,10 +21,19 @@ export function useTrainingsPractice() {
   });
 }
 
-export function useTraining(id: string, enabled = true) {
+export function useTraining(
+  id: string,
+  include: string[] = [],
+  enabled = true
+) {
   return useQuery({
     queryKey: trainingKeys.detail(id),
-    queryFn: () => api<TrainingCreate>(`/api/v1/trainings/${id}`),
+    queryFn: () =>
+      api<TrainingCreate>(
+        `/api/v1/trainings/${id}${
+          include.length ? "?include=" + include.join(",") : ""
+        }`
+      ),
     enabled,
   });
 }

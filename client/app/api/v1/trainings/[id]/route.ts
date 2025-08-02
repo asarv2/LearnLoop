@@ -9,7 +9,17 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const training = await trainingRepo.find(params.id);
+    const { searchParams } = new URL(req.url);
+    const include = searchParams.get("include");
+
+    let training;
+    if (include) {
+      const includes = include.split(",").map((s) => s.trim());
+      training = await trainingRepo.fetchTraining(params.id, includes);
+    } else {
+      training = await trainingRepo.find(params.id);
+    }
+
     return NextResponse.json(training);
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
