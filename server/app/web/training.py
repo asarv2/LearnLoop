@@ -1,0 +1,459 @@
+"""
+Training WebSocket handlers for real-time training chat
+Simplified version focused on core training functionality
+"""
+
+import asyncio
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+import socketio  # type: ignore
+from app.db import get_session
+from app.models import Chats, Messages
+from app.services.agents.assesment import run_assessment_agent
+from app.services.agents.feedback import run_feedback_agent
+from app.services.agents.generic import run_generic_agent
+from app.services.agents.grade import run_grading_agent
+from app.services.agents.hint import run_hint_agent
+from sqlmodel import select
+
+logger = logging.getLogger(__name__)
+
+# Global store for active training runs
+active_training_runs: Dict[str, Any] = {}
+
+
+def get_sio_instance() -> socketio.AsyncServer:
+    """Get the Socket.IO server instance from main.py"""
+    from app.main import get_socketio_instance
+    return get_socketio_instance()
+
+
+async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
+    """
+    Handle training join requests via WebSocket
+    Joins a specific chat room for training
+    """
+    try:
+        logger.info(f"Received join_training request from {sid} with data: {data}")
+
+        chat_id = data.get("chat_id")
+        profile_id = data.get("profile_id")
+
+        if not chat_id:
+            logger.error(f"Missing chat_id in request from {sid}")
+            await emit_error(sid, "Missing chat_id")
+            return
+
+        # Handle empty string profile_id as None for guest mode
+        if profile_id == "" or profile_id == "null":
+            profile_id = None
+
+        logger.info(
+            f"Processing training join: chat_id={chat_id}, profile_id={profile_id}, sid={sid}"
+        )
+
+        # Create a new session for this operation
+        db_session = next(get_session())
+
+        try:
+            # Get the chat to validate it exists
+            result = db_session.exec(
+                select(Chats).where(Chats.id == chat_id)
+            )
+            chat = result.one_or_none()
+            if not chat:
+                await emit_error(sid, "Chat not found")
+                return
+
+            logger.info(f"Joining training chat {chat_id} for user {profile_id}")
+
+            # Add the user to the chat room
+            sio = get_sio_instance()
+            await sio.enter_room(sid, chat_id)
+
+            # Send success response
+            await sio.emit(
+                "training_joined",
+                {
+                    "success": True,
+                    "chat_id": chat_id,
+                    "message": "Successfully joined training room",
+                },
+                room=sid,
+            )
+
+            logger.info(f"User {sid} successfully joined training room {chat_id}")
+
+        finally:
+            db_session.close()
+
+    except Exception as e:
+        logger.error(f"Error joining training for {sid}: {str(e)}")
+        await emit_error(sid, f"Failed to join training: {str(e)}")
+
+
+async def handle_stop_training(sid: str, data: Dict[str, Any]) -> None:
+    """
+    Handle training stop requests via WebSocket
+    Stops the current training message generation
+    """
+    try:
+        chat_id = data.get("chat_id")
+
+        if not chat_id:
+            await emit_error(sid, "Missing chat_id")
+            return
+
+        # Create a new session for this operation
+        db_session = next(get_session())
+
+        try:
+            # Verify the chat exists
+            result = db_session.exec(
+                select(Chats).where(Chats.id == chat_id)
+            )
+            chat = result.one_or_none()
+            if not chat:
+                await emit_error(sid, "Chat not found")
+                return
+
+            # Stop any active training run for this chat
+            if chat_id in active_training_runs:
+                # Cancel the training run
+                training_run = active_training_runs[chat_id]
+                if hasattr(training_run, 'cancel'):
+                    training_run.cancel()
+                del active_training_runs[chat_id]
+                success = True
+                logger.info(f"Successfully cancelled training run for chat {chat_id}")
+            else:
+                success = False
+                logger.warning(f"No active training run found for chat {chat_id}")
+
+            sio_instance = get_sio_instance()
+
+            # Emit stop signal via WebSocket
+            await sio_instance.emit(
+                "training_stopped",
+                {
+                    "chat_id": chat_id,
+                    "success": success,
+                    "message": "" if success else "No active training run found",
+                },
+                room=chat_id,
+            )
+
+        finally:
+            db_session.close()
+
+    except Exception as e:
+        logger.error(f"Error stopping training for {sid}: {str(e)}")
+        await emit_error(sid, f"Failed to stop training: {str(e)}")
+
+
+async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
+    """
+    Handle training end requests via WebSocket
+    Ends the training session and marks chat as completed
+    """
+    try:
+        chat_id = data.get("chat_id")
+
+        if not chat_id:
+            await emit_error(sid, "Missing chat_id")
+            return
+
+        # Create a new session for this operation
+        db_session = next(get_session())
+
+        try:
+            # Get the chat
+            result = db_session.exec(
+                select(Chats).where(Chats.id == chat_id)
+            )
+            chat = result.one_or_none()
+            if not chat:
+                await emit_error(sid, "Chat not found")
+                return
+
+            # Mark the chat as completed
+            chat.completed = True
+            chat.completed_at = datetime.now(timezone.utc)
+            db_session.add(chat)
+            db_session.commit()
+
+            logger.info(f"Training chat {chat_id} marked as completed")
+
+            # Send success response
+            sio = get_sio_instance()
+            await sio.emit(
+                "training_ended",
+                {
+                    "success": True,
+                    "chat_id": chat_id,
+                    "message": "Training session ended successfully",
+                },
+                room=chat_id,
+            )
+
+        finally:
+            db_session.close()
+
+    except Exception as e:
+        logger.error(f"Error ending training for {sid}: {str(e)}")
+        await emit_error(sid, f"Failed to end training: {str(e)}")
+
+
+async def process_training_message_websocket(
+    chat_id: str,
+    message: str = "",
+    session: Optional[Any] = None,
+    profile_id: Optional[str] = None,
+) -> None:
+    """
+    Process a training message and stream the response via WebSocket
+    Simple training-focused message processing
+    """
+    
+    # Use provided session or create new one
+    if session is None:
+        from app.db import get_session
+        db_session = next(get_session())
+        should_close_session = True
+    else:
+        db_session = session
+        should_close_session = False
+
+    try:
+        # Get the chat
+        result = db_session.exec(
+            select(Chats).where(Chats.id == chat_id)
+        )
+        chat = result.one_or_none()
+        if not chat:
+            raise ValueError(f"Chat {chat_id} not found")
+
+        if not message.strip():
+            logger.warning(f"Empty message received for chat {chat_id}")
+            return
+
+        # Create user message
+        user_message = Messages(
+            chat_id=chat_id,
+            content=message,
+            role="user",
+            training_id=chat.training_id,
+            completed=True
+        )
+        db_session.add(user_message)
+        db_session.commit()
+        db_session.refresh(user_message)
+
+        logger.info(f"Created user message {user_message.id} for chat {chat_id}")
+
+        # Create assistant message placeholder
+        assistant_message = Messages(
+            chat_id=chat_id,
+            content="",
+            role="assistant", 
+            training_id=chat.training_id,
+            completed=False
+        )
+        db_session.add(assistant_message)
+        db_session.commit()
+        db_session.refresh(assistant_message)
+
+        # Emit message creation events
+        sio = get_sio_instance()
+        await sio.emit("training_message_start", {
+            "chat_id": chat_id,
+            "message_id": str(assistant_message.id)
+        }, room=chat_id)
+
+        # Stream response
+        accumulated_content = ""
+        try:
+            # For now, use a simple response generation
+            # TODO: Integrate with actual agent system
+            response_content = f"Thank you for your message: '{message}'. This is a training response."
+            
+            # Simulate streaming by sending the response in chunks
+            words = response_content.split()
+            for i, word in enumerate(words):
+                accumulated_content += word + " "
+                
+                # Emit token update
+                await sio.emit("training_message_token", {
+                    "chat_id": chat_id,
+                    "message_id": str(assistant_message.id),
+                    "token": word,
+                    "accumulated_content": accumulated_content.strip()
+                }, room=chat_id)
+                
+                # Small delay to simulate real streaming
+                await asyncio.sleep(0.1)
+
+            # Update message with final content
+            assistant_message.content = accumulated_content.strip()
+            assistant_message.completed = True
+            db_session.add(assistant_message)
+            db_session.commit()
+
+            # Emit completion
+            await sio.emit("training_message_complete", {
+                "chat_id": chat_id,
+                "message_id": str(assistant_message.id),
+                "final_content": accumulated_content.strip()
+            }, room=chat_id)
+
+            logger.info(f"Completed training message {assistant_message.id} for chat {chat_id}")
+
+        except Exception as e:
+            logger.error(f"Error generating training response: {str(e)}")
+            
+            # Mark message as error and emit error event
+            assistant_message.error = str(e)
+            assistant_message.completed = True
+            db_session.add(assistant_message)
+            db_session.commit()
+
+            await sio.emit("training_message_error", {
+                "chat_id": chat_id,
+                "message_id": str(assistant_message.id),
+                "error": str(e)
+            }, room=chat_id)
+
+    except Exception as e:
+        logger.error(f"Error processing training message: {str(e)}")
+        raise
+    finally:
+        if should_close_session:
+            db_session.close()
+
+
+# Simplified training message handler 
+async def handle_send_training_message(sid: str, data: Dict[str, Any]) -> None:
+    """Handle training message sending via WebSocket"""
+    try:
+        chat_id = data.get("chat_id")
+        message = data.get("message", "")
+        
+        if not chat_id:
+            await emit_error(sid, "Missing chat_id")
+            return
+            
+        logger.info(f"Processing training message for chat {chat_id}")
+        
+        # Process the message
+        await process_training_message_websocket(
+            chat_id=chat_id,
+            message=message
+        )
+        
+    except Exception as e:
+        logger.error(f"Error handling training message: {str(e)}")
+        await emit_error(sid, f"Failed to process message: {str(e)}")
+
+
+# Handler functions for assessment and feedback
+async def handle_submit_assessment(sid: str, data: Dict[str, Any]) -> None:
+    """Handle assessment submission"""
+    try:
+        chat_id = data.get("chat_id")
+        responses = data.get("responses", {})
+        
+        if not chat_id:
+            await emit_error(sid, "Missing chat_id")
+            return
+            
+        # Process assessment submission
+        result = await run_assessment_agent(chat_id)
+        
+        sio = get_sio_instance()
+        await sio.emit("assessment_submitted", {
+            "chat_id": chat_id,
+            "success": result.get("success", False),
+            "assessment_id": result.get("assessment_id")
+        }, room=chat_id)
+        
+    except Exception as e:
+        logger.error(f"Error submitting assessment: {str(e)}")
+        await emit_error(sid, f"Failed to submit assessment: {str(e)}")
+
+
+async def handle_generate_feedback(sid: str, data: Dict[str, Any]) -> None:
+    """Handle feedback generation"""
+    try:
+        chat_id = data.get("chat_id")
+        
+        if not chat_id:
+            await emit_error(sid, "Missing chat_id")
+            return
+            
+        # Process feedback generation  
+        result = await run_feedback_agent(chat_id)
+        
+        sio = get_sio_instance()
+        await sio.emit("feedback_generated", {
+            "chat_id": chat_id,
+            "success": result.get("success", False),
+            "feedback_id": result.get("feedback_id")
+        }, room=chat_id)
+        
+    except Exception as e:
+        logger.error(f"Error generating feedback: {str(e)}")
+        await emit_error(sid, f"Failed to generate feedback: {str(e)}")
+
+
+# Register training event handlers with socketio
+def register_training_events(sio: socketio.AsyncServer) -> None:
+    """Register training WebSocket event handlers"""
+    
+    @sio.event  # type: ignore
+    async def join_training(sid: str, data: Dict[str, Any]) -> None:
+        """Join a training chat room"""
+        logger.info(f"join_training event triggered for sid={sid}")
+        await handle_join_training(sid, data)
+    
+    @sio.event  # type: ignore  
+    async def send_training_message(sid: str, data: Dict[str, Any]) -> None:
+        """Send a training message"""
+        logger.info(f"send_training_message event triggered for sid={sid}")
+        await handle_send_training_message(sid, data)
+    
+    @sio.event  # type: ignore
+    async def stop_training(sid: str, data: Dict[str, Any]) -> None:
+        """Stop training message generation"""
+        logger.info(f"stop_training event triggered for sid={sid}")
+        await handle_stop_training(sid, data)
+    
+    @sio.event  # type: ignore
+    async def end_training(sid: str, data: Dict[str, Any]) -> None:
+        """End training session"""
+        logger.info(f"end_training event triggered for sid={sid}")
+        await handle_end_training(sid, data)
+    
+    @sio.event  # type: ignore
+    async def submit_assessment(sid: str, data: Dict[str, Any]) -> None:
+        """Submit assessment responses"""
+        logger.info(f"submit_assessment event triggered for sid={sid}")
+        await handle_submit_assessment(sid, data)
+    
+    @sio.event  # type: ignore
+    async def generate_feedback(sid: str, data: Dict[str, Any]) -> None:
+        """Generate feedback"""
+        logger.info(f"generate_feedback event triggered for sid={sid}")
+        await handle_generate_feedback(sid, data)
+    
+    logger.info("Successfully registered training WebSocket event handlers")
+
+
+# Utility functions
+async def emit_error(sid: str, message: str) -> None:
+    """Emit error message to specific socket"""
+    sio = get_sio_instance()
+    await sio.emit("error", {"message": message}, room=sid)
+    logger.error(f"Emitted error to {sid}: {message}")
