@@ -1,42 +1,46 @@
-// lib/repos/scenarioRepo.ts
+// lib/repos/trainingRepo.ts
 import type { Database } from "@/database.types";
 import { HttpError } from "@/utils/HttpError";
 import supabaseServer from "@/utils/supabase/supabase-server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 
-export type ScenarioCreate =
-  Database["public"]["Tables"]["scenarios"]["Insert"];
-export type ScenarioUpdate =
-  Database["public"]["Tables"]["scenarios"]["Update"];
+export type TrainingCreate =
+  Database["public"]["Tables"]["trainings"]["Insert"];
+export type TrainingUpdate =
+  Database["public"]["Tables"]["trainings"]["Update"];
 
 // Runtime validators for API requests
-export const ScenarioCreateSchema = z.object({
+export const TrainingCreateSchema = z.object({
   title: z.string().min(1, "Title is required"),
-  description: z.string().nullable().optional(),
-  parameter_ids: z.array(z.string()).nullable().optional(),
-  rubric_id: z.string().nullable().optional(),
-  training_id: z.string().nullable().optional(),
+  description: z.string().optional(),
+  what_to_do: z.array(z.string()).optional(),
+  what_not_to_do: z.array(z.string()).optional(),
+  active: z.boolean().default(false),
+  practice: z.boolean().default(false),
+  type: z.string().min(1, "Type is required"),
 });
 
-export const ScenarioUpdateSchema = z.object({
+export const TrainingUpdateSchema = z.object({
   title: z.string().min(1, "Title is required").optional(),
-  description: z.string().nullable().optional(),
-  parameter_ids: z.array(z.string()).nullable().optional(),
-  rubric_id: z.string().nullable().optional(),
-  training_id: z.string().nullable().optional(),
+  description: z.string().optional(),
+  what_to_do: z.array(z.string()).optional(),
+  what_not_to_do: z.array(z.string()).optional(),
+  active: z.boolean().optional(),
+  practice: z.boolean().optional(),
+  type: z.string().min(1, "Type is required").optional(),
 });
 
 async function getSupabase() {
   return await supabaseServer(cookies());
 }
 
-// CRUD wrappers
-export const scenarioRepo = {
-  async create(payload: ScenarioCreate) {
+// 3.2 – CRUD wrappers
+export const trainingRepo = {
+  async create(payload: TrainingCreate) {
     const supabase = await getSupabase();
     const { data, error } = await supabase
-      .from("scenarios")
+      .from("trainings")
       .insert(payload)
       .select()
       .single();
@@ -47,8 +51,19 @@ export const scenarioRepo = {
   async list() {
     const supabase = await getSupabase();
     const { data, error } = await supabase
-      .from("scenarios")
+      .from("trainings")
       .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw new HttpError(500, error.message);
+    return data;
+  },
+
+  async listPractice() {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("trainings")
+      .select("*")
+      .eq("practice", true)
       .order("created_at", { ascending: false });
     if (error) throw new HttpError(500, error.message);
     return data;
@@ -57,30 +72,30 @@ export const scenarioRepo = {
   async find(id: string) {
     const supabase = await getSupabase();
     const { data, error } = await supabase
-      .from("scenarios")
+      .from("trainings")
       .select("*")
       .eq("id", id)
       .single();
     if (error) {
       if (error.code === "PGRST116") {
-        throw HttpError.notFound(`Scenario with id ${id} not found`);
+        throw HttpError.notFound(`Training with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
     }
     return data;
   },
 
-  async update(id: string, patch: ScenarioUpdate) {
+  async update(id: string, patch: TrainingUpdate) {
     const supabase = await getSupabase();
     const { data, error } = await supabase
-      .from("scenarios")
+      .from("trainings")
       .update(patch)
       .eq("id", id)
       .select()
       .single();
     if (error) {
       if (error.code === "PGRST116") {
-        throw HttpError.notFound(`Scenario with id ${id} not found`);
+        throw HttpError.notFound(`Training with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
     }
@@ -89,10 +104,10 @@ export const scenarioRepo = {
 
   async remove(id: string) {
     const supabase = await getSupabase();
-    const { error } = await supabase.from("scenarios").delete().eq("id", id);
+    const { error } = await supabase.from("trainings").delete().eq("id", id);
     if (error) {
       if (error.code === "PGRST116") {
-        throw HttpError.notFound(`Scenario with id ${id} not found`);
+        throw HttpError.notFound(`Training with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
     }

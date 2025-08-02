@@ -17,11 +17,14 @@ export const ProfileUpdateSchema = z.object({
   name: z.string().min(1, "Name is required").optional(),
 });
 
-const supabase = await supabaseServer(cookies());
+async function getSupabase() {
+  return await supabaseServer(cookies());
+}
 
 // CRUD wrappers
 export const profileRepo = {
   async create(payload: ProfileCreate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase
       .from('profiles')
       .insert(payload)
@@ -32,12 +35,14 @@ export const profileRepo = {
   },
 
   async list() {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
     if (error) throw new HttpError(500, error.message);
     return data;
   },
 
   async find(id: string) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('profiles').select('*').eq('id', id).single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -49,6 +54,7 @@ export const profileRepo = {
   },
 
   async update(id: string, patch: ProfileUpdate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('profiles').update(patch).eq('id', id).select().single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -60,6 +66,7 @@ export const profileRepo = {
   },
 
   async remove(id: string) {
+    const supabase = await getSupabase();
     const { error } = await supabase.from('profiles').delete().eq('id', id);
     if (error) {
       if (error.code === 'PGRST116') {

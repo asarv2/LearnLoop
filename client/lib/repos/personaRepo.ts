@@ -25,11 +25,14 @@ export const PersonaUpdateSchema = z.object({
   metadata: z.any().optional(), // Json type
 });
 
-const supabase = await supabaseServer(cookies());
+async function getSupabase() {
+  return await supabaseServer(cookies());
+}
 
 // 3.2 – CRUD wrappers
 export const personaRepo = {
   async create(payload: PersonaCreate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase
       .from('personas')
       .insert(payload)
@@ -40,12 +43,14 @@ export const personaRepo = {
   },
 
   async list() {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('personas').select('*').order('created_at', { ascending: false });
     if (error) throw new HttpError(500, error.message);
     return data;
   },
 
   async find(id: string) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('personas').select('*').eq('id', id).single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -57,6 +62,7 @@ export const personaRepo = {
   },
 
   async update(id: string, patch: PersonaUpdate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('personas').update(patch).eq('id', id).select().single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -68,6 +74,7 @@ export const personaRepo = {
   },
 
   async remove(id: string) {
+    const supabase = await getSupabase();
     const { error } = await supabase.from('personas').delete().eq('id', id);
     if (error) {
       if (error.code === 'PGRST116') {
