@@ -25,10 +25,9 @@ interface InterviewHeaderProps {
   completedAtIso?: string | null;
   isAudioMode?: boolean;
   onToggleAudioMode?: () => void;
-  trainingType?: 'interview' | 'offboarding' | string;
 }
 
-export default function InterviewHeader({
+export default function ChatHeader({
   candidateName,
   interviewType, // Keep for future use
   isEndingInterview,
@@ -41,7 +40,6 @@ export default function InterviewHeader({
   completedAtIso,
   isAudioMode = false,
   onToggleAudioMode,
-  trainingType = 'interview',
 }: InterviewHeaderProps) {
   // Suppress lint warning for interviewType - keeping for future use
   void interviewType;
@@ -101,14 +99,10 @@ export default function InterviewHeader({
   };
 
   // Header text logic
-  let headerText = 'Training with ' + candidateName;
-  if (trainingType === 'interview') headerText = 'Interview with ' + candidateName;
-  else if (trainingType === 'offboarding') headerText = 'Offboarding with ' + candidateName;
+  const headerText = 'Training with ' + candidateName;
 
   // End button text
-  let endButtonText = 'End Training';
-  if (trainingType === 'interview') endButtonText = 'End Interview';
-  else if (trainingType === 'offboarding') endButtonText = 'End Offboarding';
+  const endButtonText = 'End Training';
 
   return (
     <>
@@ -194,7 +188,7 @@ export default function InterviewHeader({
             )}
 
             {/* Resume Button - only for interview training and if resumeId exists */}
-            {trainingType === 'interview' && resumeId && (
+            {resumeId && (
               <Dialog.Root open={isResumeModalOpen} onOpenChange={setIsResumeModalOpen}>
                 <Dialog.Trigger asChild>
                   <Button variant="soft" size="2">
