@@ -5,7 +5,7 @@
  * 08-02-2025
  */
 
-import History from "@/components/history/History";
+import History from "@/components/dashboard/history/History";
 
 import { Metadata } from "next";
 

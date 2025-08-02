@@ -5,7 +5,7 @@
  * 08-02-2025
  */
 
-import Overview from "@/components/overview/Overview";
+import Overview from "@/components/dashboard/overview/Overview";
 
 import { Metadata } from "next";
 
@@ -13,7 +13,6 @@ export const metadata: Metadata = {
   title: "Overview",
   description: `Overview of the user on LearnLoop.`,
 };
-
 
 export default function OverviewPage() {
   return <Overview />;

@@ -5,7 +5,7 @@
  * 08-02-2025
  */
 
-import Trainings from "@/components/training/Trainings";
+import Trainings from "@/components/dashboard/training/Trainings";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
