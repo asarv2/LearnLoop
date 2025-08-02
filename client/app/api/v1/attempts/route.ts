@@ -1,7 +1,6 @@
 import { AttemptCreateSchema, attemptRepo } from "@/lib/repos/attemptRepo";
 import { handleHttpError } from "@/utils/HttpError";
 import { logError, logWarn } from "@/utils/logger";
-import { getAllAttemptsWithTraining } from "@/utils/queries/attempts/get-all-attempts-with-training";
 import { NextResponse } from "next/server";
 
 // POST /api/attempts  – create
@@ -30,16 +29,8 @@ export async function POST(req: Request) {
 }
 
 // GET /api/attempts  – list
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const include = searchParams.get("include");
-
-    if (include === "training") {
-      const rows = await getAllAttemptsWithTraining();
-      return NextResponse.json(rows);
-    }
-
     const rows = await attemptRepo.list();
     return NextResponse.json(rows);
   } catch (err) {
