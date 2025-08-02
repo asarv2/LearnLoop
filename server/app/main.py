@@ -40,7 +40,7 @@ else:
         from av import AudioFrame  # type: ignore
 
 from app.db import get_session, init_db
-from app.models import SimulationChats
+from app.models import Chats
 from app.routes.audio import router as audio_router
 from app.routes.documents import router as documents_router
 from app.routes.scenarios import router as scenarios_router

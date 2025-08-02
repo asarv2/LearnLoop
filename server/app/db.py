@@ -2,25 +2,22 @@ import os
 from typing import Generator
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlmodel import Session, SQLModel, create_engine
 
-# Load environment variables from .env
 load_dotenv()
 
-# Fetch variables
-user = os.getenv("DB_USER")
-password = os.getenv("DB_PASSWORD")
-host = os.getenv("DB_HOST")
-port = os.getenv("DB_PORT")
-dbname = os.getenv("DB_NAME")
+db_user = os.getenv("DB_USER")
+db_password = os.getenv("DB_PASSWORD")
+db_name = os.getenv("DB_NAME")
+db_port = os.getenv("DB_PORT")
+db_host = os.getenv("DB_HOST")
 
-# Construct the SQLAlchemy connection string
-database_url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}?sslmode=require"
+# Construct the database URL
+db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
 
-# Create the SQLAlchemy engine with NullPool for transaction pooling
-engine = create_engine(database_url, poolclass=NullPool)
+if not db_url:
+    raise ValueError("Database url is not set")
+engine = create_engine(db_url)
 
 # Test the connection
 try:
@@ -29,12 +26,18 @@ try:
 except Exception as e:
     print(f"Failed to connect: {e}")
 
-# Session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def init_db() -> None:
+    # Skip schema creation if running in Docker environment
+    # Docker initialization already creates the schema from SQL files
+    if os.getenv("DOCKER_ENV"):
+        print("🐳 Running in Docker - skipping SQLModel schema creation (using SQL files instead)")
+        return
+    
+    print("🔧 Creating database schema via SQLModel...")
+    SQLModel.metadata.create_all(engine)
+
 
 def get_session() -> Generator[Session, None, None]:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    with Session(engine) as session:
+        yield session
