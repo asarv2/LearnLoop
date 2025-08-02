@@ -5,7 +5,7 @@
  * 08-02-2025
  */
 
-import BestPractices from "@/components/advice/BestPractices";
+import BestPractices from "@/components/dashboard/advice/BestPractices";
 
 import { Metadata } from "next";
 

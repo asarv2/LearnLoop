@@ -5,7 +5,7 @@
  * 08-02-2025
  */
 
-import Evaluation from "@/components/evaluation/Evaluation";
+import Evaluation from "@/components/dashboard/rubric/Evaluation";
 
 import { Metadata } from "next";
 
@@ -13,7 +13,6 @@ export const metadata: Metadata = {
   title: "Rubric",
   description: `Rubric of the user on LearnLoop.`,
 };
-
 
 export default function RubricPage() {
   return <Evaluation />;
