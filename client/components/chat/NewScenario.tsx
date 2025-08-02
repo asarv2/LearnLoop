@@ -4,11 +4,701 @@
  * @AshokSaravanan222 & @siladie
  * 08-02-2025
  */
+"use client";
+
+import {
+  ArrowLeftIcon,
+  CheckIcon,
+  FileTextIcon,
+  PlayIcon,
+} from "@radix-ui/react-icons";
+import {
+  Badge,
+  Box,
+  Button,
+  Card,
+  Container,
+  Flex,
+  Heading,
+  Select,
+  Spinner,
+  Text,
+} from "@radix-ui/themes";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+// Hooks
+import { useField } from "@/lib/api/hooks/useFields";
+import {
+  useCreateParameter,
+  useParametersByField,
+} from "@/lib/api/hooks/useParameters";
+import { usePersonas } from "@/lib/api/hooks/usePersonas";
+import { useScenario } from "@/lib/api/hooks/useScenarios";
+
+// Types
+import type { Tables } from "@/database.types";
 
 export interface NewScenarioProps {
   scenarioId: string;
 }
 
+type FieldValue = {
+  fieldId: string;
+  value: string;
+  parameterId?: string;
+};
+
+// Individual field components
+function TextField({
+  field,
+  value,
+  onChange,
+}: {
+  field: NonNullable<Tables<"fields">>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <input
+      type="text"
+      placeholder={field.description || `Enter ${field.name.toLowerCase()}`}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        width: "100%",
+        padding: "12px 16px",
+        borderRadius: "8px",
+        border: `1px solid ${value ? "var(--green-7)" : "var(--gray-6)"}`,
+        fontSize: "16px",
+        outline: "none",
+        background: "white",
+      }}
+    />
+  );
+}
+
+function NumericalField({
+  field,
+  value,
+  onChange,
+}: {
+  field: NonNullable<Tables<"fields">>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <input
+      type="number"
+      placeholder={field.description || `Enter ${field.name.toLowerCase()}`}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        width: "100%",
+        padding: "12px 16px",
+        borderRadius: "8px",
+        border: `1px solid ${value ? "var(--green-7)" : "var(--gray-6)"}`,
+        fontSize: "16px",
+        outline: "none",
+        background: "white",
+      }}
+    />
+  );
+}
+
+function CategoricalField({
+  field,
+  value,
+  onChange,
+}: {
+  field: NonNullable<Tables<"fields">>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { data: parameters, isLoading } = useParametersByField(field.id);
+
+  if (isLoading) return <Spinner size="2" />;
+
+  return (
+    <Flex direction="column" gap="3">
+      {parameters?.map((param) => (
+        <Card
+          key={param.id}
+          style={{
+            background: value === param.id ? "var(--blue-2)" : "var(--gray-1)",
+            border: `2px solid ${
+              value === param.id ? "var(--blue-7)" : "var(--gray-6)"
+            }`,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+          }}
+          onClick={() => onChange(param.id!)}
+        >
+          <Box p="4">
+            <Flex align="center" gap="3">
+              <Box
+                style={{
+                  width: "20px",
+                  height: "20px",
+                  borderRadius: "50%",
+                  border: `2px solid ${
+                    value === param.id ? "var(--blue-9)" : "var(--gray-6)"
+                  }`,
+                  background:
+                    value === param.id ? "var(--blue-9)" : "transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {value === param.id && (
+                  <CheckIcon width="12" height="12" color="white" />
+                )}
+              </Box>
+              <Box>
+                <Text size="3" weight="bold">
+                  {param.name}:{" "}
+                </Text>
+                <Text size="2" color="gray">
+                  {param.description}
+                </Text>
+              </Box>
+            </Flex>
+          </Box>
+        </Card>
+      ))}
+    </Flex>
+  );
+}
+
+function DocumentField({
+  field,
+  value,
+  onChange,
+}: {
+  field: NonNullable<Tables<"fields">>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      onChange(file.name); // For now, just store the filename
+    }
+  };
+
+  const hasFile = selectedFile || value;
+
+  return (
+    <Box
+      style={{
+        border: `2px dashed ${hasFile ? "var(--green-7)" : "var(--gray-6)"}`,
+        borderRadius: "8px",
+        padding: "24px",
+        textAlign: "center",
+        cursor: "pointer",
+        background: hasFile ? "var(--green-1)" : "var(--gray-1)",
+        transition: "all 0.2s ease",
+      }}
+      onClick={() =>
+        document.getElementById(`file-upload-${field.id}`)?.click()
+      }
+    >
+      {hasFile ? (
+        <Flex direction="column" align="center" gap="2">
+          <CheckIcon width="24" height="24" color="var(--green-9)" />
+          <Text size="3" weight="medium" color="green">
+            {selectedFile?.name || value}
+          </Text>
+          <Text size="1" color="gray">
+            Click to change file
+          </Text>
+        </Flex>
+      ) : (
+        <Flex direction="column" align="center" gap="2">
+          <FileTextIcon width="24" height="24" color="var(--gray-9)" />
+          <Text size="3" weight="medium">
+            Click to upload {field.name.toLowerCase()}
+          </Text>
+          <Text size="1" color="gray">
+            {field.description}
+          </Text>
+        </Flex>
+      )}
+      <input
+        id={`file-upload-${field.id}`}
+        type="file"
+        onChange={handleFileChange}
+        style={{ display: "none" }}
+      />
+    </Box>
+  );
+}
+
+function PersonaField({
+  field,
+  value,
+  onChange,
+}: {
+  field: NonNullable<Tables<"fields">>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { data: personas, isLoading } = usePersonas();
+
+  if (isLoading) return <Spinner size="2" />;
+
+  return (
+    <Select.Root value={value} onValueChange={onChange}>
+      <Select.Trigger
+        style={{
+          width: "100%",
+          padding: "12px 16px",
+          borderRadius: "8px",
+          border: `1px solid ${value ? "var(--green-7)" : "var(--gray-6)"}`,
+          fontSize: "16px",
+          background: "white",
+        }}
+        placeholder={`Select ${field.name.toLowerCase()}`}
+      />
+      <Select.Content>
+        {personas?.map((persona) => (
+          <Select.Item key={persona.id!} value={persona.id!}>
+            {persona.name}
+          </Select.Item>
+        ))}
+      </Select.Content>
+    </Select.Root>
+  );
+}
+
+// Main component
 export default function NewScenario({ scenarioId }: NewScenarioProps) {
-  return <div>NewScenario{scenarioId}</div>;
+  const [fieldValues, setFieldValues] = useState<FieldValue[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fetch scenario data
+  const { data: scenario, isLoading: scenarioLoading } =
+    useScenario(scenarioId);
+
+  // Initialize field values when scenario loads
+  useEffect(() => {
+    if (scenario?.field_ids) {
+      setFieldValues(
+        scenario.field_ids.map((fieldId) => ({
+          fieldId,
+          value: "",
+          parameterId: undefined,
+        }))
+      );
+    }
+  }, [scenario]);
+
+  const createParameter = useCreateParameter();
+
+  const updateFieldValue = (
+    fieldId: string,
+    value: string,
+    parameterId?: string
+  ) => {
+    setFieldValues((prev) =>
+      prev.map((fv) =>
+        fv.fieldId === fieldId ? { ...fv, value, parameterId } : fv
+      )
+    );
+  };
+
+  const isStepComplete = (fieldId: string) => {
+    const fieldValue = fieldValues.find((fv) => fv.fieldId === fieldId);
+    return fieldValue?.value !== "";
+  };
+
+  const allStepsComplete =
+    fieldValues.length > 0 && fieldValues.every((fv) => fv.value !== "");
+
+  const startScenario = async () => {
+    if (!allStepsComplete) {
+      alert("Please complete all fields before starting the scenario");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Create parameter records for text and numerical fields
+      const parameterIds: string[] = [];
+
+      for (const fieldValue of fieldValues) {
+        if (fieldValue.parameterId) {
+          // For categorical fields, use the existing parameter ID
+          parameterIds.push(fieldValue.parameterId);
+        } else {
+          // For text, numerical, document, and persona fields, create new parameters
+          const newParam = await createParameter.mutateAsync({
+            field_id: fieldValue.fieldId,
+            name: fieldValue.value,
+            value: fieldValue.value,
+          });
+          parameterIds.push(newParam.id!);
+        }
+      }
+
+      // TODO: Replace with websocket handler
+      console.log("Starting scenario with parameter IDs:", parameterIds);
+      alert(`Scenario would start with parameters: ${parameterIds.join(", ")}`);
+    } catch (error) {
+      console.error("Error starting scenario:", error);
+      alert("Failed to start scenario. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (scenarioLoading) {
+    return (
+      <Box style={{ minHeight: "100vh", background: "var(--gray-1)" }}>
+        <Container size="4" py="8">
+          <Flex justify="center" align="center" style={{ minHeight: "50vh" }}>
+            <Spinner size="3" />
+          </Flex>
+        </Container>
+      </Box>
+    );
+  }
+
+  if (!scenario) {
+    return (
+      <Box style={{ minHeight: "100vh", background: "var(--gray-1)" }}>
+        <Container size="4" py="8">
+          <Text>Scenario not found</Text>
+        </Container>
+      </Box>
+    );
+  }
+
+  return (
+    <Box style={{ minHeight: "100vh", background: "var(--gray-1)" }}>
+      {/* Header */}
+      <Box
+        style={{
+          background: "white",
+          borderBottom: "1px solid var(--gray-6)",
+          position: "sticky",
+          top: "0",
+          zIndex: "100",
+        }}
+      >
+        <Container size="4">
+          <Flex justify="between" align="center" py="4">
+            <Link href="/">
+              <Flex align="center" gap="3" style={{ cursor: "pointer" }}>
+                <Box
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "8px",
+                    background:
+                      "linear-gradient(135deg, var(--blue-9) 0%, var(--purple-9) 100%)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text size="4" weight="bold" style={{ color: "white" }}>
+                    L
+                  </Text>
+                </Box>
+                <Heading size="6" weight="bold">
+                  LearnLoop
+                </Heading>
+              </Flex>
+            </Link>
+            <Badge size="2" variant="soft" color="blue">
+              Scenario Setup
+            </Badge>
+          </Flex>
+        </Container>
+      </Box>
+
+      {/* Back Button */}
+      <Container size="4" pt="4">
+        <Link href="/dashboard/trainings">
+          <Button variant="ghost" size="2" style={{ color: "black" }}>
+            <ArrowLeftIcon width="16" height="16" />
+            Back to Training Dashboard
+          </Button>
+        </Link>
+      </Container>
+
+      {/* Main Content */}
+      <Container size="4" py="8">
+        {/* Hero Section */}
+        <Box mb="10" style={{ textAlign: "center" }}>
+          <Heading size="9" weight="bold" mb="4">
+            {scenario.title}
+          </Heading>
+          <Text size="4" color="gray">
+            {scenario.description}
+          </Text>
+        </Box>
+
+        {/* Dynamic Field Cards */}
+        <Box maxWidth="800px" mx="auto">
+          {scenario.field_ids?.map((fieldId, index) => (
+            <FieldCard
+              key={fieldId}
+              fieldId={fieldId}
+              index={index}
+              isComplete={isStepComplete(fieldId)}
+              value={
+                fieldValues.find((fv) => fv.fieldId === fieldId)?.value || ""
+              }
+              onChange={(value, parameterId) =>
+                updateFieldValue(fieldId, value, parameterId)
+              }
+              isLast={index === (scenario.field_ids?.length || 0) - 1}
+            />
+          ))}
+
+          {/* Start Button */}
+          <Box>
+            <Card
+              style={{
+                background: allStepsComplete ? "white" : "var(--gray-2)",
+                border: `1px solid ${
+                  allStepsComplete ? "var(--blue-7)" : "var(--gray-6)"
+                }`,
+                borderRadius: "12px",
+                boxShadow: allStepsComplete
+                  ? "0 4px 12px rgba(0, 100, 200, 0.15)"
+                  : "0 1px 3px rgba(0, 0, 0, 0.1)",
+                transition: "all 0.2s ease",
+              }}
+            >
+              <Box p="6">
+                <Flex align="center" gap="4">
+                  <Box
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "50%",
+                      background: allStepsComplete
+                        ? "var(--blue-9)"
+                        : "var(--gray-7)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <PlayIcon color="white" width="16" height="16" />
+                  </Box>
+                  <Box style={{ flex: 1 }}>
+                    <Flex align="center" gap="2" mb="3">
+                      <Text size="4" weight="bold">
+                        Start Scenario
+                      </Text>
+                      {allStepsComplete && (
+                        <Badge size="1" variant="soft" color="blue">
+                          Ready to start
+                        </Badge>
+                      )}
+                    </Flex>
+
+                    <Button
+                      size="3"
+                      onClick={startScenario}
+                      disabled={!allStepsComplete || isLoading}
+                      style={{
+                        width: "100%",
+                        background: allStepsComplete
+                          ? "var(--blue-9)"
+                          : "var(--gray-6)",
+                        opacity: allStepsComplete ? 1 : 0.6,
+                        cursor: allStepsComplete ? "pointer" : "not-allowed",
+                      }}
+                    >
+                      {isLoading ? (
+                        <Flex align="center" gap="2">
+                          <Spinner size="2" />
+                          <Text>Starting Scenario...</Text>
+                        </Flex>
+                      ) : (
+                        <Flex align="center" gap="2">
+                          <PlayIcon />
+                          <Text>Start Scenario</Text>
+                        </Flex>
+                      )}
+                    </Button>
+                  </Box>
+                </Flex>
+              </Box>
+            </Card>
+          </Box>
+        </Box>
+      </Container>
+    </Box>
+  );
+}
+
+// Field card component
+function FieldCard({
+  fieldId,
+  index,
+  isComplete,
+  value,
+  onChange,
+  isLast,
+}: {
+  fieldId: string;
+  index: number;
+  isComplete: boolean;
+  value: string;
+  onChange: (value: string, parameterId?: string) => void;
+  isLast: boolean;
+}) {
+  const { data: field, isLoading } = useField(fieldId);
+
+  if (isLoading) {
+    return (
+      <Box mb="4">
+        <Card
+          style={{ background: "white", borderRadius: "12px", padding: "24px" }}
+        >
+          <Spinner size="2" />
+        </Card>
+      </Box>
+    );
+  }
+
+  if (!field) return null;
+
+  const renderFieldInput = () => {
+    if (!field) return null;
+
+    const handleChange = (newValue: string) => {
+      if (field.field_type === "categorical") {
+        // For categorical, the value is the parameter ID
+        onChange(newValue, newValue);
+      } else {
+        onChange(newValue);
+      }
+    };
+
+    const safeField = field as NonNullable<Tables<"fields">>;
+
+    switch (field.field_type) {
+      case "text":
+        return (
+          <TextField field={safeField} value={value} onChange={handleChange} />
+        );
+      case "numerical":
+        return (
+          <NumericalField
+            field={safeField}
+            value={value}
+            onChange={handleChange}
+          />
+        );
+      case "categorical":
+        return (
+          <CategoricalField
+            field={safeField}
+            value={value}
+            onChange={handleChange}
+          />
+        );
+      case "document":
+        return (
+          <DocumentField
+            field={safeField}
+            value={value}
+            onChange={handleChange}
+          />
+        );
+      case "persona":
+        return (
+          <PersonaField
+            field={safeField}
+            value={value}
+            onChange={handleChange}
+          />
+        );
+      default:
+        return <Text>Unknown field type: {field.field_type}</Text>;
+    }
+  };
+
+  return (
+    <>
+      <Box mb="4">
+        <Card
+          style={{
+            background: "white",
+            border: `1px solid ${
+              isComplete ? "var(--green-8)" : "var(--gray-6)"
+            }`,
+            borderRadius: "12px",
+            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+            transition: "all 0.2s ease",
+          }}
+        >
+          <Box p="6">
+            <Flex align="center" gap="4">
+              <Box
+                style={{
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "50%",
+                  background: isComplete ? "var(--green-9)" : "var(--gray-7)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                {isComplete ? (
+                  <CheckIcon color="white" width="16" height="16" />
+                ) : (
+                  <Text size="2" weight="bold" style={{ color: "white" }}>
+                    {index + 1}
+                  </Text>
+                )}
+              </Box>
+              <Box style={{ flex: 1 }}>
+                <Flex align="center" gap="2" mb="3">
+                  <Text size="4" weight="bold">
+                    {field.name}
+                  </Text>
+                  {isComplete && (
+                    <Badge size="1" variant="soft" color="green">
+                      Complete
+                    </Badge>
+                  )}
+                </Flex>
+                {renderFieldInput()}
+              </Box>
+            </Flex>
+          </Box>
+        </Card>
+      </Box>
+
+      {/* Progress Bar */}
+      {!isLast && (
+        <Flex justify="center" mb="4">
+          <Box
+            style={{
+              width: "2px",
+              height: "24px",
+              background: isComplete ? "var(--green-8)" : "var(--gray-6)",
+              borderRadius: "2px",
+            }}
+          />
+        </Flex>
+      )}
+    </>
+  );
 }
