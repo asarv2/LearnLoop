@@ -6,16 +6,26 @@
  */
 "use client";
 
-import { getChats } from "@/utils/queries/chats/get-all-chats";
+import { useChats } from "@/lib/api/hooks/useChats";
+import { useTrainings } from "@/lib/api/hooks/useTrainings";
 import {
   BarChartOutlined,
   BulbOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  CommentOutlined,
+  ExclamationCircleOutlined,
+  HeartOutlined,
+  PlayCircleOutlined,
+  RocketOutlined,
+  SafetyOutlined,
+  TeamOutlined,
+  TrophyOutlined,
+  UserDeleteOutlined,
 } from "@ant-design/icons";
-import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
+  Badge,
   Button,
   Card,
   Col,
@@ -30,21 +40,81 @@ import { useState } from "react";
 
 const { Title, Text, Paragraph } = Typography;
 
+// Array of colors and icons for training modules (matching other components)
+const trainingColors = [
+  "#1890ff",
+  "#fa8c16",
+  "#52c41a",
+  "#eb2f96",
+  "#722ed1",
+  "#13c2c2",
+  "#fa541c",
+  "#a0d911",
+  "#f5222d",
+  "#2f54eb",
+];
+
+const trainingIcons = [
+  <PlayCircleOutlined key="play" />,
+  <UserDeleteOutlined key="user-delete" />,
+  <TeamOutlined key="team" />,
+  <CommentOutlined key="comment" />,
+  <ExclamationCircleOutlined key="exclamation" />,
+  <BulbOutlined key="bulb" />,
+  <TrophyOutlined key="trophy" />,
+  <SafetyOutlined key="safety" />,
+  <HeartOutlined key="heart" />,
+  <RocketOutlined key="rocket" />,
+];
+
 export default function BestPractices() {
-  const [selectedSimulation, setSelectedSimulation] = useState<string | null>(
-    null
-  );
+  const [selectedTraining, setSelectedTraining] = useState<string | null>(null);
 
-  const { data: sessions } = useQuery({
-    queryKey: ["chats"],
-    queryFn: () => getChats(),
-  });
+  const { data: chats } = useChats();
+  const { data: trainings } = useTrainings();
 
-  const sortedSessions =
-    sessions?.sort(
+  // Filter practice trainings and sort active ones first
+  const practiceTrainings =
+    trainings
+      ?.filter((training) => training.practice)
+      .sort((a, b) => {
+        if (a.active && !b.active) return -1;
+        if (!a.active && b.active) return 1;
+        return 0;
+      }) || [];
+
+  // Sort chats by creation date (newest first)
+  const sortedChats =
+    chats?.sort(
       (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        new Date(b.created_at || "").getTime() -
+        new Date(a.created_at || "").getTime()
     ) || [];
+
+  // Create training modules with colors and icons
+  const trainingModules = practiceTrainings.map((training, index) => {
+    const color = trainingColors[index % trainingColors.length];
+    const icon = trainingIcons[index % trainingIcons.length];
+    const status = training.active ? "available" : "coming-soon";
+
+    // Get chats for this training
+    const trainingChats = sortedChats.filter(
+      (chat) => chat.training_id === training.id
+    );
+
+    return {
+      id: training.id,
+      title: training.title,
+      description: training.description,
+      color,
+      icon,
+      status,
+      training,
+      chats: trainingChats,
+      whatToDo: training.what_to_do || [],
+      whatNotToDo: training.what_not_to_do || [],
+    };
+  });
 
   return (
     <div>
@@ -56,27 +126,23 @@ export default function BestPractices() {
         </Paragraph>
       </div>
 
-      {selectedSimulation ? (
-        // Detailed view for selected simulation
+      {selectedTraining ? (
+        // Detailed view for selected training
         <div>
           <Button
             icon={<BulbOutlined />}
-            onClick={() => setSelectedSimulation(null)}
+            onClick={() => setSelectedTraining(null)}
             style={{ marginBottom: "24px" }}
           >
-            Back to All Simulations
+            Back to All Trainings
           </Button>
 
           {(() => {
-            const simulation = simulationTypes.find(
-              (s) => s.id === selectedSimulation
+            const training = trainingModules.find(
+              (t) => t.id === selectedTraining
             );
-            const simulationSessions = sortedSessions.filter(
-              (session) =>
-                session.type === selectedSimulation ||
-                (selectedSimulation === "interview" &&
-                  ["regular", "ai-assisted", "cheating"].includes(session.type))
-            );
+
+            if (!training) return null;
 
             return (
               <Row gutter={[24, 24]}>
@@ -84,10 +150,10 @@ export default function BestPractices() {
                   <Card
                     title={
                       <Space>
-                        <div style={{ color: simulation?.color }}>
-                          {simulation?.icon}
+                        <div style={{ color: training.color }}>
+                          {training.icon}
                         </div>
-                        <span>{simulation?.title} - Best Practices</span>
+                        <span>{training.title} - Best Practices</span>
                       </Space>
                     }
                   >
@@ -98,15 +164,21 @@ export default function BestPractices() {
                       >
                         <CheckCircleOutlined /> What to Do Well
                       </Title>
-                      <List
-                        size="small"
-                        dataSource={simulation?.dos || []}
-                        renderItem={(item) => (
-                          <List.Item>
-                            <Text>{item}</Text>
-                          </List.Item>
-                        )}
-                      />
+                      {training.whatToDo.length > 0 ? (
+                        <List
+                          size="small"
+                          dataSource={training.whatToDo}
+                          renderItem={(item) => (
+                            <List.Item>
+                              <Text>{item}</Text>
+                            </List.Item>
+                          )}
+                        />
+                      ) : (
+                        <Text type="secondary">
+                          No specific guidance available yet.
+                        </Text>
+                      )}
                     </div>
 
                     <Divider />
@@ -118,15 +190,21 @@ export default function BestPractices() {
                       >
                         <CloseCircleOutlined /> Common Mistakes
                       </Title>
-                      <List
-                        size="small"
-                        dataSource={simulation?.donts || []}
-                        renderItem={(item) => (
-                          <List.Item>
-                            <Text>{item}</Text>
-                          </List.Item>
-                        )}
-                      />
+                      {training.whatNotToDo.length > 0 ? (
+                        <List
+                          size="small"
+                          dataSource={training.whatNotToDo}
+                          renderItem={(item) => (
+                            <List.Item>
+                              <Text>{item}</Text>
+                            </List.Item>
+                          )}
+                        />
+                      ) : (
+                        <Text type="secondary">
+                          No specific guidance available yet.
+                        </Text>
+                      )}
                     </div>
                   </Card>
                 </Col>
@@ -140,7 +218,7 @@ export default function BestPractices() {
                       </Space>
                     }
                   >
-                    {simulationSessions.length > 0 ? (
+                    {training.chats.length > 0 ? (
                       <Space
                         direction="vertical"
                         style={{ width: "100%" }}
@@ -155,7 +233,7 @@ export default function BestPractices() {
                                 color: "#1890ff",
                               }}
                             >
-                              {simulationSessions.length}
+                              {training.chats.length}
                             </Text>
                             <br />
                             <Text type="secondary">Sessions</Text>
@@ -169,7 +247,7 @@ export default function BestPractices() {
                               }}
                             >
                               {
-                                simulationSessions.filter((s) => s.completed_at)
+                                training.chats.filter((c) => c.completed_at)
                                   .length
                               }
                             </Text>
@@ -184,27 +262,33 @@ export default function BestPractices() {
                                 color: "#722ed1",
                               }}
                             >
-                              {simulationSessions.filter((s) => s.completed_at)
-                                .length > 0
-                                ? Math.round(
-                                    simulationSessions
-                                      .filter((s) => s.completed_at)
-                                      .reduce((acc, s) => {
-                                        const start = new Date(s.created_at);
-                                        const end = s.completed_at
-                                          ? new Date(s.completed_at)
-                                          : start;
-                                        return (
-                                          acc +
-                                          (end.getTime() - start.getTime())
-                                        );
-                                      }, 0) /
-                                      simulationSessions.filter(
-                                        (s) => s.completed_at
-                                      ).length /
-                                      (1000 * 60)
-                                  )
-                                : 0}
+                              {(() => {
+                                const completedChats = training.chats.filter(
+                                  (c) => c.completed_at
+                                );
+                                if (completedChats.length === 0) return 0;
+
+                                const totalTime = completedChats.reduce(
+                                  (acc, chat) => {
+                                    const start = new Date(
+                                      chat.created_at || ""
+                                    );
+                                    const end = chat.completed_at
+                                      ? new Date(chat.completed_at)
+                                      : start;
+                                    return (
+                                      acc + (end.getTime() - start.getTime())
+                                    );
+                                  },
+                                  0
+                                );
+
+                                return Math.round(
+                                  totalTime /
+                                    completedChats.length /
+                                    (1000 * 60)
+                                );
+                              })()}
                             </Text>
                             <br />
                             <Text type="secondary">Avg Minutes</Text>
@@ -217,21 +301,21 @@ export default function BestPractices() {
                           <Title level={5}>Recent Sessions</Title>
                           <List
                             size="small"
-                            dataSource={simulationSessions.slice(0, 3)}
-                            renderItem={(session) => (
+                            dataSource={training.chats.slice(0, 3)}
+                            renderItem={(chat) => (
                               <List.Item>
                                 <Space direction="vertical" size={2}>
                                   <Text strong>
-                                    {session.title || "Untitled Session"}
+                                    {chat.title || "Untitled Session"}
                                   </Text>
                                   <Text
                                     type="secondary"
                                     style={{ fontSize: "12px" }}
                                   >
                                     {new Date(
-                                      session.created_at
+                                      chat.created_at || ""
                                     ).toLocaleDateString()}
-                                    {session.completed_at && (
+                                    {chat.completed_at && (
                                       <span> - Completed</span>
                                     )}
                                   </Text>
@@ -241,14 +325,14 @@ export default function BestPractices() {
                           />
                         </div>
 
-                        {simulationSessions.length > 0 && (
+                        {training.chats.length > 0 && (
                           <>
                             <Divider />
                             <Alert
                               message="Performance Tip"
                               description={`Based on your ${
-                                simulationSessions.length
-                              } sessions, focus on the best practices above to improve your ${simulation?.title.toLowerCase()} skills.`}
+                                training.chats.length
+                              } sessions, focus on the best practices above to improve your ${training.title.toLowerCase()} skills.`}
                               type="info"
                               showIcon
                             />
@@ -258,7 +342,7 @@ export default function BestPractices() {
                     ) : (
                       <div style={{ textAlign: "center", padding: "40px 0" }}>
                         <Text type="secondary">
-                          No sessions completed for this simulation type yet.
+                          No sessions completed for this training yet.
                         </Text>
                         <br />
                         <Link href="/dashboard/trainings">
@@ -275,71 +359,88 @@ export default function BestPractices() {
           })()}
         </div>
       ) : (
-        // Grid view of all simulations
+        // Grid view of all trainings
         <Row gutter={[24, 24]}>
-          {simulationTypes.map((simulation) => {
-            const sessionCount = sortedSessions.filter(
-              (session) =>
-                session.type === simulation.id ||
-                (simulation.id === "interview" &&
-                  ["regular", "ai-assisted", "cheating"].includes(session.type))
-            ).length;
-
-            return (
-              <Col xs={24} sm={12} lg={8} key={simulation.id}>
-                <Card
-                  hoverable
-                  onClick={() => setSelectedSimulation(simulation.id)}
-                  style={{
-                    height: "100%",
-                    cursor: "pointer",
-                    transition: "all 0.3s ease",
-                  }}
-                >
-                  <div style={{ textAlign: "center", marginBottom: "16px" }}>
-                    <div
-                      style={{
-                        fontSize: "48px",
-                        color: simulation.color,
-                        marginBottom: "12px",
-                      }}
-                    >
-                      {simulation.icon}
-                    </div>
-                    <Title level={4} style={{ margin: 0 }}>
-                      {simulation.title}
-                    </Title>
+          {trainingModules.map((training) => (
+            <Col xs={24} sm={12} lg={8} key={training.id}>
+              <Card
+                hoverable={training.status === "available"}
+                onClick={() =>
+                  training.status === "available" &&
+                  training.id &&
+                  setSelectedTraining(training.id)
+                }
+                style={{
+                  height: "100%",
+                  cursor:
+                    training.status === "available" ? "pointer" : "default",
+                  transition: "all 0.3s ease",
+                  opacity: training.status === "coming-soon" ? 0.8 : 1,
+                }}
+              >
+                <div style={{ textAlign: "center", marginBottom: "16px" }}>
+                  <div
+                    style={{
+                      fontSize: "48px",
+                      color: training.color,
+                      marginBottom: "12px",
+                    }}
+                  >
+                    {training.icon}
                   </div>
+                  <Title level={4} style={{ margin: 0 }}>
+                    {training.title}
+                    {training.status === "coming-soon" && (
+                      <div style={{ marginTop: "8px" }}>
+                        <Badge
+                          count="Soon"
+                          style={{ backgroundColor: "#fa8c16" }}
+                        />
+                      </div>
+                    )}
+                  </Title>
+                </div>
 
-                  <div style={{ textAlign: "center", marginBottom: "16px" }}>
-                    <Text
-                      style={{
-                        fontSize: "24px",
-                        fontWeight: "bold",
-                        color: simulation.color,
-                      }}
-                    >
-                      {sessionCount}
-                    </Text>
-                    <br />
-                    <Text type="secondary">Sessions Completed</Text>
-                  </div>
+                <div style={{ textAlign: "center", marginBottom: "16px" }}>
+                  <Text
+                    style={{
+                      fontSize: "24px",
+                      fontWeight: "bold",
+                      color: training.color,
+                    }}
+                  >
+                    {training.chats.length}
+                  </Text>
+                  <br />
+                  <Text type="secondary">Sessions Completed</Text>
+                </div>
 
-                  <div style={{ textAlign: "center" }}>
+                <div style={{ textAlign: "center" }}>
+                  {training.status === "available" ? (
                     <Button
                       type="primary"
                       style={{
-                        backgroundColor: simulation.color,
-                        borderColor: simulation.color,
+                        backgroundColor: training.color,
+                        borderColor: training.color,
                       }}
                     >
                       View Guidance
                     </Button>
-                  </div>
-                </Card>
-              </Col>
-            );
-          })}
+                  ) : (
+                    <Button
+                      disabled
+                      style={{
+                        backgroundColor: training.color,
+                        borderColor: training.color,
+                      }}
+                    >
+                      Coming Soon
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            </Col>
+          ))}
         </Row>
       )}
     </div>
