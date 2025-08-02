@@ -79,8 +79,10 @@ CREATE TABLE IF NOT EXISTS trainings (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     title TEXT NOT NULL,
     description TEXT,
+    what_to_do TEXT[], -- this will be a list of what the user should do.
+    what_not_to_do TEXT[], -- this will be a list of what the user should not do.
     active BOOLEAN DEFAULT FALSE,
-    preparation BOOLEAN DEFAULT FALSE
+    practice BOOLEAN DEFAULT FALSE
 ); -- these would be the "simulations", allowing for multiple scenarios for the training
 
 CREATE TABLE IF NOT EXISTS scenarios (

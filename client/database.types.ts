@@ -105,6 +105,7 @@ export type Database = {
           feedback: Json | null
           id: string
           name: string
+          parameter_ids: string[] | null
           position: string
           profile_id: string | null
           resume_id: string | null
@@ -125,6 +126,7 @@ export type Database = {
           feedback?: Json | null
           id?: string
           name?: string
+          parameter_ids?: string[] | null
           position?: string
           profile_id?: string | null
           resume_id?: string | null
@@ -145,6 +147,7 @@ export type Database = {
           feedback?: Json | null
           id?: string
           name?: string
+          parameter_ids?: string[] | null
           position?: string
           profile_id?: string | null
           resume_id?: string | null
@@ -823,8 +826,8 @@ export type Database = {
         Row: {
           created_at: string | null
           description: string | null
+          field_ids: string[] | null
           id: string
-          parameter_ids: string[] | null
           rubric_id: string | null
           title: string
           training_id: string | null
@@ -833,8 +836,8 @@ export type Database = {
         Insert: {
           created_at?: string | null
           description?: string | null
+          field_ids?: string[] | null
           id?: string
-          parameter_ids?: string[] | null
           rubric_id?: string | null
           title: string
           training_id?: string | null
@@ -843,8 +846,8 @@ export type Database = {
         Update: {
           created_at?: string | null
           description?: string | null
+          field_ids?: string[] | null
           id?: string
-          parameter_ids?: string[] | null
           rubric_id?: string | null
           title?: string
           training_id?: string | null
@@ -959,39 +962,42 @@ export type Database = {
           additional_info: Json | null
           created_at: string
           description: string | null
-          field_ids: string[] | null
           id: string
-          preparation: boolean | null
+          practice: boolean | null
           title: string
           type: string
           updated_at: string
           user_id: string | null
+          what_not_to_do: string[] | null
+          what_to_do: string[] | null
         }
         Insert: {
           active?: boolean | null
           additional_info?: Json | null
           created_at?: string
           description?: string | null
-          field_ids?: string[] | null
           id?: string
-          preparation?: boolean | null
+          practice?: boolean | null
           title: string
           type: string
           updated_at?: string
           user_id?: string | null
+          what_not_to_do?: string[] | null
+          what_to_do?: string[] | null
         }
         Update: {
           active?: boolean | null
           additional_info?: Json | null
           created_at?: string
           description?: string | null
-          field_ids?: string[] | null
           id?: string
-          preparation?: boolean | null
+          practice?: boolean | null
           title?: string
           type?: string
           updated_at?: string
           user_id?: string | null
+          what_not_to_do?: string[] | null
+          what_to_do?: string[] | null
         }
         Relationships: []
       }

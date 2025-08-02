@@ -8,10 +8,18 @@ import type { Tables } from "@/database.types";
 
 // --- ASSESSMENTS ---
 export type Assessment = Tables<'assessments'>;
+// --- ATTEMPTS ---
+export type Attempt = Tables<'attempts'>;
 // --- CHATS ---
 export type Chat = Tables<'chats'>;
+// --- DOCUMENTS ---
+export type Document = Tables<'documents'>;
 // --- FEEDBACK ---
 export type Feedback = Tables<'feedback'>;
+// --- FIELDS ---
+export type Field = Tables<'fields'>;
+// --- HINTS ---
+export type Hint = Tables<'hints'>;
 // --- INTERVIEW_SCORES ---
 export type InterviewScore = Tables<'interview_scores'>;
 // --- LOGS ---
@@ -20,8 +28,26 @@ export type Log = Tables<'logs'>;
 export type Message = Tables<'messages'>;
 // --- OFFBOARDING_SCORES ---
 export type OffboardingScore = Tables<'offboarding_scores'>;
+// --- PARAMETERS ---
+export type Parameter = Tables<'parameters'>;
+// --- PERSONAS ---
+export type Persona = Tables<'personas'>;
+// --- PROFILES ---
+export type Profile = Tables<'profiles'>;
+// --- QUESTIONS ---
+export type Question = Tables<'questions'>;
 // --- RESUMES ---
 export type Resume = Tables<'resumes'>;
+// --- RUBRIC_GRADES ---
+export type RubricGrade = Tables<'rubric_grades'>;
+// --- RUBRICS ---
+export type Rubric = Tables<'rubrics'>;
+// --- SCENARIOS ---
+export type Scenario = Tables<'scenarios'>;
+// --- STANDARD_GRADES ---
+export type StandardGrade = Tables<'standard_grades'>;
+// --- STANDARDS ---
+export type Standard = Tables<'standards'>;
 // --- TRAININGS ---
 export type Training = Tables<'trainings'>;
 
@@ -29,9 +55,11 @@ export type Training = Tables<'trainings'>;
 // ================ ENUM TYPES ================
 // =============================================
 
+export type FieldType = "persona" | "document" | "numerical" | "categorical" | "text";
 export type InterviewType = "preparation" | "regular" | "cheating" | "ai-assisted";
 export type LogLevel = "info" | "error" | "warn" | "debug";
 export type MessageRole = "user" | "assistant";
+export type QuestionType = "mcq" | "frq";
 export type TrainingType = "interview" | "offboarding" | "preparation";
 
 // =============================================
@@ -39,7 +67,7 @@ export type TrainingType = "interview" | "offboarding" | "preparation";
 // =============================================
 
 // Union type of all table names
-export type TableName = 'assessments' | 'chats' | 'feedback' | 'interview_scores' | 'logs' | 'messages' | 'offboarding_scores' | 'resumes' | 'trainings';
+export type TableName = 'assessments' | 'attempts' | 'chats' | 'documents' | 'feedback' | 'fields' | 'hints' | 'interview_scores' | 'logs' | 'messages' | 'offboarding_scores' | 'parameters' | 'personas' | 'profiles' | 'questions' | 'resumes' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings';
 
 // Union type of all entity types
-export type Entity = Assessment | Chat | Feedback | InterviewScore | Log | Message | OffboardingScore | Resume | Training;
+export type Entity = Assessment | Attempt | Chat | Document | Feedback | Field | Hint | InterviewScore | Log | Message | OffboardingScore | Parameter | Persona | Profile | Question | Resume | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training;
