@@ -24,11 +24,14 @@ export const AssessmentUpdateSchema = z.object({
   training_id: z.string().nullable().optional(),
 });
 
-const supabase = await supabaseServer(cookies());
+async function getSupabase() {
+  return await supabaseServer(cookies());
+}
 
 // 3.2 – CRUD wrappers
 export const assessmentRepo = {
   async create(payload: AssessmentCreate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase
       .from('assessments')
       .insert(payload)
@@ -39,12 +42,14 @@ export const assessmentRepo = {
   },
 
   async list() {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('assessments').select('*').order('created_at', { ascending: false });
     if (error) throw new HttpError(500, error.message);
     return data;
   },
 
   async find(id: string) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('assessments').select('*').eq('id', id).single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -56,6 +61,7 @@ export const assessmentRepo = {
   },
 
   async update(id: string, patch: AssessmentUpdate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('assessments').update(patch).eq('id', id).select().single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -67,6 +73,7 @@ export const assessmentRepo = {
   },
 
   async remove(id: string) {
+    const supabase = await getSupabase();
     const { error } = await supabase.from('assessments').delete().eq('id', id);
     if (error) {
       if (error.code === 'PGRST116') {
@@ -77,6 +84,7 @@ export const assessmentRepo = {
   },
 
   async getFeedback(assessmentId: string): Promise<AssessmentFeedback[]> {
+    const supabase = await getSupabase();
     const { data, error } = await supabase
       .from('feedback')
       .select('*')

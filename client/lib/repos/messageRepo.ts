@@ -24,11 +24,14 @@ export const MessageUpdateSchema = z.object({
   metadata: z.any().optional(), // Json type
 });
 
-const supabase = await supabaseServer(cookies());
+async function getSupabase() {
+  return await supabaseServer(cookies());
+}
 
 // 3.2 – CRUD wrappers
 export const messageRepo = {
   async create(payload: MessageCreate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase
       .from('messages')
       .insert(payload)
@@ -39,12 +42,14 @@ export const messageRepo = {
   },
 
   async list() {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('messages').select('*').order('created_at', { ascending: false });
     if (error) throw new HttpError(500, error.message);
     return data;
   },
 
   async find(id: string) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('messages').select('*').eq('id', id).single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -56,6 +61,7 @@ export const messageRepo = {
   },
 
   async update(id: string, patch: MessageUpdate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('messages').update(patch).eq('id', id).select().single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -67,6 +73,7 @@ export const messageRepo = {
   },
 
   async remove(id: string) {
+    const supabase = await getSupabase();
     const { error } = await supabase.from('messages').delete().eq('id', id);
     if (error) {
       if (error.code === 'PGRST116') {
@@ -77,6 +84,7 @@ export const messageRepo = {
   },
 
   async getHints(messageId: string): Promise<MessageHint[]> {
+    const supabase = await getSupabase();
     const { data, error } = await supabase
       .from('hints')
       .select('*')

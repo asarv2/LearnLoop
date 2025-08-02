@@ -21,11 +21,14 @@ export const FieldUpdateSchema = z.object({
   description: z.string().nullable().optional(),
 });
 
-const supabase = await supabaseServer(cookies());
+async function getSupabase() {
+  return await supabaseServer(cookies());
+}
 
 // CRUD wrappers
 export const fieldRepo = {
   async create(payload: FieldCreate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase
       .from('fields')
       .insert(payload)
@@ -36,12 +39,14 @@ export const fieldRepo = {
   },
 
   async list() {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('fields').select('*').order('created_at', { ascending: false });
     if (error) throw new HttpError(500, error.message);
     return data;
   },
 
   async find(id: string) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('fields').select('*').eq('id', id).single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -53,6 +58,7 @@ export const fieldRepo = {
   },
 
   async update(id: string, patch: FieldUpdate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('fields').update(patch).eq('id', id).select().single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -64,6 +70,7 @@ export const fieldRepo = {
   },
 
   async remove(id: string) {
+    const supabase = await getSupabase();
     const { error } = await supabase.from('fields').delete().eq('id', id);
     if (error) {
       if (error.code === 'PGRST116') {

@@ -43,11 +43,14 @@ export const ChatUpdateSchema = z.object({
   feedback: z.any().optional(), // Json type
 });
 
-const supabase = await supabaseServer(cookies());
+async function getSupabase() {
+  return await supabaseServer(cookies());
+}
 
 // CRUD wrappers
 export const chatRepo = {
   async create(payload: ChatCreate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase
       .from('chats')
       .insert(payload)
@@ -58,12 +61,14 @@ export const chatRepo = {
   },
 
   async list() {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('chats').select('*').order('created_at', { ascending: false });
     if (error) throw new HttpError(500, error.message);
     return data;
   },
 
   async find(id: string) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('chats').select('*').eq('id', id).single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -75,6 +80,7 @@ export const chatRepo = {
   },
 
   async fetchChat(id: string, includes: string[] = []) {
+    const supabase = await getSupabase();
     /* Build a dynamic SELECT clause */
     const selectors = ['*'];                    // ← base chat columns
 
@@ -110,6 +116,7 @@ export const chatRepo = {
   },
 
   async update(id: string, patch: ChatUpdate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('chats').update(patch).eq('id', id).select().single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -121,6 +128,7 @@ export const chatRepo = {
   },
 
   async remove(id: string) {
+    const supabase = await getSupabase();
     const { error } = await supabase.from('chats').delete().eq('id', id);
     if (error) {
       if (error.code === 'PGRST116') {

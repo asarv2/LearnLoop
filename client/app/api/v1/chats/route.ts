@@ -1,14 +1,18 @@
-import { NextResponse } from 'next/server';
-import { chatRepo, ChatCreateSchema } from '@/lib/repos/chatRepo';
-import { logError, logWarn } from '@/utils/logger';
-import { handleHttpError } from '@/utils/HttpError';
+import { ChatCreateSchema, chatRepo } from "@/lib/repos/chatRepo";
+import { handleHttpError } from "@/utils/HttpError";
+import { logError, logWarn } from "@/utils/logger";
+import { getAllChats } from "@/utils/queries/chats/get-chats-by-attempt";
+import { NextResponse } from "next/server";
 
 // POST /api/chats  – create
 export async function POST(req: Request) {
   const json = await req.json();
   const parse = ChatCreateSchema.safeParse(json);
   if (!parse.success) {
-    await logWarn('Invalid POST body for chat', { body: json, errors: parse.error });
+    await logWarn("Invalid POST body for chat", {
+      body: json,
+      errors: parse.error,
+    });
     return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
   }
 
@@ -16,23 +20,31 @@ export async function POST(req: Request) {
     const created = await chatRepo.create(parse.data);
     return NextResponse.json(created, {
       status: 201,
-      headers: { Location: `/api/v1/chats/${created.id}` }
+      headers: { Location: `/api/v1/chats/${created.id}` },
     });
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
-    await logError('Failed to create chat', err, { data: parse.data });
+    await logError("Failed to create chat", err, { data: parse.data });
     return NextResponse.json({ error: message }, { status: statusCode });
   }
 }
 
 // GET /api/chats  – list
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const attemptId = searchParams.get("attempt_id");
+
+    if (attemptId) {
+      const rows = await getAllChats(attemptId);
+      return NextResponse.json(rows);
+    }
+
     const rows = await chatRepo.list();
     return NextResponse.json(rows);
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
-    await logError('Failed to list chats', err);
+    await logError("Failed to list chats", err);
     return NextResponse.json({ error: message }, { status: statusCode });
   }
 }

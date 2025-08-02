@@ -25,11 +25,14 @@ export const ParameterUpdateSchema = z.object({
   description: z.string().optional(),
 });
 
-const supabase = await supabaseServer(cookies());
+async function getSupabase() {
+  return await supabaseServer(cookies());
+}
 
 // 3.2 – CRUD wrappers
 export const parameterRepo = {
   async create(payload: ParameterCreate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase
       .from('parameters')
       .insert(payload)
@@ -40,12 +43,14 @@ export const parameterRepo = {
   },
 
   async list() {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('parameters').select('*').order('created_at', { ascending: false });
     if (error) throw new HttpError(500, error.message);
     return data;
   },
 
   async find(id: string) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('parameters').select('*').eq('id', id).single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -57,6 +62,7 @@ export const parameterRepo = {
   },
 
   async update(id: string, patch: ParameterUpdate) {
+    const supabase = await getSupabase();
     const { data, error } = await supabase.from('parameters').update(patch).eq('id', id).select().single();
     if (error) {
       if (error.code === 'PGRST116') {
@@ -68,6 +74,7 @@ export const parameterRepo = {
   },
 
   async remove(id: string) {
+    const supabase = await getSupabase();
     const { error } = await supabase.from('parameters').delete().eq('id', id);
     if (error) {
       if (error.code === 'PGRST116') {
