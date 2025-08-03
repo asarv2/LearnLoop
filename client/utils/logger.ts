@@ -1,6 +1,6 @@
 // utils/logger.ts
 "use server";
-import { createLog } from "@/lib/api/hooks/useLogs";
+import { logRepo } from "@/lib/repos/logRepo";
 import supabaseServer from "@/utils/supabase/supabase-server";
 import { cookies } from "next/headers";
 
@@ -13,13 +13,14 @@ async function insertLogToDatabase(
   message: string,
   context: Record<string, unknown>
 ): Promise<void> {
-  
   try {
     // Try to get current user, but don't fail if not available
     let userId: string | null = null;
     try {
       const supabase = await supabaseServer(cookies());
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       userId = user?.id || null;
     } catch {
       // Ignore auth errors - logs can be created without user context
@@ -27,7 +28,7 @@ async function insertLogToDatabase(
 
     // convert context to json
     const contextJson = JSON.stringify(context);
-    await createLog()( {
+    await logRepo.create({
       level,
       message: message + " " + contextJson,
       user_id: userId || undefined,
