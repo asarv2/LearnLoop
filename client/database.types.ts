@@ -688,6 +688,7 @@ export type Database = {
         Row: {
           assessment_id: string | null
           created_at: string | null
+          default_question: boolean | null
           id: string
           options: string[] | null
           question_type: Database["public"]["Enums"]["question_type"]
@@ -698,6 +699,7 @@ export type Database = {
         Insert: {
           assessment_id?: string | null
           created_at?: string | null
+          default_question?: boolean | null
           id?: string
           options?: string[] | null
           question_type: Database["public"]["Enums"]["question_type"]
@@ -708,6 +710,7 @@ export type Database = {
         Update: {
           assessment_id?: string | null
           created_at?: string | null
+          default_question?: boolean | null
           id?: string
           options?: string[] | null
           question_type?: Database["public"]["Enums"]["question_type"]

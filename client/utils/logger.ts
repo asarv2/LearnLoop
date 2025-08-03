@@ -1,9 +1,8 @@
 // utils/logger.ts
 "use server";
-
-import { createLog } from "@/utils/mutations/logs/create-log";
-import { cookies } from "next/headers";
+import { createLog } from "@/lib/api/hooks/useLogs";
 import supabaseServer from "@/utils/supabase/supabase-server";
+import { cookies } from "next/headers";
 
 // Server-only PostgreSQL logger, log to console in non production
 const isProduction = process.env.NODE_ENV === "production";
@@ -14,6 +13,7 @@ async function insertLogToDatabase(
   message: string,
   context: Record<string, unknown>
 ): Promise<void> {
+  
   try {
     // Try to get current user, but don't fail if not available
     let userId: string | null = null;
@@ -27,10 +27,10 @@ async function insertLogToDatabase(
 
     // convert context to json
     const contextJson = JSON.stringify(context);
-    await createLog({
+    await createLog()( {
       level,
       message: message + " " + contextJson,
-      user_id: userId,
+      user_id: userId || undefined,
     });
   } catch (error) {
     throw new Error(`Failed to insert log to database: ${error}`);

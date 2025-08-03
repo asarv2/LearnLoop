@@ -94,3 +94,9 @@ export const trainingKeys = {
   list: (filters?: unknown) => [...trainingKeys.all, { filters }] as const,
   detail: (id: string) => [...trainingKeys.all, id] as const,
 };
+
+export const logKeys = {
+  all: ["logs"] as const,
+  list: (filters?: unknown) => [...logKeys.all, { filters }] as const,
+  detail: (id: string) => [...logKeys.all, id] as const,
+};

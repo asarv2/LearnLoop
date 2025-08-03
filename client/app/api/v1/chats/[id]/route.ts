@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   chatRepo,
+  ChatIncludes,
   ChatUpdateSchema
 } from '@/lib/repos/chatRepo';
 import { logError, logWarn } from '@/utils/logger';
@@ -12,7 +13,7 @@ export async function GET(
 ) {
   const include = url.searchParams.get('include')?.split(',') ?? [];
   try {
-    const chat = await chatRepo.fetchChat(params.id, include);
+    const chat = await chatRepo.fetchChat(params.id, include as ChatIncludes[]);
     return NextResponse.json(chat);
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
