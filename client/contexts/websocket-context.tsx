@@ -592,7 +592,7 @@ export function WebSocketProvider({
       }
 
       router.push(
-        `/dashboard/training/s/${data.scenario_id}/a/${data.attempt_id}`
+        `/dashboard/trainings/s/${data.scenario_id}/a/${data.attempt_id}`
       );
 
       setIsStartingTraining(true);
