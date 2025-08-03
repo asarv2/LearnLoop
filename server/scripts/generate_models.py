@@ -137,11 +137,17 @@ def generate_sqlmodel_from_sql():
 
         class_definitions = "\n".join(processed_lines)
 
-        # Correct type hints and other formatting
+        # Fix Mapped type usage - remove Mapped wrapper for SQLModel compatibility
         class_definitions = re.sub(
-            r": uuid\.UUID", r": Mapped[uuid.UUID]", class_definitions
+            r": Mapped\[uuid\.UUID\]", r": uuid.UUID", class_definitions
         )
-        class_definitions = re.sub(r": UUID", r": Mapped[uuid.UUID]", class_definitions)
+        class_definitions = re.sub(r": Mapped\[UUID\]", r": uuid.UUID", class_definitions)
+        class_definitions = re.sub(
+            r": Optional\[Mapped\[uuid\.UUID\]\]", r": Optional[uuid.UUID]", class_definitions
+        )
+        
+        # Fix other type hints
+        class_definitions = re.sub(r": UUID", r": uuid.UUID", class_definitions)
         class_definitions = re.sub(
             r": Optional\[UUID\]", r": Optional[uuid.UUID]", class_definitions
         )
@@ -159,6 +165,27 @@ def generate_sqlmodel_from_sql():
         class_definitions = class_definitions.replace(
             ", Uuid)", ", Uuid(as_uuid=True))"
         )
+
+        # Fix inheritance - ensure all classes inherit from _Base instead of other classes
+        # This prevents field shadowing and inheritance conflicts
+        class_definitions = re.sub(
+            r"class (\w+)\((\w+), table=True\):",
+            r"class \1(_Base, table=True):",
+            class_definitions,
+        )
+
+        # Fix text array type mappings - ensure ARRAY(Text()) maps to List[str], not List[uuid.UUID]
+        # This needs to happen AFTER all other type transformations
+        # Process line by line to only replace List[uuid.UUID] in lines with ARRAY(Text())
+        processed_lines = []
+        for line in class_definitions.split("\n"):
+            if "ARRAY(Text())" in line:
+                # Replace both Optional[List[uuid.UUID]] and List[uuid.UUID] with their str equivalents
+                line = line.replace("Optional[List[uuid.UUID]]", "Optional[List[str]]")
+                line = line.replace("List[uuid.UUID]", "List[str]")
+            processed_lines.append(line)
+        
+        class_definitions = "\n".join(processed_lines)
 
         final_code = import_section + class_definitions
 

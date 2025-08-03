@@ -178,6 +178,7 @@ export function WebSocketProvider({
         attempt: connectionAttempts.current + 1,
       });
 
+      console.log("api base", getApiBase());
       const socket = io(getApiBase(), {
         path: "/socket.io",
         autoConnect: true,
