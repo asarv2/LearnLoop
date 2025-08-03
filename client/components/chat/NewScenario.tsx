@@ -30,7 +30,10 @@ import { useEffect, useState } from "react";
 // Hooks
 import { useWebSocket } from "@/contexts/websocket-context";
 import { useCreateAttempt } from "@/lib/api/hooks/useAttempts";
-import { uploadDocument, useCreateDocument } from "@/lib/api/hooks/useDocuments";
+import {
+  uploadDocument,
+  useCreateDocument,
+} from "@/lib/api/hooks/useDocuments";
 import { useField } from "@/lib/api/hooks/useFields";
 import {
   useCreateParameter,
@@ -403,46 +406,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   return (
     <Box style={{ minHeight: "100vh", background: "var(--gray-1)" }}>
       {/* Header */}
-      <Box
-        style={{
-          background: "white",
-          borderBottom: "1px solid var(--gray-6)",
-          position: "sticky",
-          top: "0",
-          zIndex: "100",
-        }}
-      >
-        <Container size="4">
-          <Flex justify="between" align="center" py="4">
-            <Link href="/">
-              <Flex align="center" gap="3" style={{ cursor: "pointer" }}>
-                <Box
-                  style={{
-                    width: "40px",
-                    height: "40px",
-                    borderRadius: "8px",
-                    background:
-                      "linear-gradient(135deg, var(--blue-9) 0%, var(--purple-9) 100%)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Text size="4" weight="bold" style={{ color: "white" }}>
-                    L
-                  </Text>
-                </Box>
-                <Heading size="6" weight="bold">
-                  LearnLoop
-                </Heading>
-              </Flex>
-            </Link>
-            <Badge size="2" variant="soft" color="blue">
-              Scenario Setup
-            </Badge>
-          </Flex>
-        </Container>
-      </Box>
 
       {/* Back Button */}
       <Container size="4" pt="4">
