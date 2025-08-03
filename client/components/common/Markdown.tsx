@@ -17,7 +17,7 @@ import RemarkMathPlugin from "remark-math";
 // import remarkDirective from 'remark-directive';
 import "highlight.js/styles/github.css"; // Keep highlight.js CSS for code blocks
 import rehypeHighlight from "rehype-highlight";
-import MarkdownImage from "@/components/chat/MarkdownImage";
+import MarkdownImage from "@/components/common/MarkdownImage";
 // Removed Avatar, Badge, Flex, Text from '@mantine/core' as they are not used
 // Removed imports related to data fetching and specific types like Document, CONTENT_COLORS
 // Removed IconChevronRight

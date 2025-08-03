@@ -14,7 +14,6 @@ import {
   useSubmitAssessment,
   useTrainingMessages,
 } from "@/lib/api/hooks/useTrainingMessages";
-import type { MessageCreate } from "@/lib/repos/messageRepo";
 import { Assessment } from "@/types";
 import { logError } from "@/utils/logger";
 import { Box } from "@radix-ui/themes";
@@ -75,7 +74,6 @@ export default function TrainingAttempt({ chatId }: TrainingAttemptProps) {
       await sendMessageMutation.mutateAsync({
         chatId,
         message: userMessage,
-        assistantAudioEnabled: false, // TODO: Add audio toggle
       });
     } catch (error) {
       logError("Error sending message:", error);
@@ -143,7 +141,7 @@ export default function TrainingAttempt({ chatId }: TrainingAttemptProps) {
       training_id: chat?.training_id || null,
       error: null,
       persona_id: null,
-    } as MessageCreate); // Type assertion to fix the mismatch
+    });
   }
 
   return (
@@ -162,7 +160,7 @@ export default function TrainingAttempt({ chatId }: TrainingAttemptProps) {
       />
 
       <ChatArea
-        displayMessages={displayMessages as any}
+        displayMessages={displayMessages}
         isSendingMessage={sendMessageMutation.isPending}
         isEndingInterview={endTrainingMutation.isPending}
         streamingMessage={!!streamingMessage}
@@ -182,7 +180,7 @@ export default function TrainingAttempt({ chatId }: TrainingAttemptProps) {
         onComplete={handleAssessmentComplete}
         candidateName={chat?.name || "John Doe"}
         isSubmitting={submitAssessmentMutation.isPending}
-        messages={messages as any}
+        messages={messages}
         chat={chat!}
       />
 

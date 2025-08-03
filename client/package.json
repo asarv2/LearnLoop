@@ -4,9 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "npm run gen:all && next dev --turbopack",
-    "gen:all": "npm run gen:db && npm run gen:types && npm run gen:queries",
+    "gen:all": "npm run gen:db && npm run gen:types",
     "gen:db": "npx supabase gen types typescript --project-id uslxyheljqngrofpygud --schema public > database.types.ts",
-    "gen:queries": "node ./scripts/generate-db.js",
     "gen:types": "node ./scripts/generate-types.js",
     "build": "next build",
     "start": "next start",
