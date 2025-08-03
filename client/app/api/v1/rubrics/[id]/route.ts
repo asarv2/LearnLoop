@@ -6,14 +6,16 @@ import { NextResponse } from "next/server";
 // GET /api/rubrics/[id]  – get by id
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const rubric = await rubricRepo.find(params.id);
+    const { id } = await params;
+    const rubric = await rubricRepo.find(id);
     return NextResponse.json(rubric);
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
-    await logError("Failed to get rubric", err, { id: params.id });
+    const { id } = await params;
+    await logError("Failed to get rubric", err, { id });
     return NextResponse.json({ error: message }, { status: statusCode });
   }
 }
@@ -21,7 +23,7 @@ export async function GET(
 // PATCH /api/rubrics/[id]  – update
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const json = await req.json();
   const parse = RubricUpdateSchema.safeParse(json);
@@ -34,12 +36,14 @@ export async function PATCH(
   }
 
   try {
-    const updated = await rubricRepo.update(params.id, parse.data);
+    const { id } = await params;
+    const updated = await rubricRepo.update(id, parse.data);
     return NextResponse.json(updated);
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
+    const { id } = await params;
     await logError("Failed to update rubric", err, {
-      id: params.id,
+      id,
       data: parse.data,
     });
     return NextResponse.json({ error: message }, { status: statusCode });
@@ -49,14 +53,16 @@ export async function PATCH(
 // DELETE /api/rubrics/[id]  – delete
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await rubricRepo.remove(params.id);
+    const { id } = await params;
+    await rubricRepo.remove(id);
     return new NextResponse(null, { status: 204 });
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
-    await logError("Failed to delete rubric", err, { id: params.id });
+    const { id } = await params;
+    await logError("Failed to delete rubric", err, { id });
     return NextResponse.json({ error: message }, { status: statusCode });
   }
 }
