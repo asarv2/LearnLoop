@@ -362,6 +362,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         user_id: user?.id || null, // Add user ID
         voice: "alloy",
         type: "regular", // Default to regular interview type
+        parameter_ids: parameterIds,
       });
 
       // Upload documents if any
