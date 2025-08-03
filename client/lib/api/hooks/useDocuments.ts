@@ -62,19 +62,12 @@ export function useDeleteDocument(id: string) {
   });
 }
 
-export function useUploadDocument(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (formData: FormData) =>
-      api<{ success: boolean; key: string; message: string }>(
-        `/api/v1/documents/${id}/upload`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      ),
-    onSuccess() {
-      qc.invalidateQueries({ queryKey: documentKeys.detail(id) });
-    },
-  });
+export async function uploadDocument(id: string, formData: FormData) {
+  return await api<{ success: boolean; key: string; message: string }>(
+    `/api/v1/documents/${id}/upload`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
 }

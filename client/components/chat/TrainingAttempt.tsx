@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useChat } from "@/lib/api/hooks/useChats";
+import { useChat, useChats } from "@/lib/api/hooks/useChats";
 import {
   useEndTraining,
   useGenerateFeedback,
@@ -24,25 +24,29 @@ import ChatArea from "./ChatArea";
 import ChatHeader from "./ChatHeader";
 import FeedbackModal from "./FeedbackModal";
 interface TrainingAttemptProps {
-  chatId: string;
+  attemptId: string;
+  scenarioId: string;
 }
 
-export default function TrainingAttempt({ chatId }: TrainingAttemptProps) {
+export default function TrainingAttempt({ attemptId }: TrainingAttemptProps) {
   const router = useRouter();
   const [currentMessage, setCurrentMessage] = useState("");
   const [showAssessment, setShowAssessment] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const {data: chats} = useChats();
+  const chatId = chats?.find((chat) => chat.attempt_id === attemptId)?.id;
+
   // Use the new training hooks
-  const { data: chat } = useChat(chatId, [
+  const { data: chat } = useChat(chatId!, [
     "grades",
     "assessment",
     "feedback",
     "hints",
     "messages",
   ]);
-  const { data: messages = [], streamingMessage } = useTrainingMessages(chatId);
+  const { data: messages = [], streamingMessage } = useTrainingMessages(chatId!);
   const sendMessageMutation = useSendTrainingMessage();
   const endTrainingMutation = useEndTraining();
   const submitAssessmentMutation = useSubmitAssessment();
@@ -63,7 +67,7 @@ export default function TrainingAttempt({ chatId }: TrainingAttemptProps) {
     if (endTrainingMutation.isPending) return;
 
     try {
-      await endTrainingMutation.mutateAsync({ chatId });
+      await endTrainingMutation.mutateAsync({ chatId: chatId! });
       // Show the assessment wizard after successful end
       setShowAssessment(true);
     } catch (error) {
@@ -81,13 +85,13 @@ export default function TrainingAttempt({ chatId }: TrainingAttemptProps) {
   ) => {
     try {
       await submitAssessmentMutation.mutateAsync({
-        chatId,
+        chatId: chatId!,
         responses: responses as Record<string, unknown>,
       });
       setShowAssessment(false);
 
       // Generate feedback after assessment is submitted
-      await generateFeedbackMutation.mutateAsync({ chatId });
+      await generateFeedbackMutation.mutateAsync({ chatId: chatId! });
       setShowFeedback(true);
     } catch (error) {
       logError("Error processing assessment:", error);

@@ -546,6 +546,7 @@ class Questions(_Base, table=True):
     assessment_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('assessment_id', Uuid(as_uuid=True)))
     options: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('options', ARRAY(Text())))
     value: Optional[str] = Field(default=None, sa_column=Column('value', Text))
+    default_question: Optional[bool] = Field(default=None, sa_column=Column('default_question', Boolean, default=False, comment='if a default question'))
 
     assessment: Optional['Assessments'] = Relationship(back_populates='questions')
 

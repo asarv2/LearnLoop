@@ -29,6 +29,10 @@
     "eslint.workingDirectories": [
       "client"
     ],
+    "typescript.preferences.includePackageJsonAutoImports": "on",
+    "typescript.suggest.autoImports": true,
+    "typescript.preferences.includeCompletionsForModuleExports": true,
+    "typescript.preferences.includeCompletionsWithSnippetText": true,
     "[typescript]": {
       "editor.defaultFormatter": "esbenp.prettier-vscode",
       "editor.formatOnSave": true,

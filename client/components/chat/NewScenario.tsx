@@ -30,10 +30,7 @@ import { useEffect, useState } from "react";
 // Hooks
 import { useWebSocket } from "@/contexts/websocket-context";
 import { useCreateAttempt } from "@/lib/api/hooks/useAttempts";
-import {
-  useCreateDocument,
-  useUploadDocument,
-} from "@/lib/api/hooks/useDocuments";
+import { uploadDocument, useCreateDocument } from "@/lib/api/hooks/useDocuments";
 import { useField } from "@/lib/api/hooks/useFields";
 import {
   useCreateParameter,
@@ -361,8 +358,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       for (const { documentId, file } of documentUploads) {
         const formData = new FormData();
         formData.append("file", file);
-        const uploadDocument = useUploadDocument(documentId);
-        await uploadDocument.mutateAsync(formData);
+        await uploadDocument(documentId, formData);
       }
 
       // Emit training start event via WebSocket

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { messageRepo, MessageCreateSchema } from '@/lib/repos/messageRepo';
+import { messageRepo, MessageCreate, MessageCreateSchema } from '@/lib/repos/messageRepo';
 import { logError, logWarn } from '@/utils/logger';
 import { handleHttpError } from '@/utils/HttpError';
 
@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const created = await messageRepo.create(parse.data);
+    const created = await messageRepo.create(parse.data as MessageCreate);
     return NextResponse.json(created, {
       status: 201,
       headers: { Location: `/api/messages/${created.id}` }
