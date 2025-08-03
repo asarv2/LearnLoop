@@ -251,24 +251,14 @@ export function WebSocketProvider({
         toast.error("Connection lost. Please refresh the page to reconnect.");
       });
 
-      // Set up event handlers
+      // Set up training event handlers
       socket.on(
-        "simulation_started",
-        (data: {
-          success: boolean;
-          message: string;
-          attempt_id: string;
-          chat_id: string;
-        }) => {
-          logInfo("Simulation started", data);
+        "training_joined",
+        (data: { success: boolean; message: string; chat_id: string }) => {
+          logInfo("Training joined", data);
           setIsStartingTraining(false);
           if (data.success) {
             toast.success(data.message);
-            window.dispatchEvent(
-              new CustomEvent("simulationStarted", {
-                detail: { attemptId: data.attempt_id },
-              })
-            );
           } else {
             toast.error(data.message);
           }
@@ -276,9 +266,54 @@ export function WebSocketProvider({
       );
 
       socket.on(
-        "simulation_stopped",
+        "training_message_start",
+        (data: { chat_id: string; message_id: string }) => {
+          logInfo("Training message start", data);
+          setIsSendingTrainingMessage(false);
+        }
+      );
+
+      socket.on(
+        "training_message_token",
+        (data: {
+          chat_id: string;
+          message_id: string;
+          token: string;
+          accumulated_content: string;
+        }) => {
+          // Handle streaming tokens - could dispatch to UI components
+          logInfo("Training message token", {
+            chatId: data.chat_id,
+            token: data.token,
+          });
+        }
+      );
+
+      socket.on(
+        "training_message_complete",
+        (data: {
+          chat_id: string;
+          message_id: string;
+          final_content: string;
+        }) => {
+          logInfo("Training message complete", data);
+          setIsSendingTrainingMessage(false);
+        }
+      );
+
+      socket.on(
+        "training_message_error",
+        (data: { chat_id: string; message_id: string; error: string }) => {
+          logError("Training message error", data.error);
+          setIsSendingTrainingMessage(false);
+          toast.error(data.error);
+        }
+      );
+
+      socket.on(
+        "training_stopped",
         (data: { chat_id: string; success: boolean; message: string }) => {
-          logInfo("Simulation stopped", data);
+          logInfo("Training stopped", data);
           setIsStoppingTraining(false);
           if (data.success) {
             if (data.message) {
@@ -291,52 +326,10 @@ export function WebSocketProvider({
       );
 
       socket.on(
-        "simulation_continued",
-        (data: {
-          success: boolean;
-          message: string;
-          completed_chat_id: string;
-          next_chat_id: string;
-          is_attempt_finished: boolean;
-        }) => {
-          logInfo("Simulation continued", data);
-          setIsEndingTraining(false);
-
-          if (data.success) {
-            toast.success(data.message);
-            window.dispatchEvent(
-              new CustomEvent("simulationChatEnded", {
-                detail: {
-                  completedChatId: data.completed_chat_id,
-                  nextChatId: data.next_chat_id,
-                  isAttemptFinished: data.is_attempt_finished,
-                },
-              })
-            );
-          } else {
-            toast.error(data.message);
-          }
-        }
-      );
-
-      socket.on(
-        "simulation_error",
-        (data: { success: boolean; message: string }) => {
-          logError("Simulation error", data.message);
-          setIsStartingTraining(false);
-          setIsSendingTrainingMessage(false);
-          setIsStoppingTraining(false);
-          setIsEndingTraining(false);
-          toast.error(data.message);
-          window.dispatchEvent(new CustomEvent("simulationError"));
-        }
-      );
-
-      socket.on(
-        "assistant_started",
+        "training_ended",
         (data: { success: boolean; message: string; chat_id: string }) => {
-          logInfo("Assistant started", data);
-          setIsStartingTraining(false);
+          logInfo("Training ended", data);
+          setIsEndingTraining(false);
           if (data.success) {
             toast.success(data.message);
           } else {
@@ -346,10 +339,10 @@ export function WebSocketProvider({
       );
 
       socket.on(
-        "assistant_stopped",
-        (data: { chat_id: string; success: boolean; message: string }) => {
-          logInfo("Assistant stopped", data);
-          setIsStoppingTraining(false);
+        "assessment_submitted",
+        (data: { success: boolean; message: string; chat_id: string }) => {
+          logInfo("Assessment submitted", data);
+          setIsSubmittingAssessment(false);
           if (data.success) {
             toast.success(data.message);
           } else {
@@ -359,19 +352,15 @@ export function WebSocketProvider({
       );
 
       socket.on(
-        "assistant_error",
-        (data: { success: boolean; message: string }) => {
-          logError("Assistant error", data.message);
-          setIsStartingTraining(false);
-          setIsSendingTrainingMessage(false);
-          setIsStoppingTraining(false);
-          toast.error(data.message);
-
-          window.dispatchEvent(
-            new CustomEvent("assistant_error", {
-              detail: { message: data.message },
-            })
-          );
+        "feedback_generated",
+        (data: { success: boolean; message: string; chat_id: string }) => {
+          logInfo("Feedback generated", data);
+          setIsGeneratingFeedback(false);
+          if (data.success) {
+            toast.success(data.message);
+          } else {
+            toast.error(data.message);
+          }
         }
       );
 

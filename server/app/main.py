@@ -26,12 +26,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import Session, select
 
-# Redis is nice in production, but optional in dev
-try:
-    from socketio import AsyncRedisManager
-except ImportError:               # pip install redis-py not present
-    AsyncRedisManager = None      # type: ignore
-
 load_dotenv()
 
 # Configure logging first
@@ -377,11 +371,9 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
             chat_id = getattr(pc, "_last_chat_id", None)
 
             if chat_id:
-                # MODIFIED: Route audio stream to the training handler
-                from app.web.training import process_training_audio_stream
-                asyncio.create_task(
-                    process_training_audio_stream(track, chat_id, profile_id)
-                )
+                # For now, just log that we received audio track
+                # TODO: Implement audio processing for training
+                logger.info(f"Received audio track for training chat {chat_id} from profile {profile_id}")
             else:
                 logger.warning(
                     f"Received audio track for profile {profile_id} but no chat_id was associated."
@@ -488,7 +480,6 @@ async def handle_text_dc_message(profile_id: str, message: Any) -> None:
         await process_training_message_websocket(
             chat_id=chat_id,
             message=content,
-            sketch_data=sketch_bytes,
             profile_id=profile_id,
         )
         
@@ -498,9 +489,9 @@ async def handle_text_dc_message(profile_id: str, message: Any) -> None:
 # ----------  Socket.IO with Redis message queue  ----------
 redis_url = os.getenv("REDIS_URL")          # don't default when unset
 
-if redis_url and AsyncRedisManager:
+if redis_url and socketio.AsyncRedisManager:
     logger.info(f"Socket.IO: clustering via Redis → {redis_url}")
-    redis_manager = AsyncRedisManager(redis_url)
+    redis_manager = socketio.AsyncRedisManager(redis_url)
 else:
     logger.info("Socket.IO: no REDIS_URL - using in-memory manager")
     redis_manager = None            # ⇢ default AsyncManager
@@ -538,6 +529,60 @@ sio = socketio.AsyncServer(
 from app.web.training import register_training_events
 
 register_training_events(sio)
+
+# Add training event handlers that correspond to client expectations
+@sio.event  # type: ignore
+async def training_joined(sid: str, data: Dict[str, Any]) -> None:
+    """Handle training joined event - emit back to client"""
+    logger.info(f"Training joined: {data}")
+    await sio.emit("training_joined", data, room=sid)
+
+@sio.event  # type: ignore
+async def training_message_start(sid: str, data: Dict[str, Any]) -> None:
+    """Handle training message start event - emit back to client"""
+    logger.info(f"Training message start: {data}")
+    await sio.emit("training_message_start", data, room=sid)
+
+@sio.event  # type: ignore
+async def training_message_token(sid: str, data: Dict[str, Any]) -> None:
+    """Handle training message token event - emit back to client"""
+    await sio.emit("training_message_token", data, room=sid)
+
+@sio.event  # type: ignore
+async def training_message_complete(sid: str, data: Dict[str, Any]) -> None:
+    """Handle training message complete event - emit back to client"""
+    logger.info(f"Training message complete: {data}")
+    await sio.emit("training_message_complete", data, room=sid)
+
+@sio.event  # type: ignore
+async def training_message_error(sid: str, data: Dict[str, Any]) -> None:
+    """Handle training message error event - emit back to client"""
+    logger.error(f"Training message error: {data}")
+    await sio.emit("training_message_error", data, room=sid)
+
+@sio.event  # type: ignore
+async def training_stopped(sid: str, data: Dict[str, Any]) -> None:
+    """Handle training stopped event - emit back to client"""
+    logger.info(f"Training stopped: {data}")
+    await sio.emit("training_stopped", data, room=sid)
+
+@sio.event  # type: ignore
+async def training_ended(sid: str, data: Dict[str, Any]) -> None:
+    """Handle training ended event - emit back to client"""
+    logger.info(f"Training ended: {data}")
+    await sio.emit("training_ended", data, room=sid)
+
+@sio.event  # type: ignore
+async def assessment_submitted(sid: str, data: Dict[str, Any]) -> None:
+    """Handle assessment submitted event - emit back to client"""
+    logger.info(f"Assessment submitted: {data}")
+    await sio.emit("assessment_submitted", data, room=sid)
+
+@sio.event  # type: ignore
+async def feedback_generated(sid: str, data: Dict[str, Any]) -> None:
+    """Handle feedback generated event - emit back to client"""
+    logger.info(f"Feedback generated: {data}")
+    await sio.emit("feedback_generated", data, room=sid)
 
 @sio.event  # type: ignore
 async def connect(sid: str, environ: Any, auth: Any) -> bool:
