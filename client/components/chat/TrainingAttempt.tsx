@@ -59,27 +59,6 @@ export default function TrainingAttempt({ chatId }: TrainingAttemptProps) {
     scrollToBottom();
   }, [messages, streamingMessage]);
 
-  const sendMessage = async () => {
-    if (
-      !currentMessage.trim() ||
-      sendMessageMutation.isPending ||
-      !isInterviewActive
-    )
-      return;
-
-    const userMessage = currentMessage;
-    setCurrentMessage("");
-
-    try {
-      await sendMessageMutation.mutateAsync({
-        chatId,
-        message: userMessage,
-      });
-    } catch (error) {
-      logError("Error sending message:", error);
-    }
-  };
-
   const endInterview = async () => {
     if (endTrainingMutation.isPending) return;
 
@@ -117,13 +96,6 @@ export default function TrainingAttempt({ chatId }: TrainingAttemptProps) {
       alert(
         `Failed to process assessment: ${errorMessage}. Please check the console for more details.`
       );
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
     }
   };
 
@@ -167,8 +139,6 @@ export default function TrainingAttempt({ chatId }: TrainingAttemptProps) {
         isInterviewActive={isInterviewActive}
         currentMessage={currentMessage}
         setCurrentMessage={setCurrentMessage}
-        handleKeyPress={handleKeyPress}
-        sendMessage={sendMessage}
         chat={chat!}
         messagesEndRef={messagesEndRef}
       />
