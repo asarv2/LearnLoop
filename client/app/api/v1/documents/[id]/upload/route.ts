@@ -1,6 +1,6 @@
 import { logError } from "@/utils/logger";
-import { uploadDocument } from "@/utils/storage/upload-resume-to-supabase";
 import { NextRequest, NextResponse } from "next/server";
+import { storage } from "@/lib/storage";
 
 export async function POST(
   req: NextRequest,
@@ -8,7 +8,8 @@ export async function POST(
 ) {
   try {
     const formData = await req.formData();
-    const key = await uploadDocument(params.id, formData);
+    const file = formData.get("file") as File;
+    const key = await storage.uploadFile(file, `${params.id}.pdf`);
 
     return NextResponse.json({
       success: true,

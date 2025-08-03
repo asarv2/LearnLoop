@@ -17,6 +17,7 @@ import React, {
   useState,
 } from "react";
 import { io, Socket } from "socket.io-client";
+import { useRouter } from "next/navigation";
 
 interface WebSocketContextType {
   // Connection state
@@ -44,7 +45,7 @@ interface WebSocketContextType {
   stopAudioStream: (chatId: string) => void;
 
   // Training event emitters
-  emitJoinTraining: (data: { chat_id: string; profile_id?: string }) => void;
+  emitJoinTraining: (data: { attempt_id: string; scenario_id: string; chat_id: string; profile_id?: string }) => void;
   emitSendTrainingMessage: (data: { chat_id: string; message: string }) => void;
   emitStopTraining: (data: { chat_id: string }) => void;
   emitEndTraining: (data: { chat_id: string }) => void;
@@ -74,6 +75,7 @@ export function WebSocketProvider({
   children,
   profileId,
 }: WebSocketProviderProps) {
+  const router = useRouter();
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const connectionAttempts = useRef(0);
@@ -573,18 +575,20 @@ export function WebSocketProvider({
 
   // Training event emitters
   const emitJoinTraining = useCallback(
-    (data: { chat_id: string; profile_id?: string }) => {
+    (data: { attempt_id: string; scenario_id: string; chat_id: string; profile_id?: string }) => {
       if (!socketRef.current || !isConnected) {
         logError("Cannot join training - WebSocket not connected");
         toast.error("WebSocket not connected. Please refresh the page.");
         return;
       }
 
+      router.push(`/dashboard/training/s/${data.scenario_id}/a/${data.attempt_id}`);
+
       setIsStartingTraining(true);
       logInfo("Emitting join_training", data);
       socketRef.current.emit("join_training", data);
     },
-    [isConnected]
+    [isConnected, router]
   );
 
   const emitSendTrainingMessage = useCallback(

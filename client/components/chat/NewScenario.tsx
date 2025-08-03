@@ -28,6 +28,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 // Hooks
+import { useWebSocket } from "@/contexts/websocket-context";
+import { useCreateAttempt } from "@/lib/api/hooks/useAttempts";
+import {
+  useCreateDocument,
+  useUploadDocument,
+} from "@/lib/api/hooks/useDocuments";
 import { useField } from "@/lib/api/hooks/useFields";
 import {
   useCreateParameter,
@@ -38,6 +44,7 @@ import { useScenario } from "@/lib/api/hooks/useScenarios";
 
 // Types
 import type { Tables } from "@/database.types";
+import { useCreateChat } from "@/lib/api/hooks/useChats";
 
 export interface NewScenarioProps {
   scenarioId: string;
@@ -47,6 +54,7 @@ type FieldValue = {
   fieldId: string;
   value: string;
   parameterId?: string;
+  file?: File; // Add file for document fields
 };
 
 // Individual field components
@@ -120,54 +128,26 @@ function CategoricalField({
   if (isLoading) return <Spinner size="2" />;
 
   return (
-    <Flex direction="column" gap="3">
-      {parameters?.map((param) => (
-        <Card
-          key={param.id}
-          style={{
-            background: value === param.id ? "var(--blue-2)" : "var(--gray-1)",
-            border: `2px solid ${
-              value === param.id ? "var(--blue-7)" : "var(--gray-6)"
-            }`,
-            cursor: "pointer",
-            transition: "all 0.2s ease",
-          }}
-          onClick={() => onChange(param.id!)}
-        >
-          <Box p="4">
-            <Flex align="center" gap="3">
-              <Box
-                style={{
-                  width: "20px",
-                  height: "20px",
-                  borderRadius: "50%",
-                  border: `2px solid ${
-                    value === param.id ? "var(--blue-9)" : "var(--gray-6)"
-                  }`,
-                  background:
-                    value === param.id ? "var(--blue-9)" : "transparent",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {value === param.id && (
-                  <CheckIcon width="12" height="12" color="white" />
-                )}
-              </Box>
-              <Box>
-                <Text size="3" weight="bold">
-                  {param.name}:{" "}
-                </Text>
-                <Text size="2" color="gray">
-                  {param.description}
-                </Text>
-              </Box>
-            </Flex>
-          </Box>
-        </Card>
-      ))}
-    </Flex>
+    <Select.Root value={value} onValueChange={onChange}>
+      <Select.Trigger
+        style={{
+          width: "100%",
+          padding: "12px 16px",
+          borderRadius: "8px",
+          border: `1px solid ${value ? "var(--green-7)" : "var(--gray-6)"}`,
+          fontSize: "16px",
+          background: "white",
+        }}
+        placeholder={`Select ${field.name.toLowerCase()}`}
+      />
+      <Select.Content>
+        {parameters?.map((parameter) => (
+          <Select.Item key={parameter.id!} value={parameter.id!}>
+            {parameter.name}
+          </Select.Item>
+        ))}
+      </Select.Content>
+    </Select.Root>
   );
 }
 
@@ -178,7 +158,7 @@ function DocumentField({
 }: {
   field: NonNullable<Tables<"fields">>;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (file: File | null) => void;
 }) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -186,7 +166,7 @@ function DocumentField({
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
-      onChange(file.name); // For now, just store the filename
+      onChange(file);
     }
   };
 
@@ -275,7 +255,6 @@ function PersonaField({
   );
 }
 
-// Main component
 export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [fieldValues, setFieldValues] = useState<FieldValue[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -283,6 +262,13 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   // Fetch scenario data
   const { data: scenario, isLoading: scenarioLoading } =
     useScenario(scenarioId);
+
+  // Hooks for mutations
+  const createParameter = useCreateParameter();
+  const createAttempt = useCreateAttempt();
+  const createChat = useCreateChat();
+  const createDocument = useCreateDocument();
+  const { emitJoinTraining } = useWebSocket();
 
   // Initialize field values when scenario loads
   useEffect(() => {
@@ -297,16 +283,15 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     }
   }, [scenario]);
 
-  const createParameter = useCreateParameter();
-
   const updateFieldValue = (
     fieldId: string,
     value: string,
-    parameterId?: string
+    parameterId?: string,
+    file?: File
   ) => {
     setFieldValues((prev) =>
       prev.map((fv) =>
-        fv.fieldId === fieldId ? { ...fv, value, parameterId } : fv
+        fv.fieldId === fieldId ? { ...fv, value, parameterId, file } : fv
       )
     );
   };
@@ -320,7 +305,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     fieldValues.length > 0 && fieldValues.every((fv) => fv.value !== "");
 
   const startScenario = async () => {
-    if (!allStepsComplete) {
+    if (!allStepsComplete || !scenario) {
       alert("Please complete all fields before starting the scenario");
       return;
     }
@@ -330,6 +315,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     try {
       // Create parameter records for text and numerical fields
       const parameterIds: string[] = [];
+      const documentUploads: { documentId: string; file: File }[] = [];
 
       for (const fieldValue of fieldValues) {
         if (fieldValue.parameterId) {
@@ -343,12 +329,51 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             value: fieldValue.value,
           });
           parameterIds.push(newParam.id!);
+
+          // If this is a document field with a file, create document record
+          if (fieldValue.file) {
+            const newDocument = await createDocument.mutateAsync({
+              content: null, // Will be populated after upload
+              profile_id: null, // Will be set when we have a profile
+            });
+            documentUploads.push({
+              documentId: newDocument.id!,
+              file: fieldValue.file,
+            });
+          }
         }
       }
 
-      // TODO: Replace with websocket handler
-      console.log("Starting scenario with parameter IDs:", parameterIds);
-      alert(`Scenario would start with parameters: ${parameterIds.join(", ")}`);
+      // Create training attempt
+      const attempt = await createAttempt.mutateAsync({
+        training_id: scenario.training_id || undefined,
+        profile_id: undefined, // Will be set when we have a profile
+      });
+
+      const chat = await createChat.mutateAsync({
+        attempt_id: attempt.id,
+        title: scenario.title,
+        profile_id: undefined,
+        voice: "alloy",
+      });
+
+      // Upload documents if any
+      for (const { documentId, file } of documentUploads) {
+        const formData = new FormData();
+        formData.append("file", file);
+        const uploadDocument = useUploadDocument(documentId);
+        await uploadDocument.mutateAsync(formData);
+      }
+
+      // Emit training start event via WebSocket
+      if (attempt.id && chat.id) {
+        emitJoinTraining({
+          attempt_id: attempt.id,
+          scenario_id: scenarioId,
+          chat_id: chat.id,
+          profile_id: undefined,
+        });
+      }
     } catch (error) {
       console.error("Error starting scenario:", error);
       alert("Failed to start scenario. Please try again.");
@@ -456,8 +481,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               value={
                 fieldValues.find((fv) => fv.fieldId === fieldId)?.value || ""
               }
-              onChange={(value, parameterId) =>
-                updateFieldValue(fieldId, value, parameterId)
+              onChange={(value, parameterId, file) =>
+                updateFieldValue(fieldId, value, parameterId, file)
               }
               isLast={index === (scenario.field_ids?.length || 0) - 1}
             />
@@ -557,7 +582,7 @@ function FieldCard({
   index: number;
   isComplete: boolean;
   value: string;
-  onChange: (value: string, parameterId?: string) => void;
+  onChange: (value: string, parameterId?: string, file?: File) => void;
   isLast: boolean;
 }) {
   const { data: field, isLoading } = useField(fieldId);
@@ -585,6 +610,12 @@ function FieldCard({
         onChange(newValue, newValue);
       } else {
         onChange(newValue);
+      }
+    };
+
+    const handleFileChange = (file: File | null) => {
+      if (field.field_type === "document") {
+        onChange(file?.name || "", undefined, file || undefined);
       }
     };
 
@@ -616,7 +647,7 @@ function FieldCard({
           <DocumentField
             field={safeField}
             value={value}
-            onChange={handleChange}
+            onChange={handleFileChange}
           />
         );
       case "persona":
