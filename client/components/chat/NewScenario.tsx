@@ -66,7 +66,7 @@ function TextField({
 }: {
   field: NonNullable<Tables<"fields">>;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, parameterId?: string) => void;
 }) {
   return (
     <input
@@ -94,7 +94,7 @@ function NumericalField({
 }: {
   field: NonNullable<Tables<"fields">>;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, parameterId?: string) => void;
 }) {
   return (
     <input
@@ -122,14 +122,17 @@ function CategoricalField({
 }: {
   field: NonNullable<Tables<"fields">>;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, parameterId?: string) => void;
 }) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
 
   if (isLoading) return <Spinner size="2" />;
 
   return (
-    <Select.Root value={value} onValueChange={onChange}>
+    <Select.Root
+      value={value}
+      onValueChange={(selectedValue) => onChange(selectedValue, selectedValue)}
+    >
       <Select.Trigger
         style={{
           width: "100%",
@@ -226,14 +229,17 @@ function PersonaField({
 }: {
   field: NonNullable<Tables<"fields">>;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, parameterId?: string) => void;
 }) {
   const { data: personas, isLoading } = usePersonas();
 
   if (isLoading) return <Spinner size="2" />;
 
   return (
-    <Select.Root value={value} onValueChange={onChange}>
+    <Select.Root
+      value={value}
+      onValueChange={(selectedValue) => onChange(selectedValue, selectedValue)}
+    >
       <Select.Trigger
         style={{
           width: "100%",
@@ -320,9 +326,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       const documentUploads: { documentId: string; file: File }[] = [];
 
       for (const fieldValue of fieldValues) {
+        let parameterId: string;
+
         if (fieldValue.parameterId) {
           // For categorical fields, use the existing parameter ID
-          parameterIds.push(fieldValue.parameterId);
+          parameterId = fieldValue.parameterId;
         } else {
           // For text, numerical, document, and persona fields, create new parameters
           const newParam = await createParameter.mutateAsync({
@@ -330,19 +338,21 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             name: fieldValue.value,
             value: fieldValue.value,
           });
-          parameterIds.push(newParam.id!);
+          parameterId = newParam.id!;
+        }
 
-          // If this is a document field with a file, create document record
-          if (fieldValue.file) {
-            const newDocument = await createDocument.mutateAsync({
-              content: null, // Will be populated after upload
-              profile_id: user?.id || null, // Use user ID as profile ID
-            });
-            documentUploads.push({
-              documentId: newDocument.id!,
-              file: fieldValue.file,
-            });
-          }
+        parameterIds.push(parameterId);
+
+        // If this is a document field with a file, create document record
+        if (fieldValue.file) {
+          const newDocument = await createDocument.mutateAsync({
+            content: null, // Will be populated after upload
+            profile_id: user?.id || null, // Use user ID as profile ID
+          });
+          documentUploads.push({
+            documentId: newDocument.id!,
+            file: fieldValue.file,
+          });
         }
       }
 
@@ -571,10 +581,13 @@ function FieldCard({
   const renderFieldInput = () => {
     if (!field) return null;
 
-    const handleChange = (newValue: string) => {
-      if (field.field_type === "categorical") {
-        // For categorical, the value is the parameter ID
-        onChange(newValue, newValue);
+    const handleChange = (newValue: string, parameterId?: string) => {
+      if (
+        field.field_type === "categorical" ||
+        field.field_type === "persona"
+      ) {
+        // For categorical and persona fields, pass both value and parameter ID
+        onChange(newValue, parameterId);
       } else {
         onChange(newValue);
       }

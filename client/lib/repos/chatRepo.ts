@@ -53,6 +53,7 @@ export const ChatCreateSchema = z.object({
   user_id: z.string().nullable().optional(),
   completed: z.boolean().optional(),
   feedback: z.any().optional(), // Json type
+  parameter_ids: z.array(z.string()).nullable().optional(),
 });
 
 export const ChatUpdateSchema = z.object({
@@ -75,6 +76,7 @@ export const ChatUpdateSchema = z.object({
   user_id: z.string().nullable().optional(),
   completed: z.boolean().optional(),
   feedback: z.any().optional(), // Json type
+  parameter_ids: z.array(z.string()).nullable().optional(),
 });
 
 async function getSupabase() {
