@@ -15,7 +15,7 @@ import {
 } from '@radix-ui/themes';
 import { PaperPlaneIcon, PersonIcon, ChatBubbleIcon, SpeakerLoudIcon, Pencil1Icon, InfoCircledIcon } from '@radix-ui/react-icons';
 import { Chat, Message } from '@/types';
-import Markdown from '@/components/chat/Markdown';
+import Markdown from '@/components/common/Markdown';
 
 import { logError } from '@/utils/logger';
 import { getCheatingRealtimeSession } from '@/utils/ai/agents/cheating';
@@ -23,9 +23,8 @@ import { getRegularRealtimeSession } from '@/utils/ai/agents/regular';
 import { RealtimeSession } from '@openai/agents/realtime';
 import { generateConversationHistoryRealtime } from '@/utils/ai/chat/conversation-history';
 import { generateResumeHistoryRealtime } from '@/utils/ai/chat/resume-history';
-
-import { useCreateMessage } from '@/utils/react-query/mutations/useCreateMessage';
 import { useQueryClient } from '@tanstack/react-query';
+import { useCreateMessage } from '@/lib/api/hooks/useMessages';
 
 interface ChatAreaProps {
     displayMessages: Message[];
