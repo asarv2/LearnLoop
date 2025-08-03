@@ -178,7 +178,8 @@ CREATE TABLE IF NOT EXISTS questions (
     assessment_id UUID REFERENCES assessments(id) ON DELETE CASCADE,
     question_type question_type NOT NULL,
     options TEXT[] NULL, -- if mcq, this will be the options
-    value TEXT NULL -- this is either the frq or mcq selection
+    value TEXT NULL, -- this is either the frq or mcq selection
+    default_question BOOLEAN DEFAULT FALSE -- this is whether the question is a default question or not
 );
 
 CREATE TABLE IF NOT EXISTS feedback (

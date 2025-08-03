@@ -1,18 +1,15 @@
 // lib/api/hooks/useDocuments.ts
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { documentKeys } from '../keys';
-import type {
-  DocumentCreate,
-  DocumentUpdate,
-} from '@/lib/repos/documentRepo';
-import { api } from '../fetcher';
+import type { DocumentCreate, DocumentUpdate } from "@/lib/repos/documentRepo";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "../fetcher";
+import { documentKeys } from "../keys";
 
 // ---------- Queries ----------
 export function useDocuments() {
   return useQuery({
     queryKey: documentKeys.list(),
-    queryFn: () => api<DocumentCreate[]>('/api/v1/documents'),
-    staleTime: 5 * 60_000,      // 5 minutes
+    queryFn: () => api<DocumentCreate[]>("/api/v1/documents"),
+    staleTime: 5 * 60_000, // 5 minutes
   });
 }
 
@@ -29,8 +26,8 @@ export function useCreateDocument() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: DocumentCreate) =>
-      api<DocumentCreate>('/api/v1/documents', {
-        method: 'POST',
+      api<DocumentCreate>("/api/v1/documents", {
+        method: "POST",
         body: JSON.stringify(payload),
       }),
     onSuccess() {
@@ -44,7 +41,7 @@ export function useUpdateDocument(id: string) {
   return useMutation({
     mutationFn: (patch: DocumentUpdate) =>
       api<DocumentCreate>(`/api/v1/documents/${id}`, {
-        method: 'PATCH',
+        method: "PATCH",
         body: JSON.stringify(patch),
       }),
     onSuccess() {
@@ -57,10 +54,27 @@ export function useDeleteDocument(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      api<void>(`/api/v1/documents/${id}`, { method: 'DELETE' }),
+      api<void>(`/api/v1/documents/${id}`, { method: "DELETE" }),
     onSuccess() {
       // remove both list & detail caches
       qc.invalidateQueries({ queryKey: documentKeys.all });
     },
   });
-} 
+}
+
+export function useUploadDocument(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (formData: FormData) =>
+      api<{ success: boolean; key: string; message: string }>(
+        `/api/v1/documents/${id}/upload`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      ),
+    onSuccess() {
+      qc.invalidateQueries({ queryKey: documentKeys.detail(id) });
+    },
+  });
+}
