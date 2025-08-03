@@ -20,7 +20,6 @@ import {
   Container,
   Flex,
   Heading,
-  Select,
   Spinner,
   Text,
 } from "@radix-ui/themes";
@@ -128,30 +127,90 @@ function CategoricalField({
 
   if (isLoading) return <Spinner size="2" />;
 
+  const colors = [
+    "var(--green-2)",
+    "var(--blue-2)",
+    "var(--purple-2)",
+    "var(--orange-2)",
+    "var(--red-2)",
+    "var(--gold-2)",
+  ];
+
+  const borderColors = [
+    "var(--green-7)",
+    "var(--blue-7)",
+    "var(--purple-7)",
+    "var(--orange-7)",
+    "var(--red-7)",
+    "var(--gold-7)",
+  ];
+
+  const dotColors = [
+    "var(--green-9)",
+    "var(--blue-9)",
+    "var(--purple-9)",
+    "var(--orange-9)",
+    "var(--red-9)",
+    "var(--gold-9)",
+  ];
+
   return (
-    <Select.Root
-      value={value}
-      onValueChange={(selectedValue) => onChange(selectedValue, selectedValue)}
-    >
-      <Select.Trigger
-        style={{
-          width: "100%",
-          padding: "12px 16px",
-          borderRadius: "8px",
-          border: `1px solid ${value ? "var(--green-7)" : "var(--gray-6)"}`,
-          fontSize: "16px",
-          background: "white",
-        }}
-        placeholder={`Select ${field.name.toLowerCase()}`}
-      />
-      <Select.Content>
-        {parameters?.map((parameter) => (
-          <Select.Item key={parameter.id!} value={parameter.id!}>
-            {parameter.name}
-          </Select.Item>
-        ))}
-      </Select.Content>
-    </Select.Root>
+    <Flex direction="column" gap="3">
+      {parameters?.map((parameter, index) => {
+        const isSelected = value === parameter.id;
+        const colorIndex = index % colors.length;
+
+        return (
+          <Card
+            key={parameter.id!}
+            style={{
+              background: isSelected ? colors[colorIndex] : "var(--gray-1)",
+              border: `2px solid ${
+                isSelected ? borderColors[colorIndex] : "var(--gray-6)"
+              }`,
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+            onClick={() => onChange(parameter.id!, parameter.id!)}
+          >
+            <Box p="4">
+              <Flex align="center" gap="3">
+                <Box
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    borderRadius: "50%",
+                    border: `2px solid ${
+                      isSelected ? dotColors[colorIndex] : "var(--gray-6)"
+                    }`,
+                    background: isSelected
+                      ? dotColors[colorIndex]
+                      : "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isSelected && (
+                    <CheckIcon width="12" height="12" color="white" />
+                  )}
+                </Box>
+                <Box>
+                  <Text size="3" weight="bold">
+                    {parameter.name}:
+                  </Text>
+                  {parameter.description && (
+                    <Text size="2" color="gray">
+                      {` ${parameter.description}`}
+                    </Text>
+                  )}
+                </Box>
+              </Flex>
+            </Box>
+          </Card>
+        );
+      })}
+    </Flex>
   );
 }
 
@@ -223,7 +282,6 @@ function DocumentField({
 }
 
 function PersonaField({
-  field,
   value,
   onChange,
 }: {
@@ -235,30 +293,90 @@ function PersonaField({
 
   if (isLoading) return <Spinner size="2" />;
 
+  const colors = [
+    "var(--green-2)",
+    "var(--blue-2)",
+    "var(--purple-2)",
+    "var(--orange-2)",
+    "var(--red-2)",
+    "var(--gold-2)",
+  ];
+
+  const borderColors = [
+    "var(--green-7)",
+    "var(--blue-7)",
+    "var(--purple-7)",
+    "var(--orange-7)",
+    "var(--red-7)",
+    "var(--gold-7)",
+  ];
+
+  const dotColors = [
+    "var(--green-9)",
+    "var(--blue-9)",
+    "var(--purple-9)",
+    "var(--orange-9)",
+    "var(--red-9)",
+    "var(--gold-9)",
+  ];
+
   return (
-    <Select.Root
-      value={value}
-      onValueChange={(selectedValue) => onChange(selectedValue, selectedValue)}
-    >
-      <Select.Trigger
-        style={{
-          width: "100%",
-          padding: "12px 16px",
-          borderRadius: "8px",
-          border: `1px solid ${value ? "var(--green-7)" : "var(--gray-6)"}`,
-          fontSize: "16px",
-          background: "white",
-        }}
-        placeholder={`Select ${field.name.toLowerCase()}`}
-      />
-      <Select.Content>
-        {personas?.map((persona) => (
-          <Select.Item key={persona.id!} value={persona.id!}>
-            {persona.name}
-          </Select.Item>
-        ))}
-      </Select.Content>
-    </Select.Root>
+    <Flex direction="column" gap="3">
+      {personas?.map((persona, index) => {
+        const isSelected = value === persona.id;
+        const colorIndex = index % colors.length;
+
+        return (
+          <Card
+            key={persona.id!}
+            style={{
+              background: isSelected ? colors[colorIndex] : "var(--gray-1)",
+              border: `2px solid ${
+                isSelected ? borderColors[colorIndex] : "var(--gray-6)"
+              }`,
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+            onClick={() => onChange(persona.id!, persona.id!)}
+          >
+            <Box p="4">
+              <Flex align="center" gap="3">
+                <Box
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    borderRadius: "50%",
+                    border: `2px solid ${
+                      isSelected ? dotColors[colorIndex] : "var(--gray-6)"
+                    }`,
+                    background: isSelected
+                      ? dotColors[colorIndex]
+                      : "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isSelected && (
+                    <CheckIcon width="12" height="12" color="white" />
+                  )}
+                </Box>
+                <Box>
+                  <Text size="3" weight="bold">
+                    {persona.name}
+                  </Text>
+                  {persona.description && (
+                    <Text size="2" color="gray">
+                      {persona.description}
+                    </Text>
+                  )}
+                </Box>
+              </Flex>
+            </Box>
+          </Card>
+        );
+      })}
+    </Flex>
   );
 }
 

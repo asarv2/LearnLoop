@@ -114,7 +114,6 @@ CREATE TABLE IF NOT EXISTS chats (
     completed BOOLEAN DEFAULT FALSE,
     title TEXT,
     trace_id TEXT, -- openAI trace id
-    profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
     attempt_id UUID REFERENCES attempts(id) ON DELETE CASCADE,
     parameter_ids UUID[] -- these would be used corresponding to the fields in the training.
 );
