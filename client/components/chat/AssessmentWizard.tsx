@@ -1,63 +1,62 @@
 //Assessment Wizard for the interview assessment
 "use client";
 
-import { useState, useEffect } from 'react';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogTitle,
+import { useAssessment } from "@/lib/api/hooks/useAssessments";
+import { useQuestionsByAssessment } from "@/lib/api/hooks/useQuestions";
+import { Assessment, Chat } from "@/types";
+import { ArrowBack, ArrowForward } from "@mui/icons-material";
+import {
+  Alert,
   Box,
-  Typography,
-  LinearProgress,
   Button,
-  Radio,
-  RadioGroup,
-  FormControlLabel,
-  FormControl,
-  Rating,
-  TextField,
   Card,
   CardContent,
   CircularProgress,
-  Alert
-} from '@mui/material';
-import { styled } from '@mui/material/styles';
-import { ArrowBack, ArrowForward } from '@mui/icons-material';
-import { AssessmentQuestion, getStaticQuestions, getTotalQuestions } from '@/utils/assessment/questions';
-import { Assessment, Message, Chat } from '@/types';
-import { logError } from '@/utils/logger';
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  FormControlLabel,
+  LinearProgress,
+  Radio,
+  RadioGroup,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { styled } from "@mui/material/styles";
+import { useState } from "react";
 
 // Styled components for professional look
 const StyledDialog = styled(Dialog)(() => ({
-  '& .MuiDialog-paper': {
+  "& .MuiDialog-paper": {
     borderRadius: 16,
     minWidth: 600,
     maxWidth: 800,
     minHeight: 500,
-    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15)',
+    boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
   },
 }));
 
 const StyledCard = styled(Card)(() => ({
   borderRadius: 12,
-  boxShadow: '0 2px 12px rgba(0, 0, 0, 0.08)',
-  border: '1px solid rgba(0, 0, 0, 0.08)',
+  boxShadow: "0 2px 12px rgba(0, 0, 0, 0.08)",
+  border: "1px solid rgba(0, 0, 0, 0.08)",
 }));
 
 const StyledButton = styled(Button)(() => ({
   borderRadius: 8,
-  textTransform: 'none',
+  textTransform: "none",
   fontWeight: 600,
-  padding: '10px 24px',
+  padding: "10px 24px",
 }));
 
 interface AssessmentWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: (responses: Assessment['responses']) => void;
+  onComplete: (responses: Assessment["responses"]) => void;
   candidateName: string;
   isSubmitting?: boolean;
-  messages: Message[];
+  assessmentId: string;
   chat: Chat;
 }
 
@@ -67,195 +66,136 @@ export default function AssessmentWizard({
   onComplete,
   candidateName,
   isSubmitting = false,
-  messages,
-  chat
+  assessmentId,
+  chat,
 }: AssessmentWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
-  const [responses, setResponses] = useState<{ [key: string]: string | number }>({});
-  const [allQuestions, setAllQuestions] = useState<AssessmentQuestion[]>([]);
-  const [isLoadingQuestions, setIsLoadingQuestions] = useState(true);
-  const [questionsError, setQuestionsError] = useState<string | null>(null);
+  const [responses, setResponses] = useState<{
+    [key: string]: string | number;
+  }>({});
 
-  // Fetch dynamic questions on component mount
-  useEffect(() => {
-    const fetchQuestions = async () => {
-      if (!isOpen || !messages.length) return;
-      
-      setIsLoadingQuestions(true);
-      setQuestionsError(null);
-      
-      try {
-        const response = await fetch('/api/chat/assessment/questions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            messages: messages,
-            chatType: chat?.type || 'regular',
-            chatTitle: chat?.title || 'Interview'
-          })
-        });
+  // Fetch assessment and questions
+  const { data: assessment, isLoading: isLoadingAssessment } = useAssessment(
+    assessmentId,
+    isOpen
+  );
+  const {
+    data: questions = [],
+    isLoading: isLoadingQuestions,
+    error: questionsError,
+  } = useQuestionsByAssessment(assessmentId, isOpen);
 
-        const data = await response.json();
-        
-        if (data.questions && Array.isArray(data.questions)) {
-          // Get appropriate static questions based on training type
-          const staticQuestions = getStaticQuestions(chat?.title || '');
-          // Combine dynamic questions with training-specific static ones
-          const combinedQuestions = [...data.questions, ...staticQuestions];
-          setAllQuestions(combinedQuestions);
-        } else {
-          throw new Error('Invalid questions format');
-        }
-      } catch (error) {
-        logError('Error fetching assessment questions:', error);
-        setQuestionsError('Failed to load assessment questions. Please try again.');
-        // Fallback to training-specific static questions only
-        const staticQuestions = getStaticQuestions(chat?.title || '');
-        setAllQuestions(staticQuestions);
-      } finally {
-        setIsLoadingQuestions(false);
-      }
-    };
-
-    fetchQuestions();
-  }, [isOpen, messages, chat]);
-
-  const currentQuestion = allQuestions[currentStep];
-  const totalQuestions = getTotalQuestions(allQuestions);
+  const isLoading = isLoadingAssessment || isLoadingQuestions;
+  const currentQuestion = questions[currentStep];
+  const totalQuestions = questions.length;
   const isLastQuestion = currentStep === totalQuestions - 1;
-  const canProceed = responses[currentQuestion?.id] !== undefined;
+  const canProceed =
+    currentQuestion &&
+    currentQuestion.id &&
+    responses[currentQuestion.id] !== undefined;
 
   const handleResponse = (value: string | number) => {
-    if (!currentQuestion) return;
-    setResponses(prev => ({
+    if (!currentQuestion || !currentQuestion.id) return;
+    setResponses((prev) => ({
       ...prev,
-      [currentQuestion.id]: value
+      [currentQuestion.id as string]: value,
     }));
   };
 
   const handleNext = () => {
     if (isLastQuestion) {
       // Convert responses to the format expected by the API
-      const assessmentResponses: Assessment['responses'] = Object.entries(responses).map(([question_id, response]) => ({
+      const assessmentResponses: Assessment["responses"] = Object.entries(
+        responses
+      ).map(([question_id, response]) => ({
         question_id,
-        response
+        response,
       }));
       onComplete(assessmentResponses);
     } else {
-      setCurrentStep(prev => prev + 1);
+      setCurrentStep((prev) => prev + 1);
     }
   };
 
   const handlePrevious = () => {
     if (currentStep > 0) {
-      setCurrentStep(prev => prev - 1);
+      setCurrentStep((prev) => prev - 1);
     }
   };
 
   const renderQuestionInput = () => {
-    if (!currentQuestion) return null;
-    
+    if (!currentQuestion || !currentQuestion.id) return null;
+
     const currentResponse = responses[currentQuestion.id];
+    const isMcq =
+      currentQuestion.question_type === "mcq" &&
+      currentQuestion.options &&
+      currentQuestion.options.length > 0;
 
-    switch (currentQuestion.type) {
-      case 'yes_no':
-        return (
-          <FormControl component="fieldset" fullWidth>
-            <RadioGroup
-              value={currentResponse || ''}
-              onChange={(e) => handleResponse(e.target.value)}
-            >
-              <FormControlLabel 
-                value="yes" 
-                control={<Radio />} 
-                label="Yes" 
-                sx={{ mb: 2 }}
-              />
-              <FormControlLabel 
-                value="no" 
-                control={<Radio />} 
-                label="No" 
-              />
-            </RadioGroup>
-          </FormControl>
-        );
-
-      case 'multiple_choice':
-        return (
-          <FormControl component="fieldset" fullWidth>
-            <RadioGroup
-              value={currentResponse || ''}
-              onChange={(e) => handleResponse(e.target.value)}
-            >
-              {currentQuestion.options?.map((option, index) => (
-                <FormControlLabel
-                  key={index}
-                  value={option}
-                  control={<Radio />}
-                  label={option}
-                  sx={{ mb: 1.5, alignItems: 'flex-start' }}
-                />
-              ))}
-            </RadioGroup>
-          </FormControl>
-        );
-
-      case 'rating':
-        return (
-          <Box sx={{ py: 3 }}>
-
-            <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-              <Rating
-                value={currentResponse as number || 0}
-                onChange={(_, newValue) => newValue && handleResponse(newValue)}
-                size="large"
-                max={5}
-              />
-            </Box>
-          </Box>
-        );
-
-      case 'text':
-        return (
-          <TextField
-            fullWidth
-            multiline
-            rows={4}
-            placeholder="Please provide your detailed thoughts and observations..."
-            value={currentResponse as string || ''}
+    if (isMcq) {
+      return (
+        <FormControl component="fieldset" fullWidth>
+          <RadioGroup
+            value={currentResponse || ""}
             onChange={(e) => handleResponse(e.target.value)}
-            variant="outlined"
-          />
-        );
-
-      default:
-        return null;
+          >
+            {currentQuestion.options?.map((option: string, index: number) => (
+              <FormControlLabel
+                key={index}
+                value={option}
+                control={<Radio />}
+                label={option}
+                sx={{ mb: 1.5, alignItems: "flex-start" }}
+              />
+            ))}
+          </RadioGroup>
+        </FormControl>
+      );
+    } else {
+      // FRQ (Free Response Question)
+      return (
+        <TextField
+          fullWidth
+          multiline
+          rows={4}
+          placeholder="Please provide your detailed thoughts and observations..."
+          value={(currentResponse as string) || ""}
+          onChange={(e) => handleResponse(e.target.value)}
+          variant="outlined"
+        />
+      );
     }
   };
 
   // Loading state
-  if (isLoadingQuestions) {
+  if (isLoading) {
     return (
-      <StyledDialog 
-        open={isOpen} 
+      <StyledDialog
+        open={isOpen}
         onClose={() => {}} // Disable closing
-        maxWidth="sm" 
+        maxWidth="sm"
         fullWidth
         disableEscapeKeyDown
       >
         <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4 }}>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              py: 4,
+            }}
+          >
             <CircularProgress size={48} sx={{ mb: 3 }} />
             <Typography variant="h6" gutterBottom>
-              Preparing Your Assessment
+              Loading Assessment
             </Typography>
-            <Typography variant="body2" color="text.secondary" textAlign="center">
-              {chat?.title?.startsWith('Offboarding:') 
-                ? 'Analyzing the offboarding conversation to create personalized questions...'
-                : 'Analyzing the interview to create personalized questions...'
-              }
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              textAlign="center"
+            >
+              Preparing your assessment questions...
             </Typography>
           </Box>
         </DialogContent>
@@ -266,22 +206,20 @@ export default function AssessmentWizard({
   // Error state
   if (questionsError) {
     return (
-      <StyledDialog 
-        open={isOpen} 
+      <StyledDialog
+        open={isOpen}
         onClose={() => {}} // Disable closing
-        maxWidth="sm" 
+        maxWidth="sm"
         fullWidth
         disableEscapeKeyDown
       >
         <DialogContent>
           <Box sx={{ py: 2 }}>
             <Alert severity="error" sx={{ mb: 3 }}>
-              {questionsError}
+              Failed to load assessment questions. Please try again.
             </Alert>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <StyledButton onClick={onClose}>
-                Close
-              </StyledButton>
+            <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+              <StyledButton onClick={onClose}>Close</StyledButton>
             </Box>
           </Box>
         </DialogContent>
@@ -289,36 +227,63 @@ export default function AssessmentWizard({
     );
   }
 
-  if (!currentQuestion) {
-    return null;
+  if (!currentQuestion || totalQuestions === 0) {
+    return (
+      <StyledDialog
+        open={isOpen}
+        onClose={() => {}} // Disable closing
+        maxWidth="sm"
+        fullWidth
+        disableEscapeKeyDown
+      >
+        <DialogContent>
+          <Box sx={{ py: 2 }}>
+            <Alert severity="warning" sx={{ mb: 3 }}>
+              No questions found for this assessment.
+            </Alert>
+            <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+              <StyledButton onClick={onClose}>Close</StyledButton>
+            </Box>
+          </Box>
+        </DialogContent>
+      </StyledDialog>
+    );
   }
 
   return (
-    <StyledDialog 
-      open={isOpen} 
+    <StyledDialog
+      open={isOpen}
       onClose={() => {}} // Disable closing by clicking outside or escape key
-      maxWidth="md" 
+      maxWidth="md"
       fullWidth
       disableEscapeKeyDown
     >
       <DialogTitle>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
           <Box>
             <Typography variant="h5" component="h2" gutterBottom>
-              {chat?.title?.startsWith('Offboarding:') ? 'Offboarding Assessment' : 'Interview Assessment'}
+              {assessment?.title || "Assessment"}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              {chat?.title?.startsWith('Offboarding:') ? 'Employee' : 'Candidate'}: {candidateName}
+              {chat?.title?.startsWith("Offboarding:")
+                ? "Employee"
+                : "Candidate"}
+              : {candidateName}
             </Typography>
           </Box>
-          {/* Remove the close button to prevent accidental closing */}
         </Box>
       </DialogTitle>
 
       <DialogContent>
         <Box sx={{ mb: 4 }}>
           {/* Progress */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
             <Typography variant="body2" color="text.secondary">
               Question {currentStep + 1} of {totalQuestions}
             </Typography>
@@ -326,9 +291,9 @@ export default function AssessmentWizard({
               {Math.round(((currentStep + 1) / totalQuestions) * 100)}% Complete
             </Typography>
           </Box>
-          <LinearProgress 
-            variant="determinate" 
-            value={(currentStep + 1) / totalQuestions * 100}
+          <LinearProgress
+            variant="determinate"
+            value={((currentStep + 1) / totalQuestions) * 100}
             sx={{ height: 8, borderRadius: 4 }}
           />
         </Box>
@@ -337,12 +302,12 @@ export default function AssessmentWizard({
         <StyledCard sx={{ mb: 4 }}>
           <CardContent sx={{ p: 4 }}>
             <Typography variant="h6" gutterBottom sx={{ mb: 3 }}>
-              {currentQuestion.question}
+              {currentQuestion.stem}
             </Typography>
-            
-            {currentQuestion.context && (
+
+            {currentQuestion.default_question && (
               <Alert severity="info" sx={{ mb: 3 }}>
-                {currentQuestion.context}
+                This is a standard assessment question.
               </Alert>
             )}
 
@@ -351,7 +316,13 @@ export default function AssessmentWizard({
         </StyledCard>
 
         {/* Navigation */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
           <StyledButton
             variant="outlined"
             onClick={handlePrevious}
@@ -360,7 +331,7 @@ export default function AssessmentWizard({
           >
             Previous
           </StyledButton>
-          
+
           <StyledButton
             variant="contained"
             onClick={handleNext}
@@ -373,9 +344,9 @@ export default function AssessmentWizard({
                 Generating score and feedback...
               </>
             ) : isLastQuestion ? (
-              'Complete Assessment'
+              "Complete Assessment"
             ) : (
-              'Next Question'
+              "Next Question"
             )}
           </StyledButton>
         </Box>

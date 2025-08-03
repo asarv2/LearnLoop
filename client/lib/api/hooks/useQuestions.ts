@@ -1,18 +1,15 @@
 // lib/api/hooks/useQuestions.ts
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { questionKeys } from '../keys';
-import type {
-  QuestionCreate,
-  QuestionUpdate,
-} from '@/lib/repos/questionRepo';
-import { api } from '../fetcher';
+import type { QuestionCreate, QuestionUpdate } from "@/lib/repos/questionRepo";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "../fetcher";
+import { questionKeys } from "../keys";
 
 // ---------- Queries ----------
 export function useQuestions() {
   return useQuery({
     queryKey: questionKeys.list(),
-    queryFn: () => api<QuestionCreate[]>('/api/v1/questions'),
-    staleTime: 5 * 60_000,      // 5 minutes
+    queryFn: () => api<QuestionCreate[]>("/api/v1/questions"),
+    staleTime: 5 * 60_000, // 5 minutes
   });
 }
 
@@ -24,13 +21,22 @@ export function useQuestion(id: string, enabled = true) {
   });
 }
 
+export function useQuestionsByAssessment(assessmentId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...questionKeys.all, "assessment", assessmentId],
+    queryFn: () =>
+      api<QuestionCreate[]>(`/api/v1/assessments/${assessmentId}/questions`),
+    enabled,
+  });
+}
+
 // ---------- Mutations ----------
 export function useCreateQuestion() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: QuestionCreate) =>
-      api<QuestionCreate>('/api/v1/questions', {
-        method: 'POST',
+      api<QuestionCreate>("/api/v1/questions", {
+        method: "POST",
         body: JSON.stringify(payload),
       }),
     onSuccess() {
@@ -44,7 +50,7 @@ export function useUpdateQuestion(id: string) {
   return useMutation({
     mutationFn: (patch: QuestionUpdate) =>
       api<QuestionCreate>(`/api/v1/questions/${id}`, {
-        method: 'PATCH',
+        method: "PATCH",
         body: JSON.stringify(patch),
       }),
     onSuccess() {
@@ -57,10 +63,10 @@ export function useDeleteQuestion(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      api<void>(`/api/v1/questions/${id}`, { method: 'DELETE' }),
+      api<void>(`/api/v1/questions/${id}`, { method: "DELETE" }),
     onSuccess() {
       // remove both list & detail caches
       qc.invalidateQueries({ queryKey: questionKeys.all });
     },
   });
-} 
+}

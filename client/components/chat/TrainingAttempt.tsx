@@ -14,6 +14,7 @@ import {
   useSubmitAssessment,
   useTrainingMessages,
 } from "@/lib/api/hooks/useTrainingMessages";
+import { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import { Assessment } from "@/types";
 import { logError } from "@/utils/logger";
 import { Box } from "@radix-ui/themes";
@@ -23,6 +24,7 @@ import AssessmentWizard from "./AssessmentWizard";
 import ChatArea from "./ChatArea";
 import ChatHeader from "./ChatHeader";
 import FeedbackModal from "./FeedbackModal";
+
 interface TrainingAttemptProps {
   attemptId: string;
   scenarioId: string;
@@ -35,22 +37,25 @@ export default function TrainingAttempt({ attemptId }: TrainingAttemptProps) {
   const [showFeedback, setShowFeedback] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const {data: chats} = useChats();
+  const { data: chats } = useChats();
   const chatId = chats?.find((chat) => chat.attempt_id === attemptId)?.id;
 
   // Use the new training hooks
-  const { data: chat } = useChat(chatId!, [
-    "grades",
-    "assessment",
-    "feedback",
-    "hints",
-    "messages",
-  ]);
-  const { data: messages = [], streamingMessage } = useTrainingMessages(chatId!);
+  const { data: chat } = useChat(chatId!);
+  const { data: messages = [], streamingMessage } = useTrainingMessages(
+    chatId!
+  );
   const sendMessageMutation = useSendTrainingMessage();
   const endTrainingMutation = useEndTraining();
   const submitAssessmentMutation = useSubmitAssessment();
   const generateFeedbackMutation = useGenerateFeedback();
+
+  // Helper function to get assessment ID
+  const getAssessmentId = () => {
+    if (!chat) return "";
+    const chatWithIncludes = chat as ChatWithAllIncludes;
+    return chatWithIncludes.assessments?.[0]?.id || "";
+  };
 
   // Determine if interview is active based on chat completion status
   const isInterviewActive = chat ? !chat.completed : true;
@@ -154,7 +159,7 @@ export default function TrainingAttempt({ attemptId }: TrainingAttemptProps) {
         onComplete={handleAssessmentComplete}
         candidateName={chat?.name || "John Doe"}
         isSubmitting={submitAssessmentMutation.isPending}
-        messages={messages}
+        assessmentId={getAssessmentId()}
         chat={chat!}
       />
 
@@ -162,9 +167,9 @@ export default function TrainingAttempt({ attemptId }: TrainingAttemptProps) {
       <FeedbackModal
         isOpen={showFeedback}
         onClose={() => setShowFeedback(false)}
-        feedback={chat?.feedback_?.[0] || null}
+        feedback={chat?.feedback?.[0] || null}
         candidateName={chat?.name || "John Doe"}
-        interviewScore={chat?.interview_scores?.[0] || null}
+        interviewScore={null}
         chat={chat}
       />
     </Box>

@@ -1,9 +1,8 @@
 // lib/api/hooks/useChats.ts
 import type {
   ChatCreate,
-  ChatIncludes,
   ChatUpdate,
-  ChatWithIncludes,
+  ChatWithAllIncludes,
 } from "@/lib/repos/chatRepo";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../fetcher";
@@ -18,19 +17,10 @@ export function useChats() {
   });
 }
 
-export function useChat<T extends ChatIncludes[] = []>(
-  id: string,
-  include: T = [] as unknown as T,
-  enabled = true
-) {
+export function useChat(id: string, enabled = true) {
   return useQuery({
-    queryKey: ["chat", id, include.sort().join(",")],
-    queryFn: () =>
-      api<ChatWithIncludes<T>>(
-        `/api/v1/chats/${id}${
-          include.length ? "?include=" + include.join(",") : ""
-        }`
-      ),
+    queryKey: ["chat", id],
+    queryFn: () => api<ChatWithAllIncludes>(`/api/v1/chats/${id}`),
     enabled,
   });
 }

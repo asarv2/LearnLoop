@@ -20,53 +20,19 @@ type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
 type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
 type HintRow = Database["public"]["Tables"]["hints"]["Row"];
 
-// Union type for all possible includes
-export type ChatIncludes =
-  | "grades"
-  | "assessment"
-  | "feedback"
-  | "hints"
-  | "messages";
-
-// Type mapping for includes
-type IncludeMap = {
-  grades: {
-    rubric_grades: (RubricGradeRow & {
-      standard_grades: StandardGradeRow[];
-    })[];
-  };
-  assessment: {
-    assessments: (AssessmentRow & {
-      questions: QuestionRow[];
-    })[];
-  };
-  feedback: {
-    feedback: FeedbackRow[];
-  };
-  hints: {
-    messages: (MessageRow & {
-      hints: HintRow[];
-    })[];
-  };
-  messages: {
-    messages: MessageRow[];
-  };
+// Simplified chat type with all includes
+export type ChatWithAllIncludes = ChatRow & {
+  rubric_grades: (RubricGradeRow & {
+    standard_grades: StandardGradeRow[];
+  })[];
+  assessments: (AssessmentRow & {
+    questions: QuestionRow[];
+  })[];
+  feedback: FeedbackRow[];
+  messages: (MessageRow & {
+    hints: HintRow[];
+  })[];
 };
-
-// Helper type to check if a type is never
-type IsNever<T> = [T] extends [never] ? true : false;
-
-// Conditional type that builds the return type based on includes
-export type ChatWithIncludes<T extends ChatIncludes[]> = ChatRow &
-  (T extends [infer First, ...infer Rest]
-    ? First extends ChatIncludes
-      ? Rest extends ChatIncludes[]
-        ? IsNever<Rest> extends true
-          ? IncludeMap[First]
-          : IncludeMap[First] & ChatWithIncludes<Rest>
-        : IncludeMap[First]
-      : Record<string, never>
-    : Record<string, never>);
 
 // Runtime validators for API requests
 export const ChatCreateSchema = z.object({
@@ -154,33 +120,20 @@ export const chatRepo = {
     return data;
   },
 
-  async fetchChat<T extends ChatIncludes[]>(
-    id: string,
-    includes: T = [] as unknown as T
-  ): Promise<ChatWithIncludes<T>> {
+  async fetchChat(id: string): Promise<ChatWithAllIncludes> {
     const supabase = await getSupabase();
-    /* Build a dynamic SELECT clause */
-    const selectors = ["*"]; // ← base chat columns
-
-    if (includes.includes("grades" as ChatIncludes)) {
-      selectors.push("rubric_grades(*, standard_grades(*))");
-    }
-    if (includes.includes("assessment" as ChatIncludes)) {
-      selectors.push("assessments(*, questions(*))");
-    }
-    if (includes.includes("feedback" as ChatIncludes)) {
-      selectors.push("feedback(*)");
-    }
-    if (includes.includes("hints" as ChatIncludes)) {
-      selectors.push("messages(*, hints(*))");
-    }
-    if (includes.includes("messages" as ChatIncludes)) {
-      selectors.push("messages(*)");
-    }
 
     const { data, error } = await supabase
       .from("chats")
-      .select(selectors.join(", "))
+      .select(
+        `
+        *,
+        rubric_grades(*, standard_grades(*)),
+        assessments(*, questions(*)),
+        feedback(*),
+        messages(*, hints(*))
+      `
+      )
       .eq("id", id)
       .single();
 
@@ -190,7 +143,7 @@ export const chatRepo = {
       }
       throw new HttpError(500, error.message);
     }
-    return data as unknown as ChatWithIncludes<T>;
+    return data as ChatWithAllIncludes;
   },
 
   async update(id: string, patch: ChatUpdate) {
