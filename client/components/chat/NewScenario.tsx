@@ -38,7 +38,6 @@ import {
   useCreateParameter,
   useParametersByField,
 } from "@/lib/api/hooks/useParameters";
-import { usePersonas } from "@/lib/api/hooks/usePersonas";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
 
 // Types
@@ -55,6 +54,7 @@ type FieldValue = {
   value: string;
   parameterId?: string;
   file?: File; // Add file for document fields
+  selectedPersonas?: string[]; // Array of selected persona parameter IDs
 };
 
 // Individual field components
@@ -282,100 +282,128 @@ function DocumentField({
 }
 
 function PersonaField({
-  value,
+  field,
   onChange,
 }: {
   field: NonNullable<Tables<"fields">>;
-  value: string;
   onChange: (value: string, parameterId?: string) => void;
 }) {
-  const { data: personas, isLoading } = usePersonas();
+  const { data: parameters, isLoading } = useParametersByField(field.id);
+  const [personaSelections, setPersonaSelections] = useState<string[]>([""]);
 
   if (isLoading) return <Spinner size="2" />;
 
-  const colors = [
-    "var(--green-2)",
-    "var(--blue-2)",
-    "var(--purple-2)",
-    "var(--orange-2)",
-    "var(--red-2)",
-    "var(--gold-2)",
-  ];
+  const handlePersonaSelect = (index: number, parameterId: string) => {
+    const newSelections = [...personaSelections];
+    newSelections[index] = parameterId;
+    setPersonaSelections(newSelections);
 
-  const borderColors = [
-    "var(--green-7)",
-    "var(--blue-7)",
-    "var(--purple-7)",
-    "var(--orange-7)",
-    "var(--red-7)",
-    "var(--gold-7)",
-  ];
+    // Update parent with comma-separated parameter IDs only
+    const validSelections = newSelections.filter((id) => id && id.trim());
+    const selectedNames = validSelections.join(",");
 
-  const dotColors = [
-    "var(--green-9)",
-    "var(--blue-9)",
-    "var(--purple-9)",
-    "var(--orange-9)",
-    "var(--red-9)",
-    "var(--gold-9)",
-  ];
+    onChange(selectedNames, selectedNames);
+  };
+
+  const addPersonaSelection = () => {
+    setPersonaSelections([...personaSelections, ""]);
+  };
+
+  const removePersonaSelection = (index: number) => {
+    // Don't allow removal if there's only one persona left
+    if (personaSelections.length <= 1) {
+      return;
+    }
+
+    const newSelections = personaSelections.filter((_, i) => i !== index);
+    setPersonaSelections(newSelections);
+
+    // Update parent with comma-separated parameter IDs only
+    const validSelections = newSelections.filter((id) => id && id.trim());
+    const selectedNames = validSelections.join(",");
+
+    onChange(selectedNames, selectedNames);
+  };
 
   return (
     <Flex direction="column" gap="3">
-      {personas?.map((persona, index) => {
-        const isSelected = value === persona.id;
-        const colorIndex = index % colors.length;
-
+      {/* Existing persona selections */}
+      {personaSelections.map((selectedId, index) => {
+        const selectedParameter = parameters?.find((p) => p.id === selectedId);
         return (
           <Card
-            key={persona.id!}
+            key={index}
             style={{
-              background: isSelected ? colors[colorIndex] : "var(--gray-1)",
-              border: `2px solid ${
-                isSelected ? borderColors[colorIndex] : "var(--gray-6)"
-              }`,
-              cursor: "pointer",
-              transition: "all 0.2s ease",
+              background: "var(--gray-1)",
+              border: "1px solid var(--gray-6)",
             }}
-            onClick={() => onChange(persona.id!, persona.id!)}
           >
             <Box p="4">
-              <Flex align="center" gap="3">
-                <Box
+              <Flex align="center" gap="3" justify="between">
+                <Text size="3" weight="medium">
+                  Persona {index + 1}:
+                </Text>
+                <select
+                  value={selectedId}
+                  onChange={(e) => handlePersonaSelect(index, e.target.value)}
                   style={{
-                    width: "20px",
-                    height: "20px",
-                    borderRadius: "50%",
-                    border: `2px solid ${
-                      isSelected ? dotColors[colorIndex] : "var(--gray-6)"
-                    }`,
-                    background: isSelected
-                      ? dotColors[colorIndex]
-                      : "transparent",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid var(--gray-6)",
+                    background: "white",
+                    fontSize: "14px",
+                    minWidth: "200px",
                   }}
                 >
-                  {isSelected && (
-                    <CheckIcon width="12" height="12" color="white" />
-                  )}
-                </Box>
-                <Box>
-                  <Text size="3" weight="bold">
-                    {persona.name}
-                  </Text>
-                  {persona.description && (
-                    <Text size="2" color="gray">
-                      {persona.description}
-                    </Text>
-                  )}
-                </Box>
+                  <option value="">Select a persona...</option>
+                  {parameters?.map((parameter) => (
+                    <option key={parameter.id || ""} value={parameter.id || ""}>
+                      {parameter.name || "Unnamed Parameter"}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  size="1"
+                  variant="soft"
+                  color="red"
+                  onClick={() => removePersonaSelection(index)}
+                  disabled={personaSelections.length <= 1}
+                  style={{
+                    opacity: personaSelections.length <= 1 ? 0.5 : 1,
+                    cursor:
+                      personaSelections.length <= 1 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Remove
+                </Button>
               </Flex>
+              {selectedParameter && (
+                <Box mt="2">
+                  <Text size="2" color="gray">
+                    {selectedParameter.description ||
+                      "No description available"}
+                  </Text>
+                </Box>
+              )}
             </Box>
           </Card>
         );
       })}
+
+      {/* Add Persona button */}
+      <Button
+        size="2"
+        variant="soft"
+        onClick={addPersonaSelection}
+        style={{
+          alignSelf: "flex-start",
+          background: "var(--blue-2)",
+          border: "1px solid var(--blue-6)",
+          color: "var(--blue-9)",
+        }}
+      >
+        + Add Persona
+      </Button>
     </Flex>
   );
 }
@@ -424,7 +452,18 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
   const isStepComplete = (fieldId: string) => {
     const fieldValue = fieldValues.find((fv) => fv.fieldId === fieldId);
-    return fieldValue?.value !== "";
+    if (!fieldValue) return false;
+
+    // For persona fields, check if there's at least one valid selection
+    if (fieldValue.parameterId && fieldValue.parameterId.includes(",")) {
+      const validSelections = fieldValue.parameterId
+        .split(",")
+        .filter((id) => id.trim());
+      return validSelections.length > 0;
+    }
+
+    // For other fields, check if value is not empty
+    return fieldValue.value !== "";
   };
 
   const allStepsComplete =
@@ -444,22 +483,25 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       const documentUploads: { documentId: string; file: File }[] = [];
 
       for (const fieldValue of fieldValues) {
-        let parameterId: string;
-
-        if (fieldValue.parameterId) {
-          // For categorical fields, use the existing parameter ID
-          parameterId = fieldValue.parameterId;
+        // Handle multiple persona selections
+        if (fieldValue.parameterId && fieldValue.parameterId.includes(",")) {
+          // Multiple persona selections - split by comma and add all IDs
+          const personaIds = fieldValue.parameterId
+            .split(",")
+            .filter((id) => id.trim());
+          parameterIds.push(...personaIds);
+        } else if (fieldValue.parameterId) {
+          // Single parameter ID (categorical or single persona)
+          parameterIds.push(fieldValue.parameterId);
         } else {
-          // For text, numerical, document, and persona fields, create new parameters
+          // For text, numerical, and document fields, create new parameters
           const newParam = await createParameter.mutateAsync({
             field_id: fieldValue.fieldId,
             name: fieldValue.value,
             value: fieldValue.value,
           });
-          parameterId = newParam.id!;
+          parameterIds.push(newParam.id!);
         }
-
-        parameterIds.push(parameterId);
 
         // If this is a document field with a file, create document record
         if (fieldValue.file) {
@@ -749,13 +791,7 @@ function FieldCard({
           />
         );
       case "persona":
-        return (
-          <PersonaField
-            field={safeField}
-            value={value}
-            onChange={handleChange}
-          />
-        );
+        return <PersonaField field={safeField} onChange={handleChange} />;
       default:
         return <Text>Unknown field type: {field.field_type}</Text>;
     }
