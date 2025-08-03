@@ -81,12 +81,7 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
   const { isConnected } = useWebSocket();
 
   // API hooks
-  const { data: chat } = useChat(chatId, [
-    "assessment",
-    "feedback",
-    "hints",
-    "messages",
-  ]);
+  const { data: chat } = useChat(chatId);
 
   const { data: messages = [], streamingMessage } = useTrainingMessages(chatId);
 
