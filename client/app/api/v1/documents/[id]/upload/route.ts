@@ -1,15 +1,16 @@
+import { storage } from "@/lib/storage";
 import { logError } from "@/utils/logger";
 import { NextRequest, NextResponse } from "next/server";
-import { storage } from "@/lib/storage";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const formData = await req.formData();
     const file = formData.get("file") as File;
-    const key = await storage.uploadFile(file, `${params.id}.pdf`);
+    const key = await storage.uploadFile(file, `${id}.pdf`);
 
     return NextResponse.json({
       success: true,
@@ -17,7 +18,8 @@ export async function POST(
       message: "Document uploaded successfully",
     });
   } catch (err) {
-    await logError("Failed to upload document", err, { id: params.id });
+    const { id } = await params;
+    await logError("Failed to upload document", err, { id });
 
     if (err instanceof Error) {
       return NextResponse.json({ error: err.message }, { status: 400 });
