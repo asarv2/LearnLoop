@@ -54,6 +54,17 @@ export const scenarioRepo = {
     return data;
   },
 
+  async listByTrainingId(trainingId: string) {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("scenarios")
+      .select("*")
+      .eq("training_id", trainingId)
+      .order("created_at", { ascending: false });
+    if (error) throw new HttpError(500, error.message);
+    return data;
+  },
+
   async find(id: string) {
     const supabase = await getSupabase();
     const { data, error } = await supabase
