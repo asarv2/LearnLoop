@@ -10,17 +10,21 @@ export type TrainingCreate =
 export type TrainingUpdate =
   Database["public"]["Tables"]["trainings"]["Update"];
 
-// Type for training with included relationships
-export type TrainingWithIncludes = TrainingCreate & {
-  scenarios?: Array<
-    Database["public"]["Tables"]["scenarios"]["Row"] & {
-      rubrics?: Array<
-        Database["public"]["Tables"]["rubrics"]["Row"] & {
-          standards?: Array<Database["public"]["Tables"]["standards"]["Row"]>;
-        }
-      >;
-    }
-  >;
+// Base training type
+type TrainingRow = Database["public"]["Tables"]["trainings"]["Row"];
+
+// Related table types
+type ScenarioRow = Database["public"]["Tables"]["scenarios"]["Row"];
+type RubricRow = Database["public"]["Tables"]["rubrics"]["Row"];
+type StandardRow = Database["public"]["Tables"]["standards"]["Row"];
+
+// Simplified training type with all includes
+export type TrainingWithAllIncludes = TrainingRow & {
+  scenarios: (ScenarioRow & {
+    rubrics: (RubricRow & {
+      standards: StandardRow[];
+    })[];
+  })[];
 };
 
 // Runtime validators for API requests
@@ -48,7 +52,7 @@ async function getSupabase() {
   return await supabaseServer(cookies());
 }
 
-// 3.2 – CRUD wrappers
+// CRUD wrappers
 export const trainingRepo = {
   async create(payload: TrainingCreate) {
     const supabase = await getSupabase();
@@ -98,27 +102,17 @@ export const trainingRepo = {
     return data;
   },
 
-  async fetchTraining(
-    id: string,
-    includes: string[] = []
-  ): Promise<TrainingWithIncludes> {
+  async fetchTraining(id: string): Promise<TrainingWithAllIncludes> {
     const supabase = await getSupabase();
-    /* Build a dynamic SELECT clause */
-    const selectors = ["*"]; // ← base training columns
-
-    if (includes.includes("scenarios")) {
-      selectors.push("scenarios(*)");
-    }
-    if (includes.includes("rubrics")) {
-      selectors.push("scenarios(rubrics(*))");
-    }
-    if (includes.includes("standards")) {
-      selectors.push("scenarios(rubrics(standards(*)))");
-    }
 
     const { data, error } = await supabase
       .from("trainings")
-      .select(selectors.join(", "))
+      .select(
+        `
+        *,
+        scenarios(*, rubrics(*, standards(*)))
+      `
+      )
       .eq("id", id)
       .single();
 
@@ -128,7 +122,7 @@ export const trainingRepo = {
       }
       throw new HttpError(500, error.message);
     }
-    return data as unknown as TrainingWithIncludes;
+    return data as unknown as TrainingWithAllIncludes;
   },
 
   async update(id: string, patch: TrainingUpdate) {

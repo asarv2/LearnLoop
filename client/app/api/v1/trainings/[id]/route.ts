@@ -9,17 +9,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { searchParams } = new URL(req.url);
-    const include = searchParams.get("include");
-
-    let training;
-    if (include) {
-      const includes = include.split(",").map((s) => s.trim());
-      training = await trainingRepo.fetchTraining(params.id, includes);
-    } else {
-      training = await trainingRepo.find(params.id);
-    }
-
+    const training = await trainingRepo.fetchTraining(params.id);
     return NextResponse.json(training);
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
@@ -58,7 +48,7 @@ export async function PATCH(
 
 // DELETE /api/trainings/[id]  – delete
 export async function DELETE(
-  req: Request,
+  _req: Request,
   { params }: { params: { id: string } }
 ) {
   try {

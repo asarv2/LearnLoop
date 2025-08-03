@@ -1,5 +1,9 @@
 // lib/api/hooks/useTrainings.ts
-import type { TrainingCreate, TrainingUpdate } from "@/lib/repos/trainingRepo";
+import type {
+  TrainingCreate,
+  TrainingUpdate,
+  TrainingWithAllIncludes,
+} from "@/lib/repos/trainingRepo";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../fetcher";
 import { trainingKeys } from "../keys";
@@ -21,19 +25,10 @@ export function useTrainingsPractice() {
   });
 }
 
-export function useTraining(
-  id: string,
-  include: string[] = [],
-  enabled = true
-) {
+export function useTraining(id: string, enabled = true) {
   return useQuery({
     queryKey: trainingKeys.detail(id),
-    queryFn: () =>
-      api<TrainingCreate>(
-        `/api/v1/trainings/${id}${
-          include.length ? "?include=" + include.join(",") : ""
-        }`
-      ),
+    queryFn: () => api<TrainingWithAllIncludes>(`/api/v1/trainings/${id}`),
     enabled,
   });
 }
