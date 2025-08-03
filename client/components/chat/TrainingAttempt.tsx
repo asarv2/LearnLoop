@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useChat, useChats } from "@/lib/api/hooks/useChats";
+import { useChatForAttempt } from "@/lib/api/hooks/useChats";
 import {
   useEndTraining,
   useGenerateFeedback,
@@ -17,7 +17,7 @@ import {
 import { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import { Assessment } from "@/types";
 import { logError } from "@/utils/logger";
-import { Box } from "@radix-ui/themes";
+import { Box, Text } from "@radix-ui/themes";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import AssessmentWizard from "./AssessmentWizard";
@@ -37,13 +37,14 @@ export default function TrainingAttempt({ attemptId }: TrainingAttemptProps) {
   const [showFeedback, setShowFeedback] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { data: chats } = useChats();
-  const chatId = chats?.find((chat) => chat.attempt_id === attemptId)?.id;
+  // Use the new hook to get the most recent incomplete chat for this attempt
+  const { data: chat } = useChatForAttempt(attemptId);
+  const chatId = chat?.id;
 
   // Use the new training hooks
-  const { data: chat } = useChat(chatId!);
   const { data: messages = [], streamingMessage } = useTrainingMessages(
-    chatId!
+    chatId!,
+    !!chatId
   );
   const sendMessageMutation = useSendTrainingMessage();
   const endTrainingMutation = useEndTraining();
@@ -69,10 +70,10 @@ export default function TrainingAttempt({ attemptId }: TrainingAttemptProps) {
   }, [messages, streamingMessage]);
 
   const endInterview = async () => {
-    if (endTrainingMutation.isPending) return;
+    if (endTrainingMutation.isPending || !chatId) return;
 
     try {
-      await endTrainingMutation.mutateAsync({ chatId: chatId! });
+      await endTrainingMutation.mutateAsync({ chatId });
       // Show the assessment wizard after successful end
       setShowAssessment(true);
     } catch (error) {
@@ -88,15 +89,17 @@ export default function TrainingAttempt({ attemptId }: TrainingAttemptProps) {
   const handleAssessmentComplete = async (
     responses: Assessment["responses"]
   ) => {
+    if (!chatId) return;
+
     try {
       await submitAssessmentMutation.mutateAsync({
-        chatId: chatId!,
+        chatId,
         responses: responses as Record<string, unknown>,
       });
       setShowAssessment(false);
 
       // Generate feedback after assessment is submitted
-      await generateFeedbackMutation.mutateAsync({ chatId: chatId! });
+      await generateFeedbackMutation.mutateAsync({ chatId });
       setShowFeedback(true);
     } catch (error) {
       logError("Error processing assessment:", error);
@@ -127,51 +130,66 @@ export default function TrainingAttempt({ attemptId }: TrainingAttemptProps) {
 
   return (
     <Box style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-      <ChatHeader
-        candidateName={chat?.name || "John Doe"}
-        interviewType={chat?.type || ""}
-        resumeId={chat?.resume_id || ""}
-        onEndInterview={endInterview}
-        isInterviewActive={isInterviewActive}
-        isEndingInterview={endTrainingMutation.isPending}
-        onShowFeedback={() => setShowFeedback(true)}
-        onBack={() => router.push("/dashboard/trainings")}
-        interviewStartTimeIso={chat?.created_at}
-        completedAtIso={chat?.completed_at}
-      />
+      {!chat ? (
+        <Box
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            height: "100%",
+          }}
+        >
+          <Text>Loading chat...</Text>
+        </Box>
+      ) : (
+        <>
+          <ChatHeader
+            candidateName={chat?.name || "John Doe"}
+            interviewType={chat?.type || ""}
+            resumeId={chat?.resume_id || ""}
+            onEndInterview={endInterview}
+            isInterviewActive={isInterviewActive}
+            isEndingInterview={endTrainingMutation.isPending}
+            onShowFeedback={() => setShowFeedback(true)}
+            onBack={() => router.push("/dashboard/trainings")}
+            interviewStartTimeIso={chat?.created_at}
+            completedAtIso={chat?.completed_at}
+          />
 
-      <ChatArea
-        displayMessages={displayMessages}
-        isSendingMessage={sendMessageMutation.isPending}
-        isEndingInterview={endTrainingMutation.isPending}
-        streamingMessage={!!streamingMessage}
-        isInterviewActive={isInterviewActive}
-        currentMessage={currentMessage}
-        setCurrentMessage={setCurrentMessage}
-        chat={chat!}
-        messagesEndRef={messagesEndRef}
-      />
+          <ChatArea
+            displayMessages={displayMessages}
+            isSendingMessage={sendMessageMutation.isPending}
+            isEndingInterview={endTrainingMutation.isPending}
+            streamingMessage={!!streamingMessage}
+            isInterviewActive={isInterviewActive}
+            currentMessage={currentMessage}
+            setCurrentMessage={setCurrentMessage}
+            chat={chat}
+            messagesEndRef={messagesEndRef}
+          />
 
-      {/* Assessment Wizard */}
-      <AssessmentWizard
-        isOpen={showAssessment}
-        onClose={() => setShowAssessment(false)}
-        onComplete={handleAssessmentComplete}
-        candidateName={chat?.name || "John Doe"}
-        isSubmitting={submitAssessmentMutation.isPending}
-        assessmentId={getAssessmentId()}
-        chat={chat!}
-      />
+          {/* Assessment Wizard */}
+          <AssessmentWizard
+            isOpen={showAssessment}
+            onClose={() => setShowAssessment(false)}
+            onComplete={handleAssessmentComplete}
+            candidateName={chat?.name || "John Doe"}
+            isSubmitting={submitAssessmentMutation.isPending}
+            assessmentId={getAssessmentId()}
+            chat={chat}
+          />
 
-      {/* Feedback Modal */}
-      <FeedbackModal
-        isOpen={showFeedback}
-        onClose={() => setShowFeedback(false)}
-        feedback={chat?.feedback?.[0] || null}
-        candidateName={chat?.name || "John Doe"}
-        interviewScore={null}
-        chat={chat}
-      />
+          {/* Feedback Modal */}
+          <FeedbackModal
+            isOpen={showFeedback}
+            onClose={() => setShowFeedback(false)}
+            feedback={chat?.feedback?.[0] || null}
+            candidateName={chat?.name || "John Doe"}
+            interviewScore={null}
+            chat={chat}
+          />
+        </>
+      )}
     </Box>
   );
 }

@@ -1,26 +1,26 @@
 // lib/repos/messageRepo.ts
-import { cookies } from "next/headers";
-import { z } from "zod";
-import supabaseServer from "@/utils/supabase/supabase-server";
 import type { Database } from "@/database.types";
 import { HttpError } from "@/utils/HttpError";
+import supabaseServer from "@/utils/supabase/supabase-server";
+import { cookies } from "next/headers";
+import { z } from "zod";
 
-export type MessageCreate = Database['public']['Tables']['messages']['Insert'];
-export type MessageUpdate = Database['public']['Tables']['messages']['Update'];
-export type MessageHint = Database['public']['Tables']['hints']['Row'];
+export type MessageCreate = Database["public"]["Tables"]["messages"]["Insert"];
+export type MessageUpdate = Database["public"]["Tables"]["messages"]["Update"];
+export type MessageHint = Database["public"]["Tables"]["hints"]["Row"];
 
 // Runtime validators for API requests
 export const MessageCreateSchema = z.object({
   chat_id: z.string().min(1, "Chat ID is required"),
   content: z.string().min(1, "Content is required"),
-  role: z.enum(['user', 'assistant']).optional(),
+  role: z.enum(["user", "assistant"]).optional(),
   metadata: z.any().optional(), // Json type
 });
 
 export const MessageUpdateSchema = z.object({
   chat_id: z.string().min(1, "Chat ID is required").optional(),
   content: z.string().min(1, "Content is required").optional(),
-  role: z.enum(['user', 'assistant']).optional(),
+  role: z.enum(["user", "assistant"]).optional(),
   metadata: z.any().optional(), // Json type
 });
 
@@ -33,7 +33,7 @@ export const messageRepo = {
   async create(payload: MessageCreate) {
     const supabase = await getSupabase();
     const { data, error } = await supabase
-      .from('messages')
+      .from("messages")
       .insert(payload)
       .select()
       .single();
@@ -43,16 +43,34 @@ export const messageRepo = {
 
   async list() {
     const supabase = await getSupabase();
-    const { data, error } = await supabase.from('messages').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw new HttpError(500, error.message);
+    return data;
+  },
+
+  async listByChatId(chatId: string) {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: true });
     if (error) throw new HttpError(500, error.message);
     return data;
   },
 
   async find(id: string) {
     const supabase = await getSupabase();
-    const { data, error } = await supabase.from('messages').select('*').eq('id', id).single();
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("id", id)
+      .single();
     if (error) {
-      if (error.code === 'PGRST116') {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Message with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
@@ -62,9 +80,14 @@ export const messageRepo = {
 
   async update(id: string, patch: MessageUpdate) {
     const supabase = await getSupabase();
-    const { data, error } = await supabase.from('messages').update(patch).eq('id', id).select().single();
+    const { data, error } = await supabase
+      .from("messages")
+      .update(patch)
+      .eq("id", id)
+      .select()
+      .single();
     if (error) {
-      if (error.code === 'PGRST116') {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Message with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
@@ -74,9 +97,9 @@ export const messageRepo = {
 
   async remove(id: string) {
     const supabase = await getSupabase();
-    const { error } = await supabase.from('messages').delete().eq('id', id);
+    const { error } = await supabase.from("messages").delete().eq("id", id);
     if (error) {
-      if (error.code === 'PGRST116') {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Message with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
@@ -86,12 +109,12 @@ export const messageRepo = {
   async getHints(messageId: string): Promise<MessageHint[]> {
     const supabase = await getSupabase();
     const { data, error } = await supabase
-      .from('hints')
-      .select('*')
-      .eq('message_id', messageId)
-      .order('created_at', { ascending: false });
-    
+      .from("hints")
+      .select("*")
+      .eq("message_id", messageId)
+      .order("created_at", { ascending: false });
+
     if (error) throw new HttpError(500, error.message);
     return data;
-  }
-}; 
+  },
+};
