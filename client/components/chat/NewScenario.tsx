@@ -43,6 +43,7 @@ import { usePersonas } from "@/lib/api/hooks/usePersonas";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
 
 // Types
+import { useAuth } from "@/components/auth/AuthProvider";
 import type { Tables } from "@/database.types";
 import { useCreateChat } from "@/lib/api/hooks/useChats";
 
@@ -258,6 +259,7 @@ function PersonaField({
 export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [fieldValues, setFieldValues] = useState<FieldValue[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const { user } = useAuth();
 
   // Fetch scenario data
   const { data: scenario, isLoading: scenarioLoading } =
@@ -334,7 +336,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           if (fieldValue.file) {
             const newDocument = await createDocument.mutateAsync({
               content: null, // Will be populated after upload
-              profile_id: null, // Will be set when we have a profile
+              profile_id: user?.id || null, // Use user ID as profile ID
             });
             documentUploads.push({
               documentId: newDocument.id!,
@@ -347,14 +349,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       // Create training attempt
       const attempt = await createAttempt.mutateAsync({
         training_id: scenario.training_id || undefined,
-        profile_id: undefined, // Will be set when we have a profile
+        profile_id: user?.id || null, // Use user ID as profile ID
       });
 
       const chat = await createChat.mutateAsync({
         attempt_id: attempt.id,
         title: scenario.title,
-        profile_id: undefined,
+        name: scenario.title, // Use title as name
+        position: "Participant", // Default position
+        additional_info: scenario.description || "", // Use description as additional info
+        profile_id: user?.id || null, // Use user ID as profile ID
+        user_id: user?.id || null, // Add user ID
         voice: "alloy",
+        type: "regular", // Default to regular interview type
       });
 
       // Upload documents if any
@@ -370,7 +377,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           attempt_id: attempt.id,
           scenario_id: scenarioId,
           chat_id: chat.id,
-          profile_id: undefined,
+          profile_id: user?.id || undefined,
         });
       }
     } catch (error) {
