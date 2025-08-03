@@ -9,8 +9,6 @@ from sqlalchemy import (ARRAY, Boolean, CheckConstraint, Column, Computed,
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped
 from sqlmodel import Field, Relationship, SQLModel
-
-
 class _Base(SQLModel):
     """Shared config so Pydantic will accept SQLAlchemy types."""
     model_config = {"arbitrary_types_allowed": True}
