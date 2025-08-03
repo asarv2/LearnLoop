@@ -11,12 +11,14 @@ from typing import Any, Dict, Optional
 
 import socketio  # type: ignore
 from app.db import get_session
-from app.models import Chats, Messages
+from app.models import Chats, Fields, Messages, Parameters
 from app.services.agents.assesment import run_assessment_agent
 from app.services.agents.feedback import run_feedback_agent
 from app.services.agents.generic import run_generic_agent
 from app.services.agents.grade import run_grading_agent
 from app.services.agents.hint import run_hint_agent
+from app.utils.chat import get_conversation_history
+from sqlalchemy import Column
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
@@ -207,6 +209,44 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
         await emit_error(sid, f"Failed to end training: {str(e)}")
 
 
+def get_persona_id_from_chat(db_session, chat: Chats) -> Optional[uuid.UUID]:
+    """
+    Extract persona_id from chat's parameter_ids by finding the parameter with field_type 'persona'
+    """
+    if not chat.parameter_ids:
+        return None
+    
+    try:
+        # Get all parameters for this chat
+        parameters = []
+        for param_id in chat.parameter_ids:
+            param = db_session.exec(
+                select(Parameters).where(Parameters.id == param_id)
+            ).one_or_none()
+            if param:
+                parameters.append(param)
+        
+        # Find the parameter that has a field with field_type 'persona'
+        for param in parameters:
+            if param.field_id:
+                field = db_session.exec(
+                    select(Fields).where(Fields.id == param.field_id)
+                ).one_or_none()
+                
+                if field and field.field_type == 'persona' and param.value:
+                    # The value should be the persona UUID
+                    try:
+                        return uuid.UUID(param.value)
+                    except ValueError:
+                        logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
+                        continue
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error extracting persona_id from chat {chat.id}: {str(e)}")
+        return None
+
+
 async def process_training_message_websocket(
     chat_id: str,
     message: str = "",
@@ -215,7 +255,7 @@ async def process_training_message_websocket(
 ) -> None:
     """
     Process a training message and stream the response via WebSocket
-    Simple training-focused message processing
+    Uses the generic agent with the persona linked to the chat
     """
     
     # Use provided session or create new one
@@ -273,31 +313,42 @@ async def process_training_message_websocket(
             "message_id": str(assistant_message.id)
         }, room=chat_id)
 
-        # Stream response
+        # Get persona_id from chat parameters
+        persona_id = get_persona_id_from_chat(db_session, chat)
+        if not persona_id:
+            logger.error(f"No persona found for chat {chat_id}")
+            assistant_message.error = "No persona configured for this chat"
+            assistant_message.completed = True
+            db_session.add(assistant_message)
+            db_session.commit()
+            
+            await sio.emit("training_message_error", {
+                "chat_id": chat_id,
+                "message_id": str(assistant_message.id),
+                "error": "No persona configured for this chat"
+            }, room=chat_id)
+            return
+
+        # Get conversation history
+        messages = db_session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
+        conversation_history = get_conversation_history(messages)
+
+        # Stream response using generic agent
         accumulated_content = ""
         try:
-            # For now, use a simple response generation
-            # TODO: Integrate with actual agent system
-            response_content = f"Thank you for your message: '{message}'. This is a training response."
-            
-            # Simulate streaming by sending the response in chunks
-            words = response_content.split()
-            for i, word in enumerate(words):
-                accumulated_content += word + " "
+            async for chunk in run_generic_agent(persona_id, conversation_history, db_session):
+                accumulated_content += chunk
                 
                 # Emit token update
                 await sio.emit("training_message_token", {
                     "chat_id": chat_id,
                     "message_id": str(assistant_message.id),
-                    "token": word,
-                    "accumulated_content": accumulated_content.strip()
+                    "token": chunk,
+                    "accumulated_content": accumulated_content
                 }, room=chat_id)
-                
-                # Small delay to simulate real streaming
-                await asyncio.sleep(0.1)
 
             # Update message with final content
-            assistant_message.content = accumulated_content.strip()
+            assistant_message.content = accumulated_content
             assistant_message.completed = True
             db_session.add(assistant_message)
             db_session.commit()
@@ -306,7 +357,7 @@ async def process_training_message_websocket(
             await sio.emit("training_message_complete", {
                 "chat_id": chat_id,
                 "message_id": str(assistant_message.id),
-                "final_content": accumulated_content.strip()
+                "final_content": accumulated_content
             }, room=chat_id)
 
             logger.info(f"Completed training message {assistant_message.id} for chat {chat_id}")
