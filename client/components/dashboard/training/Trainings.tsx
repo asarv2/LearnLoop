@@ -6,6 +6,7 @@
  */
 "use client";
 
+import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import { useTrainingsPractice } from "@/lib/api/hooks/useTrainings";
 import {
   BulbOutlined,
@@ -51,6 +52,112 @@ const trainingIcons = [
   <RocketOutlined key="rocket" />,
 ];
 
+// Helper component to handle training card with scenario routing
+function TrainingCard({
+  training,
+  index,
+}: {
+  training: {
+    id?: string;
+    title: string;
+    description?: string | null;
+    active?: boolean | null;
+  };
+  index: number;
+}) {
+  const { data: scenarios } = useScenariosByTrainingId(
+    training.id || "",
+    training.active || false
+  );
+
+  const color = trainingColors[index % trainingColors.length];
+  const icon = trainingIcons[index % trainingIcons.length];
+  const status = training.active ? "available" : "coming-soon";
+
+  // Get the first scenario if available
+  const firstScenario = scenarios?.[0];
+  const href =
+    training.active && firstScenario && firstScenario.id
+      ? `/dashboard/trainings/s/${firstScenario.id}`
+      : "#";
+
+  return (
+    <Col xs={24} sm={12} lg={8} key={training.id}>
+      <Card
+        hoverable={status === "available"}
+        style={{
+          height: "100%",
+          cursor: status === "available" ? "pointer" : "default",
+          transition: "all 0.3s ease",
+          opacity: status === "coming-soon" ? 0.8 : 1,
+        }}
+      >
+        <div style={{ textAlign: "center", marginBottom: "16px" }}>
+          <div
+            style={{
+              fontSize: "48px",
+              color: color,
+              marginBottom: "12px",
+            }}
+          >
+            {icon}
+          </div>
+          <Title level={4} style={{ margin: 0 }}>
+            {training.title}
+            {status === "coming-soon" && (
+              <div style={{ marginTop: "8px" }}>
+                <Badge count="Soon" style={{ backgroundColor: "#fa8c16" }} />
+              </div>
+            )}
+          </Title>
+        </div>
+
+        <div style={{ textAlign: "center", marginBottom: "24px" }}>
+          <Paragraph
+            type="secondary"
+            style={{
+              margin: 0,
+              lineHeight: 1.5,
+              minHeight: "60px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {training.description || "No description available"}
+          </Paragraph>
+        </div>
+
+        <div style={{ textAlign: "center" }}>
+          {status === "available" ? (
+            <Link href={href}>
+              <Button
+                type="primary"
+                style={{
+                  backgroundColor: color,
+                  borderColor: color,
+                }}
+              >
+                Start Training
+              </Button>
+            </Link>
+          ) : (
+            <Button
+              disabled
+              style={{
+                backgroundColor: color,
+                borderColor: color,
+              }}
+            >
+              Coming Soon
+            </Button>
+          )}
+        </div>
+      </Card>
+    </Col>
+  );
+}
+
 export default function Trainings() {
   const { data: trainings, isLoading, error } = useTrainingsPractice();
 
@@ -95,93 +202,9 @@ export default function Trainings() {
             if (!a.active && b.active) return 1;
             return 0;
           })
-          .map((training, index) => {
-            const color = trainingColors[index % trainingColors.length];
-            const icon = trainingIcons[index % trainingIcons.length];
-            const status = training.active ? "available" : "coming-soon";
-            const href = training.active
-              ? `/training/${training.type}/new`
-              : "#";
-
-            return (
-              <Col xs={24} sm={12} lg={8} key={training.id}>
-                <Card
-                  hoverable={status === "available"}
-                  style={{
-                    height: "100%",
-                    cursor: status === "available" ? "pointer" : "default",
-                    transition: "all 0.3s ease",
-                    opacity: status === "coming-soon" ? 0.8 : 1,
-                  }}
-                >
-                  <div style={{ textAlign: "center", marginBottom: "16px" }}>
-                    <div
-                      style={{
-                        fontSize: "48px",
-                        color: color,
-                        marginBottom: "12px",
-                      }}
-                    >
-                      {icon}
-                    </div>
-                    <Title level={4} style={{ margin: 0 }}>
-                      {training.title}
-                      {status === "coming-soon" && (
-                        <div style={{ marginTop: "8px" }}>
-                          <Badge
-                            count="Soon"
-                            style={{ backgroundColor: "#fa8c16" }}
-                          />
-                        </div>
-                      )}
-                    </Title>
-                  </div>
-
-                  <div style={{ textAlign: "center", marginBottom: "24px" }}>
-                    <Paragraph
-                      type="secondary"
-                      style={{
-                        margin: 0,
-                        lineHeight: 1.5,
-                        minHeight: "60px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      {training.description || "No description available"}
-                    </Paragraph>
-                  </div>
-
-                  <div style={{ textAlign: "center" }}>
-                    {status === "available" ? (
-                      <Link href={href}>
-                        <Button
-                          type="primary"
-                          style={{
-                            backgroundColor: color,
-                            borderColor: color,
-                          }}
-                        >
-                          Start Training
-                        </Button>
-                      </Link>
-                    ) : (
-                      <Button
-                        disabled
-                        style={{
-                          backgroundColor: color,
-                          borderColor: color,
-                        }}
-                      >
-                        Coming Soon
-                      </Button>
-                    )}
-                  </div>
-                </Card>
-              </Col>
-            );
-          })}
+          .map((training, index) => (
+            <TrainingCard key={training.id} training={training} index={index} />
+          ))}
       </Row>
 
       {/* Footer Information */}
