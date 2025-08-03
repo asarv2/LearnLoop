@@ -9,6 +9,8 @@ from sqlalchemy import (ARRAY, Boolean, CheckConstraint, Column, Computed,
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped
 from sqlmodel import Field, Relationship, SQLModel
+
+
 class _Base(SQLModel):
     """Shared config so Pydantic will accept SQLAlchemy types."""
     model_config = {"arbitrary_types_allowed": True}
@@ -30,7 +32,7 @@ class Users(_Base, table=True):
      'schema': 'auth'}
     )
 
-    id: Mapped[uuid.UUID] = Field(sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True))
     is_sso_user: bool = Field(sa_column=Column('is_sso_user', Boolean, default=False, comment='Auth: Set this column to true when the account comes from SSO. These accounts can have duplicate emails.'))
     is_anonymous: bool = Field(sa_column=Column('is_anonymous', Boolean, default=False))
     instance_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('instance_id', Uuid(as_uuid=True)))
@@ -76,7 +78,7 @@ class Fields(_Base, table=True):
         PrimaryKeyConstraint('id', name='fields_pkey'),
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     name: str = Field(sa_column=Column('name', Text))
     field_type: str = Field(sa_column=Column('field_type', Enum('persona', 'document', 'numerical', 'categorical', 'text', name='field_type')))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
@@ -86,30 +88,12 @@ class Fields(_Base, table=True):
     parameters: List['Parameters'] = Relationship(back_populates='field')
 
 
-class Profiles(_Base, table=True):
-    __table_args__ = (
-        PrimaryKeyConstraint('id', name='profiles_pkey'),
-    )
-
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    name: str = Field(sa_column=Column('name', Text))
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
-    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
-    active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
-    last_active: Optional[datetime] = Field(default=None, sa_column=Column('last_active', DateTime(True)))
-
-    attempts: List['Attempts'] = Relationship(back_populates='profile')
-    documents: List['Documents'] = Relationship(back_populates='profile')
-    personas: List['Personas'] = Relationship(back_populates='profile')
-    chats: List['Chats'] = Relationship(back_populates='profile')
-
-
 class Rubrics(_Base, table=True):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='rubrics_pkey'),
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     name: str = Field(sa_column=Column('name', Text))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
@@ -129,7 +113,7 @@ class Trainings(_Base, table=True):
         Index('idx_trainings_user_id', 'user_id')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     type: str = Field(sa_column=Column('type', Text))
     title: str = Field(sa_column=Column('title', Text))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
@@ -139,53 +123,19 @@ class Trainings(_Base, table=True):
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
     active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
     practice: Optional[bool] = Field(default=None, sa_column=Column('practice', Boolean, default=False))
-    what_to_do: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('what_to_do', ARRAY(Text())))
-    what_not_to_do: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('what_not_to_do', ARRAY(Text())))
+    what_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_to_do', ARRAY(Text())))
+    what_not_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_not_to_do', ARRAY(Text())))
 
-    attempts: List['Attempts'] = Relationship(back_populates='training')
     logs: List['Logs'] = Relationship(back_populates='training')
     resumes: List['Resumes'] = Relationship(back_populates='training')
     scenarios: List['Scenarios'] = Relationship(back_populates='training')
+    attempts: List['Attempts'] = Relationship(back_populates='training')
     chats: List['Chats'] = Relationship(back_populates='training')
     assessments: List['Assessments'] = Relationship(back_populates='training')
     feedback: List['Feedback'] = Relationship(back_populates='training')
     interview_scores: List['InterviewScores'] = Relationship(back_populates='training')
     messages: List['Messages'] = Relationship(back_populates='training')
     offboarding_scores: List['OffboardingScores'] = Relationship(back_populates='training')
-
-
-class Attempts(_Base, table=True):
-    __table_args__ = (
-        ForeignKeyConstraint(['profile_id'], ['profiles.id'], ondelete='CASCADE', name='attempts_profile_id_fkey'),
-        ForeignKeyConstraint(['training_id'], ['trainings.id'], ondelete='CASCADE', name='attempts_training_id_fkey'),
-        PrimaryKeyConstraint('id', name='attempts_pkey')
-    )
-
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
-    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
-    profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
-    training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
-
-    profile: Optional['Profiles'] = Relationship(back_populates='attempts')
-    training: Optional['Trainings'] = Relationship(back_populates='attempts')
-    chats: List['Chats'] = Relationship(back_populates='attempt')
-
-
-class Documents(_Base, table=True):
-    __table_args__ = (
-        ForeignKeyConstraint(['profile_id'], ['profiles.id'], ondelete='CASCADE', name='documents_profile_id_fkey'),
-        PrimaryKeyConstraint('id', name='documents_pkey')
-    )
-
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
-    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
-    google_file_id: Optional[str] = Field(default=None, sa_column=Column('google_file_id', Text))
-    content: Optional[str] = Field(default=None, sa_column=Column('content', Text))
-    profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
-
-    profile: Optional['Profiles'] = Relationship(back_populates='documents')
 
 
 class Logs(_Base, table=True):
@@ -198,7 +148,7 @@ class Logs(_Base, table=True):
         {'comment': 'for viewing client logs'}
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     level: str = Field(sa_column=Column('level', Enum('info', 'error', 'warn', 'debug', name='log_level')))
     message: str = Field(sa_column=Column('message', Text))
@@ -215,7 +165,7 @@ class Parameters(_Base, table=True):
         PrimaryKeyConstraint('id', name='parameters_pkey')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     name: str = Field(sa_column=Column('name', Text))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
@@ -226,24 +176,23 @@ class Parameters(_Base, table=True):
     field: Optional['Fields'] = Relationship(back_populates='parameters')
 
 
-class Personas(_Base, table=True):
+class Profiles(_Base, table=True):
     __table_args__ = (
-        ForeignKeyConstraint(['profile_id'], ['profiles.id'], ondelete='SET NULL', name='personas_profile_id_fkey'),
-        PrimaryKeyConstraint('id', name='personas_pkey')
+        ForeignKeyConstraint(['id'], ['auth.users.id'], ondelete='CASCADE', onupdate='CASCADE', name='profiles_id_fkey'),
+        PrimaryKeyConstraint('id', name='profiles_pkey')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     name: str = Field(sa_column=Column('name', Text))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
-    description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
-    system_prompt: Optional[str] = Field(default=None, sa_column=Column('system_prompt', Text))
-    temperature: Optional[float] = Field(default=None, sa_column=Column('temperature', Double(53), default=0.0))
-    voice: Optional[str] = Field(default=None, sa_column=Column('voice', Text))
-    profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
+    active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
+    last_active: Optional[datetime] = Field(default=None, sa_column=Column('last_active', DateTime(True)))
 
-    profile: Optional['Profiles'] = Relationship(back_populates='personas')
-    messages: List['Messages'] = Relationship(back_populates='persona')
+    attempts: List['Attempts'] = Relationship(back_populates='profile')
+    documents: List['Documents'] = Relationship(back_populates='profile')
+    personas: List['Personas'] = Relationship(back_populates='profile')
+    chats: List['Chats'] = Relationship(back_populates='profile')
 
 
 class Resumes(_Base, table=True):
@@ -255,7 +204,7 @@ class Resumes(_Base, table=True):
         Index('idx_resumes_user_id', 'user_id')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     google_file_id: Optional[str] = Field(default=None, sa_column=Column('google_file_id', Text))
     content: Optional[str] = Field(default=None, sa_column=Column('content', Text))
@@ -274,7 +223,7 @@ class Scenarios(_Base, table=True):
         PrimaryKeyConstraint('id', name='scenarios_pkey')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     title: str = Field(sa_column=Column('title', Text))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
@@ -293,16 +242,70 @@ class Standards(_Base, table=True):
         PrimaryKeyConstraint('id', name='standards_pkey')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     name: str = Field(sa_column=Column('name', Text))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
     rubric_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('rubric_id', Uuid(as_uuid=True)))
-    items: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('items', ARRAY(Text())))
+    items: Optional[List[str]] = Field(default=None, sa_column=Column('items', ARRAY(Text())))
 
     rubric: Optional['Rubrics'] = Relationship(back_populates='standards')
     standard_grades: List['StandardGrades'] = Relationship(back_populates='standard')
+
+
+class Attempts(_Base, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['profile_id'], ['profiles.id'], ondelete='CASCADE', name='attempts_profile_id_fkey'),
+        ForeignKeyConstraint(['training_id'], ['trainings.id'], ondelete='CASCADE', name='attempts_training_id_fkey'),
+        PrimaryKeyConstraint('id', name='attempts_pkey')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
+    training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
+
+    profile: Optional['Profiles'] = Relationship(back_populates='attempts')
+    training: Optional['Trainings'] = Relationship(back_populates='attempts')
+    chats: List['Chats'] = Relationship(back_populates='attempt')
+
+
+class Documents(_Base, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['profile_id'], ['profiles.id'], ondelete='CASCADE', name='documents_profile_id_fkey'),
+        PrimaryKeyConstraint('id', name='documents_pkey')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    google_file_id: Optional[str] = Field(default=None, sa_column=Column('google_file_id', Text))
+    content: Optional[str] = Field(default=None, sa_column=Column('content', Text))
+    profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
+
+    profile: Optional['Profiles'] = Relationship(back_populates='documents')
+
+
+class Personas(_Base, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['profile_id'], ['profiles.id'], ondelete='SET NULL', name='personas_profile_id_fkey'),
+        PrimaryKeyConstraint('id', name='personas_pkey')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    name: str = Field(sa_column=Column('name', Text))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
+    system_prompt: Optional[str] = Field(default=None, sa_column=Column('system_prompt', Text))
+    temperature: Optional[float] = Field(default=None, sa_column=Column('temperature', Double(53), default=0.0))
+    voice: Optional[str] = Field(default=None, sa_column=Column('voice', Text))
+    profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
+
+    profile: Optional['Profiles'] = Relationship(back_populates='personas')
+    messages: List['Messages'] = Relationship(back_populates='persona')
 
 
 class Chats(_Base, table=True):
@@ -317,7 +320,7 @@ class Chats(_Base, table=True):
         Index('idx_chats_user_id', 'user_id')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     title: str = Field(sa_column=Column('title', Text))
     completed: bool = Field(sa_column=Column('completed', Boolean, default=False))
@@ -359,8 +362,8 @@ class Assessments(_Base, table=True):
         Index('idx_assessments_training_id', 'training_id')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    chat_id: Mapped[uuid.UUID] = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
     responses: Dict[str, Any] = Field(sa_column=Column('responses', JSONB, server_default=text("'[]'::jsonb")))
     title: str = Field(sa_column=Column('title', Text, default=r'Untitled Assessment'))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
@@ -379,15 +382,15 @@ class Feedback(_Base, table=True):
         Index('idx_feedback_training_id', 'training_id')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
-    strengths: List[uuid.UUID] = Field(sa_column=Column('strengths', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    errors: List[uuid.UUID] = Field(sa_column=Column('errors', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    green_flags: List[uuid.UUID] = Field(sa_column=Column('green_flags', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    red_flags: List[uuid.UUID] = Field(sa_column=Column('red_flags', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    chat_id: Mapped[uuid.UUID] = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
+    strengths: List[str] = Field(sa_column=Column('strengths', ARRAY(Text()), server_default=text("'{}'::text[]")))
+    errors: List[str] = Field(sa_column=Column('errors', ARRAY(Text()), server_default=text("'{}'::text[]")))
+    green_flags: List[str] = Field(sa_column=Column('green_flags', ARRAY(Text()), server_default=text("'{}'::text[]")))
+    red_flags: List[str] = Field(sa_column=Column('red_flags', ARRAY(Text()), server_default=text("'{}'::text[]")))
+    chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
-    weaknesses: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('weaknesses', ARRAY(Text())))
+    weaknesses: Optional[List[str]] = Field(default=None, sa_column=Column('weaknesses', ARRAY(Text())))
 
     chat: Optional['Chats'] = Relationship(back_populates='feedback_')
     training: Optional['Trainings'] = Relationship(back_populates='feedback')
@@ -412,8 +415,8 @@ class InterviewScores(_Base, table=True):
         Index('idx_interview_scores_training_id', 'training_id')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    chat_id: Mapped[uuid.UUID] = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
     question_quality: int = Field(sa_column=Column('question_quality', Integer))
     followup_skills: int = Field(sa_column=Column('followup_skills', Integer))
     assessment_thoughtfulness: int = Field(sa_column=Column('assessment_thoughtfulness', Integer))
@@ -425,8 +428,8 @@ class InterviewScores(_Base, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     overall_feedback: Optional[str] = Field(default=None, sa_column=Column('overall_feedback', Text))
-    strengths: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('strengths', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    improvement_areas: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('improvement_areas', ARRAY(Text()), server_default=text("'{}'::text[]")))
+    strengths: Optional[List[str]] = Field(default=None, sa_column=Column('strengths', ARRAY(Text()), server_default=text("'{}'::text[]")))
+    improvement_areas: Optional[List[str]] = Field(default=None, sa_column=Column('improvement_areas', ARRAY(Text()), server_default=text("'{}'::text[]")))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
 
     chat: Optional['Chats'] = Relationship(back_populates='interview_scores')
@@ -442,11 +445,11 @@ class Messages(_Base, table=True):
         Index('idx_messages_training_id', 'training_id')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     completed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('completed_at', DateTime(True)))
     completed: bool = Field(sa_column=Column('completed', Boolean, default=False))
-    chat_id: Mapped[uuid.UUID] = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
+    chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
     role: str = Field(sa_column=Column('role', Enum('user', 'assistant', name='message_role')))
     content: Optional[str] = Field(default=None, sa_column=Column('content', Text))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
@@ -477,8 +480,8 @@ class OffboardingScores(_Base, table=True):
         Index('idx_offboarding_scores_training_id', 'training_id')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    chat_id: Mapped[uuid.UUID] = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
     empathy_emotional_intelligence: int = Field(sa_column=Column('empathy_emotional_intelligence', Integer))
     communication_professionalism: int = Field(sa_column=Column('communication_professionalism', Integer))
     transition_planning_logistics: int = Field(sa_column=Column('transition_planning_logistics', Integer))
@@ -490,8 +493,8 @@ class OffboardingScores(_Base, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     clarity_of_next_steps: int = Field(sa_column=Column('clarity_of_next_steps', Integer, default=1))
     overall_feedback: Optional[str] = Field(default=None, sa_column=Column('overall_feedback', Text))
-    strengths: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('strengths', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    improvement_areas: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('improvement_areas', ARRAY(Text()), server_default=text("'{}'::text[]")))
+    strengths: Optional[List[str]] = Field(default=None, sa_column=Column('strengths', ARRAY(Text()), server_default=text("'{}'::text[]")))
+    improvement_areas: Optional[List[str]] = Field(default=None, sa_column=Column('improvement_areas', ARRAY(Text()), server_default=text("'{}'::text[]")))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
 
     chat: Optional['Chats'] = Relationship(back_populates='offboarding_scores')
@@ -505,7 +508,7 @@ class RubricGrades(_Base, table=True):
         PrimaryKeyConstraint('id', name='rubric_grades_pkey')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     name: str = Field(sa_column=Column('name', Text))
     score: int = Field(sa_column=Column('score', Integer))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
@@ -523,11 +526,11 @@ class Hints(_Base, table=True):
         PrimaryKeyConstraint('id', name='hints_pkey')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     message_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('message_id', Uuid(as_uuid=True)))
-    contents: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('contents', ARRAY(Text())))
+    contents: Optional[List[str]] = Field(default=None, sa_column=Column('contents', ARRAY(Text())))
 
     message: Optional['Messages'] = Relationship(back_populates='hints')
 
@@ -538,13 +541,13 @@ class Questions(_Base, table=True):
         PrimaryKeyConstraint('id', name='questions_pkey')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     stem: str = Field(sa_column=Column('stem', Text))
     question_type: str = Field(sa_column=Column('question_type', Enum('mcq', 'frq', name='question_type')))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     assessment_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('assessment_id', Uuid(as_uuid=True)))
-    options: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('options', ARRAY(Text())))
+    options: Optional[List[str]] = Field(default=None, sa_column=Column('options', ARRAY(Text())))
     value: Optional[str] = Field(default=None, sa_column=Column('value', Text))
     default_question: Optional[bool] = Field(default=None, sa_column=Column('default_question', Boolean, default=False, comment='if a default question'))
 
@@ -559,7 +562,7 @@ class StandardGrades(_Base, table=True):
         PrimaryKeyConstraint('id', name='standard_grades_pkey')
     )
 
-    id: Mapped[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     name: str = Field(sa_column=Column('name', Text))
     score: int = Field(sa_column=Column('score', Integer))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
