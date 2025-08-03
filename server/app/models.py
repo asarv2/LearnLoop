@@ -95,6 +95,8 @@ class Profiles(_Base, table=True):
     name: str = Field(sa_column=Column('name', Text))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
+    last_active: Optional[datetime] = Field(default=None, sa_column=Column('last_active', DateTime(True)))
 
     attempts: List['Attempts'] = Relationship(back_populates='profile')
     documents: List['Documents'] = Relationship(back_populates='profile')

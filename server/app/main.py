@@ -12,51 +12,25 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, Generator, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 import socketio  # type: ignore
-
-# ---------------------------------------------------------------------------+
-# 1.  Gate everything behind one flag                                        +
-# ---------------------------------------------------------------------------+
-WEBRTC_ENABLED = os.getenv("WEBRTC_ENABLED", "true").lower() == "true"
-
-from typing import TYPE_CHECKING, Any
-
-if WEBRTC_ENABLED:
-    # WebRTC imports
-    from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
-                        RTCIceCandidate, RTCIceServer, RTCPeerConnection,
-                        RTCSessionDescription)
-    from aiortc.sdp import candidate_from_sdp  # type: ignore
-    from av import AudioFrame  # type: ignore
-else:
-    # Tiny no-op stubs so the rest of the file still imports cleanly
-    if TYPE_CHECKING:
-        from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
-                            RTCIceCandidate, RTCIceServer, RTCPeerConnection,
-                            RTCSessionDescription)
-        from aiortc.sdp import candidate_from_sdp  # type: ignore
-        from av import AudioFrame  # type: ignore
-
-from app.db import get_session, init_db
-from app.models import Chats
-from app.routes.audio import router as audio_router
-from app.routes.documents import router as documents_router
-from app.routes.scenarios import router as scenarios_router
-from app.routes.sketch import router as sketch_router
-from app.utils.audio import Modalities
+from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
+                    RTCIceCandidate, RTCIceServer, RTCPeerConnection,
+                    RTCSessionDescription)
+from aiortc.sdp import candidate_from_sdp  # type: ignore
+from av import AudioFrame  # type: ignore
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlmodel import Session, select
 
 # Redis is nice in production, but optional in dev
 try:
     from socketio import AsyncRedisManager
 except ImportError:               # pip install redis-py not present
     AsyncRedisManager = None      # type: ignore
-from sqlmodel import Session, select
 
 load_dotenv()
 
@@ -75,7 +49,6 @@ client_port = os.getenv("CLIENT_PORT", "3000")
 # Allow all origins
 allowed_origins = [
     f"http://localhost:{client_port}",
-    "https://boilersketch.cs.purdue.edu",
 ]
 
 # Store active chat connections
@@ -90,6 +63,9 @@ socket_owner: Dict[str, str] = {}  # profile_id -> socket_id
 
 # ICE candidate buffering for profiles without remote description
 pending_ice: Dict[str, List[RTCIceCandidate]] = defaultdict(list)
+
+# WebRTC configuration flag
+WEBRTC_ENABLED = True
 
 class ServerAudioStreamTrack(MediaStreamTrack):
     """
@@ -200,37 +176,10 @@ def force_opus_codec(sdp: str) -> str:
     logger.warning("Opus codec not found in offer, cannot force it.")
     return sdp
 
-def _get_public_ip() -> str:
-    """Get public IP address for TURN server configuration."""
-    import socket
-    import urllib.request
-
-    # Try multiple methods to get public IP
-    methods = [
-        "https://ifconfig.me/ip",
-        "https://ipinfo.io/ip", 
-        "https://icanhazip.com",
-    ]
-    
-    for url in methods:
-        try:
-            with urllib.request.urlopen(url, timeout=5) as response:
-                ip = response.read().decode('utf-8').strip()
-                # Validate IP format
-                socket.inet_aton(ip)
-                return str(ip)
-        except Exception:
-            continue
-    
-    # Fallback to localhost for local development
-    return "127.0.0.1"
-
 # ---------------------------------------------------------------------------+
 # 4.  Empty ICE list when disabled                                           +
 # ---------------------------------------------------------------------------+
 def _build_ice_servers() -> List[Dict[str, Any]]:
-    if not WEBRTC_ENABLED:
-        return []
         
     turn_uri = os.getenv("TURN_URI", "")
     stun_uri = os.getenv("STUN_URI", "")
@@ -426,15 +375,12 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
         logger.info(f"Received track: {track.kind} for profile {profile_id}")
         if track.kind == "audio":
             chat_id = getattr(pc, "_last_chat_id", None)
-            # MODIFIED: Get the stored audio preference
-            assistant_audio_enabled = getattr(pc, "_assistant_audio_enabled", True)
 
             if chat_id:
-                from app.web.simulations import process_audio_stream
-
-                # MODIFIED: Pass the preference down to the processing function
+                # MODIFIED: Route audio stream to the training handler
+                from app.web.training import process_training_audio_stream
                 asyncio.create_task(
-                    process_audio_stream(track, chat_id, profile_id, assistant_audio_enabled)
+                    process_training_audio_stream(track, chat_id, profile_id)
                 )
             else:
                 logger.warning(
@@ -470,8 +416,6 @@ async def send_text_dc(profile_id: str, payload: Dict[str, Any]) -> bool:
             return False
     return False          # caller can fall back to socket.emit
 
-
-
 async def handle_webrtc_data_message(profile_id: str, channel_label: str, message: Any) -> None:
     """Handle incoming WebRTC data channel messages."""
     try:
@@ -487,57 +431,20 @@ async def handle_webrtc_data_message(profile_id: str, channel_label: str, messag
         
         chat_id = data.get('chat_id')
         content = data.get('content', '')
-        assistant_audio_enabled = data.get('assistant_audio_enabled', False)  # New field
         
         if not chat_id:
             logger.error(f"No chat_id in WebRTC message: {data}")
             return
         
-        # Determine chat type by checking database tables
-        if channel_label.startswith('text-'):
-            from app.db import get_session
-            from app.models import AssistantChats, SimulationChats
-            
-            db_session = next(get_session())
-            try:
-                # Check if it's an assistant chat
-                assistant_chat = db_session.exec(
-                    select(AssistantChats).where(AssistantChats.id == uuid.UUID(chat_id))
-                ).one_or_none()
-                
-                if assistant_chat:
-                    # It's an assistant chat
-                    logger.info(f"Routing WebRTC message to assistant chat: {chat_id}")
-                    from app.web.assistants import \
-                        process_assistant_message_websocket
-                    await process_assistant_message_websocket(
-                        chat_id=uuid.UUID(chat_id),
-                        message=content,
-                        session=None
-                    )
-                else:
-                    # Check if it's a simulation chat
-                    simulation_chat = db_session.exec(
-                        select(SimulationChats).where(SimulationChats.id == uuid.UUID(chat_id))
-                    ).one_or_none()
-                    
-                    if simulation_chat:
-                        # It's a simulation chat
-                        logger.info(f"Routing WebRTC message to simulation chat: {chat_id}")
-                        from app.web.simulations import \
-                            process_simulation_message_websocket
-                        await process_simulation_message_websocket(
-                            chat_id=chat_id,
-                            message=content,
-                            profile_id=profile_id,
-                            assistant_audio_enabled=assistant_audio_enabled,
-                            session=None
-                        )
-                    else:
-                        logger.error(f"Chat {chat_id} not found in either assistant_chats or simulation_chats tables")
-                        return
-            finally:
-                db_session.close()
+        # MODIFIED: Directly route to training handler
+        logger.info(f"Routing WebRTC message to training chat: {chat_id}")
+        from app.web.training import process_training_message_websocket
+        
+        await process_training_message_websocket(
+            chat_id=chat_id,
+            message=content,
+            profile_id=profile_id,
+        )
         
     except Exception as e:
         logger.error(f"Error handling WebRTC data message: {e}")
@@ -555,7 +462,6 @@ async def handle_text_dc_message(profile_id: str, message: Any) -> None:
         
         chat_id = data.get('chat_id')
         content = data.get('content', '')
-        assistant_audio_enabled = data.get('assistant_audio_enabled', False)
         sketch_data = data.get('sketch_data')
         
         if not chat_id:
@@ -575,51 +481,16 @@ async def handle_text_dc_message(profile_id: str, message: Any) -> None:
                 logger.error(f"Error decoding sketch data from WebRTC: {e}")
                 sketch_bytes = None
         
-        # Determine chat type by checking database tables
-        from app.db import get_session
-        from app.models import AssistantChats, SimulationChats
+        # MODIFIED: Directly route to training handler
+        logger.info(f"Routing message to training chat: {chat_id}")
+        from app.web.training import process_training_message_websocket
         
-        db_session = next(get_session())
-        try:
-            # Check if it's an assistant chat
-            assistant_chat = db_session.exec(
-                select(AssistantChats).where(AssistantChats.id == uuid.UUID(chat_id))
-            ).one_or_none()
-            
-            if assistant_chat:
-                # It's an assistant chat
-                logger.info(f"Routing message to assistant chat: {chat_id}")
-                from app.web.assistants import \
-                    process_assistant_message_websocket
-                await process_assistant_message_websocket(
-                    chat_id=uuid.UUID(chat_id),
-                    message=content,
-                    session=None
-                )
-            else:
-                # Check if it's a simulation chat
-                simulation_chat = db_session.exec(
-                    select(SimulationChats).where(SimulationChats.id == uuid.UUID(chat_id))
-                ).one_or_none()
-                
-                if simulation_chat:
-                    # It's a simulation chat
-                    logger.info(f"Routing message to simulation chat: {chat_id}")
-                    from app.web.simulations import \
-                        process_simulation_message_websocket
-                    await process_simulation_message_websocket(
-                        chat_id=chat_id,
-                        message=content,
-                        sketch_data=sketch_bytes,
-                        profile_id=profile_id,
-                        assistant_audio_enabled=assistant_audio_enabled,
-                        session=None
-                    )
-                else:
-                    logger.error(f"Chat {chat_id} not found in either assistant_chats or simulation_chats tables")
-                    return
-        finally:
-            db_session.close()
+        await process_training_message_websocket(
+            chat_id=chat_id,
+            message=content,
+            sketch_data=sketch_bytes,
+            profile_id=profile_id,
+        )
         
     except Exception as e:
         logger.error(f"Error handling text data-channel message: {e}")
@@ -663,98 +534,10 @@ sio = socketio.AsyncServer(
     }
 )
 
-from app.web.assistants import register_assistant_events
-# Import and register WebSocket events after sio is created to avoid circular imports
-from app.web.simulations import register_simulation_events
+# MODIFIED: Only register training events
 from app.web.training import register_training_events
 
-# Register simulation, assistant, and training WebSocket events
-register_simulation_events(sio)
-register_assistant_events(sio)
 register_training_events(sio)
-
-# WebSocket events will be registered after sio is created
-
-@sio.event  # type: ignore
-async def send_simulation_message(sid: str, data: Dict[str, Any]) -> None:
-    """Handle simulation message sending requests"""
-    try:
-        chat_id = data.get("chat_id")
-        message = data.get("message")
-        assistant_audio_enabled = data.get("assistant_audio_enabled", False)
-        sketch_data = data.get("sketch_data")
-
-        if not chat_id or (not message and not sketch_data):
-            logger.error(f"Missing chat_id or both message and sketch_data in request from {sid}")
-            return
-
-        # Convert base64 sketch data to bytes if present
-        sketch_bytes = None
-        if sketch_data:
-            try:
-                # Remove data URL prefix if present (data:image/png;base64,)
-                if sketch_data.startswith('data:'):
-                    sketch_data = sketch_data.split(',', 1)[1]
-                sketch_bytes = base64.b64decode(sketch_data)
-                logger.info(f"Decoded sketch data: {len(sketch_bytes)} bytes")
-            except Exception as e:
-                logger.error(f"Error decoding sketch data: {e}")
-                sketch_bytes = None
-
-        logger.info(f"Processing send_simulation_message from {sid}: {chat_id} (audio: {assistant_audio_enabled}, sketch: {sketch_bytes is not None})")
-
-        # Process the message via WebSocket
-        from app.web.simulations import process_simulation_message_websocket
-
-        await process_simulation_message_websocket(
-            chat_id=chat_id, 
-            message=message or "", 
-            sketch_data=sketch_bytes,
-            assistant_audio_enabled=assistant_audio_enabled,
-            session=None
-        )
-
-    except Exception as e:
-        logger.error(f"Error in send_simulation_message for {sid}: {str(e)}")
-        await sio.emit(
-            "simulation_error",
-            {"success": False, "message": str(e)},
-            room=sid,
-        )
-
-@sio.event  # type: ignore
-async def send_assistant_message(sid: str, data: Dict[str, Any]) -> None:
-    """Handle assistant message sending requests"""
-    try:
-        chat_id = data.get("chat_id")
-        message = data.get("message")
-
-        if not chat_id or not message:
-            logger.error(f"Missing chat_id or message in request from {sid}")
-            return
-
-        logger.info(f"Processing send_assistant_message from {sid}: {chat_id}, message: {message[:50]}...")
-
-        # Process the message via WebSocket
-        from app.web.assistants import process_assistant_message_websocket
-
-        await process_assistant_message_websocket(
-            chat_id=uuid.UUID(chat_id), 
-            message=message, 
-            audio_mode=Modalities.TEXT_TEXT,
-            audio_data=None,
-            session=None
-        )
-        
-        logger.info(f"Completed processing send_assistant_message for {chat_id}")
-
-    except Exception as e:
-        logger.error(f"Error in send_assistant_message for {sid}: {str(e)}")
-        await sio.emit(
-            "assistant_error",
-            {"success": False, "message": str(e)},
-            room=sid,
-        )
 
 @sio.event  # type: ignore
 async def connect(sid: str, environ: Any, auth: Any) -> bool:
@@ -847,273 +630,237 @@ async def disconnect(sid: str) -> None:
             del active_connections[chat_id]
             break
 
-
-
-# ---------------------------------------------------------------------------+
-# 3.  Short-circuit all WebRTC handlers when disabled                        +
-# ---------------------------------------------------------------------------+
-async def _webrtc_disabled(sid: str, *_: object, **__: object) -> None:
-    await sio.emit("webrtc_unavailable",
-                   {"reason": "disabled_by_server"},
-                   room=sid)
-
-if not WEBRTC_ENABLED:
-    # All WebRTC endpoints return "disabled" when feature is off
-    @sio.event  # type: ignore
-    async def webrtc_start(sid: str, data: Dict[str, Any]) -> None:
-        await _webrtc_disabled(sid, data)
-    
-    @sio.event  # type: ignore
-    async def webrtc_answer(sid: str, data: Dict[str, Any]) -> None:
-        await _webrtc_disabled(sid, data)
-    
-    @sio.event  # type: ignore
-    async def webrtc_ice_candidate(sid: str, data: Dict[str, Any]) -> None:
-        await _webrtc_disabled(sid, data)
-    
-    @sio.event  # type: ignore
-    async def webrtc_start_audio(sid: str, data: Dict[str, Any]) -> None:
-        await _webrtc_disabled(sid, data)
-    
-    @sio.event  # type: ignore
-    async def webrtc_stop_audio(sid: str, data: Dict[str, Any]) -> None:
-        await _webrtc_disabled(sid, data)
-
-else:
-    # WebRTC-specific Socket.IO events with connection ID tracking
-    @sio.event  # type: ignore
-    async def webrtc_start(sid: str, data: Dict[str, Any]) -> None:
-        """Start WebRTC connection for a profile"""
-        try:
-            profile_id = data.get('profile_id')
-            if not profile_id:
-                await sio.emit('webrtc_error', {
-                    'error': 'Missing profile_id'
-                }, room=sid)
-                return
-            
-            # Verify this socket owns this profile
-            if profile_id not in socket_owner or socket_owner[profile_id] != sid:
-                await sio.emit('webrtc_error', {
-                    'error': 'Socket not authorized for this profile'
-                }, room=sid)
-                return
-            
-            logger.info(f"Starting WebRTC for profile {profile_id}")
-            
-            # Create new peer connection (this will close any existing one)
-            pc = await get_pc(profile_id)
-            
-            # Create offer
-            offer = await pc.createOffer()
-            await pc.setLocalDescription(offer)
-            
-            # Debug: Log SDP structure to verify single audio track
-            audio_lines = [line for line in offer.sdp.splitlines() if line.startswith('m=audio')]
-            logger.info(f"SDP contains {len(audio_lines)} audio tracks for profile {profile_id}")
-            
-            # Send offer and ICE config to client
-            await sio.emit('webrtc_offer', {
-                'profile_id': profile_id,
-                'offer': {
-                    'sdp': offer.sdp,
-                    'type': offer.type
-                },
-                'ice_config': _build_ice_servers()
-            }, room=sid)
-            
-            logger.info(f"Sent WebRTC offer to profile {profile_id}")
-            
-        except Exception as e:
-            logger.error(f"Error starting WebRTC: {e}")
-            await sio.emit('webrtc_error', {
-                'error': str(e)
-            }, room=sid)
-
-    @sio.event  # type: ignore
-    async def webrtc_answer(sid: str, data: Dict[str, Any]) -> None:
-        """Handle WebRTC answer from client."""
-        profile_id = data.get("profile_id")
-        
+# WebRTC-specific Socket.IO events with connection ID tracking
+@sio.event  # type: ignore
+async def webrtc_start(sid: str, data: Dict[str, Any]) -> None:
+    """Start WebRTC connection for a profile"""
+    try:
+        profile_id = data.get('profile_id')
         if not profile_id:
-            logger.warning("Received webrtc_answer without profile_id")
-            return
-
-        # Verify profile exists and socket ownership
-        if profile_id not in socket_owner or socket_owner[profile_id] != sid:
-            logger.warning(f"Received webrtc_answer for unauthorized profile: {profile_id}")
-            return
-            
-        pc = profiles_live.get(profile_id)
-        if not pc:
-            logger.warning(f"Received webrtc_answer for non-existent peer connection for profile_id: {profile_id}")
-            return
-        
-        # State guard: check if peer connection is still valid
-        if pc.signalingState == "closed":
-            logger.info(f"Stale signalling for closed PC {profile_id}, dropping")
-            return
-            
-        logger.info(f"Received WebRTC answer from profile {profile_id}")
-        try:
-            answer_data = data.get('answer')
-            if not answer_data:
-                await sio.emit('webrtc_error', {
-                    'error': 'Missing answer in webrtc_answer'
-                }, room=profile_id)
-                return
-
-            # 👇 THIS IS THE FIX 👇
-            # Before setting the remote description, force it to use Opus
-            modified_sdp = force_opus_codec(answer_data["sdp"])
-            answer_obj = RTCSessionDescription(sdp=modified_sdp, type=answer_data["type"])
-            # 👆 END OF FIX 👆
-            await pc.setRemoteDescription(answer_obj)
-            logger.info(f"Successfully set MODIFIED remote description for profile {profile_id}")
-
-            # --- Process any buffered ICE candidates ---
-            # Flush buffered candidates now that remote description is set
-            buffered_candidates = pending_ice.pop(profile_id, [])
-            for candidate in buffered_candidates:
-                try:
-                    await pc.addIceCandidate(candidate)
-                    logger.info(f"Successfully added buffered ICE candidate for {profile_id}")
-                except Exception as e:
-                    logger.error(f"Failed to add buffered ICE candidate for {profile_id}: {e}")
-            
-            await sio.emit("webrtc_ready", {
-                "profile_id": profile_id
-            }, room=profile_id)
-            logger.info(f"WebRTC handshake complete, ready for profile {profile_id}")
-
-        except Exception as e:
-            logger.error(f"Error handling WebRTC answer: {e}", exc_info=True)
             await sio.emit('webrtc_error', {
-                'error': f'Failed to process answer: {e}'
-            }, room=profile_id)
-
-    @sio.event  # type: ignore
-    async def webrtc_ice_candidate(sid: str, data: dict[str, Any]) -> None:
-        """Handle incoming ICE candidates from the client."""
-        profile_id = data.get("profile_id")
+                'error': 'Missing profile_id'
+            }, room=sid)
+            return
         
-        if not profile_id:
-            logger.warning("Received webrtc_ice_candidate without profile_id")
-            return
-
-        # Verify profile exists and socket ownership
+        # Verify this socket owns this profile
         if profile_id not in socket_owner or socket_owner[profile_id] != sid:
-            logger.warning(f"Received ICE candidate for unauthorized profile: {profile_id}")
+            await sio.emit('webrtc_error', {
+                'error': 'Socket not authorized for this profile'
+            }, room=sid)
+            return
+        
+        logger.info(f"Starting WebRTC for profile {profile_id}")
+        
+        # Create new peer connection (this will close any existing one)
+        pc = await get_pc(profile_id)
+        
+        # Create offer
+        offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
+        
+        # Debug: Log SDP structure to verify single audio track
+        audio_lines = [line for line in offer.sdp.splitlines() if line.startswith('m=audio')]
+        logger.info(f"SDP contains {len(audio_lines)} audio tracks for profile {profile_id}")
+        
+        # Send offer and ICE config to client
+        await sio.emit('webrtc_offer', {
+            'profile_id': profile_id,
+            'offer': {
+                'sdp': offer.sdp,
+                'type': offer.type
+            },
+            'ice_config': _build_ice_servers()
+        }, room=sid)
+        
+        logger.info(f"Sent WebRTC offer to profile {profile_id}")
+        
+    except Exception as e:
+        logger.error(f"Error starting WebRTC: {e}")
+        await sio.emit('webrtc_error', {
+            'error': str(e)
+        }, room=sid)
+
+@sio.event  # type: ignore
+async def webrtc_answer(sid: str, data: Dict[str, Any]) -> None:
+    """Handle WebRTC answer from client."""
+    profile_id = data.get("profile_id")
+    
+    if not profile_id:
+        logger.warning("Received webrtc_answer without profile_id")
+        return
+
+    # Verify profile exists and socket ownership
+    if profile_id not in socket_owner or socket_owner[profile_id] != sid:
+        logger.warning(f"Received webrtc_answer for unauthorized profile: {profile_id}")
+        return
+        
+    pc = profiles_live.get(profile_id)
+    if not pc:
+        logger.warning(f"Received webrtc_answer for non-existent peer connection for profile_id: {profile_id}")
+        return
+    
+    # State guard: check if peer connection is still valid
+    if pc.signalingState == "closed":
+        logger.info(f"Stale signalling for closed PC {profile_id}, dropping")
+        return
+        
+    logger.info(f"Received WebRTC answer from profile {profile_id}")
+    try:
+        answer_data = data.get('answer')
+        if not answer_data:
+            await sio.emit('webrtc_error', {
+                'error': 'Missing answer in webrtc_answer'
+            }, room=profile_id)
             return
 
-        pc = profiles_live.get(profile_id)
-        if not pc:
-            logger.warning(f"Received ICE candidate for non-existent peer connection: {profile_id}")
-            return
+        # 👇 THIS IS THE FIX 👇
+        # Before setting the remote description, force it to use Opus
+        modified_sdp = force_opus_codec(answer_data["sdp"])
+        answer_obj = RTCSessionDescription(sdp=modified_sdp, type=answer_data["type"])
+        # 👆 END OF FIX 👆
+        await pc.setRemoteDescription(answer_obj)
+        logger.info(f"Successfully set MODIFIED remote description for profile {profile_id}")
 
-        # State guard: check if peer connection is still valid
-        if pc.signalingState == "closed":
-            logger.info(f"Stale signalling for closed PC {profile_id}, dropping")
-            return
-
-        candidate_data = data.get("candidate")
-        if not candidate_data:
-            logger.info(f"End of ICE candidates signal received for profile {profile_id}")
+        # --- Process any buffered ICE candidates ---
+        # Flush buffered candidates now that remote description is set
+        buffered_candidates = pending_ice.pop(profile_id, [])
+        for candidate in buffered_candidates:
             try:
-                # An empty candidate signals the end of trickle ICE
-                await pc.addIceCandidate(None)
+                await pc.addIceCandidate(candidate)
+                logger.info(f"Successfully added buffered ICE candidate for {profile_id}")
             except Exception as e:
-                logger.warning(f"Error adding null ICE candidate for {profile_id}, may already be closed: {e}")
-            return
+                logger.error(f"Failed to add buffered ICE candidate for {profile_id}: {e}")
+        
+        await sio.emit("webrtc_ready", {
+            "profile_id": profile_id
+        }, room=profile_id)
+        logger.info(f"WebRTC handshake complete, ready for profile {profile_id}")
 
+    except Exception as e:
+        logger.error(f"Error handling WebRTC answer: {e}", exc_info=True)
+        await sio.emit('webrtc_error', {
+            'error': f'Failed to process answer: {e}'
+        }, room=profile_id)
+
+@sio.event  # type: ignore
+async def webrtc_ice_candidate(sid: str, data: dict[str, Any]) -> None:
+    """Handle incoming ICE candidates from the client."""
+    profile_id = data.get("profile_id")
+    
+    if not profile_id:
+        logger.warning("Received webrtc_ice_candidate without profile_id")
+        return
+
+    # Verify profile exists and socket ownership
+    if profile_id not in socket_owner or socket_owner[profile_id] != sid:
+        logger.warning(f"Received ICE candidate for unauthorized profile: {profile_id}")
+        return
+
+    pc = profiles_live.get(profile_id)
+    if not pc:
+        logger.warning(f"Received ICE candidate for non-existent peer connection: {profile_id}")
+        return
+
+    # State guard: check if peer connection is still valid
+    if pc.signalingState == "closed":
+        logger.info(f"Stale signalling for closed PC {profile_id}, dropping")
+        return
+
+    candidate_data = data.get("candidate")
+    if not candidate_data:
+        logger.info(f"End of ICE candidates signal received for profile {profile_id}")
         try:
-            # Reconstruct the RTCIceCandidate object from SDP string
-            ice_candidate = candidate_from_sdp(candidate_data["candidate"])
-            ice_candidate.sdpMid = candidate_data.get("sdpMid")
-            ice_candidate.sdpMLineIndex = candidate_data.get("sdpMLineIndex")
-
-            # Check if remote description is set before adding candidate
-            if pc.remoteDescription is None:
-                # Buffer the candidate until remote description is available
-                pending_ice[profile_id].append(ice_candidate) # type: ignore
-                logger.info(f"Buffered ICE candidate for {profile_id} (remote description not set yet)")
-            else:
-                # Process candidate immediately if remote description is available
-                await pc.addIceCandidate(ice_candidate)
-                logger.info(f"Successfully added ICE candidate for {profile_id}")
-
+            # An empty candidate signals the end of trickle ICE
+            await pc.addIceCandidate(None)
         except Exception as e:
-            logger.error(
-                f"Failed to process ICE candidate for profile {profile_id}: {e}",
-                exc_info=True
-            )
+            logger.warning(f"Error adding null ICE candidate for {profile_id}, may already be closed: {e}")
+        return
 
-    @sio.event  # type: ignore
-    async def webrtc_start_audio(sid: str, data: Dict[str, Any]) -> None:
-        """Signal from client that they are starting to send an audio track, and trigger renegotiation."""
-        profile_id = data.get("profile_id")
-        chat_id = data.get("chat_id")
-        # MODIFIED: Get the audio preference from the client, default to True for safety
-        assistant_audio_enabled = data.get("assistant_audio_enabled", True)
+    try:
+        # Reconstruct the RTCIceCandidate object from SDP string
+        ice_candidate = candidate_from_sdp(candidate_data["candidate"])
+        ice_candidate.sdpMid = candidate_data.get("sdpMid")
+        ice_candidate.sdpMLineIndex = candidate_data.get("sdpMLineIndex")
+
+        # Check if remote description is set before adding candidate
+        if pc.remoteDescription is None:
+            # Buffer the candidate until remote description is available
+            pending_ice[profile_id].append(ice_candidate) # type: ignore
+            logger.info(f"Buffered ICE candidate for {profile_id} (remote description not set yet)")
+        else:
+            # Process candidate immediately if remote description is available
+            await pc.addIceCandidate(ice_candidate)
+            logger.info(f"Successfully added ICE candidate for {profile_id}")
+
+    except Exception as e:
+        logger.error(
+            f"Failed to process ICE candidate for profile {profile_id}: {e}",
+            exc_info=True
+        )
+
+@sio.event  # type: ignore
+async def webrtc_start_audio(sid: str, data: Dict[str, Any]) -> None:
+    """Signal from client that they are starting to send an audio track, and trigger renegotiation."""
+    profile_id = data.get("profile_id")
+    chat_id = data.get("chat_id")
+    
+    if not profile_id or not chat_id:
+        logger.error("Missing profile_id or chat_id for webrtc_start_audio")
+        return
+
+    # Add this log line for easier debugging
+    logger.info(f"Client {sid} is starting audio for chat {chat_id}, beginning renegotiation.")
+    
+    # Verify profile exists and socket ownership
+    if profile_id not in socket_owner or socket_owner[profile_id] != sid:
+        logger.error(f"Unauthorized audio start request for profile {profile_id}.")
+        await sio.emit('webrtc_error', {'error': 'Profile not authorized.'}, room=sid)
+        return
+    
+    pc = profiles_live.get(profile_id)
+    if not pc:
+        logger.error(f"No peer connection found for profile {profile_id} to start audio.")
+        await sio.emit('webrtc_error', {'error': 'Peer connection not found.'}, room=sid)
+        return
+
+    # State guard: check if peer connection is still valid
+    if pc.signalingState == "closed":
+        logger.info(f"Cannot start audio for closed PC {profile_id}")
+        await sio.emit('webrtc_error', {'error': 'Peer connection is closed.'}, room=sid)
+        return
+
+    # MODIFIED: Associate the chat_id with the connection
+    pc.__dict__["_last_chat_id"] = chat_id
+
+    try:
+        # Create a new offer to trigger renegotiation
+        offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
         
-        if not profile_id or not chat_id:
-            logger.error("Missing profile_id or chat_id for webrtc_start_audio")
-            return
-
-        # Add this log line for easier debugging
-        logger.info(f"Client {sid} is starting audio for chat {chat_id} (assistant audio: {assistant_audio_enabled}), beginning renegotiation.")
+        # Send the new offer to the client
+        await sio.emit('webrtc_offer', {
+            'profile_id': profile_id,
+            'offer': {
+                'sdp': offer.sdp,
+                'type': offer.type
+            },
+            'ice_config': _build_ice_servers() # Resending config might be needed by client
+        }, room=sid)
         
-        # Verify profile exists and socket ownership
-        if profile_id not in socket_owner or socket_owner[profile_id] != sid:
-            logger.error(f"Unauthorized audio start request for profile {profile_id}.")
-            await sio.emit('webrtc_error', {'error': 'Profile not authorized.'}, room=sid)
-            return
-        
-        pc = profiles_live.get(profile_id)
-        if not pc:
-            logger.error(f"No peer connection found for profile {profile_id} to start audio.")
-            await sio.emit('webrtc_error', {'error': 'Peer connection not found.'}, room=sid)
-            return
+        logger.info(f"Sent renegotiation offer to profile {profile_id} for chat {chat_id}")
 
-        # State guard: check if peer connection is still valid
-        if pc.signalingState == "closed":
-            logger.info(f"Cannot start audio for closed PC {profile_id}")
-            await sio.emit('webrtc_error', {'error': 'Peer connection is closed.'}, room=sid)
-            return
+    except Exception as e:
+        logger.error(f"Error during audio start renegotiation for profile {profile_id}: {e}", exc_info=True)
+        await sio.emit('webrtc_error', {'error': f'Failed to renegotiate for audio: {e}'}, room=sid)
 
-        # MODIFIED: Associate the chat_id AND the audio preference with the connection
-        pc.__dict__["_last_chat_id"] = chat_id
-        pc.__dict__["_assistant_audio_enabled"] = assistant_audio_enabled
-
-        try:
-            # Create a new offer to trigger renegotiation
-            offer = await pc.createOffer()
-            await pc.setLocalDescription(offer)
-            
-            # Send the new offer to the client
-            await sio.emit('webrtc_offer', {
-                'profile_id': profile_id,
-                'offer': {
-                    'sdp': offer.sdp,
-                    'type': offer.type
-                },
-                'ice_config': _build_ice_servers() # Resending config might be needed by client
-            }, room=sid)
-            
-            logger.info(f"Sent renegotiation offer to profile {profile_id} for chat {chat_id}")
-
-        except Exception as e:
-            logger.error(f"Error during audio start renegotiation for profile {profile_id}: {e}", exc_info=True)
-            await sio.emit('webrtc_error', {'error': f'Failed to renegotiate for audio: {e}'}, room=sid)
-
-    @sio.event  # type: ignore
-    async def webrtc_stop_audio(sid: str, data: Dict[str, Any]) -> None:
-        """Signal from client that they are stopping an audio track."""
-        profile_id = data.get("profile_id")
-        chat_id = data.get("chat_id")
-        logger.info(f"Client {sid} is stopping audio for chat {chat_id}")
-        # Here you would add logic to signal the audio processing task to stop.
-        # For now, we'll just log it. A robust implementation would use an asyncio.Event or similar.
+@sio.event  # type: ignore
+async def webrtc_stop_audio(sid: str, data: Dict[str, Any]) -> None:
+    """Signal from client that they are stopping an audio track."""
+    profile_id = data.get("profile_id")
+    chat_id = data.get("chat_id")
+    logger.info(f"Client {sid} is stopping audio for chat {chat_id}")
+    # Here you would add logic to signal the audio processing task to stop.
+    # For now, we'll just log it. A robust implementation would use an asyncio.Event or similar.
 
 # SPEC CHANGE: Renegotiation answer handler is no longer needed
 # The server now uses a persistent audio track, eliminating the need for renegotiation
@@ -1194,10 +941,7 @@ def get_socketio_instance() -> socketio.AsyncServer:
 # Create a combined lifespan to manage both session managers
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
-    async with contextlib.AsyncExitStack() as stack:
-        from app.services.mcp.server import server
-        await stack.enter_async_context(server.session_manager.run())
-        
+    async with contextlib.AsyncExitStack():
         # Log WebRTC configuration
         logger.info("WebRTC Configuration:")
         logger.info(f"  TURN_USERNAME: {os.getenv('TURN_USERNAME', 'not set')}")
@@ -1208,7 +952,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
         yield
 
 # Create FastAPI app with lifespan
-fastapi_app = FastAPI(title="GLOW API", on_startup=[init_db], lifespan=lifespan)
+fastapi_app = FastAPI(title="GLOW API", lifespan=lifespan)
 
 # Add CORS middleware FIRST
 fastapi_app.add_middleware(
@@ -1219,24 +963,8 @@ fastapi_app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-fastapi_app.include_router(documents_router, prefix="/documents")
-fastapi_app.include_router(scenarios_router, prefix="/scenarios")
-fastapi_app.include_router(audio_router, prefix="/audio")
-fastapi_app.include_router(sketch_router, prefix="/sketch")
-# Note: Removed rtc_router as we're migrating to WebSocket-based signaling
-
-# mounting the mcp servers - ensure trailing slashes for proper routing
-from app.services.mcp.server import server
-
-fastapi_app.mount("/domain", server.streamable_http_app(), name="MCP Server")
-
 # Create the combined ASGI app with Socket.IO
 app = socketio.ASGIApp(sio, fastapi_app, socketio_path="socket.io")
-
-# Add specific logger for evaluation
-eval_logger = logging.getLogger("app.agents.generic")
-eval_logger.setLevel(logging.INFO)
 
 
 @fastapi_app.get("/")
@@ -1261,7 +989,6 @@ async def health_check() -> JSONResponse:
     Simple health check endpoint.
     """
     return JSONResponse(content={"status": "ok"})
-
 
 
 if __name__ == "__main__":
