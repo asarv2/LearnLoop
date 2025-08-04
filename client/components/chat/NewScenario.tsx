@@ -546,7 +546,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       if (attempt.id && chat.id) {
         emitJoinTraining({
           attempt_id: attempt.id,
-          scenario_id: scenarioId,
+          training_id: scenario?.training_id || "",
           chat_id: chat.id,
           profile_id: user?.id || undefined,
         });

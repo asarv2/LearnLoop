@@ -19,7 +19,7 @@ import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
 import React, { useCallback, useEffect, useState } from "react";
 
 import { useWebSocket } from "@/contexts/websocket-context";
-import { useCreateMessage } from "@/lib/api/hooks/useMessages";
+
 import { logError, logInfo } from "@/utils/logger";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -59,7 +59,6 @@ export default function ChatArea({
   } = useWebSocket();
 
   // Voice-related state
-  const createMessageMutation = useCreateMessage();
   const queryClient = useQueryClient();
   const [micActive, setMicActive] = useState(false);
 
@@ -239,10 +238,10 @@ export default function ChatArea({
     (message: string) => {
       if (!chat?.id || !message.trim()) return;
 
-      // Send via WebRTC data channel
+      // Send via WebRTC data channel (this path handles saving to DB on the server)
       sendWebRTCMessage(chat.id, message);
 
-      // Create optimistic message
+      // Create optimistic message for instant UI feedback
       const tempId = `temp-${Date.now()}`;
       patchCache(tempId, {
         role: "user",
@@ -250,23 +249,9 @@ export default function ChatArea({
         completed: true,
       });
 
-      // Save to database
-      createMessageMutation.mutate({
-        chat_id: chat.id,
-        role: "user",
-        content: message.trim(),
-        completed: true,
-      });
-
       setCurrentMessage("");
     },
-    [
-      chat?.id,
-      sendWebRTCMessage,
-      patchCache,
-      createMessageMutation,
-      setCurrentMessage,
-    ]
+    [chat?.id, sendWebRTCMessage, patchCache, setCurrentMessage]
   );
 
   // Early return if chat is not available

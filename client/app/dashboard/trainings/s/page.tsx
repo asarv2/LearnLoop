@@ -1,8 +1,8 @@
 /**
- * app/dashboard/trainings/t/page.tsx
- * Used to show the attempt for the user.
+ * app/dashboard/trainings/s/page.tsx
+ * Used to redirect to the training scenarios page.
  * @AshokSaravanan222 & @siladie
- * 08-02-2025
+ * 08-03-2025
  */
 
 import type { Metadata } from "next";
@@ -10,11 +10,11 @@ import { redirect } from "next/navigation";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    title: `Trainings`,
-    description: `Trainings`,
+    title: `Training Scenarios`,
+    description: `Training Scenarios`,
   };
 }
 
-export default async function TrainingPage() {
-  return redirect(`/dashboard/trainings`);
+export default async function TrainingScenariosPage() {
+  return redirect(`/dashboard/trainings/s`);
 }

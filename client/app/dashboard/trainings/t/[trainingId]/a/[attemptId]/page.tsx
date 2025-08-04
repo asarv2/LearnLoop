@@ -9,26 +9,26 @@ import TrainingAttempt from "@/components/chat/TrainingAttempt";
 import type { Metadata } from "next";
 
 export async function generateMetadata(
-  { params }: { params: Promise<{ scenarioId: string; attemptId: string }> }
+  { params }: { params: Promise<{ trainingId: string; attemptId: string }> }
 ): Promise<Metadata> {
   // read route params
-  const { scenarioId, attemptId } = await params;
+  const { trainingId, attemptId } = await params;
 
   return {
     title: `Training Attempt`,
     description:
-      `Training attempt for the training with id ${scenarioId} and attempt id ${attemptId}.`,
+      `Training attempt for the training with id ${trainingId} and attempt id ${attemptId}.`,
   };
 }
 
 export default async function AttemptPage({
   params,
 }: {
-  params: Promise<{ scenarioId: string; attemptId: string }>;
+  params: Promise<{ trainingId: string; attemptId: string }>;
 }) {
-  const { scenarioId, attemptId } = await params;
+  const { trainingId, attemptId } = await params;
 
   return (
-    <TrainingAttempt attemptId={attemptId} scenarioId={scenarioId} />
+    <TrainingAttempt attemptId={attemptId} trainingId={trainingId} />
   );
 }
