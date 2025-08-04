@@ -27,10 +27,12 @@ import FeedbackModal from "./FeedbackModal";
 
 interface TrainingAttemptProps {
   attemptId: string;
-  scenarioId: string;
+  trainingId: string;
 }
 
-export default function TrainingAttempt({ attemptId }: TrainingAttemptProps) {
+export default function TrainingAttempt({
+  attemptId,
+}: TrainingAttemptProps) {
   const router = useRouter();
   const [currentMessage, setCurrentMessage] = useState("");
   const [showAssessment, setShowAssessment] = useState(false);

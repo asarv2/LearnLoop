@@ -47,7 +47,7 @@ interface WebSocketContextType {
   // Training event emitters
   emitJoinTraining: (data: {
     attempt_id: string;
-    scenario_id: string;
+    training_id: string;
     chat_id: string;
     profile_id?: string;
   }) => void;
@@ -581,7 +581,7 @@ export function WebSocketProvider({
   const emitJoinTraining = useCallback(
     (data: {
       attempt_id: string;
-      scenario_id: string;
+      training_id: string;
       chat_id: string;
       profile_id?: string;
     }) => {
@@ -592,7 +592,7 @@ export function WebSocketProvider({
       }
 
       router.push(
-        `/dashboard/trainings/s/${data.scenario_id}/a/${data.attempt_id}`
+        `/dashboard/trainings/t/${data.training_id}/a/${data.attempt_id}`
       );
 
       setIsStartingTraining(true);
