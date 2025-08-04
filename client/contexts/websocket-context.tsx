@@ -106,6 +106,12 @@ export function WebSocketProvider({
   // Message queues for data channels (text messages)
   const messageQueues = useRef<Map<string, string[]>>(new Map());
 
+  // ICE candidate buffer for handling candidates before remote description is set
+  const pendingIce = useRef<RTCIceCandidateInit[]>([]);
+
+  // Flag to prevent multiple webrtc_start emissions on reconnects
+  const webrtcStarted = useRef(false);
+
   // Create data channels for text messaging and process queued messages when they open
   const createDataChannelIfNeeded = useCallback(
     (channelLabel: string): RTCDataChannel | undefined => {
@@ -210,6 +216,13 @@ export function WebSocketProvider({
           profileId,
           transport: socket.io.engine.transport.name,
         });
+
+        // Kick-off WebRTC handshake once the socket is up
+        if (!webrtcStarted.current) {
+          socket.emit("webrtc_start", { profile_id: profileId });
+          webrtcStarted.current = true;
+          logInfo("Sent webrtc_start");
+        }
       });
 
       socket.on("disconnect", (reason: string) => {
@@ -499,6 +512,14 @@ export function WebSocketProvider({
               type: data.offer.type as RTCSdpType,
             });
 
+            // Flush any ICE candidates gathered before SDP
+            pendingIce.current.forEach((candidate) => {
+              pc.addIceCandidate(candidate).catch((error) => {
+                logError("Error adding pending ICE candidate", error);
+              });
+            });
+            pendingIce.current.length = 0;
+
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
 
@@ -529,11 +550,19 @@ export function WebSocketProvider({
         }) => {
           try {
             const pc = webRTCPeerConnection.current;
-            if (pc && data.candidate) {
-              const iceCandidate = new RTCIceCandidate(data.candidate);
-              await pc.addIceCandidate(iceCandidate);
-              logInfo("Added WebRTC ICE candidate");
+            if (!pc || !data.candidate) return;
+
+            if (!pc.remoteDescription) {
+              logInfo(
+                "Buffering ICE candidate - remote description not set yet"
+              );
+              pendingIce.current.push(data.candidate);
+              return;
             }
+
+            const iceCandidate = new RTCIceCandidate(data.candidate);
+            await pc.addIceCandidate(iceCandidate);
+            logInfo("Added WebRTC ICE candidate");
           } catch (error) {
             logError("Error adding ICE candidate", error);
           }
@@ -542,13 +571,12 @@ export function WebSocketProvider({
 
       socket.on("webrtc_ready", (data: { profile_id: string }) => {
         logInfo("WebRTC connection ready", { profileId: data.profile_id });
+        setIsWebRTCConnected(true);
 
-        const pc = webRTCPeerConnection.current;
-        if (pc) {
-          currentRoomsRef.current.forEach((roomId) => {
-            createDataChannelIfNeeded(`text-${roomId}`);
-          });
-        }
+        // Create per-chat channels that were queued while connecting
+        currentRoomsRef.current.forEach((roomId) => {
+          createDataChannelIfNeeded(`text-${roomId}`);
+        });
       });
 
       socket.on("webrtc_error", (data: { error: string }) => {
@@ -593,11 +621,9 @@ export function WebSocketProvider({
       });
       currentRoomsRef.current.add(chatId);
 
-      if (isWebRTCConnected) {
-        createDataChannelIfNeeded(`text-${chatId}`);
-      }
+      // Data channel will be created in webrtc_ready callback
     },
-    [isConnected, isWebRTCConnected, createDataChannelIfNeeded, profileId]
+    [isConnected, profileId]
   );
 
   const leaveRoom = useCallback((chatId: string) => {

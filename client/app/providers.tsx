@@ -2,12 +2,12 @@
 "use client";
 
 import { AuthProvider, useAuth } from "@/components/auth/AuthProvider";
+import WebRTCDebugPanel from "@/components/chat/WebRTCDebugPanel";
 import { Toaster } from "@/components/ui/toaster";
 import { WebSocketProvider } from "@/contexts/websocket-context";
 import { createQueryClient } from "@/utils/react-query/queryClient";
 import { Theme } from "@radix-ui/themes";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ConfigProvider } from "antd";
 import { useState } from "react";
 
@@ -20,7 +20,7 @@ const ReactQueryClientProvider = ({
   return (
     <QueryClientProvider client={queryClient}>
       {children}
-      {process.env.NODE_ENV !== "production" && <ReactQueryDevtools />}
+      {/* {process.env.NODE_ENV !== "production" && <ReactQueryDevtools />} */}
     </QueryClientProvider>
   );
 };
@@ -42,6 +42,7 @@ export const Providers = ({ children }: { children: React.ReactNode }) => {
               <Toaster />
             </ConfigProvider>
           </Theme>
+          {process.env.NODE_ENV !== "production" && <WebRTCDebugPanel />}
         </WebSocketProviderWrapper>
       </AuthProvider>
     </ReactQueryClientProvider>
