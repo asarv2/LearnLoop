@@ -6,20 +6,14 @@
 
 "use client";
 
+import { TrainingProvider, useTraining } from "@/contexts/training-context";
 import { useChatForAttempt } from "@/lib/api/hooks/useChats";
-import {
-  useEndTraining,
-  useGenerateFeedback,
-  useSendTrainingMessage,
-  useSubmitAssessment,
-  useTrainingMessages,
-} from "@/lib/api/hooks/useTrainingMessages";
 import { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import { Assessment } from "@/types";
 import { logError } from "@/utils/logger";
 import { Box, Text } from "@radix-ui/themes";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import AssessmentWizard from "./AssessmentWizard";
 import ChatArea from "./ChatArea";
 import ChatHeader from "./ChatHeader";
@@ -30,28 +24,28 @@ interface TrainingAttemptProps {
   trainingId: string;
 }
 
-export default function TrainingAttempt({
-  attemptId,
-}: TrainingAttemptProps) {
+function TrainingAttemptContent() {
   const router = useRouter();
-  const [currentMessage, setCurrentMessage] = useState("");
-  const [showAssessment, setShowAssessment] = useState(false);
-  const [showFeedback, setShowFeedback] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Use the new hook to get the most recent incomplete chat for this attempt
-  const { data: chat } = useChatForAttempt(attemptId);
-  const chatId = chat?.id;
-
-  // Use the new training hooks
-  const { data: messages = [], streamingMessage } = useTrainingMessages(
-    chatId!,
-    !!chatId
-  );
-  const sendMessageMutation = useSendTrainingMessage();
-  const endTrainingMutation = useEndTraining();
-  const submitAssessmentMutation = useSubmitAssessment();
-  const generateFeedbackMutation = useGenerateFeedback();
+  // Use the training context for all training-related state and actions
+  const {
+    chat,
+    messages,
+    streamingMessage,
+    isSendingMessage,
+    isEndingTraining,
+    isSubmittingAssessment,
+    isTrainingActive,
+    currentMessage,
+    setCurrentMessage,
+    showAssessment,
+    setShowAssessment,
+    showFeedback,
+    setShowFeedback,
+    endTraining,
+    submitAssessment,
+  } = useTraining();
 
   // Helper function to get assessment ID
   const getAssessmentId = () => {
@@ -59,9 +53,6 @@ export default function TrainingAttempt({
     const chatWithIncludes = chat as ChatWithAllIncludes;
     return chatWithIncludes.assessments?.[0]?.id || "";
   };
-
-  // Determine if interview is active based on chat completion status
-  const isInterviewActive = chat ? !chat.completed : true;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -72,12 +63,8 @@ export default function TrainingAttempt({
   }, [messages, streamingMessage]);
 
   const endInterview = async () => {
-    if (endTrainingMutation.isPending || !chatId) return;
-
     try {
-      await endTrainingMutation.mutateAsync({ chatId });
-      // Show the assessment wizard after successful end
-      setShowAssessment(true);
+      await endTraining();
     } catch (error) {
       logError("Error ending interview:", error);
       const errorMessage =
@@ -91,18 +78,8 @@ export default function TrainingAttempt({
   const handleAssessmentComplete = async (
     responses: Assessment["responses"]
   ) => {
-    if (!chatId) return;
-
     try {
-      await submitAssessmentMutation.mutateAsync({
-        chatId,
-        responses: responses as Record<string, unknown>,
-      });
-      setShowAssessment(false);
-
-      // Generate feedback after assessment is submitted
-      await generateFeedbackMutation.mutateAsync({ chatId });
-      setShowFeedback(true);
+      await submitAssessment(responses as Record<string, unknown>);
     } catch (error) {
       logError("Error processing assessment:", error);
       const errorMessage =
@@ -150,8 +127,8 @@ export default function TrainingAttempt({
             interviewType={chat?.type || ""}
             resumeId={chat?.resume_id || ""}
             onEndInterview={endInterview}
-            isInterviewActive={isInterviewActive}
-            isEndingInterview={endTrainingMutation.isPending}
+            isInterviewActive={isTrainingActive}
+            isEndingInterview={isEndingTraining}
             onShowFeedback={() => setShowFeedback(true)}
             onBack={() => router.push("/dashboard/trainings")}
             interviewStartTimeIso={chat?.created_at}
@@ -160,10 +137,10 @@ export default function TrainingAttempt({
 
           <ChatArea
             displayMessages={displayMessages}
-            isSendingMessage={sendMessageMutation.isPending}
-            isEndingInterview={endTrainingMutation.isPending}
+            isSendingMessage={isSendingMessage}
+            isEndingInterview={isEndingTraining}
             streamingMessage={!!streamingMessage}
-            isInterviewActive={isInterviewActive}
+            isInterviewActive={isTrainingActive}
             currentMessage={currentMessage}
             setCurrentMessage={setCurrentMessage}
             chat={chat}
@@ -176,7 +153,7 @@ export default function TrainingAttempt({
             onClose={() => setShowAssessment(false)}
             onComplete={handleAssessmentComplete}
             candidateName={chat?.name || "John Doe"}
-            isSubmitting={submitAssessmentMutation.isPending}
+            isSubmitting={isSubmittingAssessment}
             assessmentId={getAssessmentId()}
             chat={chat}
           />
@@ -185,7 +162,7 @@ export default function TrainingAttempt({
           <FeedbackModal
             isOpen={showFeedback}
             onClose={() => setShowFeedback(false)}
-            feedback={chat?.feedback?.[0] || null}
+            feedback={(chat as ChatWithAllIncludes)?.feedback?.[0] || null}
             candidateName={chat?.name || "John Doe"}
             interviewScore={null}
             chat={chat}
@@ -193,5 +170,33 @@ export default function TrainingAttempt({
         </>
       )}
     </Box>
+  );
+}
+
+export default function TrainingAttempt({ attemptId }: TrainingAttemptProps) {
+  const { data: chat, isLoading } = useChatForAttempt(attemptId);
+  const chatId = chat?.id;
+
+  // Show loading state while fetching chat data
+  if (isLoading || !chatId) {
+    return (
+      <Box
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+        }}
+      >
+        <Text>Loading chat...</Text>
+      </Box>
+    );
+  }
+
+  // Only render the TrainingProvider once we have a stable chatId
+  return (
+    <TrainingProvider chatId={chatId}>
+      <TrainingAttemptContent />
+    </TrainingProvider>
   );
 }

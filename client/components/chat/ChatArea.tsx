@@ -16,7 +16,7 @@ import {
   SpeakerLoudIcon,
 } from "@radix-ui/react-icons";
 import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { useWebSocket } from "@/contexts/websocket-context";
 
@@ -152,16 +152,21 @@ export default function ChatArea({
     setShowHints(!showHints);
   }, [showHints, hints, lastAIResponse, generateHints]);
 
+  // Track if we're currently in a room to prevent duplicate joins
+  const currentRoomRef = useRef<string | null>(null);
+
   // Join room when chat changes and WebRTC is connected
   useEffect(() => {
-    if (chat?.id && isWebRTCConnected) {
+    if (chat?.id && isWebRTCConnected && currentRoomRef.current !== chat.id) {
       joinRoom(chat.id);
+      currentRoomRef.current = chat.id;
       logInfo(`Joined WebRTC room for chat ${chat.id}`);
     }
 
     return () => {
-      if (chat?.id) {
+      if (chat?.id && currentRoomRef.current === chat.id) {
         leaveRoom(chat.id);
+        currentRoomRef.current = null;
         logInfo(`Left WebRTC room for chat ${chat.id}`);
       }
     };
