@@ -276,6 +276,16 @@ export function WebSocketProvider({
         (data: { chat_id: string; message_id: string }) => {
           logInfo("Training message start", data);
           setIsSendingTrainingMessage(false);
+
+          // Dispatch event for UI components to listen to
+          window.dispatchEvent(
+            new CustomEvent("trainingMessageStart", {
+              detail: {
+                chatId: data.chat_id,
+                messageId: data.message_id,
+              },
+            })
+          );
         }
       );
 
@@ -287,11 +297,23 @@ export function WebSocketProvider({
           token: string;
           accumulated_content: string;
         }) => {
-          // Handle streaming tokens - could dispatch to UI components
-          logInfo("Training message token", {
+          logInfo("Dispatching training message token event", {
             chatId: data.chat_id,
-            token: data.token,
+            messageId: data.message_id,
+            contentLength: data.accumulated_content.length,
           });
+
+          // Dispatch event with streaming data for real-time UI updates
+          window.dispatchEvent(
+            new CustomEvent("trainingMessageToken", {
+              detail: {
+                chatId: data.chat_id,
+                messageId: data.message_id,
+                token: data.token,
+                accumulatedContent: data.accumulated_content,
+              },
+            })
+          );
         }
       );
 
@@ -304,6 +326,17 @@ export function WebSocketProvider({
         }) => {
           logInfo("Training message complete", data);
           setIsSendingTrainingMessage(false);
+
+          // Dispatch event for UI components to handle completion
+          window.dispatchEvent(
+            new CustomEvent("trainingMessageComplete", {
+              detail: {
+                chatId: data.chat_id,
+                messageId: data.message_id,
+                finalContent: data.final_content,
+              },
+            })
+          );
         }
       );
 
@@ -313,6 +346,17 @@ export function WebSocketProvider({
           logError("Training message error", data.error);
           setIsSendingTrainingMessage(false);
           toast.error(data.error);
+
+          // Dispatch event for UI components to handle errors
+          window.dispatchEvent(
+            new CustomEvent("trainingMessageError", {
+              detail: {
+                chatId: data.chat_id,
+                messageId: data.message_id,
+                error: data.error,
+              },
+            })
+          );
         }
       );
 

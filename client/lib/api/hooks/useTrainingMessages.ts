@@ -1,10 +1,10 @@
 // lib/api/hooks/useTrainingMessages.ts
 import { useWebSocket } from "@/contexts/websocket-context";
+import { Message } from "@/types";
 import { logError, logInfo } from "@/utils/logger";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api } from "../fetcher";
-import { Message } from "@/types";
 
 // Streaming message interface
 export interface StreamingMessage {
@@ -162,7 +162,13 @@ export function useSendTrainingMessage() {
   const { emitSendTrainingMessage } = useWebSocket();
 
   return useMutation({
-    mutationFn: async ({ chatId, message }: { chatId: string; message: string }) => {
+    mutationFn: async ({
+      chatId,
+      message,
+    }: {
+      chatId: string;
+      message: string;
+    }) => {
       emitSendTrainingMessage({ chat_id: chatId, message });
       return { success: true };
     },
