@@ -6,6 +6,7 @@
  */
 "use client";
 
+import { useAttempts } from "@/lib/api/hooks/useAttempts";
 import { useChats } from "@/lib/api/hooks/useChats";
 import { useTrainings } from "@/lib/api/hooks/useTrainings";
 import {
@@ -70,6 +71,7 @@ const trainingIcons = [
 export default function BestPractices() {
   const [selectedTraining, setSelectedTraining] = useState<string | null>(null);
 
+  const { data: attempts } = useAttempts();
   const { data: chats } = useChats();
   const { data: trainings } = useTrainings();
 
@@ -97,9 +99,13 @@ export default function BestPractices() {
     const icon = trainingIcons[index % trainingIcons.length];
     const status = training.active ? "available" : "coming-soon";
 
-    // Get chats for this training
-    const trainingChats = sortedChats.filter(
-      (chat) => chat.training_id === training.id
+    // Get attempts for this training
+    const trainingAttempts =
+      attempts?.filter((attempt) => attempt.training_id === training.id) || [];
+
+    // Get chats for this training through attempts
+    const trainingChats = sortedChats.filter((chat) =>
+      trainingAttempts.some((attempt) => attempt.id === chat.attempt_id)
     );
 
     return {
@@ -110,6 +116,7 @@ export default function BestPractices() {
       icon,
       status,
       training,
+      attempts: trainingAttempts,
       chats: trainingChats,
       whatToDo: training.what_to_do || [],
       whatNotToDo: training.what_not_to_do || [],
@@ -218,7 +225,7 @@ export default function BestPractices() {
                       </Space>
                     }
                   >
-                    {training.chats.length > 0 ? (
+                    {training.attempts.length > 0 ? (
                       <Space
                         direction="vertical"
                         style={{ width: "100%" }}
@@ -233,7 +240,7 @@ export default function BestPractices() {
                                 color: "#1890ff",
                               }}
                             >
-                              {training.chats.length}
+                              {training.attempts.length}
                             </Text>
                             <br />
                             <Text type="secondary">Sessions</Text>
@@ -247,8 +254,13 @@ export default function BestPractices() {
                               }}
                             >
                               {
-                                training.chats.filter((c) => c.completed_at)
-                                  .length
+                                training.attempts.filter((attempt) =>
+                                  training.chats.some(
+                                    (chat) =>
+                                      chat.attempt_id === attempt.id &&
+                                      chat.completed_at
+                                  )
+                                ).length
                               }
                             </Text>
                             <br />
@@ -263,19 +275,49 @@ export default function BestPractices() {
                               }}
                             >
                               {(() => {
-                                const completedChats = training.chats.filter(
-                                  (c) => c.completed_at
-                                );
-                                if (completedChats.length === 0) return 0;
+                                // Get completed attempts (attempts that have completed chats)
+                                const completedAttempts =
+                                  training.attempts.filter((attempt) =>
+                                    training.chats.some(
+                                      (chat) =>
+                                        chat.attempt_id === attempt.id &&
+                                        chat.completed_at
+                                    )
+                                  );
 
-                                const totalTime = completedChats.reduce(
-                                  (acc, chat) => {
+                                if (completedAttempts.length === 0) return 0;
+
+                                const totalTime = completedAttempts.reduce(
+                                  (acc, attempt) => {
+                                    // Find the first and last chat for this attempt
+                                    const attemptChats = training.chats
+                                      .filter(
+                                        (chat) => chat.attempt_id === attempt.id
+                                      )
+                                      .sort(
+                                        (a, b) =>
+                                          new Date(
+                                            a.created_at || ""
+                                          ).getTime() -
+                                          new Date(b.created_at || "").getTime()
+                                      );
+
+                                    if (attemptChats.length === 0) return acc;
+
+                                    const firstChat = attemptChats[0];
+                                    const lastCompletedChat = attemptChats
+                                      .reverse()
+                                      .find((chat) => chat.completed_at);
+
+                                    if (!lastCompletedChat) return acc;
+
                                     const start = new Date(
-                                      chat.created_at || ""
+                                      firstChat.created_at || ""
                                     );
-                                    const end = chat.completed_at
-                                      ? new Date(chat.completed_at)
-                                      : start;
+                                    const end = new Date(
+                                      lastCompletedChat.completed_at || ""
+                                    );
+
                                     return (
                                       acc + (end.getTime() - start.getTime())
                                     );
@@ -285,7 +327,7 @@ export default function BestPractices() {
 
                                 return Math.round(
                                   totalTime /
-                                    completedChats.length /
+                                    completedAttempts.length /
                                     (1000 * 60)
                                 );
                               })()}
@@ -301,37 +343,45 @@ export default function BestPractices() {
                           <Title level={5}>Recent Sessions</Title>
                           <List
                             size="small"
-                            dataSource={training.chats.slice(0, 3)}
-                            renderItem={(chat) => (
-                              <List.Item>
-                                <Space direction="vertical" size={2}>
-                                  <Text strong>
-                                    {chat.title || "Untitled Session"}
-                                  </Text>
-                                  <Text
-                                    type="secondary"
-                                    style={{ fontSize: "12px" }}
-                                  >
-                                    {new Date(
-                                      chat.created_at || ""
-                                    ).toLocaleDateString()}
-                                    {chat.completed_at && (
-                                      <span> - Completed</span>
-                                    )}
-                                  </Text>
-                                </Space>
-                              </List.Item>
-                            )}
+                            dataSource={training.attempts.slice(0, 3)}
+                            renderItem={(attempt) => {
+                              const attemptChats = training.chats.filter(
+                                (chat) => chat.attempt_id === attempt.id
+                              );
+                              const firstChat = attemptChats[0];
+                              const isCompleted = attemptChats.some(
+                                (chat) => chat.completed_at
+                              );
+
+                              return (
+                                <List.Item>
+                                  <Space direction="vertical" size={2}>
+                                    <Text strong>
+                                      {firstChat?.title || "Untitled Session"}
+                                    </Text>
+                                    <Text
+                                      type="secondary"
+                                      style={{ fontSize: "12px" }}
+                                    >
+                                      {new Date(
+                                        attempt.created_at || ""
+                                      ).toLocaleDateString()}
+                                      {isCompleted && <span> - Completed</span>}
+                                    </Text>
+                                  </Space>
+                                </List.Item>
+                              );
+                            }}
                           />
                         </div>
 
-                        {training.chats.length > 0 && (
+                        {training.attempts.length > 0 && (
                           <>
                             <Divider />
                             <Alert
                               message="Performance Tip"
                               description={`Based on your ${
-                                training.chats.length
+                                training.attempts.length
                               } sessions, focus on the best practices above to improve your ${training.title.toLowerCase()} skills.`}
                               type="info"
                               showIcon
@@ -409,7 +459,7 @@ export default function BestPractices() {
                       color: training.color,
                     }}
                   >
-                    {training.chats.length}
+                    {training.attempts.length}
                   </Text>
                   <br />
                   <Text type="secondary">Sessions Completed</Text>
