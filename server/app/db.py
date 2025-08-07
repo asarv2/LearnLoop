@@ -13,7 +13,7 @@ db_port = os.getenv("DB_PORT")
 db_host = os.getenv("DB_HOST")
 
 # Construct the database URL
-db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
+db_url = f"postgresql+psycopg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
 
 if not db_url:
     raise ValueError("Database url is not set")
