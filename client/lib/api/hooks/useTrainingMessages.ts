@@ -80,7 +80,7 @@ export function useTrainingMessages(chatId: string, enabled = true) {
                 role: "assistant",
                 content: "",
                 completed: false,
-                created_at: new Date().toISOString(),
+                created_at: new Date().toISOString(), // Use a new server-approximated time
                 chat_id: chatId,
               } as Message)
             : msg
@@ -121,14 +121,22 @@ export function useTrainingMessages(chatId: string, enabled = true) {
       const realMessage: Message = event.detail.message;
       logInfo(`User message saved, replacing optimistic message.`);
 
-      // This logic remains correct: find the temp user message and replace it.
-      queryClient.setQueryData<Message[]>(queryKey, (old = []) =>
-        old.map((msg) =>
-          msg.id.startsWith("temp-") && !msg.id.startsWith("temp-assistant-")
-            ? realMessage
-            : msg
-        )
-      );
+      queryClient.setQueryData<Message[]>(queryKey, (old = []) => {
+        let replaced = false; // Flag to ensure we only replace one message
+        const updatedList = old.map((msg) => {
+          // Find the first optimistic user message that hasn't been replaced yet
+          if (
+            !replaced &&
+            msg.id.startsWith("temp-") &&
+            !msg.id.startsWith("temp-assistant-")
+          ) {
+            replaced = true;
+            return realMessage; // Replace it with the real message
+          }
+          return msg; // Keep all other messages as they are
+        });
+        return updatedList;
+      });
     };
 
     const handleTrainingMessageError = (event: CustomEvent) => {

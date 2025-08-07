@@ -146,7 +146,8 @@ export default function ChatArea({
     }
   }, [displayMessages, lastAIResponse]);
 
-  // Create combined messages array for display with optimistic updates
+  // 👇 DEPRECATED: We will no longer re-sort the array on every render.
+  /*
   const getCombinedMessages = useCallback(() => {
     const messages = [...displayMessages];
     return messages.sort(
@@ -154,6 +155,7 @@ export default function ChatArea({
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     );
   }, [displayMessages]);
+  */
 
   // Handle voice start with WebRTC
   const handleVoiceStart = useCallback(async () => {
@@ -203,10 +205,12 @@ export default function ChatArea({
       // 1. Send the real message to the server
       sendWebRTCMessage(chat.id, message);
 
-      // ✨ 2. OPTIMIZATION: Atomically add optimistic updates for BOTH messages
+      // ✨ 2. FIX: Create a stable base timestamp to prevent re-ordering
       const queryKey = trainingMessageKeys.list(chat.id);
-      const tempUserId = `temp-${Date.now()}`;
-      const tempAssistantId = `temp-assistant-${Date.now()}`;
+      const baseTimestamp = new Date(); // Create one timestamp
+      const tempUserId = `temp-${baseTimestamp.getTime()}`;
+      // Ensure the assistant's temp ID is also unique
+      const tempAssistantId = `temp-assistant-${baseTimestamp.getTime()}`;
 
       queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
         ...old,
@@ -216,7 +220,7 @@ export default function ChatArea({
           role: "user",
           content: message,
           completed: true, // Mark as complete optimistically
-          created_at: new Date().toISOString(),
+          created_at: baseTimestamp.toISOString(), // Use base timestamp
           chat_id: chat.id,
         } as Message,
         // Optimistic Assistant "Thinking" Placeholder
@@ -225,7 +229,8 @@ export default function ChatArea({
           role: "assistant",
           content: "", // This will be rendered as the "thinking..." message
           completed: false,
-          created_at: new Date().toISOString(),
+          // Use the base timestamp + 1ms to guarantee it's always after
+          created_at: new Date(baseTimestamp.getTime() + 1).toISOString(),
           chat_id: chat.id,
         } as Message,
       ]);
@@ -276,7 +281,8 @@ export default function ChatArea({
         }}
       >
         <Flex direction="column" gap="4">
-          {getCombinedMessages().map((message) => (
+          {/* ✨ FIX: Map directly over the displayMessages prop */}
+          {displayMessages.map((message) => (
             <Box key={message.id}>
               <Flex
                 direction={message.role === "user" ? "row-reverse" : "row"}
