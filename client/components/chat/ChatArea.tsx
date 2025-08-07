@@ -65,9 +65,6 @@ export default function ChatArea({
   const queryClient = useQueryClient();
   const [micActive, setMicActive] = useState(false);
 
-  // ✨ NEW: State to track if the audio stream is ready
-  const [isAudioInitialized, setIsAudioInitialized] = useState(false);
-
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
   const [hints, setHints] = useState<string>("");
@@ -118,47 +115,19 @@ export default function ChatArea({
   // Track if we're currently in a room to prevent duplicate joins
   const currentRoomRef = useRef<string | null>(null);
 
-  // ✨ FIX: Add global click handler to trigger audio playback on first user interaction
+  // Ensure audio element is properly configured for server audio
   useEffect(() => {
-    const handleFirstClick = () => {
-      // Try to resume Web Audio API context first (more reliable)
-      if (
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext })
-          .webkitAudioContext
-      ) {
-        const AudioContextClass =
-          window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext })
-            .webkitAudioContext;
-        const audioContext = new AudioContextClass();
-        if (audioContext.state === "suspended") {
-          audioContext
-            .resume()
-            .then(() => {
-              logInfo("Web Audio API context resumed successfully");
-            })
-            .catch((e) => {
-              logError("Failed to resume Web Audio API context", e);
-            });
-        }
-      }
-
-      // Also try to play the audio element
-      if (audioPlaybackRef.current) {
-        audioPlaybackRef.current.muted = false; // ✅ Clear the muted flag
-        audioPlaybackRef.current.play().catch((e) => {
-          logError("Global click audio playback failed", e);
-        });
-      }
-    };
-
-    // Add click listener to the entire document
-    document.addEventListener("click", handleFirstClick, { once: true });
-
-    return () => {
-      document.removeEventListener("click", handleFirstClick);
-    };
+    const audio = audioPlaybackRef.current;
+    if (audio) {
+      // Force unmute and set volume
+      audio.muted = false;
+      audio.volume = 1;
+      logInfo("Audio element configured for server playback", {
+        muted: audio.muted,
+        volume: audio.volume,
+        readyState: audio.readyState,
+      });
+    }
   }, [audioPlaybackRef]);
 
   // Join room when chat changes and WebRTC is connected
@@ -206,23 +175,21 @@ export default function ChatArea({
   }, [displayMessages]);
   */
 
-  // Handle mode toggle to initialize/terminate the stream
+  // ✨ FIX: Simplify the mode toggle. It no longer needs to set 'isAudioInitialized'.
   const handleModeToggle = useCallback(async () => {
     const nextIsVoiceMode = !isVoiceMode;
     setIsVoiceMode(nextIsVoiceMode);
     setCurrentMessage("");
 
     if (nextIsVoiceMode) {
-      // Switching TO voice mode: initialize the stream
+      // Just initialize the stream. The user's first press will handle playback.
       if (chat?.id) {
         await initializeAudioStream(chat.id);
-        setIsAudioInitialized(true);
       }
     } else {
-      // Switching AWAY from voice mode: terminate the stream
+      // Terminate the stream when leaving voice mode.
       if (chat?.id) {
         terminateAudioStream(chat.id);
-        setIsAudioInitialized(false);
         setMicActive(false);
       }
     }
@@ -234,33 +201,32 @@ export default function ChatArea({
     setCurrentMessage,
   ]);
 
-  // Push-to-Talk handlers now just toggle mute
+  // Simple microphone control - only handles local mic, server audio plays continuously
   const handleVoiceStart = useCallback(() => {
-    if (!isAudioInitialized) return;
-
-    // Unmute the microphone to send audio
+    // Only control the local microphone
     setMicrophoneMuted(false);
     setMicActive(true);
 
-    // 👇 ADD THIS: Manually trigger the audio element to play.
-    // This overcomes browser autoplay restrictions because it's tied
-    // directly to your "mousedown" user interaction.
-    if (audioPlaybackRef.current) {
-      audioPlaybackRef.current.muted = false; // Ensure it's not muted
-      if (audioPlaybackRef.current.paused) {
-        audioPlaybackRef.current
-          .play()
-          .then(() => logInfo("Voice start: Audio playback started"))
-          .catch((e) => logError("Voice start: Playback failed", e));
+    // Force unmute and play server audio on first user interaction
+    const audio = audioPlaybackRef.current;
+    if (audio) {
+      audio.muted = false;
+      audio.volume = 1;
+      if (audio.paused) {
+        audio.play().catch((e) => {
+          logError("Failed to start server audio playback", e);
+        });
       }
     }
-  }, [isAudioInitialized, setMicrophoneMuted, audioPlaybackRef]);
+
+    logInfo("Microphone enabled for voice input");
+  }, [setMicrophoneMuted, audioPlaybackRef]);
 
   const handleVoiceStop = useCallback(() => {
-    if (!isAudioInitialized) return;
-    setMicrophoneMuted(true); // Mute
+    // This function's only job is to mute the microphone.
+    setMicrophoneMuted(true);
     setMicActive(false);
-  }, [isAudioInitialized, setMicrophoneMuted]);
+  }, [setMicrophoneMuted]);
 
   // Handle WebRTC text message sending
   const handleWebRTCTextMessage = useCallback(
@@ -336,12 +302,13 @@ export default function ChatArea({
         overflow: "hidden",
       }}
     >
-      {/* ✨ FIX: Add audio element for remote audio playback */}
+      {/* Audio element for continuous server audio playback */}
       <audio
         ref={audioPlaybackRef}
-        autoPlay // tells the browser you intend to start playback
-        playsInline // iOS
-        style={{ display: "none" }} // keep it hidden
+        autoPlay
+        playsInline
+        muted={false}
+        style={{ display: "none" }}
         onLoadedMetadata={() => {
           logInfo("Audio element loaded metadata");
         }}
@@ -548,28 +515,29 @@ export default function ChatArea({
                     onMouseDown={handleVoiceStart}
                     onMouseUp={handleVoiceStop}
                     onMouseLeave={handleVoiceStop}
-                    disabled={!isWebRTCConnected || !isAudioInitialized}
+                    onTouchStart={handleVoiceStart} // For mobile
+                    onTouchEnd={handleVoiceStop}
+                    // ✨ FIX: Simplified disabled logic.
+                    // We only need to know if the connection is ready.
+                    disabled={!isWebRTCConnected}
                     size="3"
                     style={{
                       padding: "1rem 2rem",
                       borderRadius: "30px",
                       background: micActive
                         ? "linear-gradient(135deg, #ef4444, #dc2626)"
-                        : !isWebRTCConnected || !isAudioInitialized
+                        : !isWebRTCConnected
                         ? "linear-gradient(135deg, #9ca3af, #6b7280)"
                         : "linear-gradient(135deg, #6366f1, #8b5cf6)",
                       color: "white",
                       border: "none",
-                      cursor:
-                        isWebRTCConnected && isAudioInitialized
-                          ? "pointer"
-                          : "not-allowed",
+                      cursor: !isWebRTCConnected ? "not-allowed" : "pointer",
                       fontSize: "1rem",
                       fontWeight: "600",
                       transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                       boxShadow: micActive
                         ? "0 8px 30px rgba(239, 68, 68, 0.4)"
-                        : !isWebRTCConnected || !isAudioInitialized
+                        : !isWebRTCConnected
                         ? "0 4px 15px rgba(156, 163, 175, 0.3)"
                         : "0 8px 30px rgba(99, 102, 241, 0.3)",
                       transform: micActive ? "scale(1.05)" : "scale(1)",
@@ -579,25 +547,19 @@ export default function ChatArea({
                     }}
                   >
                     <span style={{ fontSize: "1.2rem" }}>
-                      {micActive
-                        ? "🔴"
-                        : !isWebRTCConnected || !isAudioInitialized
-                        ? "⏳"
-                        : "🎤"}
+                      {micActive ? "🔴" : !isWebRTCConnected ? "⏳" : "🎤"}
                     </span>
                     {micActive
                       ? "Recording..."
-                      : !isWebRTCConnected || !isAudioInitialized
+                      : !isWebRTCConnected
                       ? "Connecting..."
                       : "Hold to Speak"}
                   </Button>
 
                   {/* Connection Status */}
-                  {(!isWebRTCConnected || !isAudioInitialized) && (
+                  {!isWebRTCConnected && (
                     <Text size="2" style={{ color: "var(--amber-11)" }}>
-                      {!isWebRTCConnected
-                        ? "Connecting to audio stream..."
-                        : "Initializing microphone..."}
+                      Connecting to audio stream...
                     </Text>
                   )}
                 </Flex>
