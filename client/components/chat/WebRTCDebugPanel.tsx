@@ -11,7 +11,8 @@ interface WebRTCDebugPanelProps {
 export default function WebRTCDebugPanel({
   audioPlaybackRef,
 }: WebRTCDebugPanelProps) {
-  const { isWebRTCConnected } = useWebSocket();
+  const { isWebRTCConnected, getTrackState, setMicrophoneMuted } =
+    useWebSocket();
   const [audioState, setAudioState] = useState({
     paused: true,
     muted: false,
@@ -20,6 +21,16 @@ export default function WebRTCDebugPanel({
     networkState: 0,
     error: null as string | null,
   });
+
+  const [micMuted, setMicMuted] = useState(false);
+
+  const [trackInfo, setTrackInfo] = useState<{
+    id: string;
+    kind: string;
+    enabled: boolean;
+    muted: boolean;
+    readyState: string;
+  } | null>(null);
 
   useEffect(() => {
     const updateAudioState = () => {
@@ -48,6 +59,7 @@ export default function WebRTCDebugPanel({
         "canplay",
         "canplaythrough",
         "play",
+        "playing",
         "pause",
         "volumechange",
         "error",
@@ -63,6 +75,22 @@ export default function WebRTCDebugPanel({
       };
     }
   }, [audioPlaybackRef]);
+
+  // Update track info periodically
+  useEffect(() => {
+    const updateTrackInfo = () => {
+      const trackState = getTrackState();
+      setTrackInfo(trackState);
+    };
+
+    // Update immediately
+    updateTrackInfo();
+
+    // Update every 500ms
+    const interval = setInterval(updateTrackInfo, 500);
+
+    return () => clearInterval(interval);
+  }, [getTrackState]);
 
   const getReadyStateText = (state: number) => {
     const states = [
@@ -116,6 +144,35 @@ export default function WebRTCDebugPanel({
           <Button size="1" onClick={openWebRTCInternals}>
             Open WebRTC Internals
           </Button>
+          <Button
+            size="1"
+            onClick={() => {
+              if (audioPlaybackRef.current) {
+                const audio = audioPlaybackRef.current;
+                audio.muted = false;
+                audio.volume = 1;
+                if (audio.paused) {
+                  audio.play().catch((e) => logInfo("Force play failed", e));
+                }
+                logInfo("Manually set audio element: muted=false, volume=1");
+              }
+            }}
+          >
+            Force Unmute
+          </Button>
+          <Button
+            size="1"
+            onClick={() => {
+              const newMutedState = !micMuted;
+              setMicMuted(newMutedState);
+              setMicrophoneMuted(newMutedState);
+              logInfo(
+                `Microphone test: ${newMutedState ? "muted" : "unmuted"}`
+              );
+            }}
+          >
+            {micMuted ? "Unmute Mic" : "Mute Mic"}
+          </Button>
         </Flex>
 
         <Box>
@@ -153,6 +210,21 @@ export default function WebRTCDebugPanel({
             )}
           </Flex>
         </Box>
+
+        {trackInfo && (
+          <Box>
+            <Text size="2" weight="bold" style={{ color: "var(--gray-11)" }}>
+              Audio Track Info:
+            </Text>
+            <Flex direction="column" gap="1">
+              <Text size="1">ID: {trackInfo.id}</Text>
+              <Text size="1">Kind: {trackInfo.kind}</Text>
+              <Text size="1">Enabled: {trackInfo.enabled ? "✅" : "❌"}</Text>
+              <Text size="1">Muted: {trackInfo.muted ? "❌" : "✅"}</Text>
+              <Text size="1">Ready State: {trackInfo.readyState}</Text>
+            </Flex>
+          </Box>
+        )}
 
         <Box>
           <Text size="2" weight="bold" style={{ color: "var(--gray-11)" }}>

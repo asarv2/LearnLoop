@@ -48,6 +48,13 @@ interface WebSocketContextType {
   setMicrophoneMuted: (muted: boolean) => void;
   terminateAudioStream: (chatId: string) => void;
   audioPlaybackRef: React.RefObject<HTMLAudioElement | null>; // 👈 ADD THIS LINE
+  getTrackState: () => {
+    id: string;
+    kind: string;
+    enabled: boolean;
+    muted: boolean;
+    readyState: string;
+  } | null; // 👈 ADD THIS LINE
 
   // Training event emitters
   emitJoinTraining: (data: {
@@ -112,7 +119,11 @@ export function WebSocketProvider({
   const audioTrackRef = useRef<MediaStreamTrack | null>(null);
 
   // ✨ NEW: Use the remote audio hook for better audio handling
-  const { audioRef: audioPlaybackRef, playTrack } = useRemoteAudio();
+  const {
+    audioRef: audioPlaybackRef,
+    playTrack,
+    getTrackState,
+  } = useRemoteAudio();
 
   // Message queues for data channels (text messages)
   const messageQueues = useRef<Map<string, string[]>>(new Map());
@@ -526,8 +537,33 @@ export function WebSocketProvider({
                   };
 
                   event.track.onunmute = () => {
-                    logInfo("Remote audio track unmuted");
+                    logInfo(
+                      "Remote audio track unmuted - should start playing now"
+                    );
                   };
+
+                  // Also monitor ready state changes
+                  const checkReadyState = () => {
+                    if (event.track.readyState === "live") {
+                      logInfo(
+                        "Remote audio track is now live and ready for playback"
+                      );
+                    }
+                  };
+
+                  // Check immediately
+                  checkReadyState();
+
+                  // Set up a periodic check for the first few seconds
+                  let checkCount = 0;
+                  const interval = setInterval(() => {
+                    checkReadyState();
+                    checkCount++;
+                    if (checkCount >= 10) {
+                      // Stop checking after 2 seconds
+                      clearInterval(interval);
+                    }
+                  }, 200);
                 }
               };
 
@@ -901,8 +937,15 @@ export function WebSocketProvider({
   // ✨ NEW: A simple, fast function to toggle mute
   const setMicrophoneMuted = useCallback((muted: boolean) => {
     if (audioTrackRef.current) {
-      audioTrackRef.current.enabled = !muted;
-      logInfo(`Microphone muted: ${muted}`);
+      const track = audioTrackRef.current;
+      track.enabled = !muted;
+      logInfo(
+        `Microphone track ${muted ? "muted" : "unmuted"}: enabled=${
+          track.enabled
+        }, id=${track.id}`
+      );
+    } else {
+      logError("Cannot mute/unmute - no microphone track available");
     }
   }, []);
 
@@ -949,6 +992,7 @@ export function WebSocketProvider({
     setMicrophoneMuted,
     terminateAudioStream,
     audioPlaybackRef, // 👈 ADD THIS LINE
+    getTrackState, // 👈 ADD THIS LINE
     emitJoinTraining,
     emitSendTrainingMessage,
     emitStopTraining,
