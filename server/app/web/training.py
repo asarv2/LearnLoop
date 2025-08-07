@@ -11,7 +11,8 @@ from typing import Any, Dict, Optional
 
 import socketio  # type: ignore
 from app.db import get_session
-from app.models import Chats, Fields, Messages, Parameters
+from app.models import (Chats, Fields, Messages,  # ✨ Import Personas
+                        Parameters, Personas)
 from app.services.agents.assesment import run_assessment_agent
 from app.services.agents.feedback import run_feedback_agent
 from app.services.agents.generic import run_generic_agent
@@ -280,13 +281,27 @@ async def process_training_message_websocket(
             logger.warning(f"Empty message received for chat {chat_id}")
             return
 
-        # Create user message
+        # ✨ 1. Find the user's persona ID from their profile ID
+        user_persona_id = None
+        if profile_id:
+            user_persona_result = db_session.exec(
+                select(Personas).where(Personas.profile_id == profile_id)
+            ).one_or_none()
+            if user_persona_result:
+                user_persona_id = user_persona_result.id
+            else:
+                logger.error(f"Could not find a persona for profile_id {profile_id}")
+                # Fallback or error handling
+                raise ValueError(f"User persona not found for profile {profile_id}")
+
+        # Create user message (in-memory, not saved with new field)
         user_message = Messages(
             chat_id=chat_id,
             content=message,
             role="user",
             training_id=chat.training_id,
-            completed=True
+            completed=True,
+            persona_id=user_persona_id  # ✨ Associate with user's persona
         )
         db_session.add(user_message)
         db_session.commit()
@@ -298,17 +313,25 @@ async def process_training_message_websocket(
         sio = get_sio_instance()
         await sio.emit("user_message_saved", {
             "chat_id": chat_id,
-            # Convert the SQLAlchemy model to a dictionary before sending
+            # ✨ 2. Enrich the message payload with the persona_id
             "message": {
                 "id": str(user_message.id),
                 "chat_id": str(user_message.chat_id),
                 "content": user_message.content,
                 "role": user_message.role,
+                "persona_id": str(user_persona_id) if user_persona_id else None,  # Add persona_id
                 "completed": user_message.completed,
                 "created_at": user_message.created_at.isoformat(),
                 "completed_at": user_message.completed_at.isoformat() if user_message.completed_at else None,
             }
         }, room=chat_id)
+
+        # ✨ 3. Get assistant's persona_id from chat parameters
+        assistant_persona_id = get_persona_id_from_chat(db_session, chat)
+        if not assistant_persona_id:
+            logger.error(f"No persona found for chat {chat_id}")
+            # Handle error...
+            return
 
         # Create assistant message placeholder
         assistant_message = Messages(
@@ -316,34 +339,19 @@ async def process_training_message_websocket(
             content="",
             role="assistant", 
             training_id=chat.training_id,
-            completed=False
+            completed=False,
+            persona_id=assistant_persona_id  # ✨ Associate with assistant's persona
         )
         db_session.add(assistant_message)
         db_session.commit()
         db_session.refresh(assistant_message)
 
-        # Emit message creation events
-        sio = get_sio_instance()
+        # ✨ 4. Emit message start event with the assistant's persona_id
         await sio.emit("training_message_start", {
             "chat_id": chat_id,
-            "message_id": str(assistant_message.id)
+            "message_id": str(assistant_message.id),
+            "persona_id": str(assistant_persona_id)  # Add persona_id
         }, room=chat_id)
-
-        # Get persona_id from chat parameters
-        persona_id = get_persona_id_from_chat(db_session, chat)
-        if not persona_id:
-            logger.error(f"No persona found for chat {chat_id}")
-            assistant_message.error = "No persona configured for this chat"
-            assistant_message.completed = True
-            db_session.add(assistant_message)
-            db_session.commit()
-            
-            await sio.emit("training_message_error", {
-                "chat_id": chat_id,
-                "message_id": str(assistant_message.id),
-                "error": "No persona configured for this chat"
-            }, room=chat_id)
-            return
 
         # Get conversation history
         messages = db_session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
@@ -352,7 +360,8 @@ async def process_training_message_websocket(
         # Stream response using generic agent
         accumulated_content = ""
         try:
-            async for chunk in run_generic_agent(persona_id, conversation_history, db_session):
+            # The agent run uses the persona_id already, which is great
+            async for chunk in run_generic_agent(assistant_persona_id, conversation_history, db_session):
                 accumulated_content += chunk
                 
                 # Emit token update
