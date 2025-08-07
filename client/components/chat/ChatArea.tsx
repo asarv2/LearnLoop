@@ -19,6 +19,7 @@ import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { useWebSocket } from "@/contexts/websocket-context";
+import { trainingMessageKeys } from "@/lib/api/hooks/useTrainingMessages";
 
 import { logError, logInfo } from "@/utils/logger";
 import { useQueryClient } from "@tanstack/react-query";
@@ -77,7 +78,10 @@ export default function ChatArea({
     ) => {
       if (!chat?.id) return;
 
-      queryClient.setQueryData<Message[]>(["messages", chat.id], (old) => {
+      // ✨ FIX: Use the unified query key from the hooks file
+      const queryKey = trainingMessageKeys.list(chat.id);
+
+      queryClient.setQueryData<Message[]>(queryKey, (old) => {
         const list = old ?? [];
         const i = list.findIndex((m) => m.id === tempId);
 
