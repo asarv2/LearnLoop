@@ -21,7 +21,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 // ✨ Import necessary hooks
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
-import { useUserPersona } from "@/lib/api/hooks/usePersonas";
+import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
 import { trainingMessageKeys } from "@/lib/api/hooks/useTrainingMessages";
 import { logError, logInfo } from "@/utils/logger";
 import { useQueryClient } from "@tanstack/react-query";
@@ -79,6 +79,7 @@ export default function ChatArea({
   // ✨ Get the current user and their associated persona
   const { user } = useAuth();
   const { data: userPersona } = useUserPersona(user?.id);
+  const { data: allPersonas } = usePersonas();
 
   // 👇 DEPRECATED: The patchCache function is no longer needed.
   // We will handle the logic directly in the send function for more control.
@@ -291,6 +292,16 @@ export default function ChatArea({
     ]
   );
 
+  // Helper function to get persona name by ID
+  const getPersonaName = useCallback(
+    (personaId: string | null) => {
+      if (!personaId || !allPersonas) return null;
+      const persona = allPersonas.find((p) => p.id === personaId);
+      return persona?.name || null;
+    },
+    [allPersonas]
+  );
+
   // Early return if chat is not available
   if (!chat) {
     return (
@@ -409,9 +420,12 @@ export default function ChatArea({
                         style={{ color: "var(--gray-11)" }}
                         weight="medium"
                       >
+                        {/* ✨ Display persona name as title */}
                         {message.persona_id === userPersona?.id
-                          ? ""
-                          : chat?.name || "John Doe"}
+                          ? getPersonaName(message.persona_id) || "You"
+                          : getPersonaName(message.persona_id) ||
+                            chat?.name ||
+                            "Assistant"}
                       </Text>
                       <Text
                         size="2"
@@ -421,7 +435,11 @@ export default function ChatArea({
                           {message.persona_id !== userPersona?.id &&
                           !message.completed &&
                           !message.content
-                            ? `${chat?.name || "John Doe"} is thinking...`
+                            ? `${
+                                getPersonaName(message.persona_id) ||
+                                chat?.name ||
+                                "Assistant"
+                              } is thinking...`
                             : message.persona_id !== userPersona?.id &&
                               message.completed &&
                               !message.content
