@@ -27,7 +27,6 @@ interface ChatAreaProps {
   displayMessages: Message[];
   isSendingMessage: boolean;
   isEndingInterview: boolean;
-  streamingMessage: boolean;
   isInterviewActive: boolean;
   currentMessage: string;
   setCurrentMessage: (message: string) => void;

@@ -27,7 +27,7 @@ export const trainingMessageKeys = {
 export function useTrainingMessages(chatId: string, enabled = true) {
   const queryClient = useQueryClient();
   const { isConnected, joinRoom, leaveRoom } = useWebSocket();
-  const joinedRef = useRef(false); // Track if we've joined to prevent duplicates
+  const joinedRef = useRef(false);
 
   // Query for fetching initial messages
   const query = useQuery({
@@ -59,75 +59,85 @@ export function useTrainingMessages(chatId: string, enabled = true) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, isConnected]);
 
-  // Listen for WebSocket message events
+  // ✨ OPTIMIZATION: This useEffect is now much smarter and more performant.
   useEffect(() => {
+    const queryKey = trainingMessageKeys.list(chatId);
+
+    // --- AI Message Handlers ---
     const handleTrainingMessageStart = (event: CustomEvent) => {
-      if (event.detail.chatId === chatId) {
-        logInfo(`Training message started for chat ${chatId}`);
-        // Optionally update loading state
-      }
+      if (event.detail.chatId !== chatId) return;
+      logInfo(
+        `AI message started, adding placeholder: ${event.detail.messageId}`
+      );
+
+      // Add a new, empty assistant message to the cache
+      queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
+        ...old,
+        {
+          id: event.detail.messageId,
+          role: "assistant",
+          content: "",
+          completed: false,
+          created_at: new Date().toISOString(),
+          chat_id: chatId,
+        } as Message,
+      ]);
     };
 
     const handleTrainingMessageToken = (event: CustomEvent) => {
-      if (event.detail.chatId === chatId) {
-        // Update the streaming message with new token
-        queryClient.setQueryData(trainingMessageKeys.streaming(chatId), {
-          id: event.detail.messageId,
-          content: event.detail.accumulatedContent,
-          completed: false,
-          role: "assistant" as const,
-          chat_id: chatId,
-          created_at: new Date().toISOString(),
-        });
-      }
+      if (event.detail.chatId !== chatId) return;
+
+      // Find the streaming message and append the token
+      queryClient.setQueryData<Message[]>(queryKey, (old = []) =>
+        old.map((msg) =>
+          msg.id === event.detail.messageId
+            ? { ...msg, content: event.detail.accumulatedContent }
+            : msg
+        )
+      );
     };
 
     const handleTrainingMessageComplete = (event: CustomEvent) => {
-      if (event.detail.chatId === chatId) {
-        logInfo(`Training message completed for chat ${chatId}`);
+      if (event.detail.chatId !== chatId) return;
+      logInfo(`AI message completed: ${event.detail.messageId}`);
 
-        // Clear streaming message
-        queryClient.setQueryData(trainingMessageKeys.streaming(chatId), null);
+      // Find the message and mark it as complete
+      queryClient.setQueryData<Message[]>(queryKey, (old = []) =>
+        old.map((msg) =>
+          msg.id === event.detail.messageId
+            ? { ...msg, content: event.detail.finalContent, completed: true }
+            : msg
+        )
+      );
+    };
 
-        // Invalidate messages to refetch with the completed message
-        queryClient.invalidateQueries({
-          queryKey: trainingMessageKeys.list(chatId),
-        });
-      }
+    // --- User Message Handler ---
+    const handleUserMessageSaved = (event: CustomEvent) => {
+      if (event.detail.chatId !== chatId) return;
+      const realMessage: Message = event.detail.message;
+      logInfo(`User message saved, replacing optimistic message.`);
+
+      // Replace the temporary message with the real one from the server
+      queryClient.setQueryData<Message[]>(queryKey, (old = []) =>
+        old.map((msg) => (msg.id.startsWith("temp-") ? realMessage : msg))
+      );
     };
 
     const handleTrainingMessageError = (event: CustomEvent) => {
-      if (event.detail.chatId === chatId) {
-        logError(
-          `Training message error for chat ${chatId}:`,
-          event.detail.error
-        );
+      if (event.detail.chatId !== chatId) return;
+      logError("Streaming error, removing placeholder.", event.detail.error);
 
-        // Clear streaming message on error
-        queryClient.setQueryData(trainingMessageKeys.streaming(chatId), null);
-
-        // Invalidate messages to ensure consistency
-        queryClient.invalidateQueries({
-          queryKey: trainingMessageKeys.list(chatId),
-        });
-      }
-    };
-
-    const handleUserMessageSaved = (event: CustomEvent) => {
-      if (event.detail.chatId === chatId) {
-        logInfo(`User message saved for chat ${chatId}, updating cache.`);
-
-        // Invalidate the query to refetch messages from the server.
-        // This is the simplest and most reliable way to ensure the UI
-        // reflects the true state of the database, replacing the
-        // optimistic message with the real one.
-        queryClient.invalidateQueries({
-          queryKey: trainingMessageKeys.list(chatId),
-        });
-      }
+      // On error, remove the incomplete assistant message
+      queryClient.setQueryData<Message[]>(queryKey, (old = []) =>
+        old.filter((msg) => msg.id !== event.detail.messageId)
+      );
     };
 
     // Add event listeners
+    window.addEventListener(
+      "userMessageSaved",
+      handleUserMessageSaved as EventListener
+    );
     window.addEventListener(
       "trainingMessageStart",
       handleTrainingMessageStart as EventListener
@@ -144,13 +154,13 @@ export function useTrainingMessages(chatId: string, enabled = true) {
       "trainingMessageError",
       handleTrainingMessageError as EventListener
     );
-    window.addEventListener(
-      "userMessageSaved",
-      handleUserMessageSaved as EventListener
-    );
 
     return () => {
       // Remove event listeners
+      window.removeEventListener(
+        "userMessageSaved",
+        handleUserMessageSaved as EventListener
+      );
       window.removeEventListener(
         "trainingMessageStart",
         handleTrainingMessageStart as EventListener
@@ -167,24 +177,14 @@ export function useTrainingMessages(chatId: string, enabled = true) {
         "trainingMessageError",
         handleTrainingMessageError as EventListener
       );
-      window.removeEventListener(
-        "userMessageSaved",
-        handleUserMessageSaved as EventListener
-      );
     };
   }, [chatId, queryClient]);
 
-  // Get streaming message
-  const streamingMessage = useQuery<StreamingMessage | null>({
-    queryKey: trainingMessageKeys.streaming(chatId),
-    queryFn: () => null, // This is managed by WebSocket events
-    enabled: false, // Never fetch, only updated by events
-    initialData: null,
-  });
-
+  // 👇 DEPRECATED: We no longer need a separate streaming message query.
+  // The main `query.data` will contain the streaming message directly.
   return {
     ...query,
-    streamingMessage: streamingMessage.data,
+    streamingMessage: null, // This is now handled within the main messages list
     isConnected,
   };
 }
@@ -221,9 +221,9 @@ export function useEndTraining() {
       return { success: true };
     },
     onSuccess: (_, { chatId }) => {
-      // Invalidate chat queries to reflect completion status
+      // Invalidate messages to refresh the list after ending training
       queryClient.invalidateQueries({
-        queryKey: ["chat", chatId],
+        queryKey: trainingMessageKeys.list(chatId),
       });
     },
     onError: (error) => {
@@ -232,10 +232,9 @@ export function useEndTraining() {
   });
 }
 
-// Hook for submitting assessment
+// Hook for submitting assessments
 export function useSubmitAssessment() {
   const { emitSubmitAssessment } = useWebSocket();
-  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({
@@ -245,20 +244,8 @@ export function useSubmitAssessment() {
       chatId: string;
       responses: Record<string, unknown>;
     }) => {
-      emitSubmitAssessment({
-        chat_id: chatId,
-        responses,
-      });
+      emitSubmitAssessment({ chat_id: chatId, responses });
       return { success: true };
-    },
-    onSuccess: (_, { chatId }) => {
-      // Invalidate assessment and feedback queries
-      queryClient.invalidateQueries({
-        queryKey: ["assessment", chatId],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["feedback", chatId],
-      });
     },
     onError: (error) => {
       logError("Error submitting assessment:", error);
@@ -269,18 +256,11 @@ export function useSubmitAssessment() {
 // Hook for generating feedback
 export function useGenerateFeedback() {
   const { emitGenerateFeedback } = useWebSocket();
-  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ chatId }: { chatId: string }) => {
       emitGenerateFeedback({ chat_id: chatId });
       return { success: true };
-    },
-    onSuccess: (_, { chatId }) => {
-      // Invalidate feedback queries
-      queryClient.invalidateQueries({
-        queryKey: ["feedback", chatId],
-      });
     },
     onError: (error) => {
       logError("Error generating feedback:", error);
