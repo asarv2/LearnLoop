@@ -680,7 +680,7 @@ export function WebSocketProvider({
         setIsConnected(false);
       }
     };
-  }, [profileId, createDataChannelIfNeeded, playTrack]);
+  }, [profileId, createDataChannelIfNeeded, playTrack, audioPlaybackRef]);
 
   // Room management (chat_id-based)
   const joinRoom = useCallback(

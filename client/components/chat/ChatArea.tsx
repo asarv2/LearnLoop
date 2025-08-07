@@ -207,6 +207,7 @@ export default function ChatArea({
     setCurrentMessage,
     enableServerAudio,
     disableServerAudio,
+    triggerServerAudio,
   ]);
 
   // Simple microphone control - only handles local mic, server audio is already enabled
@@ -702,7 +703,7 @@ export default function ChatArea({
       )}
 
       {/* ✨ DEBUG: Add WebRTC debug panel for troubleshooting */}
-      {process.env.NODE_ENV === "development" && (
+      {false && process.env.NODE_ENV === "development" && (
         <WebRTCDebugPanel audioPlaybackRef={audioPlaybackRef} />
       )}
 
