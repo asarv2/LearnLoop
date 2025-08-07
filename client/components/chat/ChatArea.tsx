@@ -81,6 +81,13 @@ export default function ChatArea({
   const { data: userPersona } = useUserPersona(user?.id);
   const { data: allPersonas } = usePersonas();
 
+  // ✨ 1. Create a memoized map for efficient and stable persona lookup.
+  // This prevents re-calculations on every render and ensures consistency.
+  const personaMap = React.useMemo(() => {
+    if (!allPersonas) return new Map<string, string>();
+    return new Map(allPersonas.map((p) => [p.id, p.name]));
+  }, [allPersonas]);
+
   // 👇 DEPRECATED: The patchCache function is no longer needed.
   // We will handle the logic directly in the send function for more control.
 
@@ -235,19 +242,32 @@ export default function ChatArea({
   // Handle WebRTC text message sending
   const handleWebRTCTextMessage = useCallback(
     (message: string) => {
-      // ✨ Guard against missing data needed for optimistic update
       if (!chat?.id || !message.trim() || !userPersona?.id) return;
 
-      // ✨ To get the assistant's persona ID, we can assume the backend
-      // has a way to provide it. For now, we'll extract it from the last
-      // assistant message. A more robust solution would be to add it to the Chat object.
-      const lastAssistantMessage = [...displayMessages]
-        .reverse()
-        .find((msg) => msg.role === "assistant");
-      const assistantPersonaId =
-        lastAssistantMessage?.persona_id || "temp-assistant-persona";
+      // ✨ 2. Establish a reliable source for the assistant's persona ID.
+      let assistantPersonaId: string | null = null;
 
-      // 1. Send the real message to the server
+      // OPTION A (Ideal): If your API provides the assistant's ID on the chat object.
+      // assistantPersonaId = chat.assistant_persona_id;
+
+      // OPTION B (Current Fallback): Reliably get it from the last *actual* message.
+      if (!assistantPersonaId) {
+        const lastAssistantMessage = [...displayMessages]
+          .reverse()
+          .find((msg) => msg.persona_id !== userPersona.id);
+        if (lastAssistantMessage?.persona_id) {
+          assistantPersonaId = lastAssistantMessage.persona_id;
+        }
+      }
+
+      // Guard against being unable to find the assistant persona
+      if (!assistantPersonaId) {
+        logError(
+          "Could not determine assistant persona ID for optimistic update."
+        );
+        return;
+      }
+
       sendWebRTCMessage(chat.id, message);
 
       const queryKey = trainingMessageKeys.list(chat.id);
@@ -257,21 +277,19 @@ export default function ChatArea({
 
       queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
         ...old,
-        // ✨ Optimistic User Message with persona_id
         {
           id: tempUserId,
-          role: "user", // Keep role for optimistic rendering until full migration
+          role: "user",
           persona_id: userPersona.id,
           content: message,
           completed: true,
           created_at: baseTimestamp.toISOString(),
           chat_id: chat.id,
         } as Message,
-        // ✨ Optimistic Assistant "Thinking" Placeholder with persona_id
         {
           id: tempAssistantId,
-          role: "assistant", // Keep role for optimistic rendering
-          persona_id: assistantPersonaId,
+          role: "assistant",
+          persona_id: assistantPersonaId, // Use the reliably found ID
           content: "",
           completed: false,
           created_at: new Date(baseTimestamp.getTime() + 1).toISOString(),
@@ -279,7 +297,6 @@ export default function ChatArea({
         } as Message,
       ]);
 
-      // 3. Clear the input field
       setCurrentMessage("");
     },
     [
@@ -292,14 +309,13 @@ export default function ChatArea({
     ]
   );
 
-  // Helper function to get persona name by ID
+  // ✨ 3. Use the memoized map in the lookup function for stability.
   const getPersonaName = useCallback(
     (personaId: string | null) => {
-      if (!personaId || !allPersonas) return null;
-      const persona = allPersonas.find((p) => p.id === personaId);
-      return persona?.name || null;
+      if (!personaId) return null;
+      return personaMap.get(personaId) || null;
     },
-    [allPersonas]
+    [personaMap] // Dependency is now the stable map
   );
 
   // Early return if chat is not available
@@ -420,30 +436,23 @@ export default function ChatArea({
                         style={{ color: "var(--gray-11)" }}
                         weight="medium"
                       >
-                        {/* ✨ Display persona name as title */}
-                        {message.persona_id === userPersona?.id
-                          ? getPersonaName(message.persona_id) || "You"
-                          : getPersonaName(message.persona_id) ||
-                            chat?.name ||
-                            "Assistant"}
+                        {/* ✨ 4. Simplify the name rendering logic using the stable getter. */}
+                        {getPersonaName(message.persona_id) ||
+                          (message.role === "user" ? "You" : "Assistant")}
                       </Text>
                       <Text
                         size="2"
                         style={{ lineHeight: "1.5", color: "var(--gray-12)" }}
                       >
                         <Markdown>
-                          {message.persona_id !== userPersona?.id &&
-                          !message.completed &&
-                          !message.content
+                          {/* Use the same stable getter for the "thinking" message */}
+                          {!message.completed &&
+                          !message.content &&
+                          message.role === "assistant"
                             ? `${
                                 getPersonaName(message.persona_id) ||
-                                chat?.name ||
                                 "Assistant"
                               } is thinking...`
-                            : message.persona_id !== userPersona?.id &&
-                              message.completed &&
-                              !message.content
-                            ? "No response"
                             : message.content || ""}
                         </Markdown>
                       </Text>
