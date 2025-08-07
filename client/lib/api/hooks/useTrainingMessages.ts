@@ -113,6 +113,20 @@ export function useTrainingMessages(chatId: string, enabled = true) {
       }
     };
 
+    const handleUserMessageSaved = (event: CustomEvent) => {
+      if (event.detail.chatId === chatId) {
+        logInfo(`User message saved for chat ${chatId}, updating cache.`);
+
+        // Invalidate the query to refetch messages from the server.
+        // This is the simplest and most reliable way to ensure the UI
+        // reflects the true state of the database, replacing the
+        // optimistic message with the real one.
+        queryClient.invalidateQueries({
+          queryKey: trainingMessageKeys.list(chatId),
+        });
+      }
+    };
+
     // Add event listeners
     window.addEventListener(
       "trainingMessageStart",
@@ -129,6 +143,10 @@ export function useTrainingMessages(chatId: string, enabled = true) {
     window.addEventListener(
       "trainingMessageError",
       handleTrainingMessageError as EventListener
+    );
+    window.addEventListener(
+      "userMessageSaved",
+      handleUserMessageSaved as EventListener
     );
 
     return () => {
@@ -148,6 +166,10 @@ export function useTrainingMessages(chatId: string, enabled = true) {
       window.removeEventListener(
         "trainingMessageError",
         handleTrainingMessageError as EventListener
+      );
+      window.removeEventListener(
+        "userMessageSaved",
+        handleUserMessageSaved as EventListener
       );
     };
   }, [chatId, queryClient]);

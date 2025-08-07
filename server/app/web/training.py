@@ -294,6 +294,22 @@ async def process_training_message_websocket(
 
         logger.info(f"Created user message {user_message.id} for chat {chat_id}")
 
+        # Immediately confirm to the client that the user message was saved
+        sio = get_sio_instance()
+        await sio.emit("user_message_saved", {
+            "chat_id": chat_id,
+            # Convert the SQLAlchemy model to a dictionary before sending
+            "message": {
+                "id": str(user_message.id),
+                "chat_id": str(user_message.chat_id),
+                "content": user_message.content,
+                "role": user_message.role,
+                "completed": user_message.completed,
+                "created_at": user_message.created_at.isoformat(),
+                "completed_at": user_message.completed_at.isoformat() if user_message.completed_at else None,
+            }
+        }, room=chat_id)
+
         # Create assistant message placeholder
         assistant_message = Messages(
             chat_id=chat_id,

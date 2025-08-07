@@ -285,6 +285,21 @@ export function WebSocketProvider({
       );
 
       socket.on(
+        "user_message_saved",
+        (data: { chat_id: string; message: Record<string, unknown> }) => {
+          logInfo("Received user message confirmation", data);
+          window.dispatchEvent(
+            new CustomEvent("userMessageSaved", {
+              detail: {
+                chatId: data.chat_id,
+                message: data.message,
+              },
+            })
+          );
+        }
+      );
+
+      socket.on(
         "training_message_start",
         (data: { chat_id: string; message_id: string }) => {
           logInfo("Training message start", data);
