@@ -46,6 +46,7 @@ interface WebSocketContextType {
   initializeAudioStream: (chatId: string) => Promise<void>;
   setMicrophoneMuted: (muted: boolean) => void;
   terminateAudioStream: (chatId: string) => void;
+  audioPlaybackRef: React.RefObject<HTMLAudioElement | null>; // 👈 ADD THIS LINE
 
   // Training event emitters
   emitJoinTraining: (data: {
@@ -108,6 +109,9 @@ export function WebSocketProvider({
 
   // ✨ NEW: Persistent audio track reference for mute/unmute
   const audioTrackRef = useRef<MediaStreamTrack | null>(null);
+
+  // ✨ NEW: Add a ref for the audio element
+  const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
 
   // Message queues for data channels (text messages)
   const messageQueues = useRef<Map<string, string[]>>(new Map());
@@ -498,10 +502,24 @@ export function WebSocketProvider({
               };
 
               pc.ontrack = (event) => {
-                logInfo("Received remote audio track", {
+                logInfo("Received remote audio track from server", {
                   streamId: event.streams[0]?.id,
                   trackKind: event.track.kind,
                 });
+
+                // Attach the server's stream to our audio element for playback
+                if (event.track.kind === "audio" && audioPlaybackRef.current) {
+                  // The stream from the event contains the audio from the server
+                  audioPlaybackRef.current.srcObject = event.streams[0];
+                  audioPlaybackRef.current
+                    .play()
+                    .catch((e) =>
+                      logError(
+                        "Audio playback failed. User may need to interact with the page first.",
+                        e
+                      )
+                    );
+                }
               };
 
               pc.ondatachannel = (event) => {
@@ -856,10 +874,12 @@ export function WebSocketProvider({
         const sender = webRTCPeerConnection.current.addTrack(track, stream);
         audioTrackSenders.current.set(chatId, sender);
 
+        // 👇 RESTORE: Trigger renegotiation to update connection for bi-directional audio
         socketRef.current.emit("webrtc_start_audio", {
           chat_id: chatId,
           profile_id: profileId,
         });
+
         logInfo(`Persistent audio stream established for chat: ${chatId}`);
       } catch (error) {
         logError("Error initializing audio stream", error);
@@ -919,6 +939,7 @@ export function WebSocketProvider({
     initializeAudioStream,
     setMicrophoneMuted,
     terminateAudioStream,
+    audioPlaybackRef, // 👈 ADD THIS LINE
     emitJoinTraining,
     emitSendTrainingMessage,
     emitStopTraining,
@@ -930,6 +951,8 @@ export function WebSocketProvider({
   return (
     <WebSocketContext.Provider value={value}>
       {children}
+      {/* ✨ NEW: Add a hidden, auto-playing audio element for the server's stream */}
+      <audio ref={audioPlaybackRef} autoPlay playsInline />
     </WebSocketContext.Provider>
   );
 }

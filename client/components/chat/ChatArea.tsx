@@ -57,6 +57,7 @@ export default function ChatArea({
     sendWebRTCMessage,
     joinRoom,
     leaveRoom,
+    audioPlaybackRef,
   } = useWebSocket();
 
   // Voice-related state
@@ -192,9 +193,20 @@ export default function ChatArea({
   // Push-to-Talk handlers now just toggle mute
   const handleVoiceStart = useCallback(() => {
     if (!isAudioInitialized) return;
-    setMicrophoneMuted(false); // Unmute
+
+    // Unmute the microphone to send audio
+    setMicrophoneMuted(false);
     setMicActive(true);
-  }, [isAudioInitialized, setMicrophoneMuted]);
+
+    // 👇 ADD THIS: Manually trigger the audio element to play.
+    // This overcomes browser autoplay restrictions because it's tied
+    // directly to your "mousedown" user interaction.
+    if (audioPlaybackRef.current && audioPlaybackRef.current.paused) {
+      audioPlaybackRef.current
+        .play()
+        .catch((e) => logError("Playback failed", e));
+    }
+  }, [isAudioInitialized, setMicrophoneMuted, audioPlaybackRef]);
 
   const handleVoiceStop = useCallback(() => {
     if (!isAudioInitialized) return;
