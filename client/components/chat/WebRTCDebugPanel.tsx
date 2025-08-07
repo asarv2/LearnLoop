@@ -1,80 +1,172 @@
 "use client";
-
 import { useWebSocket } from "@/contexts/websocket-context";
-import { Box, Button, Flex, Text } from "@radix-ui/themes";
-import { useState } from "react";
+import { logInfo } from "@/utils/logger";
+import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
+import React, { useEffect, useState } from "react";
 
 interface WebRTCDebugPanelProps {
-  className?: string;
+  audioPlaybackRef: React.RefObject<HTMLAudioElement | null>;
 }
 
 export default function WebRTCDebugPanel({
-  className = "",
+  audioPlaybackRef,
 }: WebRTCDebugPanelProps) {
-  const { isConnected, isWebRTCConnected } = useWebSocket();
+  const { isWebRTCConnected } = useWebSocket();
+  const [audioState, setAudioState] = useState({
+    paused: true,
+    muted: false,
+    volume: 1,
+    readyState: 0,
+    networkState: 0,
+    error: null as string | null,
+  });
 
-  const [isVisible, setIsVisible] = useState(false);
+  useEffect(() => {
+    const updateAudioState = () => {
+      if (audioPlaybackRef.current) {
+        const audio = audioPlaybackRef.current;
+        setAudioState({
+          paused: audio.paused,
+          muted: audio.muted,
+          volume: audio.volume,
+          readyState: audio.readyState,
+          networkState: audio.networkState,
+          error: audio.error ? audio.error.message : null,
+        });
+      }
+    };
 
-  if (!isVisible) {
-    return (
-      <Button
-        variant="ghost"
-        size="1"
-        onClick={() => setIsVisible(true)}
-        style={{
-          position: "fixed",
-          bottom: "10px",
-          right: "10px",
-          zIndex: 1000,
-        }}
-      >
-        🐛 Debug
-      </Button>
-    );
-  }
+    // Update state immediately
+    updateAudioState();
+
+    // Set up event listeners
+    const audio = audioPlaybackRef.current;
+    if (audio) {
+      const events = [
+        "loadstart",
+        "loadedmetadata",
+        "canplay",
+        "canplaythrough",
+        "play",
+        "pause",
+        "volumechange",
+        "error",
+      ];
+      events.forEach((event) => {
+        audio.addEventListener(event, updateAudioState);
+      });
+
+      return () => {
+        events.forEach((event) => {
+          audio.removeEventListener(event, updateAudioState);
+        });
+      };
+    }
+  }, [audioPlaybackRef]);
+
+  const getReadyStateText = (state: number) => {
+    const states = [
+      "HAVE_NOTHING",
+      "HAVE_METADATA",
+      "HAVE_CURRENT_DATA",
+      "HAVE_FUTURE_DATA",
+      "HAVE_ENOUGH_DATA",
+    ];
+    return states[state] || "UNKNOWN";
+  };
+
+  const getNetworkStateText = (state: number) => {
+    const states = [
+      "NETWORK_EMPTY",
+      "NETWORK_IDLE",
+      "NETWORK_LOADING",
+      "NETWORK_NO_SOURCE",
+    ];
+    return states[state] || "UNKNOWN";
+  };
+
+  const testAudioPlayback = () => {
+    if (audioPlaybackRef.current) {
+      audioPlaybackRef.current
+        .play()
+        .then(() => {
+          logInfo("Test audio playback started successfully");
+        })
+        .catch((e) => {
+          logInfo("Test audio playback failed", e);
+        });
+    }
+  };
+
+  const openWebRTCInternals = () => {
+    window.open("chrome://webrtc-internals", "_blank");
+  };
 
   return (
-    <Box
-      style={{
-        position: "fixed",
-        bottom: "10px",
-        right: "10px",
-        background: "white",
-        border: "1px solid var(--gray-6)",
-        borderRadius: "8px",
-        padding: "12px",
-        zIndex: 1000,
-        maxWidth: "300px",
-        fontSize: "12px",
-      }}
-      className={className}
-    >
-      <Flex direction="column" gap="2">
-        <Flex align="center" justify="between">
-          <Text size="2" weight="medium">
-            WebRTC Debug
-          </Text>
-          <Button variant="ghost" size="1" onClick={() => setIsVisible(false)}>
-            ✕
+    <Card size="2" style={{ margin: "16px", background: "var(--gray-1)" }}>
+      <Flex direction="column" gap="3">
+        <Text size="3" weight="bold" style={{ color: "var(--gray-12)" }}>
+          🔧 WebRTC Debug Panel
+        </Text>
+
+        <Flex gap="2" wrap="wrap">
+          <Button size="1" onClick={testAudioPlayback}>
+            Test Audio Playback
+          </Button>
+          <Button size="1" onClick={openWebRTCInternals}>
+            Open WebRTC Internals
           </Button>
         </Flex>
-        <Box
-          style={{
-            background: "var(--gray-2)",
-            padding: "8px",
-            borderRadius: "4px",
-            fontSize: "11px",
-            fontFamily: "monospace",
-          }}
-        >
-          <Text size="1" color="gray">
-            WebRTC State: {isWebRTCConnected ? "Connected" : "Disconnected"}
+
+        <Box>
+          <Text size="2" weight="bold" style={{ color: "var(--gray-11)" }}>
+            Connection Status:
           </Text>
-          <Text size="1" color="gray">
-            WebSocket State: {isConnected ? "Connected" : "Disconnected"}
+          <Text
+            size="2"
+            style={{
+              color: isWebRTCConnected ? "var(--green-11)" : "var(--red-11)",
+            }}
+          >
+            {isWebRTCConnected ? "✅ Connected" : "❌ Disconnected"}
           </Text>
         </Box>
+
+        <Box>
+          <Text size="2" weight="bold" style={{ color: "var(--gray-11)" }}>
+            Audio Element State:
+          </Text>
+          <Flex direction="column" gap="1">
+            <Text size="1">Paused: {audioState.paused ? "❌" : "✅"}</Text>
+            <Text size="1">Muted: {audioState.muted ? "❌" : "✅"}</Text>
+            <Text size="1">Volume: {audioState.volume}</Text>
+            <Text size="1">
+              Ready State: {getReadyStateText(audioState.readyState)}
+            </Text>
+            <Text size="1">
+              Network State: {getNetworkStateText(audioState.networkState)}
+            </Text>
+            {audioState.error && (
+              <Text size="1" style={{ color: "var(--red-11)" }}>
+                Error: {audioState.error}
+              </Text>
+            )}
+          </Flex>
+        </Box>
+
+        <Box>
+          <Text size="2" weight="bold" style={{ color: "var(--gray-11)" }}>
+            Troubleshooting Steps:
+          </Text>
+          <Flex direction="column" gap="1">
+            <Text size="1">1. Check if audio element is paused/muted</Text>
+            <Text size="1">2. Verify WebRTC connection is established</Text>
+            <Text size="1">3. Check browser console for errors</Text>
+            <Text size="1">4. Open WebRTC Internals to see RTP packets</Text>
+            <Text size="1">5. Ensure user has interacted with the page</Text>
+          </Flex>
+        </Box>
       </Flex>
-    </Box>
+    </Card>
   );
 }

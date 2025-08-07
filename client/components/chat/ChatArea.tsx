@@ -23,6 +23,7 @@ import { trainingMessageKeys } from "@/lib/api/hooks/useTrainingMessages";
 
 import { logError, logInfo } from "@/utils/logger";
 import { useQueryClient } from "@tanstack/react-query";
+import WebRTCDebugPanel from "./WebRTCDebugPanel";
 
 interface ChatAreaProps {
   displayMessages: Message[];
@@ -116,6 +117,48 @@ export default function ChatArea({
 
   // Track if we're currently in a room to prevent duplicate joins
   const currentRoomRef = useRef<string | null>(null);
+
+  // ✨ FIX: Add global click handler to trigger audio playback on first user interaction
+  useEffect(() => {
+    const handleFirstClick = () => {
+      // Try to resume Web Audio API context first (more reliable)
+      if (
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext
+      ) {
+        const AudioContextClass =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext;
+        const audioContext = new AudioContextClass();
+        if (audioContext.state === "suspended") {
+          audioContext
+            .resume()
+            .then(() => {
+              logInfo("Web Audio API context resumed successfully");
+            })
+            .catch((e) => {
+              logError("Failed to resume Web Audio API context", e);
+            });
+        }
+      }
+
+      // Also try to play the audio element
+      if (audioPlaybackRef.current && audioPlaybackRef.current.paused) {
+        audioPlaybackRef.current.play().catch((e) => {
+          logError("Global click audio playback failed", e);
+        });
+      }
+    };
+
+    // Add click listener to the entire document
+    document.addEventListener("click", handleFirstClick, { once: true });
+
+    return () => {
+      document.removeEventListener("click", handleFirstClick);
+    };
+  }, [audioPlaybackRef]);
 
   // Join room when chat changes and WebRTC is connected
   useEffect(() => {
@@ -693,6 +736,11 @@ export default function ChatArea({
             </Flex>
           </Card>
         </Box>
+      )}
+
+      {/* ✨ DEBUG: Add WebRTC debug panel for troubleshooting */}
+      {process.env.NODE_ENV === "development" && (
+        <WebRTCDebugPanel audioPlaybackRef={audioPlaybackRef} />
       )}
 
       {isEndingInterview && (
