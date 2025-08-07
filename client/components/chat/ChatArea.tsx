@@ -145,7 +145,8 @@ export default function ChatArea({
       }
 
       // Also try to play the audio element
-      if (audioPlaybackRef.current && audioPlaybackRef.current.paused) {
+      if (audioPlaybackRef.current) {
+        audioPlaybackRef.current.muted = false; // ✅ Clear the muted flag
         audioPlaybackRef.current.play().catch((e) => {
           logError("Global click audio playback failed", e);
         });
@@ -244,10 +245,14 @@ export default function ChatArea({
     // 👇 ADD THIS: Manually trigger the audio element to play.
     // This overcomes browser autoplay restrictions because it's tied
     // directly to your "mousedown" user interaction.
-    if (audioPlaybackRef.current && audioPlaybackRef.current.paused) {
-      audioPlaybackRef.current
-        .play()
-        .catch((e) => logError("Playback failed", e));
+    if (audioPlaybackRef.current) {
+      audioPlaybackRef.current.muted = false; // Ensure it's not muted
+      if (audioPlaybackRef.current.paused) {
+        audioPlaybackRef.current
+          .play()
+          .then(() => logInfo("Voice start: Audio playback started"))
+          .catch((e) => logError("Voice start: Playback failed", e));
+      }
     }
   }, [isAudioInitialized, setMicrophoneMuted, audioPlaybackRef]);
 
