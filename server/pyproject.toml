@@ -12,51 +12,46 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
-    "gunicorn>=21.2.0",
-    "openai>=1.3.0",
-    "openai-agents[litellm]>=0.1.0",
-    "aiortc>=1.5.0",
-    "websockets>=12.0",
-    "supabase>=2.0.0",
-    "python-dotenv>=1.0.0",
-    "httpx>=0.24.0",
-    "sqlmodel>=0.0.8",
-    "sqlalchemy>=2.0.0",
-    "psycopg2-binary>=2.9.0",
-    "psycopg[binary]>=3.1.0",
-    "sqlacodegen>=3.0.0",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "python-socketio[asyncio_client]>=5.11.0",
-    "numpy>=1.26.0",
+    # Use ~= for stable, compatible releases
+    "fastapi~=0.111.0",
+    "uvicorn[standard]~=0.29.0",
+    "gunicorn~=22.0.0",
+    "openai-agents[litellm]~=0.2.0",
+    "aiortc~=1.7.0",
+    "av~=11.0",
+    "websockets~=12.0",
+    "supabase~=2.4.0",
+    "python-dotenv~=1.0.1",
+    "httpx~=0.27.0",
+    "sqlmodel~=0.0.18",
+    "sqlalchemy~=2.0.30",
+    "psycopg[binary]~=3.1.18",
+    "sqlacodegen~=3.0.0rc4",
+    "python-socketio[asyncio_client]~=5.11.2",
+    "numpy~=1.26.4",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.0.0",
-    "pytest-mock>=3.12.0",
-    "ruff>=0.1.0",
-    "mypy>=1.7.0",
-    "mypy-extensions>=1.0.0",
-    "types-requests>=2.31.0",
-    "types-PyYAML>=6.0.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "pre-commit>=3.5.0",
-    "ipython>=8.0.0",
-    "ipdb>=0.13.0",
+    "pytest~=8.2.1",
+    "pytest-asyncio~=0.23.7",
+    "pytest-cov~=5.0.0",
+    "pytest-mock~=3.14.0",
+    # Ruff is now our primary linter, formatter, and import sorter
+    "ruff~=0.4.5",
+    "mypy~=1.10.0",
+    "mypy-extensions~=1.0.0",
+    "types-requests~=2.31.0",
+    "types-PyYAML~=6.0.12",
+    # REMOVED: black and isort are no longer needed
+    "pre-commit~=3.7.1",
+    "ipython~=8.24.0",
+    "ipdb~=0.13.13",
 ]
 
 [project.scripts]
+# Note: The 'main' function needs to be defined in app/main.py for this to work
 learnloop-server = "app.main:main"
-
-# Virtual environment configuration
-[tool.venv]
-path = ".venv"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
@@ -64,21 +59,31 @@ packages = ["app"]
 [tool.ruff]
 target-version = "py311"
 line-length = 88
+
+[tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "UP", # pyupgrade
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ANN", # flake8-annotations (enforce type hints)
+    "PT",  # flake8-pytest-style
 ]
 ignore = [
-    "E501",  # line too long, handled by black
-    "B008",  # do not perform function calls in argument defaults
-    "C901",  # too complex
+    "E501",   # line too long, handled by ruff format
+    "B008",   # do not perform function calls in argument defaults
+    "C901",   # too complex
+    "ANN101", # missing type annotation for self
 ]
 
+# Configure Ruff to replace isort
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# Configure Ruff to replace Black
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
@@ -90,70 +95,47 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
-disallow_incomplete_defs = true
 check_untyped_defs = true
-disallow_untyped_decorators = true
 no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
 strict_equality = true
 show_error_codes = true
-show_column_numbers = true
-pretty = true
-ignore_missing_imports = true
-exclude = [
-    "tests/",
-    "migrations/",
-    "__pycache__/",
-    ".venv/",
-    "venv/",
+
+# This is more precise than a global `ignore_missing_imports = true`
+[[tool.mypy.overrides]]
+module = [
+    "aiortc.*",
+    "av.*",
+    "socketio.*",
+    "sqlacodegen.*",
+    "gunicorn.*",
 ]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
+python_files = "test_*.py"
+# Be explicit about asyncio mode for pytest-asyncio >= 0.23
+asyncio_mode = "auto"
 addopts = [
     "--strict-markers",
-    "--strict-config",
     "--cov=app",
     "--cov-report=term-missing",
     "--cov-report=html",
-    "--cov-report=xml",
     "--cov-fail-under=80",
     "--tb=short",
-    "--maxfail=10",
     "-v",
-]
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests",
-    "fast: marks tests as fast (deselect with '-m \"not fast\"')",
 ]
 
 [tool.coverage.run]
 source = ["app"]
 omit = [
     "*/tests/*",
-    "*/test_*",
-    "*/__pycache__/*",
     "*/migrations/*",
 ]
 
 [tool.coverage.report]
 exclude_lines = [
     "pragma: no cover",
-    "def __repr__",
-    "if self.debug:",
-    "if settings.DEBUG",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if 0:",
     "if __name__ == .__main__.:",
-    "class .*\\bProtocol\\):",
     "@(abc\\.)?abstractmethod",
 ]

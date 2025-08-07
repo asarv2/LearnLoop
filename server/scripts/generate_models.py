@@ -20,7 +20,7 @@ def generate_sqlmodel_from_sql():
     db_port = os.getenv("DB_PORT")
     db_name = os.getenv("DB_NAME")
     
-    db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
+    db_url = f"postgresql+psycopg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
 
     if not all([db_user, db_password, db_name, db_host, db_port]):
         print("Error: Database environment variables are not properly set")

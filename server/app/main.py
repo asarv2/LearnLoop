@@ -20,7 +20,7 @@ from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
                     RTCIceCandidate, RTCIceServer, RTCPeerConnection,
                     RTCSessionDescription)
 from aiortc.sdp import candidate_from_sdp  # type: ignore
-from av import AudioFrame  # type: ignore
+from av import AudioFrame, AudioResampler  # type: ignore
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -104,47 +104,27 @@ class ServerAudioStreamTrack(MediaStreamTrack):
         logger.info("Ending persistent server audio stream.")
         self.queue.put_nowait(None)
 
+    # ✨ THIS IS THE CORRECT, SIMPLIFIED RECV METHOD
     async def recv(self) -> AudioFrame:
-        """Pulls the next PCM chunk and wraps it in a timed AudioFrame."""
+        """Pulls a pre-formatted s16 mono chunk and wraps it in a timed AudioFrame."""
         chunk = await self.queue.get()
         if chunk is None:
             self.stop()
             raise asyncio.CancelledError("Audio stream ended.")
 
-        # ✨ FIX: Convert to s16 mono no-matter-what
-        # The browser sends stereo Opus which gets decoded to planar fltp (32-bit floats)
-        # Copying that raw into an s16 frame gives denormalised near-zero samples → silence
-        try:
-            pcm16 = np.frombuffer(chunk, dtype=np.int16)
-            frame = AudioFrame(format="s16", layout="mono", samples=960)
-            frame.planes[0].update(pcm16.tobytes())
-        except Exception as e:
-            # Fallback if numpy conversion fails
-            logger.warning(f"Failed to convert audio chunk with numpy: {e}")
-            frame = AudioFrame(format="s16", layout="mono", samples=960)
-            frame.planes[0].update(chunk)
+        # The chunk from the queue is now guaranteed to be clean s16 mono audio.
+        # No conversion is needed here.
+        frame = AudioFrame(format="s16", layout="mono", samples=960)
+        frame.planes[0].update(chunk)
 
-        # Set the presentation timestamp
+        # Set the presentation timestamp for smooth playback
         frame.sample_rate = 48000
         frame.pts = self._pts
         frame.time_base = self._time_base
         self._pts += frame.samples
         
-        # Add debugging for the first ~2 seconds of frames
-        if self._pts < (48000 * 2):
-            logger.info(
-                f"DEBUG_AUDIO_FRAME: "
-                f"pts={frame.pts}, "
-                f"samples={frame.samples}, "
-                f"sample_rate={frame.sample_rate}, "
-                f"time_base={frame.time_base}, "
-                f"duration_ms={frame.samples / 48.0:.2f}"
-            )
-        
-        # ✨ FIX: Add back the 20ms pacing to prevent burst delivery
-        # aiortc's RTCRtpSender calls recv() back-to-back, so without the sleep
-        # all 100 frames are delivered in a burst; the jitter-buffer discards almost everything
-        await asyncio.sleep(frame.samples / 48000)  # 20 ms pacing
+        # This pacing is critical to prevent choppy audio
+        await asyncio.sleep(frame.samples / 48000)  # 20ms pacing
         
         return frame
 
@@ -380,35 +360,45 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                 room=profile_id,
             )
             
-    # ✨ NEW: This is the core logic for the audio echo
+    # ✨ THIS IS THE FINAL, COMPATIBLE ECHO TASK
     async def echo_audio_task(in_track: MediaStreamTrack, out_track: ServerAudioStreamTrack):
-        """Reads frames from an input track and writes them to the output track."""
-        logger.info(f"AUDIO_ECHO: Starting echo task for profile {profile_id}")
+        """
+        Reads frames, resamples them to s16 mono using a compatible
+        AudioResampler, and queues them for echo.
+        """
+        logger.info(f"AUDIO_ECHO: Starting compatible audio echo task for profile {profile_id}")
+        
+        # Create an AudioResampler instance to convert audio formats
+        resampler = AudioResampler(
+            format="s16",      # Target format: 16-bit signed integer
+            layout="mono",     # Target layout: single channel
+            rate=48000         # Target sample rate: 48,000 Hz
+        )
+
         while True:
             try:
-                frame = await in_track.recv()
+                in_frame = await in_track.recv()
 
-                # Ensure we have an AudioFrame with planes
-                if hasattr(frame, 'planes') and len(frame.planes) > 0:
-                    # ✨ FIX: Log the frame format to debug format mismatch issues
-                    if hasattr(frame, 'format'):
-                        logger.info(f"AUDIO_ECHO: Received frame format: {frame.format}, layout: {getattr(frame, 'layout', 'unknown')}")
+                # Pass the received frame to the resampler
+                # It returns a list of resampled frames (usually just one)
+                resampled_frames = resampler.resample(in_frame)
+                
+                for frame in resampled_frames:
+                    # This frame is now guaranteed to be in the correct s16 mono format
+                    s16_array = frame.to_ndarray()
+
+                    # The array is mono, so we take the first (and only) channel
+                    mono_array = s16_array[0]
                     
-                    # The frame from aiortc is already an av.AudioFrame.
-                    # We need to get the raw bytes from its first audio plane.
-                    # The 'plane' is the data buffer for a channel (mono in this case).
-                    chunk = bytes(frame.planes[0])
-                    
-                    # 👇 NEW: Clear the outbound queue of any old, delayed frames
-                    # This prevents backlog and ensures only the most recent audio is sent
+                    # Get the raw bytes from our new mono s16 array
+                    chunk = mono_array.tobytes()
+
+                    # Clear the outbound queue to prevent lag
                     while not out_track.queue.empty():
                         out_track.queue.get_nowait()
                     
-                    # Add the newest frame to the now-empty queue
+                    # Add the properly formatted mono chunk to the queue
                     out_track.add_chunk(chunk)
-                else:
-                    logger.warning(f"AUDIO_ECHO: Received non-audio frame or frame without planes for profile {profile_id}")
-                    continue
                 
             except asyncio.CancelledError:
                 logger.info(f"AUDIO_ECHO: Task cancelled for profile {profile_id}")
@@ -416,8 +406,7 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                 break
             except Exception as e:
                 logger.error(f"AUDIO_ECHO: Error in echo task for profile {profile_id}: {e}", exc_info=True)
-                # Add a small sleep to prevent a tight error loop from consuming CPU
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.02)
                 
         logger.info(f"AUDIO_ECHO: Task finished for profile {profile_id}")
 
