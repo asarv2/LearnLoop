@@ -77,6 +77,8 @@ export function useTrainingMessages(chatId: string, enabled = true) {
             ? // Replace it with the real placeholder from the server
               ({
                 id: event.detail.messageId, // Use the REAL ID now
+                // ✨ Ensure persona_id from the event is used
+                persona_id: event.detail.personaId,
                 role: "assistant",
                 content: "",
                 completed: false,
@@ -118,6 +120,7 @@ export function useTrainingMessages(chatId: string, enabled = true) {
     // --- User Message Handler ---
     const handleUserMessageSaved = (event: CustomEvent) => {
       if (event.detail.chatId !== chatId) return;
+      // ✨ The realMessage object from the backend now includes the correct persona_id
       const realMessage: Message = event.detail.message;
       logInfo(`User message saved, replacing optimistic message.`);
 
@@ -131,7 +134,8 @@ export function useTrainingMessages(chatId: string, enabled = true) {
             !msg.id.startsWith("temp-assistant-")
           ) {
             replaced = true;
-            return realMessage; // Replace it with the real message
+            // The realMessage object from the server has the definitive persona_id
+            return realMessage;
           }
           return msg; // Keep all other messages as they are
         });
