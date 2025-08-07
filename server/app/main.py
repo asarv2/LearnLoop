@@ -227,6 +227,11 @@ async def cleanup_profile_connection(profile_id: str, reason: str = "cleanup") -
     pc = profiles_live.pop(profile_id, None)
     if pc and pc.connectionState != "closed":
         try:
+            # Cancel any running echo task
+            if hasattr(pc, "_echo_task") and not pc._echo_task.done():
+                pc._echo_task.cancel()
+                logger.info(f"Cancelled echo task for profile {profile_id}")
+            
             # Give a moment for tasks to wrap up before closing
             await asyncio.sleep(0.1)  # Small delay to prevent race conditions
             await pc.close()
@@ -260,6 +265,10 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
     """Return existing pc or create a fresh one after closing the old."""
     pc_old = profiles_live.pop(profile_id, None)
     if pc_old:
+        # Cancel any running echo task before closing
+        if hasattr(pc_old, "_echo_task") and not pc_old._echo_task.done():
+            pc_old._echo_task.cancel()
+            logger.info(f"Cancelled existing echo task for profile {profile_id}")
         await pc_old.close()
 
     # Convert our dict format to aiortc's RTCIceServer objects
@@ -280,15 +289,10 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
     # SPEC CHANGE: Create and store a persistent audio track upfront
     server_audio_track = ServerAudioStreamTrack()
     
-    # Add the persistent track to the peer connection immediately
+    # NEW - Creates one simple, bi-directional audio channel
     pc.addTrack(server_audio_track)
-    logger.info(f"Added persistent audio track to peer connection for profile {profile_id}")
-
-    # SPEC CHANGE: Use a separate transceiver for receiving user audio to avoid duplicate tracks
-    # This creates one track for receiving user's mic and one for sending server's TTS
-    pc.addTransceiver("audio", direction="recvonly")  # For receiving user's mic audio
     
-    logger.info(f"WebRTC peer connection setup complete for profile {profile_id}: 1 outgoing audio track, 1 incoming audio track")
+    logger.info(f"WebRTC peer connection setup complete for profile {profile_id}: 1 sendrecv audio track")
 
     # ---- ensure at least one negotiated data channel so the initial SDP has an m-section ----
     signalling_dc = pc.createDataChannel("signalling")  # name arbitrary but consistent
@@ -364,20 +368,54 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                 room=profile_id,
             )
             
-    @pc.on("track")
-    async def on_track(track: Any) -> None:
-        logger.info(f"Received track: {track.kind} for profile {profile_id}")
-        if track.kind == "audio":
-            chat_id = getattr(pc, "_last_chat_id", None)
+    # ✨ NEW: This is the core logic for the audio echo
+    async def echo_audio_task(in_track: MediaStreamTrack, out_track: ServerAudioStreamTrack):
+        """Reads frames from an input track and writes them to the output track."""
+        logger.info(f"AUDIO_ECHO: Starting echo task for profile {profile_id}")
+        while True:
+            try:
+                frame = await in_track.recv()
 
-            if chat_id:
-                # For now, just log that we received audio track
-                # TODO: Implement audio processing for training
-                logger.info(f"Received audio track for training chat {chat_id} from profile {profile_id}")
-            else:
-                logger.warning(
-                    f"Received audio track for profile {profile_id} but no chat_id was associated."
-                )
+                # Ensure we have an AudioFrame with planes
+                if hasattr(frame, 'planes') and len(frame.planes) > 0:
+                    # The frame from aiortc is already an av.AudioFrame.
+                    # We need to get the raw bytes from its first audio plane.
+                    # The 'plane' is the data buffer for a channel (mono in this case).
+                    chunk = bytes(frame.planes[0])
+                    out_track.add_chunk(chunk)
+                else:
+                    logger.warning(f"AUDIO_ECHO: Received non-audio frame or frame without planes for profile {profile_id}")
+                    continue
+                
+            except asyncio.CancelledError:
+                logger.info(f"AUDIO_ECHO: Task cancelled for profile {profile_id}")
+                out_track.end_stream()
+                break
+            except Exception as e:
+                logger.error(f"AUDIO_ECHO: Error in echo task for profile {profile_id}: {e}", exc_info=True)
+                # Add a small sleep to prevent a tight error loop from consuming CPU
+                await asyncio.sleep(0.1)
+                
+        logger.info(f"AUDIO_ECHO: Task finished for profile {profile_id}")
+
+    @pc.on("track")
+    async def on_track(track: MediaStreamTrack) -> None:
+        logger.info(f"TRACK_EVENT: Received track: {track.kind} for profile {profile_id}")
+        if track.kind == "audio":
+            # If an old echo task is already running for this PC, cancel it.
+            if hasattr(pc, "_echo_task") and not pc._echo_task.done():
+                pc._echo_task.cancel()
+
+            # Start the echo task. It will run in the background.
+            setattr(pc, "_echo_task", asyncio.create_task(echo_audio_task(track, server_audio_track)))
+            
+            @track.on("ended")
+            async def on_ended():
+                logger.info(f"TRACK_EVENT: Track {track.kind} ended for profile {profile_id}")
+                # When the client's track ends (e.g., they switch from voice mode),
+                # cancel our echo task to clean up resources.
+                if hasattr(pc, "_echo_task") and not pc._echo_task.done():
+                    pc._echo_task.cancel()
 
     @pc.on("datachannel")  # type: ignore
     def on_datachannel(channel: Any) -> None:
