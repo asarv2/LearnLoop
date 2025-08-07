@@ -3,7 +3,7 @@ import { useWebSocket } from "@/contexts/websocket-context";
 import { Message } from "@/types";
 import { logError, logInfo } from "@/utils/logger";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { api } from "../fetcher";
 
 // Streaming message interface
@@ -27,6 +27,7 @@ export const trainingMessageKeys = {
 export function useTrainingMessages(chatId: string, enabled = true) {
   const queryClient = useQueryClient();
   const { isConnected, joinRoom, leaveRoom } = useWebSocket();
+  const joinedRef = useRef(false); // Track if we've joined to prevent duplicates
 
   // Query for fetching initial messages
   const query = useQuery({
@@ -40,14 +41,23 @@ export function useTrainingMessages(chatId: string, enabled = true) {
   useEffect(() => {
     if (!chatId || !isConnected) return;
 
-    logInfo(`Joining training room: ${chatId}`);
-    joinRoom(chatId);
+    if (!joinedRef.current) {
+      // Join only first time
+      logInfo(`Joining training room: ${chatId}`);
+      joinRoom(chatId);
+      joinedRef.current = true;
+    }
 
     return () => {
-      logInfo(`Leaving training room: ${chatId}`);
-      leaveRoom(chatId);
+      if (joinedRef.current) {
+        // Leave only if we really joined
+        logInfo(`Leaving training room: ${chatId}`);
+        leaveRoom(chatId);
+        joinedRef.current = false;
+      }
     };
-  }, [chatId, isConnected, joinRoom, leaveRoom]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId, isConnected]);
 
   // Listen for WebSocket message events
   useEffect(() => {
