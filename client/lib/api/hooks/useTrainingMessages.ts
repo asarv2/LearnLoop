@@ -66,22 +66,26 @@ export function useTrainingMessages(chatId: string, enabled = true) {
     // --- AI Message Handlers ---
     const handleTrainingMessageStart = (event: CustomEvent) => {
       if (event.detail.chatId !== chatId) return;
-      logInfo(
-        `AI message started, adding placeholder: ${event.detail.messageId}`
-      );
+      logInfo(`AI message started, replacing optimistic placeholder.`);
 
-      // Add a new, empty assistant message to the cache
-      queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
-        ...old,
-        {
-          id: event.detail.messageId,
-          role: "assistant",
-          content: "",
-          completed: false,
-          created_at: new Date().toISOString(),
-          chat_id: chatId,
-        } as Message,
-      ]);
+      // ✨ FIX: Instead of adding a new message, find our temporary one
+      // and replace it with the real one from the server. This preserves the
+      // instant "thinking" feeling while updating the message with its real ID.
+      queryClient.setQueryData<Message[]>(queryKey, (old = []) =>
+        old.map((msg) =>
+          msg.id.startsWith("temp-assistant-") // Find our optimistic placeholder
+            ? // Replace it with the real placeholder from the server
+              ({
+                id: event.detail.messageId, // Use the REAL ID now
+                role: "assistant",
+                content: "",
+                completed: false,
+                created_at: new Date().toISOString(),
+                chat_id: chatId,
+              } as Message)
+            : msg
+        )
+      );
     };
 
     const handleTrainingMessageToken = (event: CustomEvent) => {
@@ -117,9 +121,13 @@ export function useTrainingMessages(chatId: string, enabled = true) {
       const realMessage: Message = event.detail.message;
       logInfo(`User message saved, replacing optimistic message.`);
 
-      // Replace the temporary message with the real one from the server
+      // This logic remains correct: find the temp user message and replace it.
       queryClient.setQueryData<Message[]>(queryKey, (old = []) =>
-        old.map((msg) => (msg.id.startsWith("temp-") ? realMessage : msg))
+        old.map((msg) =>
+          msg.id.startsWith("temp-") && !msg.id.startsWith("temp-assistant-")
+            ? realMessage
+            : msg
+        )
       );
     };
 

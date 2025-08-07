@@ -68,54 +68,8 @@ export default function ChatArea({
   const [isLoadingHints, setIsLoadingHints] = useState(false);
   const [lastAIResponse, setLastAIResponse] = useState<string>("");
 
-  // Helper function to patch the React-Query cache for optimistic updates
-  const patchCache = useCallback(
-    (
-      tempId: string,
-      partial:
-        | Partial<Message>
-        | ((prev: Message | undefined) => Partial<Message>)
-    ) => {
-      if (!chat?.id) return;
-
-      // ✨ FIX: Use the unified query key from the hooks file
-      const queryKey = trainingMessageKeys.list(chat.id);
-
-      queryClient.setQueryData<Message[]>(queryKey, (old) => {
-        const list = old ?? [];
-        const i = list.findIndex((m) => m.id === tempId);
-
-        const updates =
-          typeof partial === "function"
-            ? partial(i !== -1 ? list[i] : undefined)
-            : partial;
-
-        if (i === -1) {
-          // Create new optimistic message
-          return [
-            ...list,
-            {
-              id: tempId,
-              role: "user",
-              content: "",
-              completed: false,
-              created_at: new Date().toISOString(),
-              chat_id: chat.id,
-              completed_at: new Date().toISOString(),
-              training_id: null,
-              ...updates,
-            } as Message,
-          ];
-        }
-
-        // Update existing message
-        const next = [...list];
-        next[i] = { ...next[i], ...updates };
-        return next;
-      });
-    },
-    [chat?.id, queryClient]
-  );
+  // 👇 DEPRECATED: The patchCache function is no longer needed.
+  // We will handle the logic directly in the send function for more control.
 
   // Generate hints function
   const generateHints = useCallback(async () => {
@@ -246,20 +200,40 @@ export default function ChatArea({
     (message: string) => {
       if (!chat?.id || !message.trim()) return;
 
-      // Send via WebRTC data channel (this path handles saving to DB on the server)
+      // 1. Send the real message to the server
       sendWebRTCMessage(chat.id, message);
 
-      // Create optimistic message for instant UI feedback
-      const tempId = `temp-${Date.now()}`;
-      patchCache(tempId, {
-        role: "user",
-        content: message,
-        completed: true,
-      });
+      // ✨ 2. OPTIMIZATION: Atomically add optimistic updates for BOTH messages
+      const queryKey = trainingMessageKeys.list(chat.id);
+      const tempUserId = `temp-${Date.now()}`;
+      const tempAssistantId = `temp-assistant-${Date.now()}`;
 
+      queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
+        ...old,
+        // Optimistic User Message
+        {
+          id: tempUserId,
+          role: "user",
+          content: message,
+          completed: true, // Mark as complete optimistically
+          created_at: new Date().toISOString(),
+          chat_id: chat.id,
+        } as Message,
+        // Optimistic Assistant "Thinking" Placeholder
+        {
+          id: tempAssistantId,
+          role: "assistant",
+          content: "", // This will be rendered as the "thinking..." message
+          completed: false,
+          created_at: new Date().toISOString(),
+          chat_id: chat.id,
+        } as Message,
+      ]);
+
+      // 3. Clear the input field
       setCurrentMessage("");
     },
-    [chat?.id, sendWebRTCMessage, patchCache, setCurrentMessage]
+    [chat?.id, sendWebRTCMessage, queryClient, setCurrentMessage]
   );
 
   // Early return if chat is not available
