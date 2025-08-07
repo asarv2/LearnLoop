@@ -5,6 +5,7 @@
  */
 "use client";
 
+import { useRemoteAudio } from "@/hooks/use-remote-audio";
 import { getApiBase } from "@/lib/api/base";
 import { toast } from "@/lib/toast";
 import { logError, logInfo } from "@/utils/logger";
@@ -110,8 +111,8 @@ export function WebSocketProvider({
   // ✨ NEW: Persistent audio track reference for mute/unmute
   const audioTrackRef = useRef<MediaStreamTrack | null>(null);
 
-  // ✨ NEW: Add a ref for the audio element
-  const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
+  // ✨ NEW: Use the remote audio hook for better audio handling
+  const { audioRef: audioPlaybackRef, playTrack } = useRemoteAudio();
 
   // Message queues for data channels (text messages)
   const messageQueues = useRef<Map<string, string[]>>(new Map());
@@ -505,20 +506,28 @@ export function WebSocketProvider({
                 logInfo("Received remote audio track from server", {
                   streamId: event.streams[0]?.id,
                   trackKind: event.track.kind,
+                  trackEnabled: event.track.enabled,
+                  trackMuted: event.track.muted,
+                  trackReadyState: event.track.readyState,
                 });
 
                 // Attach the server's stream to our audio element for playback
-                if (event.track.kind === "audio" && audioPlaybackRef.current) {
-                  // The stream from the event contains the audio from the server
-                  audioPlaybackRef.current.srcObject = event.streams[0];
-                  audioPlaybackRef.current
-                    .play()
-                    .catch((e) =>
-                      logError(
-                        "Audio playback failed. User may need to interact with the page first.",
-                        e
-                      )
-                    );
+                if (event.track.kind === "audio") {
+                  // ✨ FIX: Use the playTrack function from the hook
+                  playTrack(event.track);
+
+                  // Monitor track state changes
+                  event.track.onended = () => {
+                    logInfo("Remote audio track ended");
+                  };
+
+                  event.track.onmute = () => {
+                    logInfo("Remote audio track muted");
+                  };
+
+                  event.track.onunmute = () => {
+                    logInfo("Remote audio track unmuted");
+                  };
                 }
               };
 
@@ -951,8 +960,6 @@ export function WebSocketProvider({
   return (
     <WebSocketContext.Provider value={value}>
       {children}
-      {/* ✨ NEW: Add a hidden, auto-playing audio element for the server's stream */}
-      <audio ref={audioPlaybackRef} autoPlay playsInline />
     </WebSocketContext.Provider>
   );
 }

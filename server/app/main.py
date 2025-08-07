@@ -131,8 +131,9 @@ class ServerAudioStreamTrack(MediaStreamTrack):
                 f"duration_ms={frame.samples / 48.0:.2f}"
             )
         
-        # Keep real-time pace (important when queue is full)
-        await asyncio.sleep(frame.samples / 48000)
+        # 👇 REMOVED: Artificial delay that was causing latency and backlog
+        # The WebRTC transport layer already handles timing and pacing
+        # await asyncio.sleep(frame.samples / 48000)
         
         return frame
 
@@ -382,6 +383,13 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                     # We need to get the raw bytes from its first audio plane.
                     # The 'plane' is the data buffer for a channel (mono in this case).
                     chunk = bytes(frame.planes[0])
+                    
+                    # 👇 NEW: Clear the outbound queue of any old, delayed frames
+                    # This prevents backlog and ensures only the most recent audio is sent
+                    while not out_track.queue.empty():
+                        out_track.queue.get_nowait()
+                    
+                    # Add the newest frame to the now-empty queue
                     out_track.add_chunk(chunk)
                 else:
                     logger.warning(f"AUDIO_ECHO: Received non-audio frame or frame without planes for profile {profile_id}")

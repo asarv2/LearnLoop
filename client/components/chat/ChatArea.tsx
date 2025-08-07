@@ -288,6 +288,23 @@ export default function ChatArea({
         overflow: "hidden",
       }}
     >
+      {/* ✨ FIX: Add audio element for remote audio playback */}
+      <audio
+        ref={audioPlaybackRef}
+        autoPlay // tells the browser you intend to start playback
+        playsInline // iOS
+        style={{ display: "none" }} // keep it hidden
+        onLoadedMetadata={() => {
+          logInfo("Audio element loaded metadata");
+        }}
+        onCanPlay={() => {
+          logInfo("Audio element can play");
+        }}
+        onError={(e) => {
+          logError("Audio element error", e);
+        }}
+      />
+
       {/* Messages */}
       <Box
         style={{
