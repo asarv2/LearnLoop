@@ -14,6 +14,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional
 
+import numpy as np  # type: ignore
 import socketio  # type: ignore
 from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
                     RTCIceCandidate, RTCIceServer, RTCPeerConnection,
@@ -110,9 +111,18 @@ class ServerAudioStreamTrack(MediaStreamTrack):
             self.stop()
             raise asyncio.CancelledError("Audio stream ended.")
 
-        # Create the AudioFrame directly from the 20ms chunk
-        frame = AudioFrame(format="s16", layout="mono", samples=960)
-        frame.planes[0].update(chunk)
+        # ✨ FIX: Convert to s16 mono no-matter-what
+        # The browser sends stereo Opus which gets decoded to planar fltp (32-bit floats)
+        # Copying that raw into an s16 frame gives denormalised near-zero samples → silence
+        try:
+            pcm16 = np.frombuffer(chunk, dtype=np.int16)
+            frame = AudioFrame(format="s16", layout="mono", samples=960)
+            frame.planes[0].update(pcm16.tobytes())
+        except Exception as e:
+            # Fallback if numpy conversion fails
+            logger.warning(f"Failed to convert audio chunk with numpy: {e}")
+            frame = AudioFrame(format="s16", layout="mono", samples=960)
+            frame.planes[0].update(chunk)
 
         # Set the presentation timestamp
         frame.sample_rate = 48000
@@ -131,9 +141,10 @@ class ServerAudioStreamTrack(MediaStreamTrack):
                 f"duration_ms={frame.samples / 48.0:.2f}"
             )
         
-        # 👇 REMOVED: Artificial delay that was causing latency and backlog
-        # The WebRTC transport layer already handles timing and pacing
-        # await asyncio.sleep(frame.samples / 48000)
+        # ✨ FIX: Add back the 20ms pacing to prevent burst delivery
+        # aiortc's RTCRtpSender calls recv() back-to-back, so without the sleep
+        # all 100 frames are delivered in a burst; the jitter-buffer discards almost everything
+        await asyncio.sleep(frame.samples / 48000)  # 20 ms pacing
         
         return frame
 
@@ -379,6 +390,10 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
 
                 # Ensure we have an AudioFrame with planes
                 if hasattr(frame, 'planes') and len(frame.planes) > 0:
+                    # ✨ FIX: Log the frame format to debug format mismatch issues
+                    if hasattr(frame, 'format'):
+                        logger.info(f"AUDIO_ECHO: Received frame format: {frame.format}, layout: {getattr(frame, 'layout', 'unknown')}")
+                    
                     # The frame from aiortc is already an av.AudioFrame.
                     # We need to get the raw bytes from its first audio plane.
                     # The 'plane' is the data buffer for a channel (mono in this case).

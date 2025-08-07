@@ -2,7 +2,6 @@
 "use client";
 
 import { AuthProvider, useAuth } from "@/components/auth/AuthProvider";
-import WebRTCDebugPanel from "@/components/chat/WebRTCDebugPanel";
 import { Toaster } from "@/components/ui/toaster";
 import { WebSocketProvider } from "@/contexts/websocket-context";
 import { createQueryClient } from "@/utils/react-query/queryClient";
@@ -42,7 +41,6 @@ export const Providers = ({ children }: { children: React.ReactNode }) => {
               <Toaster />
             </ConfigProvider>
           </Theme>
-          {process.env.NODE_ENV !== "production" && <WebRTCDebugPanel />}
         </WebSocketProviderWrapper>
       </AuthProvider>
     </ReactQueryClientProvider>
