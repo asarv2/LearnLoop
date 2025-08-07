@@ -54,7 +54,14 @@ interface WebSocketContextType {
     enabled: boolean;
     muted: boolean;
     readyState: string;
-  } | null; // 👈 ADD THIS LINE
+  } | null; // Remote track state
+  getLocalMicTrackState: () => {
+    id: string;
+    kind: string;
+    enabled: boolean;
+    muted: boolean;
+    readyState: string;
+  } | null; // Local microphone track state
 
   // Training event emitters
   emitJoinTraining: (data: {
@@ -522,48 +529,9 @@ export function WebSocketProvider({
                   trackReadyState: event.track.readyState,
                 });
 
-                // Attach the server's stream to our audio element for playback
+                // Simple audio track handling - just attach and play
                 if (event.track.kind === "audio") {
-                  // ✨ FIX: Use the playTrack function from the hook
                   playTrack(event.track);
-
-                  // Monitor track state changes
-                  event.track.onended = () => {
-                    logInfo("Remote audio track ended");
-                  };
-
-                  event.track.onmute = () => {
-                    logInfo("Remote audio track muted");
-                  };
-
-                  event.track.onunmute = () => {
-                    logInfo(
-                      "Remote audio track unmuted - should start playing now"
-                    );
-                  };
-
-                  // Also monitor ready state changes
-                  const checkReadyState = () => {
-                    if (event.track.readyState === "live") {
-                      logInfo(
-                        "Remote audio track is now live and ready for playback"
-                      );
-                    }
-                  };
-
-                  // Check immediately
-                  checkReadyState();
-
-                  // Set up a periodic check for the first few seconds
-                  let checkCount = 0;
-                  const interval = setInterval(() => {
-                    checkReadyState();
-                    checkCount++;
-                    if (checkCount >= 10) {
-                      // Stop checking after 2 seconds
-                      clearInterval(interval);
-                    }
-                  }, 200);
                 }
               };
 
@@ -688,7 +656,7 @@ export function WebSocketProvider({
         setIsConnected(false);
       }
     };
-  }, [profileId, createDataChannelIfNeeded]);
+  }, [profileId, createDataChannelIfNeeded, playTrack]);
 
   // Room management (chat_id-based)
   const joinRoom = useCallback(
@@ -949,6 +917,20 @@ export function WebSocketProvider({
     }
   }, []);
 
+  // ✨ NEW: Add a function to get the state of the local microphone track
+  const getLocalMicTrackState = useCallback(() => {
+    const track = audioTrackRef.current;
+    if (!track) return null;
+
+    return {
+      id: track.id,
+      kind: track.kind,
+      enabled: track.enabled,
+      muted: track.muted, // Note: 'enabled' is the property we control
+      readyState: track.readyState,
+    };
+  }, []);
+
   const terminateAudioStream = useCallback(
     (chatId: string) => {
       logInfo(`Terminating audio stream for chat: ${chatId}`);
@@ -992,7 +974,8 @@ export function WebSocketProvider({
     setMicrophoneMuted,
     terminateAudioStream,
     audioPlaybackRef, // 👈 ADD THIS LINE
-    getTrackState, // 👈 ADD THIS LINE
+    getTrackState, // Remote track state
+    getLocalMicTrackState, // Local microphone track state
     emitJoinTraining,
     emitSendTrainingMessage,
     emitStopTraining,

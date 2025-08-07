@@ -11,8 +11,12 @@ interface WebRTCDebugPanelProps {
 export default function WebRTCDebugPanel({
   audioPlaybackRef,
 }: WebRTCDebugPanelProps) {
-  const { isWebRTCConnected, getTrackState, setMicrophoneMuted } =
-    useWebSocket();
+  const {
+    isWebRTCConnected,
+    getTrackState: getRemoteTrackState, // Renamed for clarity
+    getLocalMicTrackState, // The new function
+    setMicrophoneMuted,
+  } = useWebSocket();
   const [audioState, setAudioState] = useState({
     paused: true,
     muted: false,
@@ -24,7 +28,17 @@ export default function WebRTCDebugPanel({
 
   const [micMuted, setMicMuted] = useState(false);
 
-  const [trackInfo, setTrackInfo] = useState<{
+  // State for the REMOTE track (from server)
+  const [remoteTrackInfo, setRemoteTrackInfo] = useState<{
+    id: string;
+    kind: string;
+    enabled: boolean;
+    muted: boolean;
+    readyState: string;
+  } | null>(null);
+
+  // State for the LOCAL track (to server)
+  const [localMicInfo, setLocalMicInfo] = useState<{
     id: string;
     kind: string;
     enabled: boolean;
@@ -79,18 +93,19 @@ export default function WebRTCDebugPanel({
   // Update track info periodically
   useEffect(() => {
     const updateTrackInfo = () => {
-      const trackState = getTrackState();
-      setTrackInfo(trackState);
+      // Get state for both tracks
+      const remoteState = getRemoteTrackState();
+      setRemoteTrackInfo(remoteState);
+
+      // Get state for the local mic
+      const localState = getLocalMicTrackState();
+      setLocalMicInfo(localState);
     };
 
-    // Update immediately
     updateTrackInfo();
-
-    // Update every 500ms
     const interval = setInterval(updateTrackInfo, 500);
-
     return () => clearInterval(interval);
-  }, [getTrackState]);
+  }, [getRemoteTrackState, getLocalMicTrackState]);
 
   const getReadyStateText = (state: number) => {
     const states = [
@@ -211,17 +226,36 @@ export default function WebRTCDebugPanel({
           </Flex>
         </Box>
 
-        {trackInfo && (
+        {/* Section for the Local Microphone */}
+        {localMicInfo && (
           <Box>
             <Text size="2" weight="bold" style={{ color: "var(--gray-11)" }}>
-              Audio Track Info:
+              🎤 Local Microphone (to Server):
             </Text>
             <Flex direction="column" gap="1">
-              <Text size="1">ID: {trackInfo.id}</Text>
-              <Text size="1">Kind: {trackInfo.kind}</Text>
-              <Text size="1">Enabled: {trackInfo.enabled ? "✅" : "❌"}</Text>
-              <Text size="1">Muted: {trackInfo.muted ? "❌" : "✅"}</Text>
-              <Text size="1">Ready State: {trackInfo.readyState}</Text>
+              <Text size="1">ID: {localMicInfo.id}</Text>
+              {/* This is the checkmark that will now change */}
+              <Text size="1">
+                Enabled: {localMicInfo.enabled ? "✅" : "❌"}
+              </Text>
+              <Text size="1">Ready State: {localMicInfo.readyState}</Text>
+            </Flex>
+          </Box>
+        )}
+
+        {/* Section for the Remote Audio Track */}
+        {remoteTrackInfo && (
+          <Box>
+            <Text size="2" weight="bold" style={{ color: "var(--gray-11)" }}>
+              🔊 Remote Audio Track (from Server):
+            </Text>
+            <Flex direction="column" gap="1">
+              <Text size="1">ID: {remoteTrackInfo.id}</Text>
+              <Text size="1">
+                Enabled: {remoteTrackInfo.enabled ? "✅" : "❌"}
+              </Text>
+              <Text size="1">Muted: {remoteTrackInfo.muted ? "❌" : "✅"}</Text>
+              <Text size="1">Ready State: {remoteTrackInfo.readyState}</Text>
             </Flex>
           </Box>
         )}

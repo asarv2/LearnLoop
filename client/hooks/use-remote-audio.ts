@@ -1,54 +1,71 @@
 import { logError, logInfo } from "@/utils/logger";
-import React from "react";
+import { useCallback, useRef } from "react";
 
 /**
- * Hook for handling remote audio playback
- * Provides a safe way to attach and play remote audio tracks
+ * Simplified hook for handling remote audio playback.
+ * Focuses on continuous server audio with simple microphone control.
  */
 export function useRemoteAudio() {
-  const audioRef = React.useRef<HTMLAudioElement | null>(null);
-  const currentTrackRef = React.useRef<MediaStreamTrack | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const playTrack = React.useCallback((track: MediaStreamTrack) => {
+  // Simple function to attach and play remote audio track
+  const playTrack = useCallback((track: MediaStreamTrack) => {
     const audio = audioRef.current;
     if (!audio) {
-      logError("Audio element not available for track playback");
+      logError("Audio element not available");
       return;
     }
 
-    // Cache the track for debugging
-    currentTrackRef.current = track;
-
-    logInfo("Attaching remote audio track", {
+    logInfo("Attaching remote audio track for continuous playback", {
       trackId: track.id,
-      trackKind: track.kind,
-      trackEnabled: track.enabled,
-      trackMuted: track.muted,
-      trackReadyState: track.readyState,
+      readyState: track.readyState,
     });
 
-    // Attach the track
+    // Attach the track to the audio element
     audio.srcObject = new MediaStream([track]);
-    audio.muted = false; // 🔑 make sure the element isn't muted
+
+    // Force unmute and set volume - be aggressive about this
+    audio.muted = false;
     audio.volume = 1;
 
-    // Start as soon as the track is ready or when it becomes un-muted
-    const start = () =>
-      audio
-        .play()
-        .then(() => logInfo("🔊 remote audio playing"))
-        .catch((e) => logError("play() failed", e));
+    // Double-check muted state after a short delay
+    setTimeout(() => {
+      if (audio.muted) {
+        logInfo("Audio element was muted, forcing unmute");
+        audio.muted = false;
+      }
+    }, 100);
 
-    if (!track.muted && track.readyState === "live") {
-      start();
-    } else {
-      track.onunmute = start; // wait until server unmutes the track
-    }
+    // Try to start playback immediately
+    audio
+      .play()
+      .then(() => logInfo("🔊 Server audio started playing"))
+      .catch(() => {
+        logInfo(
+          "Server audio ready, waiting for user interaction to start playback"
+        );
+        // This is expected - browser requires user interaction
+      });
+
+    // Set up event listeners for track state changes
+    track.onunmute = () => {
+      logInfo("Server track unmuted - attempting to play");
+      audio.muted = false; // Ensure it's not muted
+      audio.play().catch((e) => logError("Play failed on unmute", e));
+    };
+
+    track.onended = () => {
+      logInfo("Server audio track ended");
+    };
   }, []);
 
   // Helper function to get current track state for debugging
-  const getTrackState = React.useCallback(() => {
-    const track = currentTrackRef.current;
+  const getTrackState = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || !audio.srcObject) return null;
+
+    const stream = audio.srcObject as MediaStream;
+    const track = stream.getAudioTracks()[0];
     if (!track) return null;
 
     return {
