@@ -1,11 +1,11 @@
 import uuid
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Union, Tuple
 
 from agents.realtime import RealtimeAgent, RealtimeRunner
 from agents.realtime.config import (RealtimeInputAudioTranscriptionConfig,
-                                    RealtimeRunConfig,
-                                    RealtimeSessionModelSettings,
-                                    RealtimeTurnDetectionConfig)
+                                     RealtimeRunConfig,
+                                     RealtimeSessionModelSettings,
+                                     RealtimeTurnDetectionConfig)
 from agents.realtime.items import RealtimeItem
 from app.db import get_session
 from app.models import Personas
@@ -17,7 +17,7 @@ async def run_realtime_agent(
     persona_id: uuid.UUID,
     input_items: list[RealtimeItem],
     session: Session = Depends(get_session),
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[Union[str, Tuple[str, Union[str, bytes]]], None]:
     """
     This function is used to run the realtime voice agent using the OpenAI Agents SDK.
 
@@ -65,7 +65,7 @@ async def run_realtime_agent(
 
     # Start the session
     realtime_session = await runner.run()
-    realtime_session._history += input_items
+    realtime_session._history = input_items
 
     async with realtime_session:
         # For realtime voice agents, we don't send initial messages
@@ -74,12 +74,13 @@ async def run_realtime_agent(
         # Process events and yield text chunks
         async for event in realtime_session:
             if event.type == "audio":
-                yield event.audio.data # we yield the audio data so that it can be played back by the client
+                yield ("audio", event.audio.data) # we yield the audio data so that it can be played back by the client
             if event.type == "response.audio_transcript.done":
-                yield event.transcript # we also yield the transcript so that it can be displayed to the user
+                yield ("text", event.transcript) # we also yield the transcript so that it can be displayed to the user
             elif event.type == "conversation.item.input_audio_transcription.completed":
                 # Optionally yield user transcriptions if needed
                 pass
+            elif event.type =="raw_model_event":
             elif event.type == "error":
                 raise Exception(f"Realtime agent error: {event.error}")
                 break
