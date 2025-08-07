@@ -9,7 +9,6 @@
 import { useWebSocket } from "@/contexts/websocket-context";
 import { useChat } from "@/lib/api/hooks/useChats";
 import {
-  StreamingMessage,
   useEndTraining,
   useGenerateFeedback,
   useSendTrainingMessage,
@@ -26,7 +25,6 @@ interface TrainingContextType {
   chatId: string;
   chat: Chat | null; // Chat data from API
   messages: Message[]; // Messages array
-  streamingMessage: StreamingMessage | null; // Currently streaming message
 
   // Connection state
   isConnected: boolean;
@@ -83,7 +81,7 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
   // API hooks
   const { data: chat } = useChat(chatId);
 
-  const { data: messages = [], streamingMessage } = useTrainingMessages(chatId);
+  const { data: messages = [] } = useTrainingMessages(chatId);
 
   const sendMessageMutation = useSendTrainingMessage();
   const endTrainingMutation = useEndTraining();
@@ -159,7 +157,6 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     chatId,
     chat: chat || null,
     messages,
-    streamingMessage,
 
     // Connection state
     isConnected,

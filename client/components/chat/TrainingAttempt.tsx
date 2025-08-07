@@ -32,7 +32,6 @@ function TrainingAttemptContent() {
   const {
     chat,
     messages,
-    streamingMessage,
     isSendingMessage,
     isEndingTraining,
     isSubmittingAssessment,
@@ -60,7 +59,7 @@ function TrainingAttemptContent() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingMessage]);
+  }, [messages]);
 
   const endInterview = async () => {
     try {
@@ -90,22 +89,9 @@ function TrainingAttemptContent() {
     }
   };
 
-  // Combine regular messages with streaming message for display
-  const displayMessages = [...messages];
-  if (streamingMessage) {
-    displayMessages.push({
-      id: streamingMessage.id,
-      content: streamingMessage.content,
-      role: streamingMessage.role,
-      chat_id: streamingMessage.chat_id,
-      completed: streamingMessage.completed,
-      completed_at: "",
-      created_at: streamingMessage.created_at,
-      training_id: chat?.training_id || null,
-      error: null,
-      persona_id: null,
-    });
-  }
+  // 👇 DEPRECATED: The complex message merging logic is gone!
+  // The `messages` array from the context is always the single source of truth.
+  const displayMessages = messages;
 
   return (
     <Box style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
@@ -139,7 +125,6 @@ function TrainingAttemptContent() {
             displayMessages={displayMessages}
             isSendingMessage={isSendingMessage}
             isEndingInterview={isEndingTraining}
-            streamingMessage={!!streamingMessage}
             isInterviewActive={isTrainingActive}
             currentMessage={currentMessage}
             setCurrentMessage={setCurrentMessage}
