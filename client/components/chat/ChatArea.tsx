@@ -51,8 +51,9 @@ export default function ChatArea({
   // WebRTC audio state
   const {
     isWebRTCConnected,
-    startAudioStream,
-    stopAudioStream,
+    initializeAudioStream,
+    setMicrophoneMuted,
+    terminateAudioStream,
     sendWebRTCMessage,
     joinRoom,
     leaveRoom,
@@ -61,6 +62,9 @@ export default function ChatArea({
   // Voice-related state
   const queryClient = useQueryClient();
   const [micActive, setMicActive] = useState(false);
+
+  // ✨ NEW: State to track if the audio stream is ready
+  const [isAudioInitialized, setIsAudioInitialized] = useState(false);
 
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
@@ -157,45 +161,46 @@ export default function ChatArea({
   }, [displayMessages]);
   */
 
-  // Handle voice start with WebRTC
-  const handleVoiceStart = useCallback(async () => {
-    if (!chat?.id || !isWebRTCConnected) {
-      logError(
-        "Cannot start voice - WebRTC not connected or chat not available"
-      );
-      return;
-    }
-
-    try {
-      // Start audio stream on server
-      await startAudioStream(chat.id);
-      setMicActive(true);
-      logInfo("WebRTC audio stream started");
-    } catch (error) {
-      logError("Error starting WebRTC audio stream:", error);
-    }
-  }, [chat?.id, isWebRTCConnected, startAudioStream]);
-
-  // Handle voice stop with WebRTC
-  const handleVoiceStop = useCallback(() => {
-    if (!chat?.id) return;
-
-    stopAudioStream(chat.id);
-    setMicActive(false);
-    logInfo("WebRTC audio stream stopped");
-  }, [chat?.id, stopAudioStream]);
-
-  // Handle mode toggle
-  const handleModeToggle = useCallback(() => {
-    setIsVoiceMode(!isVoiceMode);
+  // Handle mode toggle to initialize/terminate the stream
+  const handleModeToggle = useCallback(async () => {
+    const nextIsVoiceMode = !isVoiceMode;
+    setIsVoiceMode(nextIsVoiceMode);
     setCurrentMessage("");
 
-    // Stop audio if switching from voice mode
-    if (isVoiceMode && chat?.id) {
-      stopAudioStream(chat.id);
-      setMicActive(false);
+    if (nextIsVoiceMode) {
+      // Switching TO voice mode: initialize the stream
+      if (chat?.id) {
+        await initializeAudioStream(chat.id);
+        setIsAudioInitialized(true);
+      }
+    } else {
+      // Switching AWAY from voice mode: terminate the stream
+      if (chat?.id) {
+        terminateAudioStream(chat.id);
+        setIsAudioInitialized(false);
+        setMicActive(false);
+      }
     }
-  }, [isVoiceMode, chat?.id, stopAudioStream, setCurrentMessage]);
+  }, [
+    isVoiceMode,
+    chat?.id,
+    initializeAudioStream,
+    terminateAudioStream,
+    setCurrentMessage,
+  ]);
+
+  // Push-to-Talk handlers now just toggle mute
+  const handleVoiceStart = useCallback(() => {
+    if (!isAudioInitialized) return;
+    setMicrophoneMuted(false); // Unmute
+    setMicActive(true);
+  }, [isAudioInitialized, setMicrophoneMuted]);
+
+  const handleVoiceStop = useCallback(() => {
+    if (!isAudioInitialized) return;
+    setMicrophoneMuted(true); // Mute
+    setMicActive(false);
+  }, [isAudioInitialized, setMicrophoneMuted]);
 
   // Handle WebRTC text message sending
   const handleWebRTCTextMessage = useCallback(
@@ -466,25 +471,28 @@ export default function ChatArea({
                     onMouseDown={handleVoiceStart}
                     onMouseUp={handleVoiceStop}
                     onMouseLeave={handleVoiceStop}
-                    disabled={!isWebRTCConnected}
+                    disabled={!isWebRTCConnected || !isAudioInitialized}
                     size="3"
                     style={{
                       padding: "1rem 2rem",
                       borderRadius: "30px",
                       background: micActive
                         ? "linear-gradient(135deg, #ef4444, #dc2626)"
-                        : !isWebRTCConnected
+                        : !isWebRTCConnected || !isAudioInitialized
                         ? "linear-gradient(135deg, #9ca3af, #6b7280)"
                         : "linear-gradient(135deg, #6366f1, #8b5cf6)",
                       color: "white",
                       border: "none",
-                      cursor: isWebRTCConnected ? "pointer" : "not-allowed",
+                      cursor:
+                        isWebRTCConnected && isAudioInitialized
+                          ? "pointer"
+                          : "not-allowed",
                       fontSize: "1rem",
                       fontWeight: "600",
                       transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                       boxShadow: micActive
                         ? "0 8px 30px rgba(239, 68, 68, 0.4)"
-                        : !isWebRTCConnected
+                        : !isWebRTCConnected || !isAudioInitialized
                         ? "0 4px 15px rgba(156, 163, 175, 0.3)"
                         : "0 8px 30px rgba(99, 102, 241, 0.3)",
                       transform: micActive ? "scale(1.05)" : "scale(1)",
@@ -494,19 +502,25 @@ export default function ChatArea({
                     }}
                   >
                     <span style={{ fontSize: "1.2rem" }}>
-                      {micActive ? "🔴" : !isWebRTCConnected ? "⏳" : "🎤"}
+                      {micActive
+                        ? "🔴"
+                        : !isWebRTCConnected || !isAudioInitialized
+                        ? "⏳"
+                        : "🎤"}
                     </span>
                     {micActive
                       ? "Recording..."
-                      : !isWebRTCConnected
+                      : !isWebRTCConnected || !isAudioInitialized
                       ? "Connecting..."
                       : "Hold to Speak"}
                   </Button>
 
                   {/* Connection Status */}
-                  {!isWebRTCConnected && (
+                  {(!isWebRTCConnected || !isAudioInitialized) && (
                     <Text size="2" style={{ color: "var(--amber-11)" }}>
-                      Connecting to audio stream...
+                      {!isWebRTCConnected
+                        ? "Connecting to audio stream..."
+                        : "Initializing microphone..."}
                     </Text>
                   )}
                 </Flex>

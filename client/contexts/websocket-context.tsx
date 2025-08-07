@@ -41,8 +41,11 @@ interface WebSocketContextType {
 
   // WebRTC Emitters
   sendWebRTCMessage: (chatId: string, message: string) => void;
-  startAudioStream: (chatId: string) => Promise<void>;
-  stopAudioStream: (chatId: string) => void;
+
+  // ✨ NEW: Refactored audio functions for persistent streams
+  initializeAudioStream: (chatId: string) => Promise<void>;
+  setMicrophoneMuted: (muted: boolean) => void;
+  terminateAudioStream: (chatId: string) => void;
 
   // Training event emitters
   emitJoinTraining: (data: {
@@ -102,6 +105,9 @@ export function WebSocketProvider({
   const webRTCDataChannels = useRef<Map<string, RTCDataChannel>>(new Map());
   const userMediaStream = useRef<MediaStream | null>(null);
   const audioTrackSenders = useRef<Map<string, RTCRtpSender>>(new Map());
+
+  // ✨ NEW: Persistent audio track reference for mute/unmute
+  const audioTrackRef = useRef<MediaStreamTrack | null>(null);
 
   // Message queues for data channels (text messages)
   const messageQueues = useRef<Map<string, string[]>>(new Map());
@@ -814,52 +820,66 @@ export function WebSocketProvider({
     [createDataChannelIfNeeded, emitSendTrainingMessage]
   );
 
-  const startAudioStream = useCallback(
+  // ✨ NEW: Initialize the audio stream once and keep it open
+  const initializeAudioStream = useCallback(
     async (chatId: string) => {
-      if (!profileId || !socketRef.current || !webRTCPeerConnection.current) {
-        logError("Cannot start audio stream - missing requirements");
+      if (
+        !profileId ||
+        !socketRef.current ||
+        !webRTCPeerConnection.current ||
+        userMediaStream.current
+      ) {
+        logError(
+          "Cannot initialize audio stream - requirements not met or stream already exists."
+        );
         return;
       }
 
       try {
-        logInfo(`Starting audio stream for chat: ${chatId}`);
+        logInfo(`Initializing persistent audio stream for chat: ${chatId}`);
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        userMediaStream.current = stream;
 
-        if (!userMediaStream.current) {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            },
-          });
-          userMediaStream.current = stream;
-        }
+        const track = stream.getAudioTracks()[0];
+        audioTrackRef.current = track;
 
-        const audioTrack = userMediaStream.current.getAudioTracks()[0];
-        if (audioTrack && webRTCPeerConnection.current) {
-          const sender = webRTCPeerConnection.current.addTrack(
-            audioTrack,
-            userMediaStream.current
-          );
-          audioTrackSenders.current.set(chatId, sender);
+        // Mute the track by default immediately after getting it
+        track.enabled = false;
+        logInfo("Microphone track created and muted by default.");
 
-          socketRef.current.emit("webrtc_start_audio", {
-            chat_id: chatId,
-            profile_id: profileId,
-          });
-          logInfo(`Started and sent audio stream for chat: ${chatId}`);
-        }
+        const sender = webRTCPeerConnection.current.addTrack(track, stream);
+        audioTrackSenders.current.set(chatId, sender);
+
+        socketRef.current.emit("webrtc_start_audio", {
+          chat_id: chatId,
+          profile_id: profileId,
+        });
+        logInfo(`Persistent audio stream established for chat: ${chatId}`);
       } catch (error) {
-        logError("Error starting audio stream", error);
-        toast.error("Failed to start microphone. Please check permissions.");
+        logError("Error initializing audio stream", error);
+        toast.error("Failed to access microphone. Please check permissions.");
       }
     },
     [profileId]
   );
 
-  const stopAudioStream = useCallback(
+  // ✨ NEW: A simple, fast function to toggle mute
+  const setMicrophoneMuted = useCallback((muted: boolean) => {
+    if (audioTrackRef.current) {
+      audioTrackRef.current.enabled = !muted;
+      logInfo(`Microphone muted: ${muted}`);
+    }
+  }, []);
+
+  const terminateAudioStream = useCallback(
     (chatId: string) => {
-      logInfo(`Stopping audio stream for chat: ${chatId}`);
+      logInfo(`Terminating audio stream for chat: ${chatId}`);
       const sender = audioTrackSenders.current.get(chatId);
       if (sender && webRTCPeerConnection.current) {
         webRTCPeerConnection.current.removeTrack(sender);
@@ -869,6 +889,7 @@ export function WebSocketProvider({
       if (audioTrackSenders.current.size === 0 && userMediaStream.current) {
         userMediaStream.current.getTracks().forEach((track) => track.stop());
         userMediaStream.current = null;
+        audioTrackRef.current = null;
         logInfo("All audio streams stopped. Mic released.");
       }
 
@@ -895,8 +916,9 @@ export function WebSocketProvider({
     joinRoom,
     leaveRoom,
     sendWebRTCMessage,
-    startAudioStream,
-    stopAudioStream,
+    initializeAudioStream,
+    setMicrophoneMuted,
+    terminateAudioStream,
     emitJoinTraining,
     emitSendTrainingMessage,
     emitStopTraining,
