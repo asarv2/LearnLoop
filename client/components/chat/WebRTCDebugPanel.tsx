@@ -16,6 +16,8 @@ export default function WebRTCDebugPanel({
     getTrackState: getRemoteTrackState, // Renamed for clarity
     getLocalMicTrackState, // The new function
     setMicrophoneMuted,
+    enableServerAudio,
+    disableServerAudio,
   } = useWebSocket();
   const [audioState, setAudioState] = useState({
     paused: true,
@@ -162,18 +164,20 @@ export default function WebRTCDebugPanel({
           <Button
             size="1"
             onClick={() => {
-              if (audioPlaybackRef.current) {
-                const audio = audioPlaybackRef.current;
-                audio.muted = false;
-                audio.volume = 1;
-                if (audio.paused) {
-                  audio.play().catch((e) => logInfo("Force play failed", e));
-                }
-                logInfo("Manually set audio element: muted=false, volume=1");
-              }
+              enableServerAudio();
+              logInfo("Manually enabled server audio");
             }}
           >
-            Force Unmute
+            Enable Server Audio
+          </Button>
+          <Button
+            size="1"
+            onClick={() => {
+              disableServerAudio();
+              logInfo("Manually disabled server audio");
+            }}
+          >
+            Disable Server Audio
           </Button>
           <Button
             size="1"

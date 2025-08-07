@@ -62,6 +62,9 @@ interface WebSocketContextType {
     muted: boolean;
     readyState: string;
   } | null; // Local microphone track state
+  enableServerAudio: () => void; // Enable server audio playback
+  disableServerAudio: () => void; // Disable server audio playback
+  triggerServerAudio: () => void; // Trigger server audio by sending silent frame
 
   // Training event emitters
   emitJoinTraining: (data: {
@@ -130,6 +133,8 @@ export function WebSocketProvider({
     audioRef: audioPlaybackRef,
     playTrack,
     getTrackState,
+    enableServerAudio,
+    disableServerAudio,
   } = useRemoteAudio();
 
   // Message queues for data channels (text messages)
@@ -531,7 +536,26 @@ export function WebSocketProvider({
 
                 // Simple audio track handling - just attach and play
                 if (event.track.kind === "audio") {
-                  playTrack(event.track);
+                  // Check if audio element is ready before playing
+                  const audio = audioPlaybackRef.current;
+                  if (audio) {
+                    playTrack(event.track);
+                  } else {
+                    logInfo(
+                      "Audio element not ready yet, storing track for later"
+                    );
+                    // Store the track and play it when audio element is ready
+                    setTimeout(() => {
+                      const audio = audioPlaybackRef.current;
+                      if (audio) {
+                        playTrack(event.track);
+                      } else {
+                        logError(
+                          "Audio element still not available after delay"
+                        );
+                      }
+                    }, 100);
+                  }
                 }
               };
 
@@ -931,6 +955,27 @@ export function WebSocketProvider({
     };
   }, []);
 
+  // Function to trigger server audio by briefly enabling microphone
+  const triggerServerAudio = useCallback(() => {
+    if (audioTrackRef.current) {
+      const track = audioTrackRef.current;
+      logInfo("Triggering server audio by briefly enabling microphone");
+
+      // Briefly enable the microphone to trigger server echo
+      track.enabled = true;
+
+      // Disable it after a short delay
+      setTimeout(() => {
+        if (track) {
+          track.enabled = false;
+          logInfo("Microphone disabled after triggering server audio");
+        }
+      }, 100); // 100ms should be enough to trigger the echo
+    } else {
+      logError("Cannot trigger server audio - no microphone track available");
+    }
+  }, []);
+
   const terminateAudioStream = useCallback(
     (chatId: string) => {
       logInfo(`Terminating audio stream for chat: ${chatId}`);
@@ -976,6 +1021,9 @@ export function WebSocketProvider({
     audioPlaybackRef, // 👈 ADD THIS LINE
     getTrackState, // Remote track state
     getLocalMicTrackState, // Local microphone track state
+    enableServerAudio, // Enable server audio playback
+    disableServerAudio, // Disable server audio playback
+    triggerServerAudio, // Trigger server audio by sending silent frame
     emitJoinTraining,
     emitSendTrainingMessage,
     emitStopTraining,
