@@ -18,9 +18,11 @@ import {
 import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
+// ✨ Import necessary hooks
+import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
+import { useUserPersona } from "@/lib/api/hooks/usePersonas";
 import { trainingMessageKeys } from "@/lib/api/hooks/useTrainingMessages";
-
 import { logError, logInfo } from "@/utils/logger";
 import { useQueryClient } from "@tanstack/react-query";
 import WebRTCDebugPanel from "./WebRTCDebugPanel";
@@ -73,6 +75,10 @@ export default function ChatArea({
   const [hints, setHints] = useState<string>("");
   const [isLoadingHints, setIsLoadingHints] = useState(false);
   const [lastAIResponse, setLastAIResponse] = useState<string>("");
+
+  // ✨ Get the current user and their associated persona
+  const { user } = useAuth();
+  const { data: userPersona } = useUserPersona(user?.id);
 
   // 👇 DEPRECATED: The patchCache function is no longer needed.
   // We will handle the logic directly in the send function for more control.
@@ -228,36 +234,45 @@ export default function ChatArea({
   // Handle WebRTC text message sending
   const handleWebRTCTextMessage = useCallback(
     (message: string) => {
-      if (!chat?.id || !message.trim()) return;
+      // ✨ Guard against missing data needed for optimistic update
+      if (!chat?.id || !message.trim() || !userPersona?.id) return;
+
+      // ✨ To get the assistant's persona ID, we can assume the backend
+      // has a way to provide it. For now, we'll extract it from the last
+      // assistant message. A more robust solution would be to add it to the Chat object.
+      const lastAssistantMessage = [...displayMessages]
+        .reverse()
+        .find((msg) => msg.role === "assistant");
+      const assistantPersonaId =
+        lastAssistantMessage?.persona_id || "temp-assistant-persona";
 
       // 1. Send the real message to the server
       sendWebRTCMessage(chat.id, message);
 
-      // ✨ 2. FIX: Create a stable base timestamp to prevent re-ordering
       const queryKey = trainingMessageKeys.list(chat.id);
-      const baseTimestamp = new Date(); // Create one timestamp
+      const baseTimestamp = new Date();
       const tempUserId = `temp-${baseTimestamp.getTime()}`;
-      // Ensure the assistant's temp ID is also unique
       const tempAssistantId = `temp-assistant-${baseTimestamp.getTime()}`;
 
       queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
         ...old,
-        // Optimistic User Message
+        // ✨ Optimistic User Message with persona_id
         {
           id: tempUserId,
-          role: "user",
+          role: "user", // Keep role for optimistic rendering until full migration
+          persona_id: userPersona.id,
           content: message,
-          completed: true, // Mark as complete optimistically
-          created_at: baseTimestamp.toISOString(), // Use base timestamp
+          completed: true,
+          created_at: baseTimestamp.toISOString(),
           chat_id: chat.id,
         } as Message,
-        // Optimistic Assistant "Thinking" Placeholder
+        // ✨ Optimistic Assistant "Thinking" Placeholder with persona_id
         {
           id: tempAssistantId,
-          role: "assistant",
-          content: "", // This will be rendered as the "thinking..." message
+          role: "assistant", // Keep role for optimistic rendering
+          persona_id: assistantPersonaId,
+          content: "",
           completed: false,
-          // Use the base timestamp + 1ms to guarantee it's always after
           created_at: new Date(baseTimestamp.getTime() + 1).toISOString(),
           chat_id: chat.id,
         } as Message,
@@ -266,7 +281,14 @@ export default function ChatArea({
       // 3. Clear the input field
       setCurrentMessage("");
     },
-    [chat?.id, sendWebRTCMessage, queryClient, setCurrentMessage]
+    [
+      chat?.id,
+      sendWebRTCMessage,
+      queryClient,
+      setCurrentMessage,
+      userPersona,
+      displayMessages,
+    ]
   );
 
   // Early return if chat is not available
@@ -331,7 +353,10 @@ export default function ChatArea({
           {displayMessages.map((message) => (
             <Box key={message.id}>
               <Flex
-                direction={message.role === "user" ? "row-reverse" : "row"}
+                // ✨ RENDER based on persona_id
+                direction={
+                  message.persona_id === userPersona?.id ? "row-reverse" : "row"
+                }
                 align="start"
                 gap="3"
               >
@@ -340,19 +365,20 @@ export default function ChatArea({
                   size="1"
                   style={{
                     padding: "8px",
+                    // ✨ Style based on persona_id
                     background:
-                      message.role === "user"
+                      message.persona_id === userPersona?.id
                         ? "var(--blue-3)"
                         : "var(--green-3)",
                     border: `1px solid ${
-                      message.role === "user"
+                      message.persona_id === userPersona?.id
                         ? "var(--blue-6)"
                         : "var(--green-6)"
                     }`,
                     opacity: message.completed ? 1 : 0.6,
                   }}
                 >
-                  {message.role === "user" ? (
+                  {message.persona_id === userPersona?.id ? (
                     <PersonIcon color="var(--blue-9)" />
                   ) : (
                     <ChatBubbleIcon color="var(--green-9)" />
@@ -364,12 +390,13 @@ export default function ChatArea({
                   <Card
                     size="2"
                     style={{
+                      // ✨ Style based on persona_id
                       background:
-                        message.role === "user"
+                        message.persona_id === userPersona?.id
                           ? "var(--blue-2)"
                           : "var(--gray-2)",
                       border: `1px solid ${
-                        message.role === "user"
+                        message.persona_id === userPersona?.id
                           ? "var(--blue-7)"
                           : "var(--gray-7)"
                       }`,
@@ -382,7 +409,7 @@ export default function ChatArea({
                         style={{ color: "var(--gray-11)" }}
                         weight="medium"
                       >
-                        {message.role === "user"
+                        {message.persona_id === userPersona?.id
                           ? ""
                           : chat?.name || "John Doe"}
                       </Text>
@@ -391,11 +418,11 @@ export default function ChatArea({
                         style={{ lineHeight: "1.5", color: "var(--gray-12)" }}
                       >
                         <Markdown>
-                          {message.role === "assistant" &&
+                          {message.persona_id !== userPersona?.id &&
                           !message.completed &&
                           !message.content
                             ? `${chat?.name || "John Doe"} is thinking...`
-                            : message.role === "assistant" &&
+                            : message.persona_id !== userPersona?.id &&
                               message.completed &&
                               !message.content
                             ? "No response"

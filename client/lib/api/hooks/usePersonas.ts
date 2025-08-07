@@ -1,18 +1,19 @@
 // lib/api/hooks/usePersonas.ts
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { personaKeys } from '../keys';
-import type {
-  PersonaCreate,
-  PersonaUpdate,
-} from '@/lib/repos/personaRepo';
-import { api } from '../fetcher';
+import type { PersonaCreate, PersonaUpdate } from "@/lib/repos/personaRepo";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "../fetcher";
+import { personaKeys } from "../keys";
 
 // ---------- Queries ----------
-export function usePersonas() {
+export function usePersonas(profileId?: string) {
+  // ✨ Allow optional filtering by profileId
+  const url = profileId
+    ? `/api/v1/personas?profile_id=${profileId}`
+    : "/api/v1/personas";
   return useQuery({
-    queryKey: personaKeys.list(),
-    queryFn: () => api<PersonaCreate[]>('/api/v1/personas'),
-    staleTime: 5 * 60_000,      // 5 minutes
+    queryKey: personaKeys.list({ profileId }), // ✨ Pass profileId as filter
+    queryFn: () => api<PersonaCreate[]>(url),
+    staleTime: 5 * 60_000, // 5 minutes
   });
 }
 
@@ -24,13 +25,26 @@ export function usePersona(id: string, enabled = true) {
   });
 }
 
+// ✨ ADD THIS NEW HOOK ✨
+/**
+ * Fetches the specific persona associated with a user's profile ID.
+ * Assumes a user has one primary persona.
+ */
+export function useUserPersona(profileId?: string) {
+  const { data: personas, ...rest } = usePersonas(profileId);
+  return {
+    data: personas?.[0], // Return the first persona found for the profile
+    ...rest,
+  };
+}
+
 // ---------- Mutations ----------
 export function useCreatePersona() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: PersonaCreate) =>
-      api<PersonaCreate>('/api/v1/personas', {
-        method: 'POST',
+      api<PersonaCreate>("/api/v1/personas", {
+        method: "POST",
         body: JSON.stringify(payload),
       }),
     onSuccess() {
@@ -44,7 +58,7 @@ export function useUpdatePersona(id: string) {
   return useMutation({
     mutationFn: (patch: PersonaUpdate) =>
       api<PersonaCreate>(`/api/v1/personas/${id}`, {
-        method: 'PATCH',
+        method: "PATCH",
         body: JSON.stringify(patch),
       }),
     onSuccess() {
@@ -56,11 +70,10 @@ export function useUpdatePersona(id: string) {
 export function useDeletePersona(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () =>
-      api<void>(`/api/v1/personas/${id}`, { method: 'DELETE' }),
+    mutationFn: () => api<void>(`/api/v1/personas/${id}`, { method: "DELETE" }),
     onSuccess() {
       // remove both list & detail caches
       qc.invalidateQueries({ queryKey: personaKeys.all });
     },
   });
-} 
+}

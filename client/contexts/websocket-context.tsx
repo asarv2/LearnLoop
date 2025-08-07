@@ -326,7 +326,7 @@ export function WebSocketProvider({
             new CustomEvent("userMessageSaved", {
               detail: {
                 chatId: data.chat_id,
-                message: data.message,
+                message: data.message, // This now contains persona_id
               },
             })
           );
@@ -335,7 +335,8 @@ export function WebSocketProvider({
 
       socket.on(
         "training_message_start",
-        (data: { chat_id: string; message_id: string }) => {
+        // ✨ Add persona_id to the expected data structure
+        (data: { chat_id: string; message_id: string; persona_id: string }) => {
           logInfo("Training message start", data);
           setIsSendingTrainingMessage(false);
 
@@ -345,6 +346,7 @@ export function WebSocketProvider({
               detail: {
                 chatId: data.chat_id,
                 messageId: data.message_id,
+                personaId: data.persona_id, // ✨ Pass it along
               },
             })
           );
