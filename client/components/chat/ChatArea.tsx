@@ -59,6 +59,9 @@ export default function ChatArea({
     joinRoom,
     leaveRoom,
     audioPlaybackRef,
+    enableServerAudio,
+    disableServerAudio,
+    triggerServerAudio,
   } = useWebSocket();
 
   // Voice-related state
@@ -119,8 +122,7 @@ export default function ChatArea({
   useEffect(() => {
     const audio = audioPlaybackRef.current;
     if (audio) {
-      // Force unmute and set volume
-      audio.muted = false;
+      // Set volume but keep muted initially - will be controlled by voice mode
       audio.volume = 1;
       logInfo("Audio element configured for server playback", {
         muted: audio.muted,
@@ -182,13 +184,17 @@ export default function ChatArea({
     setCurrentMessage("");
 
     if (nextIsVoiceMode) {
-      // Just initialize the stream. The user's first press will handle playback.
+      // Enable server audio and initialize the stream when entering voice mode
       if (chat?.id) {
+        enableServerAudio();
         await initializeAudioStream(chat.id);
+        // Trigger server audio by briefly enabling microphone to start the echo
+        triggerServerAudio();
       }
     } else {
-      // Terminate the stream when leaving voice mode.
+      // Disable server audio and terminate the stream when leaving voice mode
       if (chat?.id) {
+        disableServerAudio();
         terminateAudioStream(chat.id);
         setMicActive(false);
       }
@@ -199,28 +205,18 @@ export default function ChatArea({
     initializeAudioStream,
     terminateAudioStream,
     setCurrentMessage,
+    enableServerAudio,
+    disableServerAudio,
   ]);
 
-  // Simple microphone control - only handles local mic, server audio plays continuously
+  // Simple microphone control - only handles local mic, server audio is already enabled
   const handleVoiceStart = useCallback(() => {
     // Only control the local microphone
     setMicrophoneMuted(false);
     setMicActive(true);
 
-    // Force unmute and play server audio on first user interaction
-    const audio = audioPlaybackRef.current;
-    if (audio) {
-      audio.muted = false;
-      audio.volume = 1;
-      if (audio.paused) {
-        audio.play().catch((e) => {
-          logError("Failed to start server audio playback", e);
-        });
-      }
-    }
-
     logInfo("Microphone enabled for voice input");
-  }, [setMicrophoneMuted, audioPlaybackRef]);
+  }, [setMicrophoneMuted]);
 
   const handleVoiceStop = useCallback(() => {
     // This function's only job is to mute the microphone.

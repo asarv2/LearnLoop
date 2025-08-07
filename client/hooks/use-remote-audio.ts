@@ -24,39 +24,53 @@ export function useRemoteAudio() {
     // Attach the track to the audio element
     audio.srcObject = new MediaStream([track]);
 
-    // Force unmute and set volume - be aggressive about this
-    audio.muted = false;
+    // Initially pause and mute the audio - will be controlled by voice mode
+    audio.pause();
+    audio.muted = true;
     audio.volume = 1;
 
-    // Double-check muted state after a short delay
-    setTimeout(() => {
-      if (audio.muted) {
-        logInfo("Audio element was muted, forcing unmute");
-        audio.muted = false;
-      }
-    }, 100);
-
-    // Try to start playback immediately
-    audio
-      .play()
-      .then(() => logInfo("🔊 Server audio started playing"))
-      .catch(() => {
-        logInfo(
-          "Server audio ready, waiting for user interaction to start playback"
-        );
-        // This is expected - browser requires user interaction
-      });
+    logInfo("Server audio track attached but paused and muted initially");
 
     // Set up event listeners for track state changes
     track.onunmute = () => {
-      logInfo("Server track unmuted - attempting to play");
-      audio.muted = false; // Ensure it's not muted
-      audio.play().catch((e) => logError("Play failed on unmute", e));
+      logInfo("Server track unmuted");
     };
 
     track.onended = () => {
       logInfo("Server audio track ended");
     };
+  }, []);
+
+  // Function to enable server audio (unpause and unmute)
+  const enableServerAudio = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      logError("Audio element not available for enabling");
+      return;
+    }
+
+    audio.muted = false;
+    audio
+      .play()
+      .then(() => {
+        logInfo("🔊 Server audio enabled and playing");
+      })
+      .catch((e) => {
+        logError("Failed to enable server audio", e);
+      });
+  }, []);
+
+  // Function to disable server audio (pause and mute)
+  const disableServerAudio = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      logError("Audio element not available for disabling");
+      return;
+    }
+
+    audio.pause();
+    audio.muted = true;
+    logInfo("🔇 Server audio disabled (paused and muted)");
   }, []);
 
   // Helper function to get current track state for debugging
@@ -77,5 +91,11 @@ export function useRemoteAudio() {
     };
   }, []);
 
-  return { audioRef, playTrack, getTrackState };
+  return {
+    audioRef,
+    playTrack,
+    getTrackState,
+    enableServerAudio,
+    disableServerAudio,
+  };
 }
