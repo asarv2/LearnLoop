@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npm run gen:all && next dev --turbopack",
+    "dev": "npm run gen:all && node --no-deprecation ./node_modules/.bin/next dev --turbopack",
     "gen:all": "npm run gen:db && npm run gen:types",
     "gen:db": "npx supabase gen types typescript --project-id uslxyheljqngrofpygud --schema public > database.types.ts",
     "gen:types": "node ./scripts/generate-types.js",

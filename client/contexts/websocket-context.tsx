@@ -609,8 +609,14 @@ export function WebSocketProvider({
   // Room management (chat_id-based)
   const joinRoom = useCallback(
     (chatId: string) => {
-      if (!socketRef.current || !isConnected) {
+      if (!socketRef.current?.connected) {
         logInfo("Cannot join room - WebSocket not connected", { chatId });
+        return;
+      }
+
+      // 🛑 already in the room – do nothing
+      if (currentRoomsRef.current.has(chatId)) {
+        logInfo(`Already in room ${chatId}, skipping join`);
         return;
       }
 
@@ -623,12 +629,18 @@ export function WebSocketProvider({
 
       // Data channel will be created in webrtc_ready callback
     },
-    [isConnected, profileId]
+    [profileId]
   );
 
   const leaveRoom = useCallback((chatId: string) => {
     if (!socketRef.current) {
       logInfo("Cannot leave room - WebSocket not available", { chatId });
+      return;
+    }
+
+    // 🛑 not in the room – nothing to leave
+    if (!currentRoomsRef.current.has(chatId)) {
+      logInfo(`Not in room ${chatId}, skipping leave`);
       return;
     }
 
@@ -655,7 +667,7 @@ export function WebSocketProvider({
       chat_id: string;
       profile_id?: string;
     }) => {
-      if (!socketRef.current || !isConnected) {
+      if (!socketRef.current || !socketRef.current.connected) {
         logError("Cannot join training - WebSocket not connected");
         toast.error("WebSocket not connected. Please refresh the page.");
         return;
@@ -669,12 +681,12 @@ export function WebSocketProvider({
       logInfo("Emitting join_training", data);
       socketRef.current.emit("join_training", data);
     },
-    [isConnected, router]
+    [router]
   );
 
   const emitSendTrainingMessage = useCallback(
     (data: { chat_id: string; message: string }) => {
-      if (!socketRef.current || !isConnected) {
+      if (!socketRef.current || !socketRef.current.connected) {
         logError("Cannot send training message - WebSocket not connected");
         return;
       }
@@ -683,42 +695,36 @@ export function WebSocketProvider({
       logInfo("Emitting send_training_message", { chatId: data.chat_id });
       socketRef.current.emit("send_training_message", data);
     },
-    [isConnected]
+    []
   );
 
-  const emitStopTraining = useCallback(
-    (data: { chat_id: string }) => {
-      if (!socketRef.current || !isConnected) {
-        logError("Cannot stop training - WebSocket not connected");
-        toast.error("WebSocket not connected. Please refresh the page.");
-        return;
-      }
+  const emitStopTraining = useCallback((data: { chat_id: string }) => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      logError("Cannot stop training - WebSocket not connected");
+      toast.error("WebSocket not connected. Please refresh the page.");
+      return;
+    }
 
-      setIsStoppingTraining(true);
-      logInfo("Emitting stop_training", data);
-      socketRef.current.emit("stop_training", data);
-    },
-    [isConnected]
-  );
+    setIsStoppingTraining(true);
+    logInfo("Emitting stop_training", data);
+    socketRef.current.emit("stop_training", data);
+  }, []);
 
-  const emitEndTraining = useCallback(
-    (data: { chat_id: string }) => {
-      if (!socketRef.current || !isConnected) {
-        logError("Cannot end training - WebSocket not connected");
-        toast.error("WebSocket not connected. Please refresh the page.");
-        return;
-      }
+  const emitEndTraining = useCallback((data: { chat_id: string }) => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      logError("Cannot end training - WebSocket not connected");
+      toast.error("WebSocket not connected. Please refresh the page.");
+      return;
+    }
 
-      setIsEndingTraining(true);
-      logInfo("Emitting end_training", data);
-      socketRef.current.emit("end_training", data);
-    },
-    [isConnected]
-  );
+    setIsEndingTraining(true);
+    logInfo("Emitting end_training", data);
+    socketRef.current.emit("end_training", data);
+  }, []);
 
   const emitSubmitAssessment = useCallback(
     (data: { chat_id: string; responses: Record<string, unknown> }) => {
-      if (!socketRef.current || !isConnected) {
+      if (!socketRef.current || !socketRef.current.connected) {
         logError("Cannot submit assessment - WebSocket not connected");
         toast.error("WebSocket not connected. Please refresh the page.");
         return;
@@ -728,23 +734,20 @@ export function WebSocketProvider({
       logInfo("Emitting submit_assessment", data);
       socketRef.current.emit("submit_assessment", data);
     },
-    [isConnected]
+    []
   );
 
-  const emitGenerateFeedback = useCallback(
-    (data: { chat_id: string }) => {
-      if (!socketRef.current || !isConnected) {
-        logError("Cannot generate feedback - WebSocket not connected");
-        toast.error("WebSocket not connected. Please refresh the page.");
-        return;
-      }
+  const emitGenerateFeedback = useCallback((data: { chat_id: string }) => {
+    if (!socketRef.current || !socketRef.current.connected) {
+      logError("Cannot generate feedback - WebSocket not connected");
+      toast.error("WebSocket not connected. Please refresh the page.");
+      return;
+    }
 
-      setIsGeneratingFeedback(true);
-      logInfo("Emitting generate_feedback", data);
-      socketRef.current.emit("generate_feedback", data);
-    },
-    [isConnected]
-  );
+    setIsGeneratingFeedback(true);
+    logInfo("Emitting generate_feedback", data);
+    socketRef.current.emit("generate_feedback", data);
+  }, []);
 
   // WebRTC functions
   const sendWebRTCMessage = useCallback(
