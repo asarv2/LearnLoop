@@ -100,3 +100,18 @@ export const logKeys = {
   list: (filters?: unknown) => [...logKeys.all, { filters }] as const,
   detail: (id: string) => [...logKeys.all, id] as const,
 };
+
+// New: score-related keys
+export const interviewScoreKeys = {
+  all: ["interview_scores"] as const,
+  list: (filters?: unknown) =>
+    [...interviewScoreKeys.all, { filters }] as const,
+  detail: (id: string) => [...interviewScoreKeys.all, id] as const,
+};
+
+export const offboardingScoreKeys = {
+  all: ["offboarding_scores"] as const,
+  list: (filters?: unknown) =>
+    [...offboardingScoreKeys.all, { filters }] as const,
+  detail: (id: string) => [...offboardingScoreKeys.all, id] as const,
+};
