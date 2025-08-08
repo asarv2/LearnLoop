@@ -56,11 +56,11 @@ export type Training = Tables<'trainings'>;
 // =============================================
 
 export type FieldType = "persona" | "document" | "numerical" | "categorical" | "text";
-export type InterviewType = "preparation" | "regular" | "cheating" | "ai-assisted";
+export type InterviewType = "regular" | "cheating" | "ai-assisted";
 export type LogLevel = "info" | "error" | "warn" | "debug";
 export type MessageRole = "user" | "assistant";
 export type QuestionType = "mcq" | "frq";
-export type TrainingType = "interview" | "offboarding" | "preparation";
+export type TrainingType = "interview" | "offboarding";
 
 // =============================================
 // ============= UTILITY TYPES =============

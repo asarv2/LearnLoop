@@ -972,7 +972,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
-          practice: boolean | null
+          practice: boolean
           title: string
           type: string
           updated_at: string
@@ -986,7 +986,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
-          practice?: boolean | null
+          practice?: boolean
           title: string
           type: string
           updated_at?: string
@@ -1000,7 +1000,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
-          practice?: boolean | null
+          practice?: boolean
           title?: string
           type?: string
           updated_at?: string
@@ -1019,11 +1019,11 @@ export type Database = {
     }
     Enums: {
       field_type: "persona" | "document" | "numerical" | "categorical" | "text"
-      interview_type: "regular" | "cheating" | "ai-assisted" | "preparation"
+      interview_type: "regular" | "cheating" | "ai-assisted"
       log_level: "info" | "error" | "warn" | "debug"
       message_role: "user" | "assistant"
       question_type: "mcq" | "frq"
-      training_type: "interview" | "offboarding" | "preparation"
+      training_type: "interview" | "offboarding"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1152,11 +1152,11 @@ export const Constants = {
   public: {
     Enums: {
       field_type: ["persona", "document", "numerical", "categorical", "text"],
-      interview_type: ["regular", "cheating", "ai-assisted", "preparation"],
+      interview_type: ["regular", "cheating", "ai-assisted"],
       log_level: ["info", "error", "warn", "debug"],
       message_role: ["user", "assistant"],
       question_type: ["mcq", "frq"],
-      training_type: ["interview", "offboarding", "preparation"],
+      training_type: ["interview", "offboarding"],
     },
   },
 } as const

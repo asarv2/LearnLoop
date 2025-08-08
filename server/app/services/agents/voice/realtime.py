@@ -1,11 +1,11 @@
 import uuid
-from typing import AsyncGenerator, Union, Tuple
+from typing import AsyncGenerator, Tuple, Union
 
 from agents.realtime import RealtimeAgent, RealtimeRunner
 from agents.realtime.config import (RealtimeInputAudioTranscriptionConfig,
-                                     RealtimeRunConfig,
-                                     RealtimeSessionModelSettings,
-                                     RealtimeTurnDetectionConfig)
+                                    RealtimeRunConfig,
+                                    RealtimeSessionModelSettings,
+                                    RealtimeTurnDetectionConfig)
 from agents.realtime.items import RealtimeItem
 from app.db import get_session
 from app.models import Personas
@@ -23,9 +23,12 @@ async def run_realtime_agent(
 
     Args:
         persona_id: The ID of the persona
+        input_items: List of input items to send to the agent
         session: Database session
     Yields:
-        Text chunks from the agent's response
+        Either text chunks as strings or tuples with type and data:
+        - ("audio", bytes): Audio data for playback
+        - ("text", str): Text transcript for display
     """
     persona = session.exec(select(Personas).where(Personas.id == persona_id)).one()
     if not persona:
@@ -75,12 +78,14 @@ async def run_realtime_agent(
         async for event in realtime_session:
             if event.type == "audio":
                 yield ("audio", event.audio.data) # we yield the audio data so that it can be played back by the client
-            if event.type == "response.audio_transcript.done":
+            elif event.type == "response.audio_transcript.done":
                 yield ("text", event.transcript) # we also yield the transcript so that it can be displayed to the user
             elif event.type == "conversation.item.input_audio_transcription.completed":
                 # Optionally yield user transcriptions if needed
                 pass
-            elif event.type =="raw_model_event":
+            elif event.type == "raw_model_event":
+                # Handle raw model events if needed
+                pass
             elif event.type == "error":
                 raise Exception(f"Realtime agent error: {event.error}")
                 break
