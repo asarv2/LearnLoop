@@ -137,6 +137,9 @@ export function WebSocketProvider({
     disableServerAudio,
   } = useRemoteAudio();
 
+  // ✨ NEW: State to hold the incoming remote stream for reliable connection
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
   // Message queues for data channels (text messages)
   const messageQueues = useRef<Map<string, string[]>>(new Map());
 
@@ -145,6 +148,37 @@ export function WebSocketProvider({
 
   // Flag to prevent multiple webrtc_start emissions on reconnects
   const webrtcStarted = useRef(false);
+
+  // ✨ NEW: Effect to reliably connect the remote stream to the audio element
+  useEffect(() => {
+    const audioEl = audioPlaybackRef.current;
+    if (audioEl && remoteStream) {
+      logInfo("Attaching remote stream to audio element", {
+        streamId: remoteStream.id,
+        trackCount: remoteStream.getTracks().length,
+      });
+
+      // Create a new MediaStream with just the audio track for cleaner handling
+      const audioTracks = remoteStream.getAudioTracks();
+      if (audioTracks.length > 0) {
+        const audioOnlyStream = new MediaStream(audioTracks);
+        audioEl.srcObject = audioOnlyStream;
+
+        // Attempt to play the audio
+        audioEl.play().catch((error) => {
+          logError("Audio element autoplay failed", error);
+        });
+      }
+    }
+  }, [remoteStream, audioPlaybackRef]);
+
+  // ✨ NEW: Cleanup effect to reset remote stream when WebRTC connection changes
+  useEffect(() => {
+    if (!isWebRTCConnected) {
+      setRemoteStream(null);
+      logInfo("WebRTC disconnected, clearing remote stream state");
+    }
+  }, [isWebRTCConnected]);
 
   // Create data channels for text messaging and process queued messages when they open
   const createDataChannelIfNeeded = useCallback(
@@ -536,28 +570,10 @@ export function WebSocketProvider({
                   trackReadyState: event.track.readyState,
                 });
 
-                // Simple audio track handling - just attach and play
-                if (event.track.kind === "audio") {
-                  // Check if audio element is ready before playing
-                  const audio = audioPlaybackRef.current;
-                  if (audio) {
-                    playTrack(event.track);
-                  } else {
-                    logInfo(
-                      "Audio element not ready yet, storing track for later"
-                    );
-                    // Store the track and play it when audio element is ready
-                    setTimeout(() => {
-                      const audio = audioPlaybackRef.current;
-                      if (audio) {
-                        playTrack(event.track);
-                      } else {
-                        logError(
-                          "Audio element still not available after delay"
-                        );
-                      }
-                    }, 100);
-                  }
+                // ✨ FIXED: Use React state to handle the race condition reliably
+                if (event.track.kind === "audio" && event.streams[0]) {
+                  logInfo("Setting remote stream state for audio connection");
+                  setRemoteStream(event.streams[0]);
                 }
               };
 
@@ -993,6 +1009,9 @@ export function WebSocketProvider({
         audioTrackRef.current = null;
         logInfo("All audio streams stopped. Mic released.");
       }
+
+      // ✨ NEW: Clear remote stream state when terminating audio
+      setRemoteStream(null);
 
       if (socketRef.current && profileId) {
         socketRef.current.emit("webrtc_stop_audio", {
