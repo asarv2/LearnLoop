@@ -43,8 +43,7 @@ type TrainingTypeOption =
   | "Leadership"
   | "Cross-Cultural"
   | "Difficult Conversations"
-  | "Coaching"
-  | "Performance Management";
+  | "Customer Communication";
 
 const TRAINING_TYPES: TrainingTypeOption[] = [
   "Interview",
@@ -52,7 +51,7 @@ const TRAINING_TYPES: TrainingTypeOption[] = [
   "Leadership",
   "Cross-Cultural",
   "Difficult Conversations",
-  "Coaching",
+  "Customer Communication",
 ];
 
 const INTERVIEW_CATEGORIES = [
@@ -71,20 +70,20 @@ const OFFBOARDING_CATEGORIES = [
   },
   {
     key: "communication_professionalism",
-    label: "Communication Clarity & Professionalism",
+    label: "Communication & Professionalism",
   },
   { key: "clarity_of_next_steps", label: "Clarity of Next Steps" },
   {
     key: "transition_planning_logistics",
-    label: "Transition Planning & Logistics",
+    label: "Transition Planning",
   },
   {
     key: "conflict_resolution",
-    label: "Conflict Resolution & Difficult Conversations",
+    label: "Conflict Resolution",
   },
   {
     key: "assessment_thoughtfulness",
-    label: "Assessment Thoughtfulness & Reflection",
+    label: "Assessment Thoughtfulness",
   },
 ] as const;
 
@@ -320,7 +319,7 @@ export default function Overview() {
       });
     }
 
-    // For other training types, find categories from standards using exact title matching
+    // For other training types, find categories from standards using title matching
     const matchingTrainings = (trainings || []).filter((training) =>
       training.title?.toLowerCase().includes(avgType.toLowerCase())
     );
@@ -336,11 +335,14 @@ export default function Overview() {
       );
 
       if (trainingStandards.length > 0) {
-        // Use standards as categories, all starting at 0
-        return trainingStandards.map((standard) => ({
-          name: (standard as { name?: string }).name || "Category",
-          avg: 0,
-        }));
+        // Use standards as categories, all starting at 0 for now
+        // TODO: In the future, fetch actual scores from standard_grades table
+        return trainingStandards
+          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+          .map((standard) => ({
+            name: (standard as { name?: string }).name || "Category",
+            avg: 0,
+          }));
       }
     }
 
@@ -627,26 +629,63 @@ export default function Overview() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="h-72 w-full">
+                <div className="h-[420px] w-full">
                   <RCResponsiveContainer width="100%" height="100%">
                     <RCBarChart
                       data={avgByCategory30d}
-                      margin={{ left: 8, right: 8, top: 8, bottom: 8 }}
+                      margin={{ left: 8, right: 8, top: 8, bottom: 10 }}
                     >
                       <RCCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <RCXAxis
                         dataKey="name"
                         tickLine={false}
                         axisLine={false}
-                        tick={{ fill: "#64748b" }}
+                        height={80}
+                        interval={0}
+                        tick={(props) => {
+                          const { x, y, payload } = props;
+                          const text = payload.value;
+                          const words = text.split(" ");
+                          const maxWordsPerLine = 2;
+
+                          // Split into lines with max 2 words each
+                          const lines = [];
+                          for (
+                            let i = 0;
+                            i < words.length;
+                            i += maxWordsPerLine
+                          ) {
+                            lines.push(
+                              words.slice(i, i + maxWordsPerLine).join(" ")
+                            );
+                          }
+
+                          return (
+                            <g transform={`translate(${x},${y})`}>
+                              {lines.map((line, index) => (
+                                <text
+                                  key={index}
+                                  x={0}
+                                  y={index * 12 + 5}
+                                  textAnchor="middle"
+                                  fill="#64748b"
+                                  fontSize="11"
+                                >
+                                  {line}
+                                </text>
+                              ))}
+                            </g>
+                          );
+                        }}
                       />
                       <RCYAxis
-                        allowDecimals
+                        allowDecimals={false}
                         tickLine={false}
                         axisLine={false}
                         domain={[0, 5]}
                         ticks={[0, 1, 2, 3, 4, 5]}
-                        tick={{ fill: "#64748b" }}
+                        tick={{ fill: "#64748b", fontSize: 12 }}
+                        tickCount={6}
                       />
                       <RCTip
                         wrapperStyle={{
