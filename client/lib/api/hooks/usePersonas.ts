@@ -1,8 +1,10 @@
 // lib/api/hooks/usePersonas.ts
 import type { PersonaCreate, PersonaUpdate } from "@/lib/repos/personaRepo";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import React from "react";
 import { api } from "../fetcher";
 import { personaKeys } from "../keys";
+import { useCreateProfile } from "./useProfiles";
 
 // ---------- Queries ----------
 export function usePersonas(profileId?: string) {
@@ -31,9 +33,47 @@ export function usePersona(id: string, enabled = true) {
  * Assumes a user has one primary persona.
  */
 export function useUserPersona(profileId?: string) {
-  const { data: personas, ...rest } = usePersonas(profileId);
+  const { data: personas, isLoading, error, ...rest } = usePersonas(profileId);
+  const createProfile = useCreateProfile();
+  const createPersona = useCreatePersona();
+
+  // If no personas found and we have a profileId, create a profile and persona
+  React.useEffect(() => {
+    if (
+      profileId &&
+      !isLoading &&
+      personas &&
+      personas.length === 0 &&
+      !createProfile.isPending &&
+      !createPersona.isPending
+    ) {
+      const createUserProfileAndPersona = async () => {
+        try {
+          // Create profile first
+          const profile = await createProfile.mutateAsync({
+            id: profileId, // Use the user ID as the profile ID
+            name: "User Profile", // Default name
+          });
+
+          // Create persona for the profile
+          await createPersona.mutateAsync({
+            profile_id: profile.id,
+            name: "User Persona",
+            description: "Default user persona",
+          });
+        } catch (error) {
+          console.error("Failed to create profile/persona:", error);
+        }
+      };
+
+      createUserProfileAndPersona();
+    }
+  }, [profileId, isLoading, personas, createProfile, createPersona]);
+
   return {
     data: personas?.[0], // Return the first persona found for the profile
+    isLoading: isLoading || createProfile.isPending || createPersona.isPending,
+    error: error || createProfile.error || createPersona.error,
     ...rest,
   };
 }

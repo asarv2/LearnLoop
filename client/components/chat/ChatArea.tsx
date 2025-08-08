@@ -163,7 +163,7 @@ export default function ChatArea({
     };
   }, [chat?.id, isWebRTCConnected, joinRoom, leaveRoom]);
 
-  // Track AI responses for hints generation
+  // Track AI responses for hints generation and update temporary assistant personas
   useEffect(() => {
     const lastMessage = displayMessages[displayMessages.length - 1];
     if (
@@ -177,8 +177,34 @@ export default function ChatArea({
         setLastAIResponse(newResponse);
         setHints("");
       }
+
+      // Update temporary assistant messages with the correct persona ID
+      // When a real assistant response arrives, update any temporary messages
+      // that were created with persona_id: null
+      if (lastMessage.persona_id && chat?.id) {
+        const queryKey = trainingMessageKeys.list(chat.id);
+        queryClient.setQueryData<Message[]>(queryKey, (old = []) => {
+          if (!old) return old;
+
+          return old.map((msg) => {
+            // Update temporary assistant messages that have null persona_id
+            if (
+              msg.role === "assistant" &&
+              !msg.persona_id &&
+              !msg.completed &&
+              msg.id.startsWith("temp-assistant-")
+            ) {
+              return {
+                ...msg,
+                persona_id: lastMessage.persona_id,
+              };
+            }
+            return msg;
+          });
+        });
+      }
     }
-  }, [displayMessages, lastAIResponse]);
+  }, [displayMessages, lastAIResponse, chat?.id, queryClient]);
 
   // 👇 DEPRECATED: We will no longer re-sort the array on every render.
   /*
@@ -239,34 +265,12 @@ export default function ChatArea({
     setMicActive(false);
   }, [setMicrophoneMuted]);
 
-  // Handle WebRTC text message sending
+  // Handle WebRTC text message sending with generic assistant persona
+  // This approach creates a temporary assistant message with persona_id: null
+  // The persona_id will be updated when the real assistant response arrives
   const handleWebRTCTextMessage = useCallback(
     (message: string) => {
       if (!chat?.id || !message.trim() || !userPersona?.id) return;
-
-      // ✨ 2. Establish a reliable source for the assistant's persona ID.
-      let assistantPersonaId: string | null = null;
-
-      // OPTION A (Ideal): If your API provides the assistant's ID on the chat object.
-      // assistantPersonaId = chat.assistant_persona_id;
-
-      // OPTION B (Current Fallback): Reliably get it from the last *actual* message.
-      if (!assistantPersonaId) {
-        const lastAssistantMessage = [...displayMessages]
-          .reverse()
-          .find((msg) => msg.persona_id !== userPersona.id);
-        if (lastAssistantMessage?.persona_id) {
-          assistantPersonaId = lastAssistantMessage.persona_id;
-        }
-      }
-
-      // Guard against being unable to find the assistant persona
-      if (!assistantPersonaId) {
-        logError(
-          "Could not determine assistant persona ID for optimistic update."
-        );
-        return;
-      }
 
       sendWebRTCMessage(chat.id, message);
 
@@ -275,6 +279,7 @@ export default function ChatArea({
       const tempUserId = `temp-${baseTimestamp.getTime()}`;
       const tempAssistantId = `temp-assistant-${baseTimestamp.getTime()}`;
 
+      // Create optimistic updates with a generic assistant persona
       queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
         ...old,
         {
@@ -289,7 +294,7 @@ export default function ChatArea({
         {
           id: tempAssistantId,
           role: "assistant",
-          persona_id: assistantPersonaId, // Use the reliably found ID
+          persona_id: null, // Generic placeholder - will be updated when real response arrives
           content: "",
           completed: false,
           created_at: new Date(baseTimestamp.getTime() + 1).toISOString(),
@@ -299,14 +304,7 @@ export default function ChatArea({
 
       setCurrentMessage("");
     },
-    [
-      chat?.id,
-      sendWebRTCMessage,
-      queryClient,
-      setCurrentMessage,
-      userPersona,
-      displayMessages,
-    ]
+    [chat?.id, sendWebRTCMessage, queryClient, setCurrentMessage, userPersona]
   );
 
   // ✨ 3. Use the memoized map in the lookup function for stability.
@@ -377,96 +375,92 @@ export default function ChatArea({
       >
         <Flex direction="column" gap="4">
           {/* ✨ FIX: Map directly over the displayMessages prop */}
-          {displayMessages.map((message) => (
-            <Box key={message.id}>
-              <Flex
-                // ✨ RENDER based on persona_id
-                direction={
-                  message.persona_id === userPersona?.id ? "row-reverse" : "row"
-                }
-                align="start"
-                gap="3"
-              >
-                {/* Avatar */}
-                <Card
-                  size="1"
-                  style={{
-                    padding: "8px",
-                    // ✨ Style based on persona_id
-                    background:
-                      message.persona_id === userPersona?.id
+          {displayMessages.map((message) => {
+            // Determine if this is a user message or assistant message
+            const isUserMessage = message.persona_id === userPersona?.id;
+            const isAssistantMessage = message.role === "assistant";
+
+            return (
+              <Box key={message.id}>
+                <Flex
+                  direction={isUserMessage ? "row-reverse" : "row"}
+                  align="start"
+                  gap="3"
+                >
+                  {/* Avatar */}
+                  <Card
+                    size="1"
+                    style={{
+                      padding: "8px",
+                      background: isUserMessage
                         ? "var(--blue-3)"
                         : "var(--green-3)",
-                    border: `1px solid ${
-                      message.persona_id === userPersona?.id
-                        ? "var(--blue-6)"
-                        : "var(--green-6)"
-                    }`,
-                    opacity: message.completed ? 1 : 0.6,
-                  }}
-                >
-                  {message.persona_id === userPersona?.id ? (
-                    <PersonIcon color="var(--blue-9)" />
-                  ) : (
-                    <ChatBubbleIcon color="var(--green-9)" />
-                  )}
-                </Card>
-
-                {/* Message Content */}
-                <Box style={{ maxWidth: "70%" }}>
-                  <Card
-                    size="2"
-                    style={{
-                      // ✨ Style based on persona_id
-                      background:
-                        message.persona_id === userPersona?.id
-                          ? "var(--blue-2)"
-                          : "var(--gray-2)",
                       border: `1px solid ${
-                        message.persona_id === userPersona?.id
-                          ? "var(--blue-7)"
-                          : "var(--gray-7)"
+                        isUserMessage ? "var(--blue-6)" : "var(--green-6)"
                       }`,
-                      opacity: message.completed ? 1 : 0.8,
+                      opacity: message.completed ? 1 : 0.6,
                     }}
                   >
-                    <Flex direction="column" gap="2">
-                      <Text
-                        size="1"
-                        style={{ color: "var(--gray-11)" }}
-                        weight="medium"
-                      >
-                        {/* ✨ 4. Simplify the name rendering logic using the stable getter. */}
-                        {getPersonaName(message.persona_id) ||
-                          (message.role === "user" ? "You" : "Assistant")}
-                      </Text>
-                      <Text
-                        size="2"
-                        style={{ lineHeight: "1.5", color: "var(--gray-12)" }}
-                      >
-                        <Markdown>
-                          {/* Use the same stable getter for the "thinking" message */}
-                          {!message.completed &&
-                          !message.content &&
-                          message.role === "assistant"
-                            ? `${
-                                getPersonaName(message.persona_id) ||
-                                "Assistant"
-                              } is thinking...`
-                            : message.content || ""}
-                        </Markdown>
-                      </Text>
-                      {message.completed && (
-                        <Text size="1" style={{ color: "var(--gray-11)" }}>
-                          {new Date(message.created_at).toLocaleTimeString()}
-                        </Text>
-                      )}
-                    </Flex>
+                    {isUserMessage ? (
+                      <PersonIcon color="var(--blue-9)" />
+                    ) : (
+                      <ChatBubbleIcon color="var(--green-9)" />
+                    )}
                   </Card>
-                </Box>
-              </Flex>
-            </Box>
-          ))}
+
+                  {/* Message Content */}
+                  <Box style={{ maxWidth: "70%" }}>
+                    <Card
+                      size="2"
+                      style={{
+                        background: isUserMessage
+                          ? "var(--blue-2)"
+                          : "var(--gray-2)",
+                        border: `1px solid ${
+                          isUserMessage ? "var(--blue-7)" : "var(--gray-7)"
+                        }`,
+                        opacity: message.completed ? 1 : 0.8,
+                      }}
+                    >
+                      <Flex direction="column" gap="2">
+                        <Text
+                          size="1"
+                          style={{ color: "var(--gray-11)" }}
+                          weight="medium"
+                        >
+                          {/* Handle generic assistant persona */}
+                          {isUserMessage
+                            ? "You"
+                            : getPersonaName(message.persona_id) || "Assistant"}
+                        </Text>
+                        <Text
+                          size="2"
+                          style={{ lineHeight: "1.5", color: "var(--gray-12)" }}
+                        >
+                          <Markdown>
+                            {/* Handle "thinking" message for assistant */}
+                            {!message.completed &&
+                            !message.content &&
+                            isAssistantMessage
+                              ? `${
+                                  getPersonaName(message.persona_id) ||
+                                  "Assistant"
+                                } is thinking...`
+                              : message.content || ""}
+                          </Markdown>
+                        </Text>
+                        {message.completed && (
+                          <Text size="1" style={{ color: "var(--gray-11)" }}>
+                            {new Date(message.created_at).toLocaleTimeString()}
+                          </Text>
+                        )}
+                      </Flex>
+                    </Card>
+                  </Box>
+                </Flex>
+              </Box>
+            );
+          })}
 
           <div ref={messagesEndRef} />
         </Flex>

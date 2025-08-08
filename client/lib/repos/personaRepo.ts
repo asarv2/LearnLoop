@@ -1,12 +1,12 @@
 // lib/repos/personaRepo.ts
-import { cookies } from "next/headers";
-import { z } from "zod";
-import supabaseServer from "@/utils/supabase/supabase-server";
 import type { Database } from "@/database.types";
 import { HttpError } from "@/utils/HttpError";
+import supabaseServer from "@/utils/supabase/supabase-server";
+import { cookies } from "next/headers";
+import { z } from "zod";
 
-export type PersonaCreate = Database['public']['Tables']['personas']['Insert'];
-export type PersonaUpdate = Database['public']['Tables']['personas']['Update'];
+export type PersonaCreate = Database["public"]["Tables"]["personas"]["Insert"];
+export type PersonaUpdate = Database["public"]["Tables"]["personas"]["Update"];
 
 // Runtime validators for API requests
 export const PersonaCreateSchema = z.object({
@@ -34,7 +34,7 @@ export const personaRepo = {
   async create(payload: PersonaCreate) {
     const supabase = await getSupabase();
     const { data, error } = await supabase
-      .from('personas')
+      .from("personas")
       .insert(payload)
       .select()
       .single();
@@ -42,18 +42,30 @@ export const personaRepo = {
     return data;
   },
 
-  async list() {
+  async list(profileId?: string) {
     const supabase = await getSupabase();
-    const { data, error } = await supabase.from('personas').select('*').order('created_at', { ascending: false });
+    let query = supabase.from("personas").select("*");
+
+    if (profileId) {
+      query = query.eq("profile_id", profileId);
+    }
+
+    const { data, error } = await query.order("created_at", {
+      ascending: false,
+    });
     if (error) throw new HttpError(500, error.message);
     return data;
   },
 
   async find(id: string) {
     const supabase = await getSupabase();
-    const { data, error } = await supabase.from('personas').select('*').eq('id', id).single();
+    const { data, error } = await supabase
+      .from("personas")
+      .select("*")
+      .eq("id", id)
+      .single();
     if (error) {
-      if (error.code === 'PGRST116') {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Persona with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
@@ -63,9 +75,14 @@ export const personaRepo = {
 
   async update(id: string, patch: PersonaUpdate) {
     const supabase = await getSupabase();
-    const { data, error } = await supabase.from('personas').update(patch).eq('id', id).select().single();
+    const { data, error } = await supabase
+      .from("personas")
+      .update(patch)
+      .eq("id", id)
+      .select()
+      .single();
     if (error) {
-      if (error.code === 'PGRST116') {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Persona with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
@@ -75,12 +92,12 @@ export const personaRepo = {
 
   async remove(id: string) {
     const supabase = await getSupabase();
-    const { error } = await supabase.from('personas').delete().eq('id', id);
+    const { error } = await supabase.from("personas").delete().eq("id", id);
     if (error) {
-      if (error.code === 'PGRST116') {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Persona with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
     }
-  }
-}; 
+  },
+};

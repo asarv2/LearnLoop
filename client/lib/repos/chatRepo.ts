@@ -39,7 +39,7 @@ export const ChatCreateSchema = z.object({
   title: z.string().min(1, "Title is required"),
   name: z.string().optional(),
   position: z.string().optional(),
-  type: z.enum(["regular", "cheating", "ai-assisted", "preparation"]),
+  type: z.enum(["regular", "cheating", "ai-assisted"]),
   voice: z.string().optional(),
   additional_info: z.string().optional(),
   attempt_id: z.string().nullable().optional(),
@@ -47,7 +47,7 @@ export const ChatCreateSchema = z.object({
   resume_id: z.string().nullable().optional(),
   training_id: z.string().nullable().optional(),
   training_type: z
-    .enum(["interview", "offboarding", "preparation"])
+    .enum(["interview", "offboarding"])
     .nullable()
     .optional(),
   user_id: z.string().nullable().optional(),
@@ -61,7 +61,7 @@ export const ChatUpdateSchema = z.object({
   name: z.string().optional(),
   position: z.string().optional(),
   type: z
-    .enum(["regular", "cheating", "ai-assisted", "preparation"])
+    .enum(["regular", "cheating", "ai-assisted"])
     .optional(),
   voice: z.string().optional(),
   additional_info: z.string().optional(),
@@ -70,7 +70,7 @@ export const ChatUpdateSchema = z.object({
   resume_id: z.string().nullable().optional(),
   training_id: z.string().nullable().optional(),
   training_type: z
-    .enum(["interview", "offboarding", "preparation"])
+    .enum(["interview", "offboarding"])
     .nullable()
     .optional(),
   user_id: z.string().nullable().optional(),
