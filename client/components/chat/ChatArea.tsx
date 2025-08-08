@@ -751,7 +751,7 @@ export default function ChatArea({
       )}
 
       {/* ✨ DEBUG: Add WebRTC debug panel for troubleshooting */}
-      {false && process.env.NODE_ENV === "development" && (
+      {process.env.NODE_ENV === "development" && (
         <WebRTCDebugPanel audioPlaybackRef={audioPlaybackRef} />
       )}
 

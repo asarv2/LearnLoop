@@ -90,7 +90,6 @@ async def run_realtime_agent(
                 raise Exception(f"Realtime agent error: {event.error}")
                 break
 
-
 class RealtimeVoiceAgent:
     def __init__(
         self,
