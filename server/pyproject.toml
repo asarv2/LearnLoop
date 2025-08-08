@@ -28,6 +28,7 @@ dependencies = [
     "psycopg[binary]~=3.1.18",
     "sqlacodegen~=3.0.0rc4",
     "python-socketio[asyncio_client]~=5.11.2",
+    "redis~=5.2.0",
     "numpy~=1.26.4",
 ]
 

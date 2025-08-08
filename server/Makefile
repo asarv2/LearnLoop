@@ -1,4 +1,4 @@
-.PHONY: help install install-dev dev format lint typecheck run prod test test-cov clean generate-models generate-tests stop venv venv-clean test-fast test-slow test-unit test-integration typecheck-strict
+.PHONY: help install install-dev dev format lint typecheck run prod test test-cov clean generate-models generate-tests stop venv venv-clean test-fast test-slow test-unit test-integration typecheck-strict redis-install redis-start redis-stop check-brew
 
 # Default Python interpreter
 PYTHON := python3.11
@@ -19,6 +19,37 @@ check-python:
 		echo "❌  python3.11 not found - please install Python 3.11"; \
 		exit 1; \
 	fi
+
+# --- Homebrew Redis Management ---
+# Check if Homebrew is installed
+check-brew:
+	@if ! command -v brew &> /dev/null; then \
+		echo "❌ Homebrew is not installed. Please install it to continue: https://brew.sh/"; \
+		exit 1; \
+	fi
+
+# Install Redis using Homebrew if not already installed
+redis-install: check-brew
+	@if ! brew ls --versions redis > /dev/null; then \
+		echo "🍺 Installing Redis via Homebrew..."; \
+		brew install redis; \
+		echo "✅ Redis installed."; \
+	else \
+		echo "🍺 Redis is already installed."; \
+	fi
+
+# Start Redis as a background service
+redis-start: redis-install
+	@echo "🍺 Starting Redis service via Homebrew...";
+	@brew services start redis
+	@echo "✅ Redis service started."
+
+# Stop the Redis service
+redis-stop: check-brew
+	@echo "🍺 Stopping Redis service...";
+	@brew services stop redis
+	@echo "✅ Redis service stopped."
+# --- End Homebrew Redis Management ---
 
 # Create virtual environment
 venv: check-python
@@ -56,7 +87,7 @@ install-dev: check-venv
 	@echo "✅ Development dependencies installed"
 
 # Install all dependencies (production + development)
-dev: venv install-dev
+dev: venv install-dev redis-start
 	@echo "✅ Development environment ready!"
 	@echo "To activate: source $(VENV_BIN)/activate"
 
@@ -134,14 +165,14 @@ test-integration: check-venv
 	@$(VENV_PYTHON) -m pytest tests/ -m "integration" -v
 
 # Run the development server
-run: check-venv generate-models
+run: check-venv redis-start generate-models
 	@echo "⇢ starting API server on :8000"
 	@$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Stop any running processes
-stop:
+stop: redis-stop
 	@if [ -f .model.pid ]; then kill `cat .model.pid` || true; rm .model.pid; fi
-	@echo "✅ Stopped running processes"
+	@echo "✅ Stopped running processes and services"
 
 # Start FastAPI via Gunicorn+Uvicorn for production
 prod: check-venv
@@ -170,7 +201,7 @@ help:
 	@echo "Environment setup:"
 	@echo "  venv         - Create virtual environment at .venv"
 	@echo "  venv-clean   - Remove virtual environment"
-	@echo "  dev          - Set up complete development environment (venv + install-dev)"
+	@echo "  dev          - Set up complete development environment (venv + redis + install-dev)"
 	@echo ""
 	@echo "Dependencies:"
 	@echo "  install      - Install production dependencies in venv"
@@ -191,10 +222,15 @@ help:
 	@echo "  test-integration - Run integration tests only"
 	@echo ""
 	@echo "Development:"
-	@echo "  run          - Start development server"
+	@echo "  run          - Start development server and Redis"
 	@echo "  prod         - Start production server"
-	@echo "  stop         - Stop running processes"
+	@echo "  stop         - Stop running processes and Redis"
 	@echo "  clean        - Clean up generated files and cache"
+	@echo ""
+	@echo "Services (Homebrew):"
+	@echo "  redis-install - Install Redis via Homebrew"
+	@echo "  redis-start   - Start the Redis service"
+	@echo "  redis-stop    - Stop the Redis service"
 	@echo ""
 	@echo "Code generation:"
 	@echo "  generate-models - Generate SQLModel classes from database schema"

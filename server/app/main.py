@@ -46,6 +46,11 @@ allowed_origins = [
     f"http://localhost:{client_port}",
 ]
 
+# Import Redis functions from extensions
+from app.extensions import (cleanup_redis_client, find_profile_by_socket,
+                            get_socket_owner, init_redis_client,
+                            remove_socket_owner, set_socket_owner)
+
 # Store active chat connections
 active_connections: dict[str, str] = {}
 
@@ -54,7 +59,6 @@ active_runs: dict[str, Any] = {}
 
 # Profile-based connection management (simplified)
 profiles_live: Dict[str, RTCPeerConnection] = {}  # profile_id -> RTCPeerConnection
-socket_owner: Dict[str, str] = {}  # profile_id -> socket_id
 
 # ICE candidate buffering for profiles without remote description
 pending_ice: Dict[str, List[RTCIceCandidate]] = defaultdict(list)
@@ -210,7 +214,7 @@ async def cleanup_profile_connection(profile_id: str, reason: str = "cleanup") -
     logger.info(f"Cleaning up profile {profile_id} connections - {reason}")
     
     # Remove from socket ownership
-    socket_owner.pop(profile_id, None)
+    await remove_socket_owner(profile_id)
     
     # Clear any buffered ICE candidates
     pending_ice.pop(profile_id, None)
@@ -321,12 +325,13 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
     async def on_connectionstatechange() -> None:
         logger.info(f"WebRTC connection state changed to {pc.connectionState} for profile {profile_id}")
         
-        # Only emit if this is still the current connection
-        if profile_id in socket_owner:
+        # Get current socket owner for this profile
+        current_socket_owner = await get_socket_owner(profile_id)
+        if current_socket_owner:
             await sio.emit('webrtc_connection_state', {
                 'profile_id': profile_id,
                 'state': pc.connectionState
-            }, room=profile_id)
+            }, room=current_socket_owner)
             
             if pc.connectionState == "failed" or pc.connectionState == "closed":
                 # Clean up on failure/closure
@@ -336,17 +341,19 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
     async def on_iceconnectionstatechange() -> None:
         logger.info(f"WebRTC ICE connection state changed to {pc.iceConnectionState} for profile {profile_id}")
         
-        # Only emit if this is still the current connection
-        if profile_id in socket_owner:
+        # Get current socket owner for this profile
+        current_socket_owner = await get_socket_owner(profile_id)
+        if current_socket_owner:
             await sio.emit('webrtc_ice_state', {
                 'profile_id': profile_id,
                 'state': pc.iceConnectionState
-            }, room=profile_id)
+            }, room=current_socket_owner)
     
     @pc.on("icecandidate")  # type: ignore
     async def on_icecandidate(candidate: RTCIceCandidate | None) -> None:
-        # Only emit if this is still the current connection
-        if profile_id in socket_owner:
+        # Get current socket owner for this profile
+        current_socket_owner = await get_socket_owner(profile_id)
+        if current_socket_owner:
             await sio.emit(
                 "webrtc_ice_candidate",
                 {
@@ -357,7 +364,7 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                         "sdpMLineIndex": candidate.sdpMLineIndex,
                     } if candidate else None,      # <-- None when gathering is done
                 },
-                room=profile_id,
+                room=current_socket_owner,
             )
             
     # ✨ REALTIME VOICE AGENT BRIDGE
@@ -868,20 +875,19 @@ async def connect(sid: str, environ: Any, auth: Any) -> bool:
 
     if profile_id:
         # Check if another socket is already active for this profile
-        if profile_id in socket_owner:
-            old_sid = socket_owner[profile_id]
-            if old_sid != sid:
-                logger.warning(
-                    f"Profile {profile_id} already has active socket {old_sid}. "
-                    f"Closing old connection and accepting new one {sid}."
-                )
-                # Clean up the entire old session for this profile
-                await cleanup_profile_connection(profile_id, "new socket takeover")
-                # Forcefully disconnect the old socket from the server-side
-                await sio.disconnect(old_sid, ignore_queue=True)
+        old_sid = await get_socket_owner(profile_id)
+        if old_sid and old_sid != sid:
+            logger.warning(
+                f"Profile {profile_id} already has active socket {old_sid}. "
+                f"Closing old connection and accepting new one {sid}."
+            )
+            # Clean up the entire old session for this profile
+            await cleanup_profile_connection(profile_id, "new socket takeover")
+            # Forcefully disconnect the old socket from the server-side
+            await sio.disconnect(old_sid, ignore_queue=True)
 
         # Store socket ownership
-        socket_owner[profile_id] = sid
+        await set_socket_owner(profile_id, sid)
         await sio.enter_room(sid, profile_id)
         
         # Update database to mark profile as active
@@ -929,11 +935,7 @@ async def disconnect(sid: str) -> None:
     logger.info(f"Client disconnecting: {sid}")
     
     # Find and clean up profile for this socket
-    profile_to_cleanup = None
-    for profile_id, socket_id in socket_owner.items():
-        if socket_id == sid:
-            profile_to_cleanup = profile_id
-            break
+    profile_to_cleanup = await find_profile_by_socket(sid)
     
     if profile_to_cleanup:
         await cleanup_profile_connection(profile_to_cleanup, "socket disconnect")
@@ -957,7 +959,7 @@ async def webrtc_start(sid: str, data: Dict[str, Any]) -> None:
             return
         
         # Verify this socket owns this profile
-        if profile_id not in socket_owner or socket_owner[profile_id] != sid:
+        if await get_socket_owner(profile_id) != sid:
             await sio.emit('webrtc_error', {
                 'error': 'Socket not authorized for this profile'
             }, room=sid)
@@ -1004,7 +1006,7 @@ async def webrtc_answer(sid: str, data: Dict[str, Any]) -> None:
         return
 
     # Verify profile exists and socket ownership
-    if profile_id not in socket_owner or socket_owner[profile_id] != sid:
+    if await get_socket_owner(profile_id) != sid:
         logger.warning(f"Received webrtc_answer for unauthorized profile: {profile_id}")
         return
         
@@ -1066,7 +1068,7 @@ async def webrtc_ice_candidate(sid: str, data: dict[str, Any]) -> None:
         return
 
     # Verify profile exists and socket ownership
-    if profile_id not in socket_owner or socket_owner[profile_id] != sid:
+    if await get_socket_owner(profile_id) != sid:
         logger.warning(f"Received ICE candidate for unauthorized profile: {profile_id}")
         return
 
@@ -1126,7 +1128,7 @@ async def webrtc_start_audio(sid: str, data: Dict[str, Any]) -> None:
     logger.info(f"Client {sid} is starting audio for chat {chat_id}, beginning renegotiation.")
     
     # Verify profile exists and socket ownership
-    if profile_id not in socket_owner or socket_owner[profile_id] != sid:
+    if await get_socket_owner(profile_id) != sid:
         logger.error(f"Unauthorized audio start request for profile {profile_id}.")
         await sio.emit('webrtc_error', {'error': 'Profile not authorized.'}, room=sid)
         return
@@ -1256,6 +1258,9 @@ def get_socketio_instance() -> socketio.AsyncServer:
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
     async with contextlib.AsyncExitStack():
+        # Initialize Redis client for socket ownership management
+        await init_redis_client()
+        
         # Log WebRTC configuration
         logger.info("WebRTC Configuration:")
         logger.info(f"  TURN_USERNAME: {os.getenv('TURN_USERNAME', 'not set')}")
@@ -1264,6 +1269,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
         logger.info(f"  STUN_URI: {os.getenv('STUN_URI', 'not set')}")
         
         yield
+        
+        # Clean up Redis client on shutdown
+        await cleanup_redis_client()
 
 # Create FastAPI app with lifespan
 fastapi_app = FastAPI(title="GLOW API", lifespan=lifespan)
