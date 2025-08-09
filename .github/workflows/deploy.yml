@@ -40,7 +40,7 @@ jobs:
     - name: Build and push client image
       uses: docker/build-push-action@v5
       with:
-        context: .
+        context: ./client
         push: true
         tags: ${{ steps.meta-client.outputs.tags }}
         labels: ${{ steps.meta-client.outputs.labels }}
@@ -51,6 +51,26 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           NEXT_PUBLIC_SUPABASE_SCHEMA=${{ secrets.NEXT_PUBLIC_SUPABASE_SCHEMA }}
           INTERNAL_API_BASE=http://server:8000
+
+    # Build and push server image
+    - name: Extract metadata for server Docker image
+      id: meta-server
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.actor }}/learnloop-server
+        tags: |
+          type=raw,value=latest
+          type=sha,prefix={{branch}}-
+        
+    - name: Build and push server image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./server
+        push: true
+        tags: ${{ steps.meta-server.outputs.tags }}
+        labels: ${{ steps.meta-server.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
   deploy:
     runs-on: self-hosted
