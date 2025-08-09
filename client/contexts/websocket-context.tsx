@@ -184,7 +184,118 @@ export function WebSocketProvider({
     pendingIce.current = [];
     webrtcStarted.current = false; // Allow handshake on the next connection
     logInfo("WebRTC connection resources cleaned up.");
-  }, []);
+  }, [audioPlaybackRef]);
+
+  // ✅ STEP 1: Create a new, centralized function to handle offers.
+  const handleOffer = useCallback(
+    async (data: {
+      offer: RTCSessionDescriptionInit;
+      ice_config: RTCIceServer[];
+    }) => {
+      let pc = webRTCPeerConnection.current;
+      const socket = socketRef.current;
+
+      if (!socket || !profileId) {
+        logError("Cannot handle offer: socket or profileId not available.");
+        return;
+      }
+
+      // Clean up if the connection is stale/closed
+      if (pc && pc.signalingState === "closed") {
+        logInfo("Ignoring offer for closed peer connection, cleaning up.");
+        cleanupWebRTC();
+        pc = null;
+      }
+
+      // This block only runs on the very first offer
+      if (!pc) {
+        logInfo("Creating new PeerConnection for initial setup.");
+        pc = new RTCPeerConnection({ iceServers: data.ice_config });
+        webRTCPeerConnection.current = pc;
+
+        // Attach all event listeners ONCE during initial creation
+        pc.onicecandidate = (event) => {
+          if (socket.connected && event.candidate) {
+            socket.emit("webrtc_ice_candidate", {
+              profile_id: profileId,
+              candidate: event.candidate,
+            });
+          }
+        };
+
+        pc.onconnectionstatechange = () => {
+          const currentState = webRTCPeerConnection.current?.connectionState;
+          if (currentState) {
+            setIsWebRTCConnected(currentState === "connected");
+            logInfo(`WebRTC connection state: ${currentState}`);
+          }
+        };
+
+        pc.ontrack = (event) => {
+          logInfo("Received remote audio track from server", {
+            streamId: event.streams[0]?.id,
+            trackKind: event.track.kind,
+            readyState: event.track.readyState,
+          });
+          if (event.track.kind === "audio" && event.streams[0]) {
+            const remoteAudioStream = event.streams[0];
+
+            // --- START OF THE FIX ---
+            // 1. Attach the stream directly to the audio element to bypass React state latency.
+            if (audioPlaybackRef.current) {
+              logInfo(
+                "Attaching stream directly to audio element in ontrack handler."
+              );
+              audioPlaybackRef.current.srcObject = remoteAudioStream;
+            } else {
+              logError(
+                "Audio playback ref not available at the time of track event."
+              );
+            }
+            // --- END OF THE FIX ---
+
+            // 2. Still update the state for other components that might need it.
+            setRemoteStream(remoteAudioStream);
+          }
+        };
+
+        pc.ondatachannel = (event) => {
+          const channel = event.channel;
+          logInfo(`Received data channel from server: ${channel.label}`);
+          webRTCDataChannels.current.set(channel.label, channel);
+          channel.onopen = () =>
+            logInfo(`Server data channel opened: ${channel.label}`);
+          channel.onclose = () => {
+            logInfo(`Server data channel closed: ${channel.label}`);
+            webRTCDataChannels.current.delete(channel.label);
+          };
+          channel.onerror = (error) =>
+            logError(`Server data channel error for ${channel.label}:`, error);
+        };
+      }
+
+      // This logic runs for EVERY offer (initial + renegotiation)
+      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+
+      // Flush any pending ICE candidates
+      pendingIce.current.forEach((candidate) => {
+        pc.addIceCandidate(candidate).catch((e) =>
+          logError("Error adding pending ICE", e)
+        );
+      });
+      pendingIce.current = [];
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socket.emit("webrtc_answer", {
+        profile_id: profileId,
+        answer: { sdp: answer.sdp, type: answer.type },
+      });
+      logInfo("Sent WebRTC answer in response to offer.");
+    },
+    [profileId, cleanupWebRTC, audioPlaybackRef] // Add dependencies
+  );
 
   // ✨ NEW: Effect to reliably connect the remote stream to the audio element
   useEffect(() => {
@@ -212,10 +323,11 @@ export function WebSocketProvider({
         const audioOnlyStream = new MediaStream(audioTracks);
         audioEl.srcObject = audioOnlyStream;
 
-        // Attempt to play the audio
-        audioEl.play().catch((error) => {
-          logError("Audio element autoplay failed", error);
-        });
+        // ❌ REMOVE THE PLAY CALL FROM HERE!
+        // The browser will block this and cause the error.
+        // audioEl.play().catch((error) => {
+        //   logError("Audio element autoplay failed", error);
+        // });
       }
     }
   }, [remoteStream, audioPlaybackRef]);
@@ -566,122 +678,16 @@ export function WebSocketProvider({
       // WebRTC event handlers
       socket.on(
         "webrtc_offer",
-        async (data: {
+        (data: {
           profile_id: string;
-          offer: { sdp: string; type: string };
+          offer: RTCSessionDescriptionInit;
           ice_config: RTCIceServer[];
         }) => {
-          logInfo("Received WebRTC offer", { profileId: data.profile_id });
-
-          try {
-            let pc = webRTCPeerConnection.current;
-
-            if (pc && pc.signalingState === "closed") {
-              logInfo(
-                "Ignoring offer for closed peer connection, cleaning up."
-              );
-              cleanupWebRTC(); // Clean up the stale connection
-              pc = null; // Ensure a new one is created
-            }
-
-            if (!pc) {
-              logInfo("Creating new PeerConnection for initial setup.");
-              pc = new RTCPeerConnection({
-                iceServers: data.ice_config,
-              });
-              webRTCPeerConnection.current = pc;
-
-              pc.onicecandidate = (event) => {
-                if (socket.connected) {
-                  socket.emit("webrtc_ice_candidate", {
-                    profile_id: profileId,
-                    candidate: event.candidate
-                      ? {
-                          candidate: event.candidate.candidate,
-                          sdpMid: event.candidate.sdpMid,
-                          sdpMLineIndex: event.candidate.sdpMLineIndex,
-                        }
-                      : null,
-                  });
-                }
-              };
-
-              pc.onconnectionstatechange = () => {
-                if (webRTCPeerConnection.current) {
-                  const currentState =
-                    webRTCPeerConnection.current.connectionState;
-                  setIsWebRTCConnected(currentState === "connected");
-                  logInfo(`WebRTC connection state: ${currentState}`);
-                }
-              };
-
-              pc.ontrack = (event) => {
-                logInfo("Received remote audio track from server", {
-                  streamId: event.streams[0]?.id,
-                  trackKind: event.track.kind,
-                  trackEnabled: event.track.enabled,
-                  trackMuted: event.track.muted,
-                  trackReadyState: event.track.readyState,
-                });
-
-                // ✨ FIXED: Use React state to handle the race condition reliably
-                if (event.track.kind === "audio" && event.streams[0]) {
-                  logInfo("Setting remote stream state for audio connection");
-                  setRemoteStream(event.streams[0]);
-                }
-              };
-
-              pc.ondatachannel = (event) => {
-                const channel = event.channel;
-                logInfo(`Received data channel from server: ${channel.label}`);
-
-                webRTCDataChannels.current.set(channel.label, channel);
-
-                channel.onopen = () => {
-                  logInfo(`Server data channel opened: ${channel.label}`);
-                };
-
-                channel.onclose = () => {
-                  logInfo(`Server data channel closed: ${channel.label}`);
-                  webRTCDataChannels.current.delete(channel.label);
-                };
-
-                channel.onerror = (error) => {
-                  logError(
-                    `Server data channel error for ${channel.label}:`,
-                    error
-                  );
-                };
-              };
-            }
-
-            await pc.setRemoteDescription({
-              sdp: data.offer.sdp,
-              type: data.offer.type as RTCSdpType,
+          if (data.profile_id === profileId) {
+            logInfo("Received WebRTC offer from server.");
+            handleOffer(data).catch((error) => {
+              logError("Error in handleOffer", error);
             });
-
-            // Flush any ICE candidates gathered before SDP
-            pendingIce.current.forEach((candidate) => {
-              pc.addIceCandidate(candidate).catch((error) => {
-                logError("Error adding pending ICE candidate", error);
-              });
-            });
-            pendingIce.current.length = 0;
-
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-
-            socket.emit("webrtc_answer", {
-              profile_id: data.profile_id,
-              answer: {
-                sdp: answer.sdp,
-                type: answer.type,
-              },
-            });
-
-            logInfo("Sent WebRTC answer");
-          } catch (error) {
-            logError("Error handling WebRTC offer", error);
           }
         }
       );
@@ -767,6 +773,7 @@ export function WebSocketProvider({
     playTrack,
     audioPlaybackRef,
     cleanupWebRTC,
+    handleOffer,
   ]);
 
   // Room management (chat_id-based)
