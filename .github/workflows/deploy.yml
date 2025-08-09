@@ -50,6 +50,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           NEXT_PUBLIC_SUPABASE_SCHEMA=${{ secrets.NEXT_PUBLIC_SUPABASE_SCHEMA }}
+          INTERNAL_API_BASE=http://server:8000
 
   deploy:
     runs-on: self-hosted
@@ -70,13 +71,41 @@ jobs:
     # 2️⃣ Pull and restart
     - name: Deploy with newest images
       env:
+        # Client environment variables
         SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
         NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
         NEXT_PUBLIC_SUPABASE_SCHEMA: ${{ secrets.NEXT_PUBLIC_SUPABASE_SCHEMA }}
+        
+        # Server environment variables
         GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        
+        # Database environment variables
+        DB_HOST: ${{ secrets.DB_HOST }}
+        DB_PORT: ${{ secrets.DB_PORT }}
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+        
+        # API and Socket.IO environment variables
+        ORIGIN: ${{ secrets.ORIGIN }}
+        
+        # WebRTC environment variables
+        TURN_URI: ${{ secrets.TURN_URI }}
+        STUN_URI: ${{ secrets.STUN_URI }}
+        TURN_USERNAME: ${{ secrets.TURN_USERNAME }}
+        TURN_PASSWORD: ${{ secrets.TURN_PASSWORD }}
+        TURN_REALM: ${{ secrets.TURN_REALM }}
+        TURN_PUBLIC_IP: ${{ secrets.TURN_PUBLIC_IP }}
+        
+        # Docker image references
         LEARNLOOP_CLIENT_IMAGE: ghcr.io/ashoksaravanan222/learnloop-client:latest
+        LEARNLOOP_SERVER_IMAGE: ghcr.io/ashoksaravanan222/learnloop-server:latest
+        
+        # Server scaling
+        SERVER_REPLICAS: ${{ secrets.SERVER_REPLICAS }}
+        
       run: |
         docker compose pull
         docker compose up -d

@@ -21,7 +21,7 @@ services:
       - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       - NEXT_PUBLIC_SUPABASE_SCHEMA=${NEXT_PUBLIC_SUPABASE_SCHEMA}
-    # Traefik labels moved to `nginx` service
+      - INTERNAL_API_BASE=http://server:8000
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://0.0.0.0:3000/ >/dev/null 2>&1 || exit 1"]
       interval: 10s
@@ -38,11 +38,26 @@ services:
       - internal
       - web
     environment:
+      # ai
       - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
-      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-      - NEXT_PUBLIC_SUPABASE_SCHEMA=${NEXT_PUBLIC_SUPABASE_SCHEMA}
+
+      # database
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+
+      # api + socket.io
+      - ORIGIN=${ORIGIN}
+      - REDIS_URL=http://redis:6379
+
+      # webrtc
+      - TURN_URI=${TURN_URI}
+      - STUN_URI=${STUN_URI}
+      - TURN_USERNAME=${TURN_USERNAME}
+      - TURN_PASSWORD=${TURN_PASSWORD}
 
     labels:
       - traefik.enable=true
@@ -81,7 +96,11 @@ services:
     restart: unless-stopped
     volumes:
       - ./certs:/etc/coturn/certs:ro
-    env_file: .env
+    environment:
+      - TURN_REALM=${TURN_REALM}
+      - TURN_USERNAME=${TURN_USERNAME}
+      - TURN_PASSWORD=${TURN_PASSWORD}
+      - TURN_PUBLIC_IP=${TURN_PUBLIC_IP}
     depends_on:
       - acme-extractor
     ports:
