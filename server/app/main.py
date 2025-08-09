@@ -38,15 +38,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-client_port = os.getenv("CLIENT_PORT", "3000")
+origin = os.getenv("ORIGIN", "http://localhost:3000")
 
 # ---------------------------------------------------------------------------+
 # 2.  CORS etc. remains intact                                               +
 # ---------------------------------------------------------------------------+
 # Allow all origins
-allowed_origins = [
-    f"http://localhost:{client_port}",
-]
+allowed_origins = [origin]
 
 # Import Redis functions from extensions
 from app.extensions import (cleanup_redis_client, find_profile_by_socket,
