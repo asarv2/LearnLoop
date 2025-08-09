@@ -381,7 +381,7 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
         """
         # ✅ ADDED a top-level try/except to catch any silent failures
         try:
-            logger.info(f"VOICE_BRIDGE_TASK: Starting for profile {profile_id}")
+            logger.info(f"Starting voice bridge task for profile {profile_id}")
 
             # Lazy imports to avoid circulars
             from app.db import get_session
@@ -395,35 +395,26 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
             try:
                 chat_id_for_voice = getattr(pc, "_last_chat_id", None)
                 if not chat_id_for_voice:
-                    logger.warning("VOICE_BRIDGE_TASK: ❌ FAILED - No chat_id associated with PC.")
+                    logger.warning("No chat_id associated with PC.")
                     return
-                # ✅ ADDED log
-                logger.info(f"VOICE_BRIDGE_TASK: Found chat_id: {chat_id_for_voice}")
 
                 chat_obj = db_session.exec(select(Chats).where(Chats.id == chat_id_for_voice)).one_or_none()
                 if not chat_obj:
-                    logger.error(f"VOICE_BRIDGE_TASK: ❌ FAILED - Chat {chat_id_for_voice} not found in DB.")
+                    logger.error(f"Chat {chat_id_for_voice} not found in DB.")
                     return
-                # ✅ ADDED log
-                logger.info(f"VOICE_BRIDGE_TASK: Successfully fetched chat object.")
 
                 persona_id = get_persona_id_from_chat(db_session, chat_obj)
                 if not persona_id:
-                    logger.error(f"VOICE_BRIDGE_TASK: ❌ FAILED - No persona associated with chat {chat_id_for_voice}.")
+                    logger.error(f"No persona associated with chat {chat_id_for_voice}.")
                     return
-                # ✅ ADDED log
-                logger.info(f"VOICE_BRIDGE_TASK: Found persona_id: {persona_id}")
 
                 # Create realtime session for this persona
                 session = await create_realtime_voice_session(persona_id, db_session)
-                # ✅ ADDED log
-                logger.info(f"VOICE_BRIDGE_TASK: Successfully created realtime voice session.")
                 
                 # Attach session to the peer connection for later access
                 setattr(pc, "_realtime_session", session)
             except Exception as setup_error:
-                # ✅ ADDED specific error logging for the setup phase
-                logger.error(f"VOICE_BRIDGE_TASK: ❌ FAILED during setup phase: {setup_error}", exc_info=True)
+                logger.error(f"Failed during voice bridge setup: {setup_error}", exc_info=True)
                 db_session.close()
                 return  # Exit cleanly if setup fails
 
@@ -432,9 +423,9 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                 silence_chunk = b"\x00" * (960 * 2)  # 20ms @ 48kHz mono s16 = 1920 bytes
                 for _ in range(20):  # ~400ms
                     out_track.add_chunk(silence_chunk)
-                logger.info("VOICE_BRIDGE_TASK: ✅ Primed outbound audio with initial silence frames.")
+                logger.info("Primed outbound audio with initial silence frames.")
             except Exception as e:
-                logger.warning(f"VOICE_BRIDGE_TASK: ⚠️ Failed to prime silence frames: {e}")
+                logger.warning(f"Failed to prime silence frames: {e}")
 
             # Resamplers
             # Incoming from client -> 24k s16 mono for model
@@ -454,21 +445,16 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                     assistant_message_id: Optional[Any] = None
                     accumulated_assistant: str = ""
                     
-                    # ✅ SOLUTION: Create a buffer for the resampled audio
+                    # Create a buffer for the resampled audio
                     audio_buffer = b""
                     REQUIRED_FRAME_SIZE = 1920  # 960 samples * 2 bytes/sample for 48kHz s16 mono
                     
-                    logger.info("[DEBUG] Starting to listen for session events...")
                     async for event in session:
                         
-                        # ✅ CATCH-ALL DEBUG LOG: This will print EVERY event from the session
-                        logger.info(f"[DEBUG] Received session event: type='{event.type}'")
                         if event.type == "audio":
-                            # ✅ Log details about the audio event
                             audio_data = event.audio.data
-                            logger.info(f"[DEBUG] Received 'audio' event with {len(audio_data)} bytes.")
                             if not audio_data:
-                                logger.warning("[DEBUG] Received 'audio' event but it was empty!")
+                                logger.warning("Received 'audio' event but it was empty!")
 
                             try:
                                 # Create a frame from the raw 24kHz model audio
@@ -493,10 +479,8 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                         audio_buffer = audio_buffer[REQUIRED_FRAME_SIZE:]
                                         
                             except Exception as e:
-                                logger.error(f"[DEBUG] Error processing 'audio' event: {e}", exc_info=True)
+                                logger.error(f"Error processing 'audio' event: {e}", exc_info=True)
                         elif event.type == "raw_model_event":
-                            # ✅ Log the raw event to see everything
-                            logger.info(f"[DEBUG] Raw Model Event Data: {event.data}")
                             raw_event = event.data
                             # Handle vendor events for transcripts and turn markers
                             if getattr(raw_event, "type", "") == "transcript_delta":
@@ -639,22 +623,19 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                         finally:
                                             assistant_message_id = None
                                             accumulated_assistant = ""
-                        # ✅ ADD THIS BLOCK to explicitly catch and log errors from the session
                         elif event.type == "error":
-                            logger.error(f"[DEBUG] Received 'error' event from session: {event.error}")
+                            logger.error(f"Received 'error' event from session: {event.error}")
                             # Convert the error object to a string before sending
                             error_message = str(event.error) if event.error else "An unknown error occurred."
                             await emit_transport({"type": "error", "error": error_message})
                         
-                        # ✅ ADD AN ELSE BLOCK to catch any unexpected event types
                         else:
-                            logger.warning(f"[DEBUG] Received UNKNOWN session event type: '{event.type}'")
+                            logger.warning(f"Received unknown session event type: '{event.type}'")
                 except asyncio.CancelledError:
-                    logger.info("[DEBUG] consume_session_events task was cancelled.")
+                    logger.info("consume_session_events task was cancelled.")
                 except Exception as e:
-                    logger.error(f"[DEBUG] CRASH in consume_session_events loop: {e}", exc_info=True)
+                    logger.error(f"Error in consume_session_events loop: {e}", exc_info=True)
                 finally:
-                    logger.info("[DEBUG] Closing session and database connection in consume_session_events.")
                     await session.close()
                     db_session.close()
 
@@ -667,17 +648,14 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                             mono_array = s16_array[0]
                             audio_bytes = mono_array.tobytes()
                             
-                            # ✅ Log the audio being sent TO the session
-                            logger.info(f"[DEBUG] Pumping {len(audio_bytes)} bytes of user audio to session.")
-                            
                             # Always send with commit=False. We will commit manually when turn ends.
                             await session.send_audio(audio_bytes, commit=False)
                         # Pace a bit to avoid flooding
                         await asyncio.sleep(0)
                 except asyncio.CancelledError:
-                    logger.info("[DEBUG] pump_incoming_audio task was cancelled.")
+                    logger.info("pump_incoming_audio task was cancelled.")
                 except Exception as e:
-                    logger.error(f"[DEBUG] CRASH in pump_incoming_audio loop: {e}", exc_info=True)
+                    logger.error(f"Error in pump_incoming_audio loop: {e}", exc_info=True)
 
             # Run both tasks
             consumer_task = asyncio.create_task(consume_session_events())
@@ -694,11 +672,11 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
 
         except Exception as e:
             # This will catch any unexpected errors in the entire task
-            logger.error(f"VOICE_BRIDGE_TASK: ❌ UNHANDLED EXCEPTION for profile {profile_id}: {e}", exc_info=True)
+            logger.error(f"Unhandled exception in voice bridge task for profile {profile_id}: {e}", exc_info=True)
         finally:
             # Ensure resources are cleaned up and the client track is notified
             out_track.end_stream()
-            logger.info(f"VOICE_BRIDGE_TASK: Task finished or exited for profile {profile_id}.")
+            logger.info(f"Voice bridge task finished for profile {profile_id}.")
 
 
 
