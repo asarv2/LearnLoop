@@ -412,6 +412,9 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                 session = await create_realtime_voice_session(persona_id, db_session)
                 # ✅ ADDED log
                 logger.info(f"VOICE_BRIDGE_TASK: Successfully created realtime voice session.")
+                
+                # Attach session to the peer connection for later access
+                setattr(pc, "_realtime_session", session)
             except Exception as setup_error:
                 # ✅ ADDED specific error logging for the setup phase
                 logger.error(f"VOICE_BRIDGE_TASK: ❌ FAILED during setup phase: {setup_error}", exc_info=True)
@@ -494,46 +497,47 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                     "transcript": transcript_text,
                                     "itemId": item_id,
                                 })
-                                # Persist user message mirroring training flow
-                                try:
-                                    # Find user's persona by profile_id
-                                    user_persona = db_session.exec(
-                                        select(Personas).where(Personas.profile_id == profile_id)
-                                    ).one_or_none()
-                                    user_persona_id = user_persona.id if user_persona else None
+                                # Persist user message mirroring training flow, but only if transcript is non-empty
+                                if transcript_text.strip():
+                                    try:
+                                        # Find user's persona by profile_id
+                                        user_persona = db_session.exec(
+                                            select(Personas).where(Personas.profile_id == profile_id)
+                                        ).one_or_none()
+                                        user_persona_id = user_persona.id if user_persona else None
 
-                                    user_message = Messages(
-                                        chat_id=chat_id_for_voice,
-                                        content=transcript_text.strip(),
-                                        role="user",
-                                        training_id=chat_obj.training_id,  # type: ignore[union-attr]
-                                        completed=True,
-                                        persona_id=user_persona_id,
-                                    )
-                                    db_session.add(user_message)
-                                    db_session.commit()
-                                    db_session.refresh(user_message)
+                                        user_message = Messages(
+                                            chat_id=chat_id_for_voice,
+                                            content=transcript_text.strip(),
+                                            role="user",
+                                            training_id=chat_obj.training_id,  # type: ignore[union-attr]
+                                            completed=True,
+                                            persona_id=user_persona_id,
+                                        )
+                                        db_session.add(user_message)
+                                        db_session.commit()
+                                        db_session.refresh(user_message)
 
-                                    await sio.emit(
-                                        "user_message_saved",
-                                        {
-                                            "chat_id": chat_id_for_voice,
-                                            "message": {
-                                                "id": str(user_message.id),
-                                                "chat_id": str(user_message.chat_id),
-                                                "content": user_message.content,
-                                                "role": user_message.role,
-                                                "persona_id": str(user_persona_id) if user_persona_id else None,
-                                                "completed": user_message.completed,
-                                                "created_at": user_message.created_at.isoformat(),
-                                                "completed_at": user_message.completed_at.isoformat() if user_message.completed_at else None,
+                                        await sio.emit(
+                                            "user_message_saved",
+                                            {
+                                                "chat_id": chat_id_for_voice,
+                                                "message": {
+                                                    "id": str(user_message.id),
+                                                    "chat_id": str(user_message.chat_id),
+                                                    "content": user_message.content,
+                                                    "role": user_message.role,
+                                                    "persona_id": str(user_persona_id) if user_persona_id else None,
+                                                    "completed": user_message.completed,
+                                                    "created_at": user_message.created_at.isoformat(),
+                                                    "completed_at": user_message.completed_at.isoformat() if user_message.completed_at else None,
+                                                },
                                             },
-                                        },
-                                        room=chat_id_for_voice,
-                                    )
-                                except Exception as ex:
-                                    logger.error(f"VOICE_BRIDGE: Failed to persist user message: {ex}")
-                                    db_session.rollback()  # Rollback failed transaction
+                                            room=chat_id_for_voice,
+                                        )
+                                    except Exception as ex:
+                                        logger.error(f"VOICE_BRIDGE: Failed to persist user message: {ex}")
+                                        db_session.rollback()  # Rollback failed transaction
                             elif getattr(raw_event, "type", "") == "raw_server_event":
                                 data = getattr(raw_event, "data", {})
                                 evt_type = data.get("type") if isinstance(data, dict) else None
@@ -628,24 +632,13 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
 
             async def pump_incoming_audio() -> None:
                 try:
-                    frames_since_commit = 0
-                    last_commit_monotonic = time.monotonic()
                     while True:
                         in_frame = await in_track.recv()
                         for frame in in_to_model_resampler.resample(in_frame):
                             s16_array = frame.to_ndarray()
                             mono_array = s16_array[0]
+                            # Always send with commit=False. We will commit manually when turn ends.
                             await session.send_audio(mono_array.tobytes(), commit=False)
-                            frames_since_commit += 1
-
-                            # Every ~240ms, send a commit to flush the buffer and trigger VAD turns
-                            if frames_since_commit >= 12 or (time.monotonic() - last_commit_monotonic) > 0.5:
-                                try:
-                                    await session.send_audio(b"", commit=True)
-                                except Exception:
-                                    pass
-                                frames_since_commit = 0
-                                last_commit_monotonic = time.monotonic()
                         # Pace a bit to avoid flooding
                         await asyncio.sleep(0)
                 except asyncio.CancelledError:
@@ -1215,6 +1208,31 @@ async def webrtc_stop_audio(sid: str, data: Dict[str, Any]) -> None:
     logger.info(f"Client {sid} is stopping audio for chat {chat_id}")
     # Here you would add logic to signal the audio processing task to stop.
     # For now, we'll just log it. A robust implementation would use an asyncio.Event or similar.
+
+@sio.event  # type: ignore
+async def webrtc_finalize_turn(sid: str, data: Dict[str, Any]) -> None:
+    """
+    Client has signaled the end of a push-to-talk utterance.
+    Finalize the turn by sending a final commit to the RealtimeSession.
+    """
+    profile_id = data.get("profile_id")
+    if not profile_id:
+        return
+
+    pc = profiles_live.get(profile_id)
+    if not pc:
+        return
+
+    session = getattr(pc, "_realtime_session", None)
+    if session:
+        try:
+            # Send an empty audio packet with commit=True to finalize the turn
+            await session.send_audio(b"", commit=True)
+            logger.info(f"Finalized audio turn for profile {profile_id}")
+        except Exception as e:
+            logger.error(f"Error finalizing audio turn for profile {profile_id}: {e}")
+    else:
+        logger.warning(f"No realtime session found for profile {profile_id}")
 
 # SPEC CHANGE: Renegotiation answer handler is no longer needed
 # The server now uses a persistent audio track, eliminating the need for renegotiation

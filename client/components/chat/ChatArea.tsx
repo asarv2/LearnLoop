@@ -64,6 +64,7 @@ export default function ChatArea({
     enableServerAudio,
     disableServerAudio,
     triggerServerAudio,
+    emitFinalizeTurn, // ✨ Get the new function from the context
   } = useWebSocket();
 
   // Voice-related state
@@ -263,7 +264,10 @@ export default function ChatArea({
     // This function's only job is to mute the microphone.
     setMicrophoneMuted(true);
     setMicActive(false);
-  }, [setMicrophoneMuted]);
+
+    // ✅ FIX: Signal the server that the user is done talking.
+    emitFinalizeTurn();
+  }, [setMicrophoneMuted, emitFinalizeTurn]);
 
   // Handle WebRTC text message sending with generic assistant persona
   // This approach creates a temporary assistant message with persona_id: null
