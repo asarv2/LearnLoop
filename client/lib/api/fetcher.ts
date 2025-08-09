@@ -7,10 +7,19 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+export async function api<T>(
+  input: RequestInfo,
+  init?: RequestInit
+): Promise<T> {
+  // Don't set Content-Type header for FormData - browser will set it automatically
+  const headers =
+    init?.body instanceof FormData
+      ? init?.headers || {}
+      : { "Content-Type": "application/json", ...(init?.headers || {}) };
+
   const res = await fetch(input, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+    headers,
   });
 
   if (!res.ok) {
@@ -18,4 +27,4 @@ export async function api<T>(input: RequestInfo, init?: RequestInit): Promise<T>
     throw new ApiError(res.status, body?.error || res.statusText);
   }
   return res.json() as Promise<T>;
-} 
+}
