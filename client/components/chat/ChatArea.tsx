@@ -72,6 +72,7 @@ export default function ChatArea({
   const queryClient = useQueryClient();
   const [micActive, setMicActive] = useState(false);
   const optimisticVoiceMessageIdRef = useRef<string | null>(null);
+  const lastFinalizeTimeRef = useRef<number>(0); // Track last finalize call time
 
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
@@ -316,13 +317,21 @@ export default function ChatArea({
   ]);
 
   const handleVoiceStop = useCallback(() => {
+    // Only process if the mic was actually active
+    if (!micActive) return;
+
+    // Prevent rapid successive calls (debounce)
+    const now = Date.now();
+    if (now - lastFinalizeTimeRef.current < 100) return; // 100ms debounce
+    lastFinalizeTimeRef.current = now;
+
     // This function's only job is to mute the microphone.
     setMicrophoneMuted(true);
     setMicActive(false);
 
     // ✅ FIX: Signal the server that the user is done talking.
     emitFinalizeTurn();
-  }, [setMicrophoneMuted, emitFinalizeTurn]);
+  }, [setMicrophoneMuted, emitFinalizeTurn, micActive]);
 
   // Handle WebRTC text message sending with generic assistant persona
   // This approach creates a temporary assistant message with persona_id: null

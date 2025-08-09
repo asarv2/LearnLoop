@@ -447,34 +447,37 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                 try:
                     assistant_message_id: Optional[Any] = None
                     accumulated_assistant: str = ""
+                    
+                    # ✅ SOLUTION: Create a buffer for the resampled audio
+                    audio_buffer = b""
+                    REQUIRED_FRAME_SIZE = 1920  # 960 samples * 2 bytes/sample for 48kHz s16 mono
+                    
                     async for event in session:
                         if event.type == "audio":
-                            # Process model PCM (24k s16 mono) in correctly-sized chunks
                             try:
-                                raw_buffer = event.audio.data
-                                # Process the buffer in chunks of the correct frame size
-                                frame_size = 960  # 480 samples * 2 bytes/sample for s16 mono
+                                # Create a frame from the raw 24kHz model audio
+                                model_frame = AudioFrame(format="s16", layout="mono", samples=len(event.audio.data) // 2)
+                                model_frame.planes[0].update(event.audio.data)
+                                model_frame.sample_rate = 24000
                                 
-                                for i in range(0, len(raw_buffer), frame_size):
-                                    chunk = raw_buffer[i:i + frame_size]
-                                    
-                                    # Skip incomplete chunks at the end of the buffer
-                                    if len(chunk) != frame_size:
-                                        continue
+                                # Resample to 48kHz for WebRTC output
+                                for out_frame in model_to_out_resampler.resample(model_frame):
+                                    # Append the resampled audio bytes to our buffer
+                                    audio_buffer += out_frame.to_ndarray()[0].tobytes()
 
-                                    # Create a frame with the correctly-sized chunk
-                                    frame = AudioFrame(format="s16", layout="mono", samples=480)
-                                    frame.planes[0].update(chunk)
-                                    frame.sample_rate = 24000
-                                    
-                                    # Resample and send to the client
-                                    for out_frame in model_to_out_resampler.resample(frame):
-                                        s16_array = out_frame.to_ndarray()
-                                        mono_array = s16_array[0]
-                                        out_track.add_chunk(mono_array.tobytes())
-
+                                    # Process the buffer and send complete 1920-byte frames
+                                    while len(audio_buffer) >= REQUIRED_FRAME_SIZE:
+                                        # Extract one complete frame
+                                        frame_to_send = audio_buffer[:REQUIRED_FRAME_SIZE]
+                                        
+                                        # Send it to the client
+                                        out_track.add_chunk(frame_to_send)
+                                        
+                                        # Remove the sent frame from the buffer
+                                        audio_buffer = audio_buffer[REQUIRED_FRAME_SIZE:]
+                                        
                             except Exception as e:
-                                logger.error(f"VOICE_BRIDGE: Error resampling model audio: {e}")
+                                logger.error(f"VOICE_BRIDGE: Error processing/resampling model audio: {e}")
                         elif event.type == "raw_model_event":
                             raw_event = event.data
                             # Handle vendor events for transcripts and turn markers
