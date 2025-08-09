@@ -104,6 +104,16 @@ class ServerAudioStreamTrack(MediaStreamTrack):
         padded_chunk = chunk + b'\x00' * (frame_size - len(chunk))
         self.queue.put_nowait(padded_chunk)
 
+    def clear(self) -> None:
+        """Empties the audio queue to handle interruptions."""
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                # This can happen in a race condition, it's safe to ignore.
+                break
+        logger.info("Outbound audio queue cleared due to interruption.")
+
     def end_stream(self) -> None:
         """Signals the end of the stream by adding a None sentinel."""
         logger.info("Ending persistent server audio stream.")
@@ -270,7 +280,6 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
         # Cancel any running echo task before closing
         if hasattr(pc_old, "_echo_task") and not pc_old._echo_task.done():
             pc_old._echo_task.cancel()
-            logger.info(f"Cancelled existing echo task for profile {profile_id}")
         await pc_old.close()
 
     # Convert our dict format to aiortc's RTCIceServer objects
@@ -377,391 +386,359 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
     # ✨ REALTIME VOICE AGENT BRIDGE
     async def realtime_voice_bridge_task(in_track: MediaStreamTrack, out_track: ServerAudioStreamTrack) -> None:
         """
-        Bridges incoming WebRTC audio to the RealtimeSession and plays back
-        generated audio while emitting text events over data-channel/websocket.
+        Manages the voice conversation by creating a new RealtimeSession for each user turn.
         """
-        db_session = None  # Initialize db_session to None
-        session = None     # Initialize session to None
+        # Lazy imports to avoid circulars
+        from app.db import get_session
+        from app.models import Chats, Messages, Personas
+        from app.services.agents.voice.realtime import \
+            create_realtime_voice_session
+        from app.web.training import get_persona_id_from_chat
+
+        # Prime outbound audio with ~400ms of silence to move clients off HAVE_NOTHING
         try:
-            logger.info(f"Starting voice bridge task for profile {profile_id}")
+            silence_chunk = b"\x00" * (960 * 2)  # 20ms @ 48kHz mono s16 = 1920 bytes
+            for _ in range(20):  # ~400ms
+                out_track.add_chunk(silence_chunk)
+            logger.info("Primed outbound audio with initial silence frames.")
+        except Exception as e:
+            logger.warning(f"Failed to prime silence frames: {e}")
 
-            # Lazy imports to avoid circulars
-            from app.db import get_session
-            from app.models import Chats, Messages, Personas
-            from app.services.agents.voice.realtime import \
-                create_realtime_voice_session
-            from app.web.training import get_persona_id_from_chat
+        # Resamplers (reused across turns)
+        in_to_model_resampler = AudioResampler(format="s16", layout="mono", rate=24000)
+        model_to_out_resampler = AudioResampler(format="s16", layout="mono", rate=48000)
 
-            # ✅ FIX: Get the session here, at the top level of the task
-            db_session = next(get_session())
-            
-            # This try-block for setup can remain the same
+        # Helper: emit over data-channel else websocket
+        async def emit_transport(payload: dict[str, Any], chat_id_for_voice: str) -> None:
+            payload_with_chat: dict[str, Any] = {**payload, "chat_id": chat_id_for_voice}
+            sent = await send_text_dc(profile_id, payload_with_chat)
+            if not sent:
+                await sio.emit("transport_event", payload_with_chat, room=profile_id)
+
+        # This outer loop runs for the entire duration of the voice call
+        while True:
+            session = None
+            db_session = None
             try:
+                # Wait for the first audio frame from the user to start a new turn
+                logger.info("Voice Bridge: Waiting for user to speak...")
+                first_frame = await in_track.recv()
+                logger.info("Voice Bridge: User started speaking, creating new session.")
+
+                # -- SETUP A NEW SESSION FOR THIS TURN --
+                db_session = next(get_session())
                 chat_id_for_voice = getattr(pc, "_last_chat_id", None)
                 if not chat_id_for_voice:
                     logger.warning("No chat_id associated with PC.")
-                    return
+                    continue  # Wait for the next turn
+
+                # Ensure chat_id_for_voice is a string
+                chat_id_for_voice = str(chat_id_for_voice)
 
                 chat_obj = db_session.exec(select(Chats).where(Chats.id == chat_id_for_voice)).one_or_none()
                 if not chat_obj:
                     logger.error(f"Chat {chat_id_for_voice} not found in DB.")
-                    return
+                    continue
 
                 persona_id = get_persona_id_from_chat(db_session, chat_obj)
                 if not persona_id:
-                    logger.error(f"No persona associated with chat {chat_id_for_voice}.")
-                    return
+                    logger.error(f"Could not find persona for chat {chat_id_for_voice}.")
+                    continue
 
-                # Create realtime session for this persona
                 session = await create_realtime_voice_session(persona_id, db_session)
-                
-                # Attach session to the peer connection for later access
                 setattr(pc, "_realtime_session", session)
-            except Exception as setup_error:
-                logger.error(f"Failed during voice bridge setup: {setup_error}", exc_info=True)
-                # No return here, let it fall through to the main finally block for cleanup
 
-            # Prime outbound audio with ~400ms of silence to move clients off HAVE_NOTHING
-            try:
-                silence_chunk = b"\x00" * (960 * 2)  # 20ms @ 48kHz mono s16 = 1920 bytes
-                for _ in range(20):  # ~400ms
-                    out_track.add_chunk(silence_chunk)
-                logger.info("Primed outbound audio with initial silence frames.")
-            except Exception as e:
-                logger.warning(f"Failed to prime silence frames: {e}")
+                # -- DEFINE TASKS FOR THIS SPECIFIC TURN --
+                shutdown_flag = asyncio.Event()
+                
+                async def pump_incoming_audio_turn() -> None:
+                    if not session:
+                        return
+                    try:
+                        # Immediately process the first frame we already received
+                        for frame in in_to_model_resampler.resample(first_frame):
+                            await session.send_audio(frame.to_ndarray()[0].tobytes(), commit=False)
+                        
+                        # Continue pumping subsequent frames
+                        while not shutdown_flag.is_set():
+                            in_frame = await in_track.recv()
+                            if shutdown_flag.is_set():
+                                break
+                            for frame in in_to_model_resampler.resample(in_frame):
+                                await session.send_audio(frame.to_ndarray()[0].tobytes(), commit=False)
+                            await asyncio.sleep(0.01)
+                    except ConnectionClosedOK:
+                        logger.info("Audio pump: Connection closed during turn.")
+                    except Exception as e:
+                        logger.error(f"Error in pump_incoming_audio_turn: {e}", exc_info=True)
+                    finally:
+                        logger.info("Audio pump for turn has finished.")
 
-            # Resamplers
-            # Incoming from client -> 24k s16 mono for model
-            in_to_model_resampler = AudioResampler(format="s16", layout="mono", rate=24000)
-            # Model -> 48k s16 mono for WebRTC out
-            model_to_out_resampler = AudioResampler(format="s16", layout="mono", rate=48000)
-
-            # Helper: emit over data-channel else websocket
-            async def emit_transport(payload: dict[str, Any]) -> None:
-                payload_with_chat: dict[str, Any] = {**payload, "chat_id": chat_id_for_voice}
-                sent = await send_text_dc(profile_id, payload_with_chat)
-                if not sent:
-                    await sio.emit("transport_event", payload_with_chat, room=profile_id)
-
-            async def consume_session_events() -> None:
-                # ✅ FIX: Check if session and db_session exist before using them
-                if not session:
-                    logger.error("No session available for consume_session_events")
-                    return
-                if not db_session:
-                    logger.error("No database session available for consume_session_events")
-                    return
-                try:
+                async def consume_session_events_turn() -> None:
+                    if not session or not db_session:
+                        return
+                    
+                    # Capture chat_id_for_voice from outer scope - ensure it's a string
+                    current_chat_id: str = str(chat_id_for_voice) if chat_id_for_voice else ""
+                    if not current_chat_id:
+                        logger.error("No chat_id available for consume_session_events_turn")
+                        return
+                    
                     assistant_message_id: Optional[Any] = None
                     accumulated_assistant: str = ""
-                    
-                    # ✅ FIX: Add a variable to store the start time of the user's turn
                     user_turn_start_time: Optional[datetime] = None
-                    
-                    # Create a buffer for the resampled audio
                     audio_buffer = b""
                     REQUIRED_FRAME_SIZE = 1920  # 960 samples * 2 bytes/sample for 48kHz s16 mono
-                    
-                    async for event in session:
-                        
-                        if event.type == "audio":
-                            audio_data = event.audio.data
-                            if not audio_data:
-                                logger.warning("Received 'audio' event but it was empty!")
 
-                            try:
-                                # Create a frame from the raw 24kHz model audio
-                                model_frame = AudioFrame(format="s16", layout="mono", samples=len(event.audio.data) // 2)
-                                model_frame.planes[0].update(event.audio.data)
-                                model_frame.sample_rate = 24000
-                                
-                                # Resample to 48kHz for WebRTC output
-                                for out_frame in model_to_out_resampler.resample(model_frame):
-                                    # Append the resampled audio bytes to our buffer
-                                    audio_buffer += out_frame.to_ndarray()[0].tobytes()
+                    try:
+                        async for event in session:
+                            if shutdown_flag.is_set():
+                                break
+                            
+                            if event.type == "audio":
+                                audio_data = event.audio.data
+                                if not audio_data:
+                                    logger.warning("Received 'audio' event but it was empty!")
+                                    continue
 
-                                    # Process the buffer and send complete 1920-byte frames
-                                    while len(audio_buffer) >= REQUIRED_FRAME_SIZE:
-                                        # Extract one complete frame
-                                        frame_to_send = audio_buffer[:REQUIRED_FRAME_SIZE]
-                                        
-                                        # Send it to the client
-                                        out_track.add_chunk(frame_to_send)
-                                        
-                                        # Remove the sent frame from the buffer
-                                        audio_buffer = audio_buffer[REQUIRED_FRAME_SIZE:]
-                                        
-                            except Exception as e:
-                                logger.error(f"Error processing 'audio' event: {e}", exc_info=True)
-                        elif event.type == "raw_model_event":
-                            raw_event = event.data
-                            # Handle vendor events for transcripts and turn markers
-                            if getattr(raw_event, "type", "") == "transcript_delta":
-                                await emit_transport({
-                                    "type": "conversation.item.input_audio_transcription.delta",
-                                    "delta": getattr(raw_event, "delta", ""),
-                                    "itemId": getattr(raw_event, "item_id", None),
-                                })
-                                # ✅ FIX: Also emit to Socket.IO for client-side transcript updates
-                                await sio.emit("conversation.item.input_audio_transcription.delta", {
-                                    "chat_id": chat_id_for_voice,
-                                    "delta": getattr(raw_event, "delta", ""),
-                                    "itemId": getattr(raw_event, "item_id", None),
-                                }, room=chat_id_for_voice)
-                            elif getattr(raw_event, "type", "") == "input_audio_buffer.speech_started":
-                                # ✅ FIX: Capture the timestamp when the user starts speaking
-                                user_turn_start_time = datetime.now(timezone.utc)
-                                event_type = getattr(raw_event, "type", "")
-                                await emit_transport({
-                                    "type": event_type,
-                                    "itemId": getattr(raw_event, "item_id", None),
-                                })
-                                # Also emit to Socket.IO for immediate client notification
-                                await sio.emit("server_vad_event", {
-                                    "type": event_type,
-                                    "chat_id": chat_id_for_voice,
-                                    "profile_id": profile_id,
-                                }, room=chat_id_for_voice)
-                            elif getattr(raw_event, "type", "") == "input_audio_buffer.speech_stopped":
-                                # ✅ NEW: Emit server VAD events to client for UI feedback
-                                event_type = getattr(raw_event, "type", "")
-                                await emit_transport({
-                                    "type": event_type,
-                                    "itemId": getattr(raw_event, "item_id", None),
-                                })
-                                # Also emit to Socket.IO for immediate client notification
-                                await sio.emit("server_vad_event", {
-                                    "type": event_type,
-                                    "chat_id": chat_id_for_voice,
-                                    "profile_id": profile_id,
-                                }, room=chat_id_for_voice)
-                            elif getattr(raw_event, "type", "") == "input_audio_transcription_completed":
-                                transcript_text = getattr(raw_event, "transcript", "") or ""
-                                item_id = getattr(raw_event, "item_id", None)
-                                await emit_transport({
-                                    "type": "conversation.item.input_audio_transcription.completed",
-                                    "transcript": transcript_text,
-                                    "itemId": item_id,
-                                })
-                                # Persist user message mirroring training flow, but only if transcript is non-empty
-                                if transcript_text.strip():
-                                    try:
-                                        # Find user's persona by profile_id
-                                        user_persona = db_session.exec(
-                                            select(Personas).where(Personas.profile_id == profile_id)
-                                        ).one_or_none()
-                                        user_persona_id = user_persona.id if user_persona else None
+                                try:
+                                    # Create a frame from the raw 24kHz model audio
+                                    model_frame = AudioFrame(format="s16", layout="mono", samples=len(event.audio.data) // 2)
+                                    model_frame.planes[0].update(event.audio.data)
+                                    model_frame.sample_rate = 24000
+                                    
+                                    # Resample to 48kHz for WebRTC output
+                                    for out_frame in model_to_out_resampler.resample(model_frame):
+                                        # Append the resampled audio bytes to our buffer
+                                        audio_buffer += out_frame.to_ndarray()[0].tobytes()
 
-                                        user_message = Messages(
-                                            chat_id=chat_id_for_voice,
-                                            content=transcript_text.strip(),
-                                            role="user",
-                                            training_id=chat_obj.training_id,  # type: ignore[union-attr]
-                                            completed=True,
-                                            persona_id=user_persona_id,
-                                            # ✅ FIX: Use the captured start time for consistency
-                                            created_at=user_turn_start_time if user_turn_start_time else datetime.now(timezone.utc)
-                                        )
-                                        db_session.add(user_message)
-                                        db_session.commit()
-                                        db_session.refresh(user_message)
+                                        # Process the buffer and send complete 1920-byte frames
+                                        while len(audio_buffer) >= REQUIRED_FRAME_SIZE:
+                                            # Extract one complete frame
+                                            frame_to_send = audio_buffer[:REQUIRED_FRAME_SIZE]
+                                            
+                                            # Send it to the client
+                                            out_track.add_chunk(frame_to_send)
+                                            
+                                            # Remove the sent frame from the buffer
+                                            audio_buffer = audio_buffer[REQUIRED_FRAME_SIZE:]
+                                            
+                                except Exception as e:
+                                    logger.error(f"Error processing 'audio' event: {e}", exc_info=True)
 
-                                        await sio.emit(
-                                            "user_message_saved",
-                                            {
-                                                "chat_id": chat_id_for_voice,
-                                                "message": {
-                                                    "id": str(user_message.id),
-                                                    "chat_id": str(user_message.chat_id),
-                                                    "content": user_message.content,
-                                                    "role": user_message.role,
-                                                    "persona_id": str(user_persona_id) if user_persona_id else None,
-                                                    "completed": user_message.completed,
-                                                    "created_at": user_message.created_at.isoformat(),
-                                                    "completed_at": user_message.completed_at.isoformat() if user_message.completed_at else None,
-                                                },
-                                            },
-                                            room=chat_id_for_voice,
-                                        )
-                                        
-                                        # ✅ FIX: Reset the start time for the next turn
-                                        user_turn_start_time = None
-                                    except Exception as ex:
-                                        logger.error(f"VOICE_BRIDGE: Failed to persist user message: {ex}")
-                                        db_session.rollback()
-                                        # ✅ FIX: Also reset on failure to prevent bad state.
-                                        user_turn_start_time = None
-                            elif getattr(raw_event, "type", "") == "raw_server_event":
-                                data = getattr(raw_event, "data", {})
-                                evt_type = data.get("type") if isinstance(data, dict) else None
-                                if evt_type in ("response.text.delta", "response.audio_transcript.delta"):
-                                    delta = data.get("delta", "")
-                                    # Create assistant placeholder on first delta
-                                    if assistant_message_id is None:
-                                        try:
-                                            assistant_message = Messages(
-                                                chat_id=chat_id_for_voice,
-                                                content="",
-                                                role="assistant",
-                                                training_id=chat_obj.training_id,  # type: ignore[union-attr]
-                                                completed=False,
-                                                persona_id=persona_id,
-                                            )
-                                            db_session.add(assistant_message)
-                                            db_session.commit()
-                                            db_session.refresh(assistant_message)
-                                            assistant_message_id = assistant_message.id
-                                            await sio.emit(
-                                                "training_message_start",
-                                                {
-                                                    "chat_id": chat_id_for_voice,
-                                                    "message_id": str(assistant_message_id),
-                                                    "persona_id": str(persona_id),
-                                                },
-                                                room=chat_id_for_voice,
-                                            )
-                                        except Exception as ex:
-                                            logger.error(f"VOICE_BRIDGE: Failed to create assistant message: {ex}")
-                                            db_session.rollback()  # Rollback failed transaction
-                                    # Stream delta
-                                    accumulated_assistant += delta
-                                    await sio.emit(
-                                        "training_message_token",
-                                        {
-                                            "chat_id": chat_id_for_voice,
-                                            "message_id": str(assistant_message_id) if assistant_message_id else "",
-                                            "token": delta,
-                                            "accumulated_content": accumulated_assistant,
-                                        },
-                                        room=chat_id_for_voice,
-                                    )
+                            elif event.type == "raw_model_event":
+                                raw_event = event.data
+                                # Handle vendor events for transcripts and turn markers
+                                if getattr(raw_event, "type", "") == "transcript_delta":
                                     await emit_transport({
-                                        "type": evt_type,
-                                        "delta": delta,
-                                    })
-                                elif evt_type in ("response.text.done", "response.audio_transcript.done"):
-                                    final_text = data.get("transcript", "")
+                                        "type": "conversation.item.input_audio_transcription.delta",
+                                        "delta": getattr(raw_event, "delta", ""),
+                                        "itemId": getattr(raw_event, "item_id", None),
+                                    }, current_chat_id)
+                                    # ✅ FIX: Also emit to Socket.IO for client-side transcript updates
+                                    await sio.emit("conversation.item.input_audio_transcription.delta", {
+                                        "chat_id": current_chat_id,
+                                        "delta": getattr(raw_event, "delta", ""),
+                                        "itemId": getattr(raw_event, "item_id", None),
+                                    }, room=current_chat_id)
+                                elif getattr(raw_event, "type", "") == "input_audio_buffer.speech_started":
+                                    # ✅ FIX: Capture the timestamp when the user starts speaking
+                                    user_turn_start_time = datetime.now(timezone.utc)
+                                    event_type = getattr(raw_event, "type", "")
                                     await emit_transport({
-                                        "type": evt_type,
-                                        "transcript": final_text,
-                                    })
-                                    # Finalize assistant message
-                                    if assistant_message_id:
+                                        "type": event_type,
+                                        "itemId": getattr(raw_event, "item_id", None),
+                                    }, current_chat_id)
+                                    # Also emit to Socket.IO for immediate client notification
+                                    await sio.emit("server_vad_event", {
+                                        "type": event_type,
+                                        "chat_id": current_chat_id,
+                                        "profile_id": profile_id,
+                                    }, room=current_chat_id)
+                                elif getattr(raw_event, "type", "") == "input_audio_buffer.speech_stopped":
+                                    # ✅ NEW: Emit server VAD events to client for UI feedback
+                                    event_type = getattr(raw_event, "type", "")
+                                    await emit_transport({
+                                        "type": event_type,
+                                        "itemId": getattr(raw_event, "item_id", None),
+                                    }, current_chat_id)
+                                    # Also emit to Socket.IO for immediate client notification
+                                    await sio.emit("server_vad_event", {
+                                        "type": event_type,
+                                        "chat_id": current_chat_id,
+                                        "profile_id": profile_id,
+                                    }, room=current_chat_id)
+                                elif getattr(raw_event, "type", "") == "input_audio_transcription_completed":
+                                    transcript_text = getattr(raw_event, "transcript", "") or ""
+                                    item_id = getattr(raw_event, "item_id", None)
+                                    await emit_transport({
+                                        "type": "conversation.item.input_audio_transcription.completed",
+                                        "transcript": transcript_text,
+                                        "itemId": item_id,
+                                    }, current_chat_id)
+                                    # Persist user message mirroring training flow, but only if transcript is non-empty
+                                    if transcript_text.strip():
                                         try:
-                                            msg = db_session.exec(
-                                                select(Messages).where(Messages.id == assistant_message_id)
+                                            # Find user's persona by profile_id
+                                            user_persona = db_session.exec(
+                                                select(Personas).where(Personas.profile_id == profile_id)
                                             ).one_or_none()
-                                            if msg:
-                                                msg.content = final_text
-                                                msg.completed = True
-                                                db_session.add(msg)
-                                                db_session.commit()
-                                            await sio.emit(
-                                                "training_message_complete",
-                                                {
-                                                    "chat_id": chat_id_for_voice,
-                                                    "message_id": str(assistant_message_id),
-                                                    "final_content": final_text,
-                                                },
-                                                room=chat_id_for_voice,
+                                            user_persona_id = user_persona.id if user_persona else None
+
+                                            user_message = Messages(
+                                                chat_id=current_chat_id,
+                                                content=transcript_text.strip(),
+                                                role="user",
+                                                training_id=chat_obj.training_id,  # type: ignore[union-attr]
+                                                completed=True,
+                                                persona_id=user_persona_id,
+                                                # ✅ FIX: Use the captured start time for consistency
+                                                created_at=user_turn_start_time if user_turn_start_time else datetime.now(timezone.utc)
                                             )
+                                            db_session.add(user_message)
+                                            db_session.commit()
+                                            db_session.refresh(user_message)
+
+                                            await sio.emit(
+                                                "user_message_saved",
+                                                {
+                                                    "chat_id": current_chat_id,
+                                                    "message": {
+                                                        "id": str(user_message.id),
+                                                        "chat_id": str(user_message.chat_id),
+                                                        "content": user_message.content,
+                                                        "role": user_message.role,
+                                                        "persona_id": str(user_persona_id) if user_persona_id else None,
+                                                        "completed": user_message.completed,
+                                                        "created_at": user_message.created_at.isoformat(),
+                                                        "completed_at": user_message.completed_at.isoformat() if user_message.completed_at else None,
+                                                    },
+                                                },
+                                                room=current_chat_id,
+                                            )
+                                            
+                                            # ✅ FIX: Reset the start time for the next turn
+                                            user_turn_start_time = None
                                         except Exception as ex:
-                                            logger.error(f"VOICE_BRIDGE: Failed to finalize assistant message: {ex}")
-                                            db_session.rollback()  # Rollback failed transaction
-                                        finally:
-                                            assistant_message_id = None
-                                            accumulated_assistant = ""
-                        elif event.type == "audio_interrupted":
-                            # ✅ NEW: Handle audio interruption for barge-in scenarios
-                            logger.info("Audio interrupted - user started speaking while assistant was talking")
-                            await emit_transport({"type": "audio_interrupted"})
-                            # Emit to Socket.IO for immediate client notification
-                            await sio.emit("audio_interrupted", {
-                                "chat_id": chat_id_for_voice,
-                                "profile_id": profile_id,
-                            }, room=chat_id_for_voice)
-                        elif event.type == "error":
-                            logger.error(f"Received 'error' event from session: {event.error}")
-                            # Convert the error object to a string before sending
-                            error_message = str(event.error) if event.error else "An unknown error occurred."
-                            await emit_transport({"type": "error", "error": error_message})
+                                            logger.error(f"VOICE_BRIDGE: Failed to persist user message: {ex}")
+                                            db_session.rollback()
+                                            # ✅ FIX: Also reset on failure to prevent bad state.
+                                            user_turn_start_time = None
+                                elif getattr(raw_event, "type", "") == "raw_server_event":
+                                    data = getattr(raw_event, "data", {})
+                                    evt_type = data.get("type") if isinstance(data, dict) else None
+                                    if evt_type in ("response.text.delta", "response.audio_transcript.delta"):
+                                        delta = data.get("delta", "")
+                                        # Create assistant placeholder on first delta
+                                        if assistant_message_id is None:
+                                            try:
+                                                assistant_message = Messages(
+                                                    chat_id=current_chat_id,
+                                                    content="",
+                                                    role="assistant",
+                                                    training_id=chat_obj.training_id,  # type: ignore[union-attr]
+                                                    completed=False,
+                                                    persona_id=persona_id,
+                                                )
+                                                db_session.add(assistant_message)
+                                                db_session.commit()
+                                                db_session.refresh(assistant_message)
+                                                assistant_message_id = assistant_message.id
+                                                await sio.emit(
+                                                    "training_message_start",
+                                                    {
+                                                        "chat_id": current_chat_id,
+                                                        "message_id": str(assistant_message_id),
+                                                        "persona_id": str(persona_id),
+                                                    },
+                                                    room=current_chat_id,
+                                                )
+                                            except Exception as ex:
+                                                logger.error(f"VOICE_BRIDGE: Failed to create assistant message: {ex}")
+                                                db_session.rollback()  # Rollback failed transaction
+                                        # Stream delta
+                                        accumulated_assistant += delta
+                                        await sio.emit(
+                                            "training_message_token",
+                                            {
+                                                "chat_id": current_chat_id,
+                                                "message_id": str(assistant_message_id) if assistant_message_id else "",
+                                                "token": delta,
+                                                "accumulated_content": accumulated_assistant,
+                                            },
+                                            room=current_chat_id,
+                                        )
+                                        await emit_transport({
+                                            "type": evt_type,
+                                            "delta": delta,
+                                        }, current_chat_id)
+                                    elif evt_type in ("response.text.done", "response.audio_transcript.done"):
+                                        final_text = data.get("transcript", "")
+                                        await emit_transport({
+                                            "type": evt_type,
+                                            "transcript": final_text,
+                                        }, current_chat_id)
+                                        # Finalize assistant message
+                                        if assistant_message_id:
+                                            try:
+                                                msg = db_session.exec(
+                                                    select(Messages).where(Messages.id == assistant_message_id)
+                                                ).one_or_none()
+                                                if msg:
+                                                    msg.content = final_text
+                                                    msg.completed = True
+                                                    db_session.add(msg)
+                                                    db_session.commit()
+                                                await sio.emit(
+                                                    "training_message_complete",
+                                                    {
+                                                        "chat_id": current_chat_id,
+                                                        "message_id": str(assistant_message_id),
+                                                        "final_content": final_text,
+                                                    },
+                                                    room=current_chat_id,
+                                                )
+                                            except Exception as ex:
+                                                logger.error(f"VOICE_BRIDGE: Failed to finalize assistant message: {ex}")
+                                                db_session.rollback()  # Rollback failed transaction
+                                            finally:
+                                                assistant_message_id = None
+                                                accumulated_assistant = ""
+
+                            elif event.type == "error":
+                                logger.error(f"Fatal error in session: {event.error}")
+                                shutdown_flag.set()  # Trigger shutdown
+                                break
                             
-                            # --- START OF FIX ---
-                            # An error event is fatal. We must stop all processing.
-                            # Breaking the loop will cause this consumer task to end, which
-                            # will trigger the 'finally' block in the parent task to
-                            # clean up the producer task (pump_incoming_audio).
-                            logger.warning("Fatal error received from session. Terminating voice bridge.")
-                            break
-                            # --- END OF FIX ---
-                        
-                        else:
-                            logger.warning(f"Received unknown session event type: '{event.type}'")
-                except asyncio.CancelledError:
-                    logger.info("consume_session_events task was cancelled.")
-                except Exception as e:
-                    logger.error(f"Error in consume_session_events loop: {e}", exc_info=True)
-                finally:
-                    # ✅ FIX: REMOVE db_session.close() from here.
-                    # The RealtimeSession is closed here, which is correct for this sub-task.
-                    if session:
-                        await session.close()
+                            # Note: Interruption logic is now implicitly handled by starting a new session
+                            # when the user speaks again, so we don't need a special case for it here.
+                    except Exception as e:
+                        logger.error(f"Error in consume_session_events_turn: {e}", exc_info=True)
+                    finally:
+                        logger.info("Event consumer for turn has finished.")
+                        shutdown_flag.set()
 
-            async def pump_incoming_audio() -> None:
-                # ✅ FIX: Check if session exists before using it
-                if not session:
-                    logger.error("No session available for pump_incoming_audio")
-                    return
-                try:
-                    while True:
-                        in_frame = await in_track.recv()
-                        for frame in in_to_model_resampler.resample(in_frame):
-                            s16_array = frame.to_ndarray()
-                            mono_array = s16_array[0]
-                            audio_bytes = mono_array.tobytes()
-                            
-                            # ✅ FIX: With server VAD, always send with commit=False
-                            # The server VAD will automatically detect speech start/stop
-                            # and handle turn management without manual commits
-                            await session.send_audio(audio_bytes, commit=False)
-                        # Pace a bit to avoid flooding
-                        await asyncio.sleep(0)
-                except asyncio.CancelledError:
-                    logger.info("pump_incoming_audio task was cancelled.")
-                # This exception is expected if the consumer_task closes the connection
-                # before this task is cancelled. We treat it as a clean exit.
-                except ConnectionClosedOK:
-                    logger.info("Audio pump: Connection was closed cleanly, likely by the consumer task. Exiting.")
-                except Exception as e:
-                    logger.error(f"Error in pump_incoming_audio loop: {e}", exc_info=True)
+                # -- RUN AND CLEAN UP THE TASKS FOR THIS TURN --
+                producer = asyncio.create_task(pump_incoming_audio_turn())
+                consumer = asyncio.create_task(consume_session_events_turn())
+                await asyncio.gather(producer, consumer)
 
-            # Run both tasks
-            consumer_task = asyncio.create_task(consume_session_events())
-            producer_task = asyncio.create_task(pump_incoming_audio())
-
-            try:
-                await asyncio.gather(consumer_task, producer_task)
+            except asyncio.CancelledError:
+                logger.info("Voice bridge task was cancelled.")
+                break  # Exit the main while loop
+            except ConnectionClosedOK:
+                logger.info("WebRTC track ended. Closing voice bridge.")
+                break
+            except Exception as e:
+                logger.error(f"Error in main voice bridge loop: {e}", exc_info=True)
+                # Pause before restarting to prevent rapid-fire errors
+                await asyncio.sleep(1)
             finally:
-                for t in (consumer_task, producer_task):
-                    if not t.done():
-                        t.cancel()
-                out_track.end_stream()
-                logger.info(f"VOICE_BRIDGE_TASK: Task finished or exited for profile {profile_id}.")
-
-        except Exception as e:
-            logger.error(f"Unhandled exception in voice bridge task for profile {profile_id}: {e}", exc_info=True)
-        finally:
-            # ✅ FIX: Close the db_session here, when the entire bridge is shutting down.
-            if db_session:
-                db_session.close()
-                logger.info(f"Database session closed for profile {profile_id}.")
-            
-            # Close the RealtimeSession here as a final fallback
-            if session:
-                await session.close()
-            
-            out_track.end_stream()
-            logger.info(f"Voice bridge task finished for profile {profile_id}.")
+                if session:
+                    await session.close()
+                if db_session:
+                    db_session.close()
+                logger.info("Cleaned up resources for the turn.")
 
 
 
