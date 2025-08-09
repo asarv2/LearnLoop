@@ -26,6 +26,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import Session, select
+from websockets.exceptions import ConnectionClosedOK  # type: ignore
 
 load_dotenv()
 
@@ -379,7 +380,8 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
         Bridges incoming WebRTC audio to the RealtimeSession and plays back
         generated audio while emitting text events over data-channel/websocket.
         """
-        # ✅ ADDED a top-level try/except to catch any silent failures
+        db_session = None  # Initialize db_session to None
+        session = None     # Initialize session to None
         try:
             logger.info(f"Starting voice bridge task for profile {profile_id}")
 
@@ -390,8 +392,10 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                 create_realtime_voice_session
             from app.web.training import get_persona_id_from_chat
 
-            # Determine chat and persona
+            # ✅ FIX: Get the session here, at the top level of the task
             db_session = next(get_session())
+            
+            # This try-block for setup can remain the same
             try:
                 chat_id_for_voice = getattr(pc, "_last_chat_id", None)
                 if not chat_id_for_voice:
@@ -415,8 +419,7 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                 setattr(pc, "_realtime_session", session)
             except Exception as setup_error:
                 logger.error(f"Failed during voice bridge setup: {setup_error}", exc_info=True)
-                db_session.close()
-                return  # Exit cleanly if setup fails
+                # No return here, let it fall through to the main finally block for cleanup
 
             # Prime outbound audio with ~400ms of silence to move clients off HAVE_NOTHING
             try:
@@ -441,6 +444,13 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                     await sio.emit("transport_event", payload_with_chat, room=profile_id)
 
             async def consume_session_events() -> None:
+                # ✅ FIX: Check if session and db_session exist before using them
+                if not session:
+                    logger.error("No session available for consume_session_events")
+                    return
+                if not db_session:
+                    logger.error("No database session available for consume_session_events")
+                    return
                 try:
                     assistant_message_id: Optional[Any] = None
                     accumulated_assistant: str = ""
@@ -628,6 +638,15 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                             # Convert the error object to a string before sending
                             error_message = str(event.error) if event.error else "An unknown error occurred."
                             await emit_transport({"type": "error", "error": error_message})
+                            
+                            # --- START OF FIX ---
+                            # An error event is fatal. We must stop all processing.
+                            # Breaking the loop will cause this consumer task to end, which
+                            # will trigger the 'finally' block in the parent task to
+                            # clean up the producer task (pump_incoming_audio).
+                            logger.warning("Fatal error received from session. Terminating voice bridge.")
+                            break
+                            # --- END OF FIX ---
                         
                         else:
                             logger.warning(f"Received unknown session event type: '{event.type}'")
@@ -636,10 +655,16 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                 except Exception as e:
                     logger.error(f"Error in consume_session_events loop: {e}", exc_info=True)
                 finally:
-                    await session.close()
-                    db_session.close()
+                    # ✅ FIX: REMOVE db_session.close() from here.
+                    # The RealtimeSession is closed here, which is correct for this sub-task.
+                    if session:
+                        await session.close()
 
             async def pump_incoming_audio() -> None:
+                # ✅ FIX: Check if session exists before using it
+                if not session:
+                    logger.error("No session available for pump_incoming_audio")
+                    return
                 try:
                     while True:
                         in_frame = await in_track.recv()
@@ -654,6 +679,10 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                         await asyncio.sleep(0)
                 except asyncio.CancelledError:
                     logger.info("pump_incoming_audio task was cancelled.")
+                # This exception is expected if the consumer_task closes the connection
+                # before this task is cancelled. We treat it as a clean exit.
+                except ConnectionClosedOK:
+                    logger.info("Audio pump: Connection was closed cleanly, likely by the consumer task. Exiting.")
                 except Exception as e:
                     logger.error(f"Error in pump_incoming_audio loop: {e}", exc_info=True)
 
@@ -671,10 +700,17 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                 logger.info(f"VOICE_BRIDGE_TASK: Task finished or exited for profile {profile_id}.")
 
         except Exception as e:
-            # This will catch any unexpected errors in the entire task
             logger.error(f"Unhandled exception in voice bridge task for profile {profile_id}: {e}", exc_info=True)
         finally:
-            # Ensure resources are cleaned up and the client track is notified
+            # ✅ FIX: Close the db_session here, when the entire bridge is shutting down.
+            if db_session:
+                db_session.close()
+                logger.info(f"Database session closed for profile {profile_id}.")
+            
+            # Close the RealtimeSession here as a final fallback
+            if session:
+                await session.close()
+            
             out_track.end_stream()
             logger.info(f"Voice bridge task finished for profile {profile_id}.")
 
@@ -1248,19 +1284,20 @@ async def webrtc_finalize_turn(sid: str, data: Dict[str, Any]) -> None:
     session: RealtimeSession | None = getattr(pc, "_realtime_session", None)
     if session:
         try:
-            # ✅ SOLUTION: Create and send 100ms of silence to satisfy the API.
-            # The format is 24kHz, 16-bit mono PCM audio.
-            # 24000 samples/sec * 0.1 sec * 2 bytes/sample = 4800 bytes.
             silence_chunk = b'\x00' * 4800
-            
             await session.send_audio(silence_chunk, commit=True)
-            
             logger.info(f"Finalized audio turn for profile {profile_id} by sending 100ms of silence.")
             
         except Exception as e:
-            logger.error(f"Error finalizing audio turn for profile {profile_id}: {e}")
+            # If the session was already closed (e.g., due to a prior fatal error),
+            # this is not a critical error. It just means the client sent a 'finalize'
+            # signal for a session that was already terminated.
+            if "Not connected" in str(e) or isinstance(e, ConnectionClosedOK):
+                 logger.info(f"Could not finalize turn for profile {profile_id}: session was already closed.")
+            else:
+                 logger.error(f"Error finalizing audio turn for profile {profile_id}: {e}")
     else:
-        logger.warning(f"No realtime session found for profile {profile_id}")
+        logger.warning(f"No realtime session found for profile {profile_id} to finalize turn.")
 
 # SPEC CHANGE: Renegotiation answer handler is no longer needed
 # The server now uses a persistent audio track, eliminating the need for renegotiation
