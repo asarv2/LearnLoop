@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import socketio  # type: ignore
+from agents.realtime import RealtimeSession
 from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
                     RTCIceCandidate, RTCIceServer, RTCPeerConnection,
                     RTCSessionDescription)
@@ -452,8 +453,18 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                     audio_buffer = b""
                     REQUIRED_FRAME_SIZE = 1920  # 960 samples * 2 bytes/sample for 48kHz s16 mono
                     
+                    logger.info("[DEBUG] Starting to listen for session events...")
                     async for event in session:
+                        
+                        # ✅ CATCH-ALL DEBUG LOG: This will print EVERY event from the session
+                        logger.info(f"[DEBUG] Received session event: type='{event.type}'")
                         if event.type == "audio":
+                            # ✅ Log details about the audio event
+                            audio_data = event.audio.data
+                            logger.info(f"[DEBUG] Received 'audio' event with {len(audio_data)} bytes.")
+                            if not audio_data:
+                                logger.warning("[DEBUG] Received 'audio' event but it was empty!")
+
                             try:
                                 # Create a frame from the raw 24kHz model audio
                                 model_frame = AudioFrame(format="s16", layout="mono", samples=len(event.audio.data) // 2)
@@ -477,8 +488,10 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                         audio_buffer = audio_buffer[REQUIRED_FRAME_SIZE:]
                                         
                             except Exception as e:
-                                logger.error(f"VOICE_BRIDGE: Error processing/resampling model audio: {e}")
+                                logger.error(f"[DEBUG] Error processing 'audio' event: {e}", exc_info=True)
                         elif event.type == "raw_model_event":
+                            # ✅ Log the raw event to see everything
+                            logger.info(f"[DEBUG] Raw Model Event Data: {event.data}")
                             raw_event = event.data
                             # Handle vendor events for transcripts and turn markers
                             if getattr(raw_event, "type", "") == "transcript_delta":
@@ -621,15 +634,22 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                         finally:
                                             assistant_message_id = None
                                             accumulated_assistant = ""
+                        # ✅ ADD THIS BLOCK to explicitly catch and log errors from the session
                         elif event.type == "error":
+                            logger.error(f"[DEBUG] Received 'error' event from session: {event.error}")
                             # Convert the error object to a string before sending
                             error_message = str(event.error) if event.error else "An unknown error occurred."
                             await emit_transport({"type": "error", "error": error_message})
+                        
+                        # ✅ ADD AN ELSE BLOCK to catch any unexpected event types
+                        else:
+                            logger.warning(f"[DEBUG] Received UNKNOWN session event type: '{event.type}'")
                 except asyncio.CancelledError:
-                    pass
+                    logger.info("[DEBUG] consume_session_events task was cancelled.")
                 except Exception as e:
-                    logger.error(f"VOICE_BRIDGE: Session consumer error: {e}")
+                    logger.error(f"[DEBUG] CRASH in consume_session_events loop: {e}", exc_info=True)
                 finally:
+                    logger.info("[DEBUG] Closing session and database connection in consume_session_events.")
                     await session.close()
                     db_session.close()
 
@@ -640,14 +660,19 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                         for frame in in_to_model_resampler.resample(in_frame):
                             s16_array = frame.to_ndarray()
                             mono_array = s16_array[0]
+                            audio_bytes = mono_array.tobytes()
+                            
+                            # ✅ Log the audio being sent TO the session
+                            logger.info(f"[DEBUG] Pumping {len(audio_bytes)} bytes of user audio to session.")
+                            
                             # Always send with commit=False. We will commit manually when turn ends.
-                            await session.send_audio(mono_array.tobytes(), commit=False)
+                            await session.send_audio(audio_bytes, commit=False)
                         # Pace a bit to avoid flooding
                         await asyncio.sleep(0)
                 except asyncio.CancelledError:
-                    pass
+                    logger.info("[DEBUG] pump_incoming_audio task was cancelled.")
                 except Exception as e:
-                    logger.error(f"VOICE_BRIDGE: Error pumping incoming audio: {e}")
+                    logger.error(f"[DEBUG] CRASH in pump_incoming_audio loop: {e}", exc_info=True)
 
             # Run both tasks
             consumer_task = asyncio.create_task(consume_session_events())
@@ -1235,12 +1260,18 @@ async def webrtc_finalize_turn(sid: str, data: Dict[str, Any]) -> None:
     if not pc:
         return
 
-    session = getattr(pc, "_realtime_session", None)
+    session: RealtimeSession | None = getattr(pc, "_realtime_session", None)
     if session:
         try:
-            # Send an empty audio packet with commit=True to finalize the turn
-            await session.send_audio(b"", commit=True)
-            logger.info(f"Finalized audio turn for profile {profile_id}")
+            # ✅ SOLUTION: Create and send 100ms of silence to satisfy the API.
+            # The format is 24kHz, 16-bit mono PCM audio.
+            # 24000 samples/sec * 0.1 sec * 2 bytes/sample = 4800 bytes.
+            silence_chunk = b'\x00' * 4800
+            
+            await session.send_audio(silence_chunk, commit=True)
+            
+            logger.info(f"Finalized audio turn for profile {profile_id} by sending 100ms of silence.")
+            
         except Exception as e:
             logger.error(f"Error finalizing audio turn for profile {profile_id}: {e}")
     else:
