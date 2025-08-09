@@ -426,6 +426,11 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                 first_frame = await in_track.recv()
                 logger.info("Voice Bridge: User started speaking, creating new session.")
 
+                # ✨ YOUR FIX GOES HERE!
+                # When the user speaks, it's an implicit interruption.
+                # Clear any audio the server was in the middle of sending.
+                out_track.clear()
+
                 # -- SETUP A NEW SESSION FOR THIS TURN --
                 db_session = next(get_session())
                 chat_id_for_voice = getattr(pc, "_last_chat_id", None)
