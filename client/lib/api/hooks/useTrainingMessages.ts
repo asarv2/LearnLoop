@@ -65,28 +65,32 @@ export function useTrainingMessages(chatId: string, enabled = true) {
     // --- AI Message Handlers ---
     const handleTrainingMessageStart = (event: CustomEvent) => {
       if (event.detail.chatId !== chatId) return;
-      logInfo(`AI message started, replacing optimistic placeholder.`);
+      logInfo(`AI message started, adding placeholder.`);
 
-      // ✨ FIX: Instead of adding a new message, find our temporary one
-      // and replace it with the real one from the server. This preserves the
-      // instant "thinking" feeling while updating the message with its real ID.
-      queryClient.setQueryData<Message[]>(queryKey, (old = []) =>
-        old.map((msg) =>
-          msg.id.startsWith("temp-assistant-") // Find our optimistic placeholder
-            ? // Replace it with the real placeholder from the server
-              ({
-                id: event.detail.messageId, // Use the REAL ID now
-                // ✨ Ensure persona_id from the event is used
-                persona_id: event.detail.personaId,
-                role: "assistant",
-                content: "",
-                completed: false,
-                created_at: new Date().toISOString(), // Use a new server-approximated time
-                chat_id: chatId,
-              } as Message)
-            : msg
-        )
-      );
+      // ✅ FIX: The server has started a response. Add a new placeholder
+      // for the assistant to the end of the message list. This is the
+      // new, correct way to show the "is thinking..." message.
+      queryClient.setQueryData<Message[]>(queryKey, (old = []) => {
+        // Prevent adding duplicate placeholders if event fires multiple times
+        if (old.some((msg) => msg.id === event.detail.messageId)) {
+          return old;
+        }
+
+        const newAssistantMessage: Message = {
+          id: event.detail.messageId, // Use the REAL ID from the server
+          persona_id: event.detail.personaId, // Use the REAL persona_id
+          role: "assistant",
+          content: "", // Starts blank, will be filled by tokens
+          completed: false,
+          created_at: new Date().toISOString(),
+          chat_id: chatId,
+          completed_at: "",
+          error: null,
+          training_id: null,
+        };
+
+        return [...old, newAssistantMessage];
+      });
     };
 
     const handleTrainingMessageToken = (event: CustomEvent) => {
@@ -154,7 +158,8 @@ export function useTrainingMessages(chatId: string, enabled = true) {
       if (event.detail.chatId !== chatId) return;
       logError("Streaming error, removing placeholder.", event.detail.error);
 
-      // On error, remove the incomplete assistant message
+      // ✅ FIX: On error, remove the incomplete assistant message
+      // This works for both optimistic placeholders and real messages
       queryClient.setQueryData<Message[]>(queryKey, (old = []) =>
         old.filter((msg) => msg.id !== event.detail.messageId)
       );
