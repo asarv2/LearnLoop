@@ -259,6 +259,14 @@ export default function ChatArea({
     setMicActive(true);
     logInfo("Microphone enabled for voice input");
 
+    // ✅ Check if the audio element is paused and play it.
+    // This is a user gesture, so it satisfies browser autoplay policies.
+    if (audioPlaybackRef.current && audioPlaybackRef.current.paused) {
+      audioPlaybackRef.current
+        .play()
+        .catch((e) => logError("Playback failed", e));
+    }
+
     // Create optimistic placeholders for both user and assistant
     if (!chat?.id || !userPersona?.id) return;
 
@@ -298,7 +306,13 @@ export default function ChatArea({
       optimisticUserMessage,
       optimisticAssistantMessage,
     ]);
-  }, [setMicrophoneMuted, chat?.id, userPersona?.id, queryClient]);
+  }, [
+    setMicrophoneMuted,
+    audioPlaybackRef,
+    chat?.id,
+    userPersona?.id,
+    queryClient,
+  ]);
 
   const handleVoiceStop = useCallback(() => {
     // This function's only job is to mute the microphone.
@@ -795,7 +809,7 @@ export default function ChatArea({
       )}
 
       {/* ✨ DEBUG: Add WebRTC debug panel for troubleshooting */}
-      {false && process.env.NODE_ENV === "development" && (
+      {process.env.NODE_ENV === "development" && (
         <WebRTCDebugPanel audioPlaybackRef={audioPlaybackRef} />
       )}
 

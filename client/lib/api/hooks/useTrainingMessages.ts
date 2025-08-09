@@ -93,6 +93,9 @@ export function useTrainingMessages(chatId: string, enabled = true) {
     const handleTrainingMessageToken = (event: CustomEvent) => {
       if (event.detail.chatId !== chatId) return;
 
+      // ❌ Comment out this line to stop the log spam
+      // logInfo("Dispatching training message token event", { ... });
+
       // Find the streaming message and append the token
       queryClient.setQueryData<Message[]>(queryKey, (old = []) =>
         old.map((msg) =>
