@@ -533,6 +533,7 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                     )
                                 except Exception as ex:
                                     logger.error(f"VOICE_BRIDGE: Failed to persist user message: {ex}")
+                                    db_session.rollback()  # Rollback failed transaction
                             elif getattr(raw_event, "type", "") == "raw_server_event":
                                 data = getattr(raw_event, "data", {})
                                 evt_type = data.get("type") if isinstance(data, dict) else None
@@ -564,6 +565,7 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                             )
                                         except Exception as ex:
                                             logger.error(f"VOICE_BRIDGE: Failed to create assistant message: {ex}")
+                                            db_session.rollback()  # Rollback failed transaction
                                     # Stream delta
                                     accumulated_assistant += delta
                                     await sio.emit(
@@ -608,6 +610,7 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                             )
                                         except Exception as ex:
                                             logger.error(f"VOICE_BRIDGE: Failed to finalize assistant message: {ex}")
+                                            db_session.rollback()  # Rollback failed transaction
                                         finally:
                                             assistant_message_id = None
                                             accumulated_assistant = ""
