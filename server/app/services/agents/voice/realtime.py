@@ -49,8 +49,7 @@ async def create_realtime_voice_session(
                 output_audio_format="pcm16",
                 input_audio_transcription=RealtimeInputAudioTranscriptionConfig(
                     model="whisper-1",
-                ),
-                # Completely disable automatic turn detection for push-to-talk
+                )
             )
         ),
     )
