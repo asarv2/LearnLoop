@@ -14,7 +14,6 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-import numpy as np  # type: ignore
 import socketio  # type: ignore
 from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
                     RTCIceCandidate, RTCIceServer, RTCPeerConnection,
@@ -368,273 +367,294 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
             )
             
     # ✨ REALTIME VOICE AGENT BRIDGE
+    # ✨ REALTIME VOICE AGENT BRIDGE
     async def realtime_voice_bridge_task(in_track: MediaStreamTrack, out_track: ServerAudioStreamTrack) -> None:
         """
         Bridges incoming WebRTC audio to the RealtimeSession and plays back
         generated audio while emitting text events over data-channel/websocket.
         """
-        logger.info(f"VOICE_BRIDGE: Starting realtime voice bridge for profile {profile_id}")
-
-        # Lazy imports to avoid circulars
-        from app.db import get_session
-        from app.models import Chats, Messages, Personas
-        from app.services.agents.voice.realtime import \
-            create_realtime_voice_session
-        from app.web.training import get_persona_id_from_chat
-
-        # Determine chat and persona
-        db_session = next(get_session())
+        # ✅ ADDED a top-level try/except to catch any silent failures
         try:
-            chat_id_for_voice = getattr(pc, "_last_chat_id", None)
-            if not chat_id_for_voice:
-                logger.warning("VOICE_BRIDGE: No chat_id associated with PC; cannot start voice agent")
-                return
+            logger.info(f"VOICE_BRIDGE_TASK: Starting for profile {profile_id}")
 
-            chat_obj = db_session.exec(select(Chats).where(Chats.id == chat_id_for_voice)).one_or_none()
-            if not chat_obj:
-                logger.error(f"VOICE_BRIDGE: Chat {chat_id_for_voice} not found")
-                return
+            # Lazy imports to avoid circulars
+            from app.db import get_session
+            from app.models import Chats, Messages, Personas
+            from app.services.agents.voice.realtime import \
+                create_realtime_voice_session
+            from app.web.training import get_persona_id_from_chat
 
-            persona_id = get_persona_id_from_chat(db_session, chat_obj)
-            if not persona_id:
-                logger.error(f"VOICE_BRIDGE: No persona associated with chat {chat_id_for_voice}")
-                return
-
-            # Create realtime session for this persona
-            session = await create_realtime_voice_session(persona_id, db_session)
-        except Exception:
-            db_session.close()
-            raise
-
-        # Prime outbound audio with ~400ms of silence to move clients off HAVE_NOTHING
-        try:
-            silence_chunk = b"\x00" * (960 * 2)  # 20ms @ 48kHz mono s16 = 1920 bytes
-            for _ in range(20):  # ~400ms
-                out_track.add_chunk(silence_chunk)
-            logger.info("VOICE_BRIDGE: Primed outbound audio with initial silence frames")
-        except Exception as e:
-            logger.warning(f"VOICE_BRIDGE: Failed to prime silence frames: {e}")
-
-        # Resamplers
-        # Incoming from client -> 24k s16 mono for model
-        in_to_model_resampler = AudioResampler(format="s16", layout="mono", rate=24000)
-        # Model -> 48k s16 mono for WebRTC out
-        model_to_out_resampler = AudioResampler(format="s16", layout="mono", rate=48000)
-
-        # Helper: emit over data-channel else websocket
-        async def emit_transport(payload: dict[str, Any]) -> None:
-            payload_with_chat: dict[str, Any] = {**payload, "chat_id": chat_id_for_voice}
-            sent = await send_text_dc(profile_id, payload_with_chat)
-            if not sent:
-                await sio.emit("transport_event", payload_with_chat, room=profile_id)
-
-        async def consume_session_events() -> None:
+            # Determine chat and persona
+            db_session = next(get_session())
             try:
-                assistant_message_id: Optional[Any] = None
-                accumulated_assistant: str = ""
-                async for event in session:
-                    if event.type == "audio":
-                        # Assume model PCM is 24k s16 mono; wrap into AV frame for resample
-                        try:
-                            raw = event.audio.data
-                            # 20ms at 24k = 480 samples, 2 bytes per sample
-                            frame = AudioFrame(format="s16", layout="mono", samples=480)
-                            frame.planes[0].update(raw)
-                            frame.sample_rate = 24000
-                            for out_frame in model_to_out_resampler.resample(frame):
-                                s16_array = out_frame.to_ndarray()
-                                mono_array = s16_array[0]
-                                out_track.add_chunk(mono_array.tobytes())
-                        except Exception as e:
-                            logger.error(f"VOICE_BRIDGE: Error resampling model audio: {e}")
-                    elif event.type == "raw_model_event":
-                        raw_event = event.data
-                        # Handle vendor events for transcripts and turn markers
-                        if getattr(raw_event, "type", "") == "transcript_delta":
-                            await emit_transport({
-                                "type": "conversation.item.input_audio_transcription.delta",
-                                "delta": getattr(raw_event, "delta", ""),
-                                "itemId": getattr(raw_event, "item_id", None),
-                            })
-                        elif getattr(raw_event, "type", "") in ("input_audio_buffer.speech_started", "input_audio_buffer.speech_stopped"):
-                            await emit_transport({
-                                "type": getattr(raw_event, "type", ""),
-                                "itemId": getattr(raw_event, "item_id", None),
-                            })
-                        elif getattr(raw_event, "type", "") == "input_audio_transcription_completed":
-                            transcript_text = getattr(raw_event, "transcript", "") or ""
-                            item_id = getattr(raw_event, "item_id", None)
-                            await emit_transport({
-                                "type": "conversation.item.input_audio_transcription.completed",
-                                "transcript": transcript_text,
-                                "itemId": item_id,
-                            })
-                            # Persist user message mirroring training flow
-                            try:
-                                # Find user's persona by profile_id
-                                user_persona = db_session.exec(
-                                    select(Personas).where(Personas.profile_id == profile_id)
-                                ).one_or_none()
-                                user_persona_id = user_persona.id if user_persona else None
+                chat_id_for_voice = getattr(pc, "_last_chat_id", None)
+                if not chat_id_for_voice:
+                    logger.warning("VOICE_BRIDGE_TASK: ❌ FAILED - No chat_id associated with PC.")
+                    return
+                # ✅ ADDED log
+                logger.info(f"VOICE_BRIDGE_TASK: Found chat_id: {chat_id_for_voice}")
 
-                                user_message = Messages(
-                                    chat_id=chat_id_for_voice,
-                                    content=transcript_text.strip(),
-                                    role="user",
-                                    training_id=chat_obj.training_id,  # type: ignore[union-attr]
-                                    completed=True,
-                                    persona_id=user_persona_id,
-                                )
-                                db_session.add(user_message)
-                                db_session.commit()
-                                db_session.refresh(user_message)
+                chat_obj = db_session.exec(select(Chats).where(Chats.id == chat_id_for_voice)).one_or_none()
+                if not chat_obj:
+                    logger.error(f"VOICE_BRIDGE_TASK: ❌ FAILED - Chat {chat_id_for_voice} not found in DB.")
+                    return
+                # ✅ ADDED log
+                logger.info(f"VOICE_BRIDGE_TASK: Successfully fetched chat object.")
 
-                                await sio.emit(
-                                    "user_message_saved",
-                                    {
-                                        "chat_id": chat_id_for_voice,
-                                        "message": {
-                                            "id": str(user_message.id),
-                                            "chat_id": str(user_message.chat_id),
-                                            "content": user_message.content,
-                                            "role": user_message.role,
-                                            "persona_id": str(user_persona_id) if user_persona_id else None,
-                                            "completed": user_message.completed,
-                                            "created_at": user_message.created_at.isoformat(),
-                                            "completed_at": user_message.completed_at.isoformat() if user_message.completed_at else None,
-                                        },
-                                    },
-                                    room=chat_id_for_voice,
-                                )
-                            except Exception as ex:
-                                logger.error(f"VOICE_BRIDGE: Failed to persist user message: {ex}")
-                        elif getattr(raw_event, "type", "") == "raw_server_event":
-                            data = getattr(raw_event, "data", {})
-                            evt_type = data.get("type") if isinstance(data, dict) else None
-                            if evt_type in ("response.text.delta", "response.audio_transcript.delta"):
-                                delta = data.get("delta", "")
-                                # Create assistant placeholder on first delta
-                                if assistant_message_id is None:
-                                    try:
-                                        assistant_message = Messages(
-                                            chat_id=chat_id_for_voice,
-                                            content="",
-                                            role="assistant",
-                                            training_id=chat_obj.training_id,  # type: ignore[union-attr]
-                                            completed=False,
-                                            persona_id=persona_id,
-                                        )
-                                        db_session.add(assistant_message)
-                                        db_session.commit()
-                                        db_session.refresh(assistant_message)
-                                        assistant_message_id = assistant_message.id
-                                        await sio.emit(
-                                            "training_message_start",
-                                            {
-                                                "chat_id": chat_id_for_voice,
-                                                "message_id": str(assistant_message_id),
-                                                "persona_id": str(persona_id),
-                                            },
-                                            room=chat_id_for_voice,
-                                        )
-                                    except Exception as ex:
-                                        logger.error(f"VOICE_BRIDGE: Failed to create assistant message: {ex}")
-                                # Stream delta
-                                accumulated_assistant += delta
-                                await sio.emit(
-                                    "training_message_token",
-                                    {
-                                        "chat_id": chat_id_for_voice,
-                                        "message_id": str(assistant_message_id) if assistant_message_id else "",
-                                        "token": delta,
-                                        "accumulated_content": accumulated_assistant,
-                                    },
-                                    room=chat_id_for_voice,
-                                )
-                                await emit_transport({
-                                    "type": evt_type,
-                                    "delta": delta,
-                                })
-                            elif evt_type in ("response.text.done", "response.audio_transcript.done"):
-                                final_text = data.get("transcript", "")
-                                await emit_transport({
-                                    "type": evt_type,
-                                    "transcript": final_text,
-                                })
-                                # Finalize assistant message
-                                if assistant_message_id:
-                                    try:
-                                        msg = db_session.exec(
-                                            select(Messages).where(Messages.id == assistant_message_id)
-                                        ).one_or_none()
-                                        if msg:
-                                            msg.content = final_text
-                                            msg.completed = True
-                                            db_session.add(msg)
-                                            db_session.commit()
-                                        await sio.emit(
-                                            "training_message_complete",
-                                            {
-                                                "chat_id": chat_id_for_voice,
-                                                "message_id": str(assistant_message_id),
-                                                "final_content": final_text,
-                                            },
-                                            room=chat_id_for_voice,
-                                        )
-                                    except Exception as ex:
-                                        logger.error(f"VOICE_BRIDGE: Failed to finalize assistant message: {ex}")
-                                    finally:
-                                        assistant_message_id = None
-                                        accumulated_assistant = ""
-                    elif event.type == "error":
-                        await emit_transport({"type": "error", "error": event.error})
-            except asyncio.CancelledError:
-                pass
-            except Exception as e:
-                logger.error(f"VOICE_BRIDGE: Session consumer error: {e}")
-            finally:
-                await session.close()
+                persona_id = get_persona_id_from_chat(db_session, chat_obj)
+                if not persona_id:
+                    logger.error(f"VOICE_BRIDGE_TASK: ❌ FAILED - No persona associated with chat {chat_id_for_voice}.")
+                    return
+                # ✅ ADDED log
+                logger.info(f"VOICE_BRIDGE_TASK: Found persona_id: {persona_id}")
+
+                # Create realtime session for this persona
+                session = await create_realtime_voice_session(persona_id, db_session)
+                # ✅ ADDED log
+                logger.info(f"VOICE_BRIDGE_TASK: Successfully created realtime voice session.")
+            except Exception as setup_error:
+                # ✅ ADDED specific error logging for the setup phase
+                logger.error(f"VOICE_BRIDGE_TASK: ❌ FAILED during setup phase: {setup_error}", exc_info=True)
                 db_session.close()
+                return  # Exit cleanly if setup fails
 
-        async def pump_incoming_audio() -> None:
+            # Prime outbound audio with ~400ms of silence to move clients off HAVE_NOTHING
             try:
-                frames_since_commit = 0
-                last_commit_monotonic = time.monotonic()
-                while True:
-                    in_frame = await in_track.recv()
-                    for frame in in_to_model_resampler.resample(in_frame):
-                        s16_array = frame.to_ndarray()
-                        mono_array = s16_array[0]
-                        await session.send_audio(mono_array.tobytes(), commit=False)
-                        frames_since_commit += 1
-
-                        # Every ~240ms, send a commit to flush the buffer and trigger VAD turns
-                        if frames_since_commit >= 12 or (time.monotonic() - last_commit_monotonic) > 0.5:
-                            try:
-                                await session.send_audio(b"", commit=True)
-                            except Exception:
-                                pass
-                            frames_since_commit = 0
-                            last_commit_monotonic = time.monotonic()
-                    # Pace a bit to avoid flooding
-                    await asyncio.sleep(0)
-            except asyncio.CancelledError:
-                pass
+                silence_chunk = b"\x00" * (960 * 2)  # 20ms @ 48kHz mono s16 = 1920 bytes
+                for _ in range(20):  # ~400ms
+                    out_track.add_chunk(silence_chunk)
+                logger.info("VOICE_BRIDGE_TASK: ✅ Primed outbound audio with initial silence frames.")
             except Exception as e:
-                logger.error(f"VOICE_BRIDGE: Error pumping incoming audio: {e}")
+                logger.warning(f"VOICE_BRIDGE_TASK: ⚠️ Failed to prime silence frames: {e}")
 
-        # Run both tasks
-        consumer_task = asyncio.create_task(consume_session_events())
-        producer_task = asyncio.create_task(pump_incoming_audio())
+            # Resamplers
+            # Incoming from client -> 24k s16 mono for model
+            in_to_model_resampler = AudioResampler(format="s16", layout="mono", rate=24000)
+            # Model -> 48k s16 mono for WebRTC out
+            model_to_out_resampler = AudioResampler(format="s16", layout="mono", rate=48000)
 
-        try:
-            await asyncio.gather(consumer_task, producer_task)
+            # Helper: emit over data-channel else websocket
+            async def emit_transport(payload: dict[str, Any]) -> None:
+                payload_with_chat: dict[str, Any] = {**payload, "chat_id": chat_id_for_voice}
+                sent = await send_text_dc(profile_id, payload_with_chat)
+                if not sent:
+                    await sio.emit("transport_event", payload_with_chat, room=profile_id)
+
+            async def consume_session_events() -> None:
+                try:
+                    assistant_message_id: Optional[Any] = None
+                    accumulated_assistant: str = ""
+                    async for event in session:
+                        if event.type == "audio":
+                            # Assume model PCM is 24k s16 mono; wrap into AV frame for resample
+                            try:
+                                raw = event.audio.data
+                                # 20ms at 24k = 480 samples, 2 bytes per sample
+                                frame = AudioFrame(format="s16", layout="mono", samples=480)
+                                frame.planes[0].update(raw)
+                                frame.sample_rate = 24000
+                                for out_frame in model_to_out_resampler.resample(frame):
+                                    s16_array = out_frame.to_ndarray()
+                                    mono_array = s16_array[0]
+                                    out_track.add_chunk(mono_array.tobytes())
+                            except Exception as e:
+                                logger.error(f"VOICE_BRIDGE: Error resampling model audio: {e}")
+                        elif event.type == "raw_model_event":
+                            raw_event = event.data
+                            # Handle vendor events for transcripts and turn markers
+                            if getattr(raw_event, "type", "") == "transcript_delta":
+                                await emit_transport({
+                                    "type": "conversation.item.input_audio_transcription.delta",
+                                    "delta": getattr(raw_event, "delta", ""),
+                                    "itemId": getattr(raw_event, "item_id", None),
+                                })
+                            elif getattr(raw_event, "type", "") in ("input_audio_buffer.speech_started", "input_audio_buffer.speech_stopped"):
+                                await emit_transport({
+                                    "type": getattr(raw_event, "type", ""),
+                                    "itemId": getattr(raw_event, "item_id", None),
+                                })
+                            elif getattr(raw_event, "type", "") == "input_audio_transcription_completed":
+                                transcript_text = getattr(raw_event, "transcript", "") or ""
+                                item_id = getattr(raw_event, "item_id", None)
+                                await emit_transport({
+                                    "type": "conversation.item.input_audio_transcription.completed",
+                                    "transcript": transcript_text,
+                                    "itemId": item_id,
+                                })
+                                # Persist user message mirroring training flow
+                                try:
+                                    # Find user's persona by profile_id
+                                    user_persona = db_session.exec(
+                                        select(Personas).where(Personas.profile_id == profile_id)
+                                    ).one_or_none()
+                                    user_persona_id = user_persona.id if user_persona else None
+
+                                    user_message = Messages(
+                                        chat_id=chat_id_for_voice,
+                                        content=transcript_text.strip(),
+                                        role="user",
+                                        training_id=chat_obj.training_id,  # type: ignore[union-attr]
+                                        completed=True,
+                                        persona_id=user_persona_id,
+                                    )
+                                    db_session.add(user_message)
+                                    db_session.commit()
+                                    db_session.refresh(user_message)
+
+                                    await sio.emit(
+                                        "user_message_saved",
+                                        {
+                                            "chat_id": chat_id_for_voice,
+                                            "message": {
+                                                "id": str(user_message.id),
+                                                "chat_id": str(user_message.chat_id),
+                                                "content": user_message.content,
+                                                "role": user_message.role,
+                                                "persona_id": str(user_persona_id) if user_persona_id else None,
+                                                "completed": user_message.completed,
+                                                "created_at": user_message.created_at.isoformat(),
+                                                "completed_at": user_message.completed_at.isoformat() if user_message.completed_at else None,
+                                            },
+                                        },
+                                        room=chat_id_for_voice,
+                                    )
+                                except Exception as ex:
+                                    logger.error(f"VOICE_BRIDGE: Failed to persist user message: {ex}")
+                            elif getattr(raw_event, "type", "") == "raw_server_event":
+                                data = getattr(raw_event, "data", {})
+                                evt_type = data.get("type") if isinstance(data, dict) else None
+                                if evt_type in ("response.text.delta", "response.audio_transcript.delta"):
+                                    delta = data.get("delta", "")
+                                    # Create assistant placeholder on first delta
+                                    if assistant_message_id is None:
+                                        try:
+                                            assistant_message = Messages(
+                                                chat_id=chat_id_for_voice,
+                                                content="",
+                                                role="assistant",
+                                                training_id=chat_obj.training_id,  # type: ignore[union-attr]
+                                                completed=False,
+                                                persona_id=persona_id,
+                                            )
+                                            db_session.add(assistant_message)
+                                            db_session.commit()
+                                            db_session.refresh(assistant_message)
+                                            assistant_message_id = assistant_message.id
+                                            await sio.emit(
+                                                "training_message_start",
+                                                {
+                                                    "chat_id": chat_id_for_voice,
+                                                    "message_id": str(assistant_message_id),
+                                                    "persona_id": str(persona_id),
+                                                },
+                                                room=chat_id_for_voice,
+                                            )
+                                        except Exception as ex:
+                                            logger.error(f"VOICE_BRIDGE: Failed to create assistant message: {ex}")
+                                    # Stream delta
+                                    accumulated_assistant += delta
+                                    await sio.emit(
+                                        "training_message_token",
+                                        {
+                                            "chat_id": chat_id_for_voice,
+                                            "message_id": str(assistant_message_id) if assistant_message_id else "",
+                                            "token": delta,
+                                            "accumulated_content": accumulated_assistant,
+                                        },
+                                        room=chat_id_for_voice,
+                                    )
+                                    await emit_transport({
+                                        "type": evt_type,
+                                        "delta": delta,
+                                    })
+                                elif evt_type in ("response.text.done", "response.audio_transcript.done"):
+                                    final_text = data.get("transcript", "")
+                                    await emit_transport({
+                                        "type": evt_type,
+                                        "transcript": final_text,
+                                    })
+                                    # Finalize assistant message
+                                    if assistant_message_id:
+                                        try:
+                                            msg = db_session.exec(
+                                                select(Messages).where(Messages.id == assistant_message_id)
+                                            ).one_or_none()
+                                            if msg:
+                                                msg.content = final_text
+                                                msg.completed = True
+                                                db_session.add(msg)
+                                                db_session.commit()
+                                            await sio.emit(
+                                                "training_message_complete",
+                                                {
+                                                    "chat_id": chat_id_for_voice,
+                                                    "message_id": str(assistant_message_id),
+                                                    "final_content": final_text,
+                                                },
+                                                room=chat_id_for_voice,
+                                            )
+                                        except Exception as ex:
+                                            logger.error(f"VOICE_BRIDGE: Failed to finalize assistant message: {ex}")
+                                        finally:
+                                            assistant_message_id = None
+                                            accumulated_assistant = ""
+                        elif event.type == "error":
+                            await emit_transport({"type": "error", "error": event.error})
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.error(f"VOICE_BRIDGE: Session consumer error: {e}")
+                finally:
+                    await session.close()
+                    db_session.close()
+
+            async def pump_incoming_audio() -> None:
+                try:
+                    frames_since_commit = 0
+                    last_commit_monotonic = time.monotonic()
+                    while True:
+                        in_frame = await in_track.recv()
+                        for frame in in_to_model_resampler.resample(in_frame):
+                            s16_array = frame.to_ndarray()
+                            mono_array = s16_array[0]
+                            await session.send_audio(mono_array.tobytes(), commit=False)
+                            frames_since_commit += 1
+
+                            # Every ~240ms, send a commit to flush the buffer and trigger VAD turns
+                            if frames_since_commit >= 12 or (time.monotonic() - last_commit_monotonic) > 0.5:
+                                try:
+                                    await session.send_audio(b"", commit=True)
+                                except Exception:
+                                    pass
+                                frames_since_commit = 0
+                                last_commit_monotonic = time.monotonic()
+                        # Pace a bit to avoid flooding
+                        await asyncio.sleep(0)
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.error(f"VOICE_BRIDGE: Error pumping incoming audio: {e}")
+
+            # Run both tasks
+            consumer_task = asyncio.create_task(consume_session_events())
+            producer_task = asyncio.create_task(pump_incoming_audio())
+
+            try:
+                await asyncio.gather(consumer_task, producer_task)
+            finally:
+                for t in (consumer_task, producer_task):
+                    if not t.done():
+                        t.cancel()
+                out_track.end_stream()
+                logger.info(f"VOICE_BRIDGE_TASK: Task finished or exited for profile {profile_id}.")
+
+        except Exception as e:
+            # This will catch any unexpected errors in the entire task
+            logger.error(f"VOICE_BRIDGE_TASK: ❌ UNHANDLED EXCEPTION for profile {profile_id}: {e}", exc_info=True)
         finally:
-            for t in (consumer_task, producer_task):
-                if not t.done():
-                    t.cancel()
+            # Ensure resources are cleaned up and the client track is notified
             out_track.end_stream()
-            logger.info(f"VOICE_BRIDGE: Finished for profile {profile_id}")
+            logger.info(f"VOICE_BRIDGE_TASK: Task finished or exited for profile {profile_id}.")
 
     @pc.on("track")
     async def on_track(track: MediaStreamTrack) -> None:
