@@ -8,6 +8,9 @@ networks:
 
 services:
   client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
     image: ${LEARNLOOP_CLIENT_IMAGE:-ghcr.io/ashoksaravanan222/learnloop-client:latest}
     pull_policy: always
     container_name: learnloop-client
@@ -30,6 +33,9 @@ services:
       start_period: 60s
 
   server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
     image: ${LEARNLOOP_SERVER_IMAGE:-ghcr.io/ashoksaravanan222/learnloop-server:latest}
     pull_policy: always
     container_name: learnloop-server
