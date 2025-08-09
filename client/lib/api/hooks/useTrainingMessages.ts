@@ -28,6 +28,8 @@ export function useTrainingMessages(chatId: string, enabled = true) {
   const queryClient = useQueryClient();
   const { isConnected, joinRoom, leaveRoom } = useWebSocket();
   const joinedRef = useRef(false);
+  // ✅ FIX: Use ref to persist accumulatedUserTranscript across re-renders
+  const accumulatedUserTranscriptRef = useRef("");
 
   // Query for fetching initial messages
   const query = useQuery({
@@ -129,6 +131,9 @@ export function useTrainingMessages(chatId: string, enabled = true) {
       const realMessage: Message = event.detail.message;
       logInfo("User message saved, replacing optimistic voice message.");
 
+      // ✅ FIX: Reset the accumulated transcript for the next turn
+      accumulatedUserTranscriptRef.current = "";
+
       queryClient.setQueryData<Message[]>(queryKey, (old = []) => {
         // Find and replace the optimistic voice placeholder
         const updatedList = old.map((msg) =>
@@ -152,6 +157,22 @@ export function useTrainingMessages(chatId: string, enabled = true) {
 
         return updatedList;
       });
+    };
+
+    // ✅ FIX: Add a new handler for the user's live transcript
+    const handleUserTranscriptDelta = (event: CustomEvent) => {
+      if (event.detail.chatId !== chatId) return;
+
+      // ✅ FIX: Use the ref to accumulate transcript
+      accumulatedUserTranscriptRef.current += event.detail.delta;
+
+      queryClient.setQueryData<Message[]>(queryKey, (old = []) =>
+        old.map((msg) =>
+          msg.id.startsWith("temp-voice-") && !msg.completed
+            ? { ...msg, content: accumulatedUserTranscriptRef.current + "..." } // Update content
+            : msg
+        )
+      );
     };
 
     const handleTrainingMessageError = (event: CustomEvent) => {
@@ -186,6 +207,10 @@ export function useTrainingMessages(chatId: string, enabled = true) {
       "trainingMessageError",
       handleTrainingMessageError as EventListener
     );
+    window.addEventListener(
+      "userTranscriptDelta",
+      handleUserTranscriptDelta as EventListener
+    );
 
     return () => {
       // Remove event listeners
@@ -208,6 +233,10 @@ export function useTrainingMessages(chatId: string, enabled = true) {
       window.removeEventListener(
         "trainingMessageError",
         handleTrainingMessageError as EventListener
+      );
+      window.removeEventListener(
+        "userTranscriptDelta",
+        handleUserTranscriptDelta as EventListener
       );
     };
   }, [chatId, queryClient]);

@@ -700,6 +700,21 @@ export function WebSocketProvider({
         }
       );
 
+      // ✅ FIX: Listen for user's own transcription deltas
+      socket.on(
+        "conversation.item.input_audio_transcription.delta",
+        (data: { chat_id: string; delta: string; itemId: string }) => {
+          window.dispatchEvent(
+            new CustomEvent("userTranscriptDelta", {
+              detail: {
+                chatId: data.chat_id,
+                delta: data.delta,
+              },
+            })
+          );
+        }
+      );
+
       // WebRTC event handlers
       socket.on(
         "webrtc_offer",
