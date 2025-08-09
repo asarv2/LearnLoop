@@ -70,6 +70,7 @@ export default function ChatArea({
   // Voice-related state
   const queryClient = useQueryClient();
   const [micActive, setMicActive] = useState(false);
+  const optimisticVoiceMessageIdRef = useRef<string | null>(null);
 
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
@@ -256,9 +257,48 @@ export default function ChatArea({
     // Only control the local microphone
     setMicrophoneMuted(false);
     setMicActive(true);
-
     logInfo("Microphone enabled for voice input");
-  }, [setMicrophoneMuted]);
+
+    // Create optimistic placeholders for both user and assistant
+    if (!chat?.id || !userPersona?.id) return;
+
+    const queryKey = trainingMessageKeys.list(chat.id);
+    const tempUserId = `temp-voice-${Date.now()}`;
+    optimisticVoiceMessageIdRef.current = tempUserId; // Store the ID to find it later
+    const tempAssistantId = `temp-assistant-${Date.now()}`;
+
+    const optimisticUserMessage: Message = {
+      id: tempUserId,
+      role: "user",
+      persona_id: userPersona.id,
+      content: "...", // Placeholder content
+      completed: false, // It's in-progress
+      created_at: new Date().toISOString(),
+      chat_id: chat.id,
+      completed_at: "", // Empty string for incomplete messages
+      error: null,
+      training_id: null,
+    };
+
+    const optimisticAssistantMessage: Message = {
+      id: tempAssistantId,
+      role: "assistant",
+      persona_id: null,
+      content: "", // Will be populated by streaming tokens
+      completed: false,
+      created_at: new Date(Date.now() + 1).toISOString(),
+      chat_id: chat.id,
+      completed_at: "", // Empty string for incomplete messages
+      error: null,
+      training_id: null,
+    };
+
+    queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
+      ...old,
+      optimisticUserMessage,
+      optimisticAssistantMessage,
+    ]);
+  }, [setMicrophoneMuted, chat?.id, userPersona?.id, queryClient]);
 
   const handleVoiceStop = useCallback(() => {
     // This function's only job is to mute the microphone.
@@ -755,7 +795,7 @@ export default function ChatArea({
       )}
 
       {/* ✨ DEBUG: Add WebRTC debug panel for troubleshooting */}
-      {process.env.NODE_ENV === "development" && (
+      {false && process.env.NODE_ENV === "development" && (
         <WebRTCDebugPanel audioPlaybackRef={audioPlaybackRef} />
       )}
 

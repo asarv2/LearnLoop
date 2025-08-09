@@ -120,25 +120,30 @@ export function useTrainingMessages(chatId: string, enabled = true) {
     // --- User Message Handler ---
     const handleUserMessageSaved = (event: CustomEvent) => {
       if (event.detail.chatId !== chatId) return;
-      // ✨ The realMessage object from the backend now includes the correct persona_id
       const realMessage: Message = event.detail.message;
-      logInfo(`User message saved, replacing optimistic message.`);
+      logInfo("User message saved, replacing optimistic voice message.");
 
       queryClient.setQueryData<Message[]>(queryKey, (old = []) => {
-        let replaced = false; // Flag to ensure we only replace one message
-        const updatedList = old.map((msg) => {
-          // Find the first optimistic user message that hasn't been replaced yet
-          if (
-            !replaced &&
-            msg.id.startsWith("temp-") &&
-            !msg.id.startsWith("temp-assistant-")
-          ) {
-            replaced = true;
-            // The realMessage object from the server has the definitive persona_id
-            return realMessage;
-          }
-          return msg; // Keep all other messages as they are
-        });
+        // Find and replace the optimistic voice placeholder
+        const updatedList = old.map((msg) =>
+          msg.id.startsWith("temp-voice-") && !msg.completed
+            ? realMessage // Replace placeholder with the real message from the server
+            : msg
+        );
+
+        // This check handles text messages, which don't have a voice placeholder
+        // If no voice placeholder was found, it means it's likely a text message update.
+        const wasReplaced = updatedList.some(
+          (msg) => msg.id === realMessage.id
+        );
+        if (!wasReplaced) {
+          return old.map((msg) =>
+            msg.id.startsWith("temp-") && !msg.id.startsWith("temp-assistant-")
+              ? realMessage
+              : msg
+          );
+        }
+
         return updatedList;
       });
     };
