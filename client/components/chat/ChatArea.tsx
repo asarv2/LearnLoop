@@ -152,7 +152,7 @@ export default function ChatArea({
   // This prevents race conditions on page refresh where multiple components
   // try to join the same room simultaneously
 
-  // Track AI responses for hints generation and update temporary assistant personas
+  // Track AI responses for hints generation
   useEffect(() => {
     const lastMessage = displayMessages[displayMessages.length - 1];
     if (
@@ -166,34 +166,8 @@ export default function ChatArea({
         setLastAIResponse(newResponse);
         setHints("");
       }
-
-      // Update temporary assistant messages with the correct persona ID
-      // When a real assistant response arrives, update any temporary messages
-      // that were created with persona_id: null
-      if (lastMessage.persona_id && chat?.id) {
-        const queryKey = trainingMessageKeys.list(chat.id);
-        queryClient.setQueryData<Message[]>(queryKey, (old = []) => {
-          if (!old) return old;
-
-          return old.map((msg) => {
-            // Update temporary assistant messages that have null persona_id
-            if (
-              msg.role === "assistant" &&
-              !msg.persona_id &&
-              !msg.completed &&
-              msg.id.startsWith("temp-assistant-")
-            ) {
-              return {
-                ...msg,
-                persona_id: lastMessage.persona_id,
-              };
-            }
-            return msg;
-          });
-        });
-      }
     }
-  }, [displayMessages, lastAIResponse, chat?.id, queryClient]);
+  }, [displayMessages, lastAIResponse]);
 
   // 👇 DEPRECATED: We will no longer re-sort the array on every render.
   /*
@@ -259,13 +233,12 @@ export default function ChatArea({
     }
     */
 
-    // Create optimistic placeholders for both user and assistant
+    // ✅ FIX: Only create optimistic placeholder for user message
     if (!chat?.id || !userPersona?.id) return;
 
     const queryKey = trainingMessageKeys.list(chat.id);
     const tempUserId = `temp-voice-${Date.now()}`;
     optimisticVoiceMessageIdRef.current = tempUserId; // Store the ID to find it later
-    const tempAssistantId = `temp-assistant-${Date.now()}`;
 
     const optimisticUserMessage: Message = {
       id: tempUserId,
@@ -280,23 +253,10 @@ export default function ChatArea({
       training_id: null,
     };
 
-    const optimisticAssistantMessage: Message = {
-      id: tempAssistantId,
-      role: "assistant",
-      persona_id: null,
-      content: "", // Will be populated by streaming tokens
-      completed: false,
-      created_at: new Date(Date.now() + 1).toISOString(),
-      chat_id: chat.id,
-      completed_at: "", // Empty string for incomplete messages
-      error: null,
-      training_id: null,
-    };
-
+    // ✅ FIX: Only add the optimistic USER message
     queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
       ...old,
       optimisticUserMessage,
-      optimisticAssistantMessage,
     ]);
   }, [setMicrophoneMuted, chat?.id, userPersona?.id, queryClient]);
 
@@ -317,9 +277,8 @@ export default function ChatArea({
     emitFinalizeTurn();
   }, [setMicrophoneMuted, emitFinalizeTurn, micActive]);
 
-  // Handle WebRTC text message sending with generic assistant persona
-  // This approach creates a temporary assistant message with persona_id: null
-  // The persona_id will be updated when the real assistant response arrives
+  // Handle WebRTC text message sending
+  // ✅ FIX: Only create optimistic user message, assistant message will be added by server
   const handleWebRTCTextMessage = useCallback(
     (message: string) => {
       if (!chat?.id || !message.trim() || !userPersona?.id) return;
@@ -329,9 +288,8 @@ export default function ChatArea({
       const queryKey = trainingMessageKeys.list(chat.id);
       const baseTimestamp = new Date();
       const tempUserId = `temp-${baseTimestamp.getTime()}`;
-      const tempAssistantId = `temp-assistant-${baseTimestamp.getTime()}`;
 
-      // Create optimistic updates with a generic assistant persona
+      // ✅ FIX: Only add the optimistic USER message
       queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
         ...old,
         {
@@ -341,15 +299,6 @@ export default function ChatArea({
           content: message,
           completed: true,
           created_at: baseTimestamp.toISOString(),
-          chat_id: chat.id,
-        } as Message,
-        {
-          id: tempAssistantId,
-          role: "assistant",
-          persona_id: null, // Generic placeholder - will be updated when real response arrives
-          content: "",
-          completed: false,
-          created_at: new Date(baseTimestamp.getTime() + 1).toISOString(),
           chat_id: chat.id,
         } as Message,
       ]);
