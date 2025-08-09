@@ -62,11 +62,6 @@ async def create_realtime_voice_session(
             output_audio_format="pcm16",
             input_audio_transcription=RealtimeInputAudioTranscriptionConfig(
                 model="whisper-1",
-            ),
-            turn_detection=RealtimeTurnDetectionConfig(
-                type="server_vad",
-                silence_duration_ms=300,
-                prefix_padding_ms=150,
             )
         )
     )
