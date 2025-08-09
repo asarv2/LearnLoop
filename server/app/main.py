@@ -111,7 +111,12 @@ class ServerAudioStreamTrack(MediaStreamTrack):
     # ✨ THIS IS THE CORRECT, SIMPLIFIED RECV METHOD
     async def recv(self) -> AudioFrame:
         """Pulls a pre-formatted s16 mono chunk and wraps it in a timed AudioFrame."""
-        chunk = await self.queue.get()
+        # Try to keep a steady 20ms cadence; if producer stalls, synthesize silence
+        try:
+            chunk = await asyncio.wait_for(self.queue.get(), timeout=0.02)
+        except asyncio.TimeoutError:
+            # Underflow: insert a 20ms silence frame to avoid choppy playback
+            chunk = b"\x00" * (960 * 2)
         if chunk is None:
             self.stop()
             raise asyncio.CancelledError("Audio stream ended.")
