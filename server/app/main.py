@@ -15,11 +15,12 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import socketio  # type: ignore
-from agents.realtime import RealtimeSession
+from agents.realtime import RealtimeModelSendEvent, RealtimeSession
 from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
                     RTCIceCandidate, RTCIceServer, RTCPeerConnection,
                     RTCSessionDescription)
 from aiortc.sdp import candidate_from_sdp  # type: ignore
+from app.utils.chat import get_realtime_instructions
 from av import AudioFrame, AudioResampler  # type: ignore
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -445,7 +446,7 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                     logger.error(f"Could not find persona for chat {chat_id_for_voice}.")
                     continue
 
-                session = await create_realtime_voice_session(persona_id, db_session)
+                session = await create_realtime_voice_session(chat_id_for_voice, persona_id, db_session)
                 setattr(pc, "_realtime_session", session)
 
                 # -- DEFINE TASKS FOR THIS SPECIFIC TURN --
