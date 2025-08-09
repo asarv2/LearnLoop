@@ -12,24 +12,33 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    # Use ~= for stable, compatible releases
-    "fastapi~=0.111.0",
-    "uvicorn[standard]~=0.29.0",
-    "gunicorn~=22.0.0",
-    "openai-agents[litellm]~=0.2.0",
-    "aiortc~=1.7.0",
-    "av~=11.0",
-    "websockets~=12.0",
-    "supabase~=2.4.0",
-    "python-dotenv~=1.0.1",
-    "httpx~=0.27.0",
-    "sqlmodel~=0.0.18",
-    "sqlalchemy~=2.0.30",
-    "psycopg[binary]~=3.1.18",
-    "sqlacodegen~=3.0.0rc4",
-    "python-socketio[asyncio_client]~=5.11.2",
-    "redis~=5.2.0",
-    "numpy~=1.26.4",
+    # Core web server
+    "fastapi>=0.111.0,<0.112.0",
+    "uvicorn[standard]>=0.29.0,<0.30.0",
+    "gunicorn>=22.0.0,<23.0.0",
+
+    # Key application logic
+    "openai-agents[litellm,realtime]>=0.2.5,<0.3.0",
+    "openai>=1.97.1,<1.98.0",
+
+    # WebRTC and Media
+    "aiortc>=1.7.0,<1.8.0",
+    "av>=11.0,<12.0",
+    "numpy>=1.26.4,<1.27.0",
+    
+    # WebSocket Signaling
+    "python-socketio[asyncio_client]>=5.11.2,<5.12.0",
+
+    # Database
+    "sqlmodel>=0.0.18,<0.1.0",
+    "sqlalchemy>=2.0.30,<2.1.0",
+    "psycopg[binary]>=3.1.18,<3.2.0",
+    "sqlacodegen>=3.0.0rc4,<3.1.0",
+
+    # Utilities
+    "python-dotenv>=1.0.1,<1.1.0",
+    "httpx>=0.27.0,<0.28.0",
+    "redis[hiredis]>=5.0.0,<5.1.0",
 ]
 
 [project.optional-dependencies]
