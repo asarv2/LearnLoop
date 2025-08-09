@@ -106,4 +106,15 @@ export const rubricRepo = {
     if (error) throw new HttpError(500, error.message);
     return data;
   },
+
+  async getAllGrades(): Promise<RubricGrade[]> {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("rubric_grades")
+      .select("*, standard_grades(*)")
+      .order("created_at", { ascending: false });
+
+    if (error) throw new HttpError(500, error.message);
+    return data;
+  },
 };

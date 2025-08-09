@@ -15,15 +15,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useChats } from "@/lib/api/hooks/useChats";
+import { useAllRubricGrades } from "@/lib/api/hooks/useRubrics";
 import { useScenarios } from "@/lib/api/hooks/useScenarios";
-import {
-  useInterviewScores,
-  useOffboardingScores,
-} from "@/lib/api/hooks/useScores";
 import { useStandards } from "@/lib/api/hooks/useStandards";
 import { useTrainings } from "@/lib/api/hooks/useTrainings";
 import { Flame, LineChartIcon, Timer } from "lucide-react";
-import { type ComponentType, useMemo, useState } from "react";
+import { type ComponentType, useCallback, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -92,8 +89,7 @@ const OFFBOARDING_CATEGORIES = [
 
 export default function Overview() {
   const { data: chats } = useChats();
-  const { data: interviewScores } = useInterviewScores();
-  const { data: offboardingScores } = useOffboardingScores();
+  const { data: rubricGrades } = useAllRubricGrades();
   const { data: trainings } = useTrainings();
   const { data: scenarios } = useScenarios();
   const { data: standards } = useStandards();
@@ -103,6 +99,17 @@ export default function Overview() {
     useState<TrainingTypeOption>("Interview");
   const [avgType, setAvgType] = useState<TrainingTypeOption>("Interview");
   const [hoursType, setHoursType] = useState<TrainingTypeOption>("Interview");
+
+  // Helper function to get score for a chat from its rubric grade
+  const getChatScore = useCallback(
+    (chatId: string): number => {
+      const rubricGrade = (rubricGrades || []).find(
+        (rg) => rg.chat_id === chatId
+      );
+      return rubricGrade?.score || 0;
+    },
+    [rubricGrades]
+  );
 
   const totals = useMemo(() => {
     const completed = (chats || []).filter((c) => c.completed).length;
@@ -116,18 +123,13 @@ export default function Overview() {
       return createdAt !== null && createdAt >= monthStart;
     }).length;
 
-    // Highest Interview Score (This Month) and its training name
-    const interviewThisMonth = (interviewScores || []).filter((s) => {
-      const createdAt = s.created_at ? new Date(s.created_at) : null;
-      return createdAt !== null && createdAt >= monthStart;
-    });
     let highestInterviewScoreThisMonth = 0;
     let highestInterviewTrainingName: string | null = null;
-    for (const s of interviewThisMonth) {
-      const score = (s as { overall_score?: number }).overall_score || 0;
+    for (const s of chats || []) {
+      const score = getChatScore(s.id || "");
       if (score >= highestInterviewScoreThisMonth) {
         highestInterviewScoreThisMonth = score;
-        const chatId = (s as { chat_id?: string }).chat_id || null;
+        const chatId = s.id || null;
         if (chatId) {
           const chat = (chats || []).find((c) => c.id === chatId);
           const trainingId = chat?.training_id || null;
@@ -199,22 +201,17 @@ export default function Overview() {
       hoursThisMonth,
       streak,
     };
-  }, [chats, interviewScores, trainings, hoursType]);
+  }, [chats, trainings, hoursType, getChatScore]);
 
   const trendData = useMemo(() => {
-    const all = [
-      ...(interviewScores || []).map((s) => ({
-        date: new Date(s.created_at || 0),
-        score: s.overall_score || 0,
-        type: "Interview",
-      })),
-      ...(offboardingScores || []).map((s) => ({
-        date: new Date(s.created_at || 0),
-        score: s.overall_score || 0,
-        type: "Offboarding",
-      })),
-    ];
-    const filtered = all.filter((x) => x.type === selectedType);
+    // Create filtered data with scores from rubric grades
+    const filtered = (chats || [])
+      .filter((c) => c.completed && c.created_at)
+      .map((c) => ({
+        date: new Date(c.created_at || 0),
+        score: getChatScore(c.id || ""),
+      }))
+      .filter((item) => item.score > 0); // Only include chats with scores
 
     if (range === "weekly") {
       // Build last 12 full weeks, starting from current week
@@ -278,13 +275,13 @@ export default function Overview() {
         return { date: label, score: avg };
       });
     }
-  }, [interviewScores, offboardingScores, range, selectedType]);
+  }, [chats, range, getChatScore]);
 
   const avgByCategory30d = useMemo(() => {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
     if (avgType === "Interview") {
-      const recent = (interviewScores || []).filter(
+      const recent = (chats || []).filter(
         (s) => new Date(s.created_at || 0).getTime() >= cutoff
       );
       return INTERVIEW_CATEGORIES.map((cat) => {
@@ -302,7 +299,7 @@ export default function Overview() {
     }
 
     if (avgType === "Offboarding") {
-      const recent = (offboardingScores || []).filter(
+      const recent = (chats || []).filter(
         (s) => new Date(s.created_at || 0).getTime() >= cutoff
       );
       return OFFBOARDING_CATEGORIES.map((cat) => {
@@ -348,14 +345,7 @@ export default function Overview() {
 
     // Fallback placeholder if no standards are found
     return [{ name: "Overall", avg: 0 }];
-  }, [
-    interviewScores,
-    offboardingScores,
-    avgType,
-    trainings,
-    scenarios,
-    standards,
-  ]);
+  }, [chats, avgType, trainings, scenarios, standards]);
 
   const insights = useMemo(() => {
     // Build per-training insight with 0-defaults
@@ -382,12 +372,7 @@ export default function Overview() {
       }
     };
 
-    (interviewScores || []).forEach((s) =>
-      add("Interview", s.overall_score || 0)
-    );
-    (offboardingScores || []).forEach((s) =>
-      add("Offboarding", s.overall_score || 0)
-    );
+    (chats || []).forEach((s) => add("Interview", getChatScore(s.id || "")));
 
     return (
       Object.entries(byType) as [
@@ -395,7 +380,7 @@ export default function Overview() {
         { avg: number; count: number; blurb: string }
       ][]
     ).map(([type, v]) => ({ type, ...v }));
-  }, [interviewScores, offboardingScores]);
+  }, [chats, getChatScore]);
 
   return (
     <div className="min-h-screen w-full">
@@ -642,7 +627,11 @@ export default function Overview() {
                         axisLine={false}
                         height={80}
                         interval={0}
-                        tick={(props) => {
+                        tick={(props: {
+                          x: number;
+                          y: number;
+                          payload: { value: string };
+                        }) => {
                           const { x, y, payload } = props;
                           const text = payload.value;
                           const words = text.split(" ");

@@ -5,15 +5,17 @@ import { NextResponse } from "next/server";
 
 export async function GET(
   _req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const questions = await questionRepo.getByAssessmentId(params.id);
+    const { id } = await params;
+    const questions = await questionRepo.getByAssessmentId(id);
     return NextResponse.json(questions);
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
+    const { id } = await params;
     await logError("Failed to get questions for assessment", err, {
-      assessmentId: params.id,
+      assessmentId: id,
     });
     return NextResponse.json({ error: message }, { status: statusCode });
   }
