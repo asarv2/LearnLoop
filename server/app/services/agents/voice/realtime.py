@@ -50,13 +50,7 @@ async def create_realtime_voice_session(
                 input_audio_transcription=RealtimeInputAudioTranscriptionConfig(
                     model="whisper-1",
                 ),
-                turn_detection=RealtimeTurnDetectionConfig(
-                    type="server_vad",
-                    create_response=True,
-                    threshold=0.5,
-                    prefix_padding_ms=300,
-                    silence_duration_ms=200,
-                ),
+                # Completely disable automatic turn detection for push-to-talk
             )
         ),
     )

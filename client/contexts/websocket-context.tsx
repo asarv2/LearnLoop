@@ -65,6 +65,7 @@ interface WebSocketContextType {
   enableServerAudio: () => void; // Enable server audio playback
   disableServerAudio: () => void; // Disable server audio playback
   triggerServerAudio: () => void; // Trigger server audio by sending silent frame
+  emitFinalizeTurn: () => void; // ✨ Add this for push-to-talk turn finalization
 
   // Training event emitters
   emitJoinTraining: (data: {
@@ -843,6 +844,16 @@ export function WebSocketProvider({
     socketRef.current.emit("generate_feedback", data);
   }, []);
 
+  // ✨ Add the new emitter function for push-to-talk turn finalization
+  const emitFinalizeTurn = useCallback(() => {
+    if (socketRef.current?.connected && profileId) {
+      logInfo("Emitting finalize_turn");
+      socketRef.current.emit("webrtc_finalize_turn", {
+        profile_id: profileId,
+      });
+    }
+  }, [profileId]);
+
   // WebRTC functions
   const sendWebRTCMessage = useCallback(
     (chatId: string, message: string) => {
@@ -1045,6 +1056,7 @@ export function WebSocketProvider({
     enableServerAudio, // Enable server audio playback
     disableServerAudio, // Disable server audio playback
     triggerServerAudio, // Trigger server audio by sending silent frame
+    emitFinalizeTurn, // ✨ Add this for push-to-talk turn finalization
     emitJoinTraining,
     emitSendTrainingMessage,
     emitStopTraining,
