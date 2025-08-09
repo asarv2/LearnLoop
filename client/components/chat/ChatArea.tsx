@@ -267,19 +267,31 @@ export default function ChatArea({
     terminateAudioStream,
   ]);
 
-  // ✅ FIX: PTT now only toggles track.enabled (no optimistic messages needed with server VAD)
+  // ✅ FIX: PTT now creates an optimistic message for immediate UI feedback
   const handleVoiceStart = useCallback(() => {
-    // ✅ NEW: With server VAD, we only need to enable the microphone track
-    // The server will automatically detect speech start/stop and manage turns
     setMicrophoneMuted(false);
     setMicActive(true);
-    logInfo(
-      "Microphone enabled for voice input (server VAD will handle turn management)"
-    );
+    logInfo("Microphone enabled for voice input.");
 
-    // ❌ REMOVED: No optimistic message creation needed
-    // Server VAD will automatically create messages when speech is detected
-  }, [setMicrophoneMuted]);
+    // ✅ FIX: Create an optimistic user message placeholder
+    if (chat?.id && userPersona?.id) {
+      const queryKey = trainingMessageKeys.list(chat.id);
+      const tempId = `temp-voice-${Date.now()}`;
+
+      queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
+        ...old,
+        {
+          id: tempId,
+          role: "user",
+          persona_id: userPersona.id,
+          content: "🎤 Listening...", // Placeholder content
+          completed: false, // It's not completed yet
+          created_at: new Date().toISOString(),
+          chat_id: chat.id,
+        } as Message,
+      ]);
+    }
+  }, [setMicrophoneMuted, chat?.id, userPersona?.id, queryClient]);
 
   const handleVoiceStop = useCallback(() => {
     // Only process if the mic was actually active

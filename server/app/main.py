@@ -455,6 +455,9 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                     assistant_message_id: Optional[Any] = None
                     accumulated_assistant: str = ""
                     
+                    # ✅ FIX: Add a variable to store the start time of the user's turn
+                    user_turn_start_time: Optional[datetime] = None
+                    
                     # Create a buffer for the resampled audio
                     audio_buffer = b""
                     REQUIRED_FRAME_SIZE = 1920  # 960 samples * 2 bytes/sample for 48kHz s16 mono
@@ -499,7 +502,27 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                     "delta": getattr(raw_event, "delta", ""),
                                     "itemId": getattr(raw_event, "item_id", None),
                                 })
-                            elif getattr(raw_event, "type", "") in ("input_audio_buffer.speech_started", "input_audio_buffer.speech_stopped"):
+                                # ✅ FIX: Also emit to Socket.IO for client-side transcript updates
+                                await sio.emit("conversation.item.input_audio_transcription.delta", {
+                                    "chat_id": chat_id_for_voice,
+                                    "delta": getattr(raw_event, "delta", ""),
+                                    "itemId": getattr(raw_event, "item_id", None),
+                                }, room=chat_id_for_voice)
+                            elif getattr(raw_event, "type", "") == "input_audio_buffer.speech_started":
+                                # ✅ FIX: Capture the timestamp when the user starts speaking
+                                user_turn_start_time = datetime.now(timezone.utc)
+                                event_type = getattr(raw_event, "type", "")
+                                await emit_transport({
+                                    "type": event_type,
+                                    "itemId": getattr(raw_event, "item_id", None),
+                                })
+                                # Also emit to Socket.IO for immediate client notification
+                                await sio.emit("server_vad_event", {
+                                    "type": event_type,
+                                    "chat_id": chat_id_for_voice,
+                                    "profile_id": profile_id,
+                                }, room=chat_id_for_voice)
+                            elif getattr(raw_event, "type", "") == "input_audio_buffer.speech_stopped":
                                 # ✅ NEW: Emit server VAD events to client for UI feedback
                                 event_type = getattr(raw_event, "type", "")
                                 await emit_transport({
@@ -536,6 +559,8 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                             training_id=chat_obj.training_id,  # type: ignore[union-attr]
                                             completed=True,
                                             persona_id=user_persona_id,
+                                            # ✅ FIX: Use the captured start time for consistency
+                                            created_at=user_turn_start_time if user_turn_start_time else datetime.now(timezone.utc)
                                         )
                                         db_session.add(user_message)
                                         db_session.commit()
@@ -558,9 +583,14 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                             },
                                             room=chat_id_for_voice,
                                         )
+                                        
+                                        # ✅ FIX: Reset the start time for the next turn
+                                        user_turn_start_time = None
                                     except Exception as ex:
                                         logger.error(f"VOICE_BRIDGE: Failed to persist user message: {ex}")
-                                        db_session.rollback()  # Rollback failed transaction
+                                        db_session.rollback()
+                                        # ✅ FIX: Also reset on failure to prevent bad state.
+                                        user_turn_start_time = None
                             elif getattr(raw_event, "type", "") == "raw_server_event":
                                 data = getattr(raw_event, "data", {})
                                 evt_type = data.get("type") if isinstance(data, dict) else None
