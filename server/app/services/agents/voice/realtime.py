@@ -30,16 +30,13 @@ async def create_realtime_voice_session(
     ).one_or_none()
 
     if not persona:
-        # ✅ Added logging
-        logger.error(f"[DEBUG] Persona lookup FAILED for ID: {persona_id}")
+        logger.error(f"Persona lookup failed for ID: {persona_id}")
         raise ValueError(f"Persona with ID {persona_id} not found")
 
-    # ✅ Added logging
-    logger.info(f"[DEBUG] Found Persona: Name='{persona.name}', Voice='{persona.voice}'")
+    logger.info(f"Found persona: Name='{persona.name}', Voice='{persona.voice}'")
 
     if not persona.system_prompt:
-        # ✅ Added logging
-        logger.error(f"[DEBUG] Persona '{persona.name}' has no system prompt.")
+        logger.error(f"Persona '{persona.name}' has no system prompt.")
         raise ValueError(f"Persona with ID {persona_id} has no system prompt")
 
     agent_instance = RealtimeVoiceAgent(
@@ -49,7 +46,6 @@ async def create_realtime_voice_session(
 
     voice = persona.voice or default_voice
     
-    # ✅ Log the configuration object
     run_config = RealtimeRunConfig(
         model_settings=RealtimeSessionModelSettings(
             model_name=model_name,
@@ -62,26 +58,19 @@ async def create_realtime_voice_session(
             )
         )
     )
-    logger.info(f"[DEBUG] Creating RealtimeRunner with config: {run_config}")
 
     runner = RealtimeRunner(
         starting_agent=agent_instance.agent(),
-        config=run_config, # Use the object we just logged
+        config=run_config,
     )
 
     try:
-        logger.info("[DEBUG] Attempting to start session with runner.run()")
         session = await runner.run()
-        logger.info("[DEBUG] runner.run() successful. Session object created.")
-
-        logger.info("[DEBUG] Attempting to connect session with session.enter()")
         await session.enter()
-        logger.info("[DEBUG] session.enter() successful. Session is connected and active.")
-        
         return session
     except Exception as e:
-        logger.error(f"[DEBUG] FAILED to create or start RealtimeSession: {e}", exc_info=True)
-        raise # Re-raise the exception after logging
+        logger.error(f"Failed to create or start RealtimeSession: {e}", exc_info=True)
+        raise
 
 class RealtimeVoiceAgent:
     def __init__(
