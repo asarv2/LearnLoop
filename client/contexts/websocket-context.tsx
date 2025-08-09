@@ -162,6 +162,17 @@ export function WebSocketProvider({
       // Create a new MediaStream with just the audio track for cleaner handling
       const audioTracks = remoteStream.getAudioTracks();
       if (audioTracks.length > 0) {
+        // ✅ Explicitly enable each track to ensure it's not muted by default
+        audioTracks.forEach((track) => {
+          track.enabled = true;
+          logInfo("Enabled audio track", {
+            trackId: track.id,
+            enabled: track.enabled,
+            muted: track.muted,
+            readyState: track.readyState,
+          });
+        });
+
         const audioOnlyStream = new MediaStream(audioTracks);
         audioEl.srcObject = audioOnlyStream;
 
@@ -396,12 +407,6 @@ export function WebSocketProvider({
           token: string;
           accumulated_content: string;
         }) => {
-          logInfo("Dispatching training message token event", {
-            chatId: data.chat_id,
-            messageId: data.message_id,
-            contentLength: data.accumulated_content.length,
-          });
-
           // Dispatch event with streaming data for real-time UI updates
           window.dispatchEvent(
             new CustomEvent("trainingMessageToken", {
