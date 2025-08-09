@@ -221,22 +221,25 @@ export default function ChatArea({
   }, [displayMessages]);
   */
 
-  // ✨ FIX: Simplify the mode toggle. It no longer needs to set 'isAudioInitialized'.
+  // ✅ ENHANCED: Voice mode toggle now handles audio playback setup
   const handleModeToggle = useCallback(async () => {
     const nextIsVoiceMode = !isVoiceMode;
     setIsVoiceMode(nextIsVoiceMode);
     setCurrentMessage("");
 
     if (nextIsVoiceMode) {
-      // Enable server audio and initialize the stream when entering voice mode
+      // ✅ STEP 1: Enable server audio playback immediately on click.
+      // This is a valid user gesture, so the .play() call inside enableServerAudio will work.
+      enableServerAudio();
+
+      // ✅ STEP 2: Initialize the microphone stream as before.
       if (chat?.id) {
-        enableServerAudio();
         await initializeAudioStream(chat.id);
-        // Trigger server audio by briefly enabling microphone to start the echo
+        // This is still useful to prime the connection if needed.
         triggerServerAudio();
       }
     } else {
-      // Disable server audio and terminate the stream when leaving voice mode
+      // Cleanup remains the same when leaving voice mode.
       if (chat?.id) {
         disableServerAudio();
         terminateAudioStream(chat.id);
@@ -246,28 +249,30 @@ export default function ChatArea({
   }, [
     isVoiceMode,
     chat?.id,
-    initializeAudioStream,
-    terminateAudioStream,
     setCurrentMessage,
     enableServerAudio,
-    disableServerAudio,
+    initializeAudioStream,
     triggerServerAudio,
+    disableServerAudio,
+    terminateAudioStream,
   ]);
 
-  // Simple microphone control - only handles local mic, server audio is already enabled
+  // ✅ SIMPLIFIED: "Hold to Speak" button now only controls microphone
   const handleVoiceStart = useCallback(() => {
     // Only control the local microphone
     setMicrophoneMuted(false);
     setMicActive(true);
     logInfo("Microphone enabled for voice input");
 
-    // ✅ Check if the audio element is paused and play it.
-    // This is a user gesture, so it satisfies browser autoplay policies.
+    // ❌ REMOVE THE PLAYBACK LOGIC FROM HERE.
+    // It's no longer needed as it's handled by the mode toggle.
+    /*
     if (audioPlaybackRef.current && audioPlaybackRef.current.paused) {
       audioPlaybackRef.current
         .play()
         .catch((e) => logError("Playback failed", e));
     }
+    */
 
     // Create optimistic placeholders for both user and assistant
     if (!chat?.id || !userPersona?.id) return;
@@ -308,13 +313,7 @@ export default function ChatArea({
       optimisticUserMessage,
       optimisticAssistantMessage,
     ]);
-  }, [
-    setMicrophoneMuted,
-    audioPlaybackRef,
-    chat?.id,
-    userPersona?.id,
-    queryClient,
-  ]);
+  }, [setMicrophoneMuted, chat?.id, userPersona?.id, queryClient]);
 
   const handleVoiceStop = useCallback(() => {
     // Only process if the mic was actually active
@@ -372,7 +371,13 @@ export default function ChatArea({
 
       setCurrentMessage("");
     },
-    [chat?.id, sendWebRTCMessage, queryClient, setCurrentMessage, userPersona]
+    [
+      chat?.id,
+      sendWebRTCMessage,
+      queryClient,
+      setCurrentMessage,
+      userPersona?.id,
+    ]
   );
 
   // ✨ 3. Use the memoized map in the lookup function for stability.
@@ -419,7 +424,7 @@ export default function ChatArea({
         ref={audioPlaybackRef}
         autoPlay
         playsInline
-        muted={false}
+        muted={true}
         style={{ display: "none" }}
         onLoadedMetadata={() => {
           logInfo("Audio element loaded metadata");
