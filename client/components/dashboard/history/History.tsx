@@ -8,10 +8,13 @@
 
 import { useAttempts } from "@/lib/api/hooks/useAttempts";
 import { useChats } from "@/lib/api/hooks/useChats";
+import {
+  useInterviewScores,
+  useOffboardingScores,
+} from "@/lib/api/hooks/useScores";
 import { useTrainings } from "@/lib/api/hooks/useTrainings";
 import { Attempt, Training } from "@/types";
 import {
-  CalendarOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   EyeOutlined,
@@ -29,7 +32,6 @@ import {
   Row,
   Select,
   Space,
-  Statistic,
   Table,
   Tag,
   Typography,
@@ -54,6 +56,8 @@ interface AttemptWithChatInfo extends Attempt {
     totalChats: number;
     completedChats: number;
   };
+  chatType?: string | null;
+  score?: number | null;
 }
 
 export default function History() {
@@ -66,6 +70,8 @@ export default function History() {
   const { data: attempts, isLoading: attemptsLoading } = useAttempts();
   const { data: chats, isLoading: chatsLoading } = useChats();
   const { data: trainings, isLoading: trainingsLoading } = useTrainings();
+  const { data: interviewScores } = useInterviewScores();
+  const { data: offboardingScores } = useOffboardingScores();
 
   const isLoading = attemptsLoading || chatsLoading || trainingsLoading;
 
@@ -73,22 +79,45 @@ export default function History() {
   const attemptsWithChatInfo = useMemo(() => {
     if (!attempts || !chats || !trainings) return [];
 
+    // Build quick lookups for scores by chat_id
+    const interviewScoreByChatId = new Map<string, number>();
+    const offboardingScoreByChatId = new Map<string, number>();
+    (interviewScores || []).forEach((s) => {
+      if ((s as any).chat_id && typeof (s as any).overall_score === "number") {
+        interviewScoreByChatId.set(
+          (s as any).chat_id,
+          (s as any).overall_score
+        );
+      }
+    });
+    (offboardingScores || []).forEach((s) => {
+      if ((s as any).chat_id && typeof (s as any).overall_score === "number") {
+        offboardingScoreByChatId.set(
+          (s as any).chat_id,
+          (s as any).overall_score
+        );
+      }
+    });
+
     return attempts.map((attempt) => {
       // Get training info
       const training = trainings.find((t) => t.id === attempt.training_id);
 
-      // Get all chats for this attempt
+      // Get all chats for this attempt (assuming chats are already desc by created_at)
       const attemptChats = chats.filter(
         (chat) => chat.attempt_id === attempt.id
       );
+
+      // latest chat for type/name/score
+      const latestChat = attemptChats[0];
 
       // Compile chat information
       const chatInfo =
         attemptChats.length > 0
           ? {
-              title: attemptChats[0]?.title || "Untitled Interview",
-              name: attemptChats[0]?.name || "Unknown Candidate",
-              position: attemptChats[0]?.position || "",
+              title: latestChat?.title || "Untitled Interview",
+              name: latestChat?.name || "Unknown Candidate",
+              position: latestChat?.position || "",
               isCompleted: attemptChats.every((chat) => chat.completed),
               completedAt: attemptChats.every((chat) => chat.completed)
                 ? attemptChats[attemptChats.length - 1]?.completed_at
@@ -106,13 +135,32 @@ export default function History() {
               completedChats: 0,
             };
 
+      // Determine chat type and score (if any)
+      const chatType = latestChat?.training_type || null;
+      let score: number | null = null;
+      if (latestChat?.id) {
+        if (chatType === "offboarding") {
+          score = offboardingScoreByChatId.get(latestChat.id) ?? null;
+        } else if (chatType === "interview") {
+          score = interviewScoreByChatId.get(latestChat.id) ?? null;
+        } else {
+          // fallback: try either map
+          score =
+            interviewScoreByChatId.get(latestChat.id) ??
+            offboardingScoreByChatId.get(latestChat.id) ??
+            null;
+        }
+      }
+
       return {
         ...attempt,
         training,
         chatInfo,
-      };
+        chatType,
+        score,
+      } as AttemptWithChatInfo;
     });
-  }, [attempts, chats, trainings]);
+  }, [attempts, chats, trainings, interviewScores, offboardingScores]);
 
   // Sort attempts by newest first
   const sortedAttempts = useMemo(
@@ -202,74 +250,34 @@ export default function History() {
 
   const columns: ColumnsType<AttemptWithChatInfo> = [
     {
-      title: "Session Details",
+      title: "Person",
       dataIndex: "chatInfo",
-      key: "chatInfo",
-      render: (chatInfo, record: AttemptWithChatInfo) => (
-        <Space direction="vertical" size={4}>
-          <Text strong>{chatInfo?.title || "Untitled Interview"}</Text>
-          <Space>
-            <UserOutlined style={{ color: "#8c8c8c" }} />
-            <Text type="secondary">
-              {chatInfo?.name || "Unknown Candidate"}
-            </Text>
-          </Space>
-          {chatInfo?.position && (
-            <Text type="secondary" style={{ fontSize: "12px" }}>
-              {chatInfo.position}
-            </Text>
-          )}
-          {record.training && (
-            <Text type="secondary" style={{ fontSize: "12px" }}>
-              Training: {record.training.title}
-            </Text>
-          )}
+      key: "person",
+      render: (chatInfo) => (
+        <Space>
+          <UserOutlined style={{ color: "#8c8c8c" }} />
+          <Text>{chatInfo?.name || "Unknown Candidate"}</Text>
         </Space>
       ),
-      width: 300,
+      width: 220,
     },
     {
-      title: "Status",
-      dataIndex: "chatInfo",
-      key: "status",
-      render: (chatInfo, record: AttemptWithChatInfo) => getStatusTag(record),
-      filters: [
-        { text: "Completed", value: true },
-        { text: "In Progress", value: false },
-      ],
-      width: 130,
-    },
-    {
-      title: "Progress",
-      key: "progress",
-      render: (_, record: AttemptWithChatInfo) => {
-        const { totalChats, completedChats } = record.chatInfo || {
-          totalChats: 0,
-          completedChats: 0,
-        };
-        if (totalChats === 0) return <Text>No chats</Text>;
-
-        const percentage = Math.round((completedChats / totalChats) * 100);
-        return (
-          <Text>
-            {completedChats}/{totalChats} chats ({percentage}%)
-          </Text>
-        );
-      },
-      width: 120,
-    },
-    {
-      title: "Duration",
-      key: "duration",
-      render: (_, record: AttemptWithChatInfo) => (
-        <Text>
-          {formatDuration(
-            record.created_at || "",
-            record.chatInfo?.completedAt || ""
-          )}
-        </Text>
+      title: "Type",
+      dataIndex: "chatType",
+      key: "type",
+      render: (chatType: string | null) => (
+        <Text style={{ textTransform: "capitalize" }}>{chatType || "-"}</Text>
       ),
-      width: 100,
+      width: 140,
+    },
+    {
+      title: "Score",
+      dataIndex: "score",
+      key: "score",
+      render: (score: number | null, record: AttemptWithChatInfo) => (
+        <Text>{typeof score === "number" ? score : "Incomplete"}</Text>
+      ),
+      width: 140,
     },
     {
       title: "Created",
@@ -312,29 +320,7 @@ export default function History() {
     showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} attempts`,
   };
 
-  // Calculate summary stats for filtered data
-  const summaryStats = useMemo(() => {
-    const total = filteredAttempts.length;
-    const completed = filteredAttempts.filter(
-      (attempt) => attempt.chatInfo?.isCompleted
-    ).length;
-    const avgDuration =
-      completed > 0
-        ? filteredAttempts
-            .filter((attempt) => attempt.chatInfo?.isCompleted)
-            .reduce((acc, attempt) => {
-              const start = new Date(attempt.created_at || "");
-              const end = attempt.chatInfo?.completedAt
-                ? new Date(attempt.chatInfo.completedAt)
-                : start;
-              return acc + (end.getTime() - start.getTime());
-            }, 0) /
-          completed /
-          (1000 * 60)
-        : 0;
-
-    return { total, completed, avgDuration: Math.round(avgDuration) };
-  }, [filteredAttempts]);
+  // Summary stats removed as requested
 
   return (
     <div>
@@ -345,40 +331,7 @@ export default function History() {
         </Text>
       </div>
 
-      {/* Summary Statistics */}
-      <Row gutter={16} style={{ marginBottom: "24px" }}>
-        <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title="Total Attempts"
-              value={summaryStats.total}
-              prefix={<CalendarOutlined />}
-              valueStyle={{ color: "#1890ff" }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title="Completed"
-              value={summaryStats.completed}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: "#52c41a" }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title="Avg Duration"
-              value={summaryStats.avgDuration}
-              suffix="min"
-              prefix={<ClockCircleOutlined />}
-              valueStyle={{ color: "#722ed1" }}
-            />
-          </Card>
-        </Col>
-      </Row>
+      {/* Summary Statistics removed as requested */}
 
       {/* Filters */}
       <Card style={{ marginBottom: "24px" }}>
