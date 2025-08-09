@@ -150,6 +150,39 @@ export function WebSocketProvider({
   // Flag to prevent multiple webrtc_start emissions on reconnects
   const webrtcStarted = useRef(false);
 
+  // ✅ FIX: Create a centralized cleanup function
+  const cleanupWebRTC = useCallback(() => {
+    if (webRTCPeerConnection.current) {
+      // Close all data channels and event listeners
+      webRTCPeerConnection.current.ontrack = null;
+      webRTCPeerConnection.current.onicecandidate = null;
+      webRTCPeerConnection.current.onconnectionstatechange = null;
+      webRTCPeerConnection.current.close();
+      webRTCPeerConnection.current = null;
+    }
+
+    // Clean up audio tracks
+    if (userMediaStream.current) {
+      userMediaStream.current.getTracks().forEach((track) => track.stop());
+      userMediaStream.current = null;
+    }
+    audioTrackRef.current = null;
+    audioTrackSenders.current.clear();
+
+    // Clean up audio element
+    if (audioPlaybackRef.current) {
+      audioPlaybackRef.current.srcObject = null;
+      audioPlaybackRef.current.pause();
+    }
+
+    setRemoteStream(null);
+    setIsWebRTCConnected(false);
+    webRTCDataChannels.current.clear();
+    pendingIce.current = [];
+    webrtcStarted.current = false; // Allow handshake on the next connection
+    logInfo("WebRTC connection resources cleaned up.");
+  }, []);
+
   // ✨ NEW: Effect to reliably connect the remote stream to the audio element
   useEffect(() => {
     const audioEl = audioPlaybackRef.current;
@@ -261,6 +294,14 @@ export function WebSocketProvider({
       return;
     }
 
+    // Prevent multiple connection attempts
+    if (socketRef.current) {
+      logInfo("WebSocket connection in progress, skipping initialization", {
+        profileId,
+      });
+      return;
+    }
+
     const roomsToCleanup = currentRoomsRef.current;
 
     const connectWebSocket = async () => {
@@ -298,7 +339,7 @@ export function WebSocketProvider({
         });
 
         // Kick-off WebRTC handshake once the socket is up
-        if (!webrtcStarted.current) {
+        if (!webrtcStarted.current && !webRTCPeerConnection.current) {
           socket.emit("webrtc_start", { profile_id: profileId });
           webrtcStarted.current = true;
           logInfo("Sent webrtc_start");
@@ -311,6 +352,7 @@ export function WebSocketProvider({
           socketId: socket.id,
           profileId,
         });
+        cleanupWebRTC(); // ✅ FIX: Clean up WebRTC on disconnect
       });
 
       socket.on("connect_error", (error: Error) => {
@@ -532,8 +574,11 @@ export function WebSocketProvider({
             let pc = webRTCPeerConnection.current;
 
             if (pc && pc.signalingState === "closed") {
-              logInfo("Ignoring offer for closed peer connection");
-              return;
+              logInfo(
+                "Ignoring offer for closed peer connection, cleaning up."
+              );
+              cleanupWebRTC(); // Clean up the stale connection
+              pc = null; // Ensure a new one is created
             }
 
             if (!pc) {
@@ -702,9 +747,16 @@ export function WebSocketProvider({
         socketRef.current.disconnect();
         socketRef.current = null;
         setIsConnected(false);
+        cleanupWebRTC(); // ✅ FIX: Clean up WebRTC on component unmount
       }
     };
-  }, [profileId, createDataChannelIfNeeded, playTrack, audioPlaybackRef]);
+  }, [
+    profileId,
+    createDataChannelIfNeeded,
+    playTrack,
+    audioPlaybackRef,
+    cleanupWebRTC,
+  ]);
 
   // Room management (chat_id-based)
   const joinRoom = useCallback(
