@@ -446,17 +446,30 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                     accumulated_assistant: str = ""
                     async for event in session:
                         if event.type == "audio":
-                            # Assume model PCM is 24k s16 mono; wrap into AV frame for resample
+                            # Process model PCM (24k s16 mono) in correctly-sized chunks
                             try:
-                                raw = event.audio.data
-                                # 20ms at 24k = 480 samples, 2 bytes per sample
-                                frame = AudioFrame(format="s16", layout="mono", samples=480)
-                                frame.planes[0].update(raw)
-                                frame.sample_rate = 24000
-                                for out_frame in model_to_out_resampler.resample(frame):
-                                    s16_array = out_frame.to_ndarray()
-                                    mono_array = s16_array[0]
-                                    out_track.add_chunk(mono_array.tobytes())
+                                raw_buffer = event.audio.data
+                                # Process the buffer in chunks of the correct frame size
+                                frame_size = 960  # 480 samples * 2 bytes/sample for s16 mono
+                                
+                                for i in range(0, len(raw_buffer), frame_size):
+                                    chunk = raw_buffer[i:i + frame_size]
+                                    
+                                    # Skip incomplete chunks at the end of the buffer
+                                    if len(chunk) != frame_size:
+                                        continue
+
+                                    # Create a frame with the correctly-sized chunk
+                                    frame = AudioFrame(format="s16", layout="mono", samples=480)
+                                    frame.planes[0].update(chunk)
+                                    frame.sample_rate = 24000
+                                    
+                                    # Resample and send to the client
+                                    for out_frame in model_to_out_resampler.resample(frame):
+                                        s16_array = out_frame.to_ndarray()
+                                        mono_array = s16_array[0]
+                                        out_track.add_chunk(mono_array.tobytes())
+
                             except Exception as e:
                                 logger.error(f"VOICE_BRIDGE: Error resampling model audio: {e}")
                         elif event.type == "raw_model_event":
@@ -599,7 +612,9 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                             assistant_message_id = None
                                             accumulated_assistant = ""
                         elif event.type == "error":
-                            await emit_transport({"type": "error", "error": event.error})
+                            # Convert the error object to a string before sending
+                            error_message = str(event.error) if event.error else "An unknown error occurred."
+                            await emit_transport({"type": "error", "error": error_message})
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:
