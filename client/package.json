@@ -7,7 +7,7 @@
     "gen:all": "npm run gen:db && npm run gen:types",
     "gen:db": "npx supabase gen types typescript --project-id uslxyheljqngrofpygud --schema public > database.types.ts",
     "gen:types": "node ./scripts/generate-types.js",
-    "build": "next build",
+    "build": "NODE_ENV=production next build",
     "start": "next start",
     "lint": "next lint"
   },

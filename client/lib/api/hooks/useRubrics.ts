@@ -33,6 +33,14 @@ export function useRubricGrades(rubricId: string, enabled = true) {
   });
 }
 
+export function useAllRubricGrades() {
+  return useQuery({
+    queryKey: ["rubric_grades", "all"],
+    queryFn: () => api<RubricGrade[]>("/api/v1/rubrics/grades"),
+    staleTime: 5 * 60_000, // 5 minutes
+  });
+}
+
 // ---------- Mutations ----------
 export function useCreateRubric() {
   const qc = useQueryClient();

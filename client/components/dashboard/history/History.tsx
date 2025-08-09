@@ -8,15 +8,9 @@
 
 import { useAttempts } from "@/lib/api/hooks/useAttempts";
 import { useChats } from "@/lib/api/hooks/useChats";
-import {
-  useInterviewScores,
-  useOffboardingScores,
-} from "@/lib/api/hooks/useScores";
 import { useTrainings } from "@/lib/api/hooks/useTrainings";
 import { Attempt, Training } from "@/types";
 import {
-  CheckCircleOutlined,
-  ClockCircleOutlined,
   EyeOutlined,
   PlayCircleOutlined,
   SearchOutlined,
@@ -33,7 +27,6 @@ import {
   Select,
   Space,
   Table,
-  Tag,
   Typography,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
@@ -70,34 +63,12 @@ export default function History() {
   const { data: attempts, isLoading: attemptsLoading } = useAttempts();
   const { data: chats, isLoading: chatsLoading } = useChats();
   const { data: trainings, isLoading: trainingsLoading } = useTrainings();
-  const { data: interviewScores } = useInterviewScores();
-  const { data: offboardingScores } = useOffboardingScores();
 
   const isLoading = attemptsLoading || chatsLoading || trainingsLoading;
 
   // Compile attempt data with chat information
   const attemptsWithChatInfo = useMemo(() => {
     if (!attempts || !chats || !trainings) return [];
-
-    // Build quick lookups for scores by chat_id
-    const interviewScoreByChatId = new Map<string, number>();
-    const offboardingScoreByChatId = new Map<string, number>();
-    (interviewScores || []).forEach((s) => {
-      if ((s as any).chat_id && typeof (s as any).overall_score === "number") {
-        interviewScoreByChatId.set(
-          (s as any).chat_id,
-          (s as any).overall_score
-        );
-      }
-    });
-    (offboardingScores || []).forEach((s) => {
-      if ((s as any).chat_id && typeof (s as any).overall_score === "number") {
-        offboardingScoreByChatId.set(
-          (s as any).chat_id,
-          (s as any).overall_score
-        );
-      }
-    });
 
     return attempts.map((attempt) => {
       // Get training info
@@ -137,20 +108,7 @@ export default function History() {
 
       // Determine chat type and score (if any)
       const chatType = latestChat?.training_type || null;
-      let score: number | null = null;
-      if (latestChat?.id) {
-        if (chatType === "offboarding") {
-          score = offboardingScoreByChatId.get(latestChat.id) ?? null;
-        } else if (chatType === "interview") {
-          score = interviewScoreByChatId.get(latestChat.id) ?? null;
-        } else {
-          // fallback: try either map
-          score =
-            interviewScoreByChatId.get(latestChat.id) ??
-            offboardingScoreByChatId.get(latestChat.id) ??
-            null;
-        }
-      }
+      const score: number | null = null;
 
       return {
         ...attempt,
@@ -160,7 +118,7 @@ export default function History() {
         score,
       } as AttemptWithChatInfo;
     });
-  }, [attempts, chats, trainings, interviewScores, offboardingScores]);
+  }, [attempts, chats, trainings]);
 
   // Sort attempts by newest first
   const sortedAttempts = useMemo(
@@ -222,32 +180,6 @@ export default function History() {
     });
   };
 
-  const formatDuration = (startDate: string, endDate?: string) => {
-    if (!endDate) return "In Progress";
-
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const durationMs = end.getTime() - start.getTime();
-    const minutes = Math.round(durationMs / (1000 * 60));
-
-    return `${minutes} min`;
-  };
-
-  const getStatusTag = (attempt: AttemptWithChatInfo) => {
-    if (attempt.chatInfo?.isCompleted) {
-      return (
-        <Tag color="success" icon={<CheckCircleOutlined />}>
-          Completed
-        </Tag>
-      );
-    }
-    return (
-      <Tag color="processing" icon={<ClockCircleOutlined />}>
-        In Progress
-      </Tag>
-    );
-  };
-
   const columns: ColumnsType<AttemptWithChatInfo> = [
     {
       title: "Person",
@@ -274,7 +206,7 @@ export default function History() {
       title: "Score",
       dataIndex: "score",
       key: "score",
-      render: (score: number | null, record: AttemptWithChatInfo) => (
+      render: (score: number | null) => (
         <Text>{typeof score === "number" ? score : "Incomplete"}</Text>
       ),
       width: 140,

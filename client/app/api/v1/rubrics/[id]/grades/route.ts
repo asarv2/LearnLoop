@@ -1,19 +1,21 @@
-import { NextResponse } from 'next/server';
-import { rubricRepo } from '@/lib/repos/rubricRepo';
-import { logError } from '@/utils/logger';
-import { handleHttpError } from '@/utils/HttpError';
+import { rubricRepo } from "@/lib/repos/rubricRepo";
+import { handleHttpError } from "@/utils/HttpError";
+import { logError } from "@/utils/logger";
+import { NextResponse } from "next/server";
 
 // GET /api/rubrics/[id]/grades  – get all grades for a rubric
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const grades = await rubricRepo.getGrades(params.id);
+    const { id } = await params;
+    const grades = await rubricRepo.getGrades(id);
     return NextResponse.json(grades);
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
-    await logError('Failed to get rubric grades', err, { rubricId: params.id });
+    const { id } = await params;
+    await logError("Failed to get rubric grades", err, { rubricId: id });
     return NextResponse.json({ error: message }, { status: statusCode });
   }
 }
