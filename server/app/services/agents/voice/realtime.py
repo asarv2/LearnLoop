@@ -55,7 +55,15 @@ async def create_realtime_voice_session(
             input_audio_format="pcm16",
             output_audio_format="pcm16",
             input_audio_transcription=RealtimeInputAudioTranscriptionConfig(
-                model="whisper-1",
+                # ✅ FIX: Use the recommended current ASR model
+                model="gpt-4o-mini-transcribe",
+            ),
+            # ✅ NEW: Add server VAD configuration
+            turn_detection=RealtimeTurnDetectionConfig(
+                type="server_vad",
+                # Optional knobs for fine-tuning VAD sensitivity
+                silence_duration_ms=300,
+                prefix_padding_ms=150,
             )
         )
     )

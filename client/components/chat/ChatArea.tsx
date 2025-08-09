@@ -1,6 +1,13 @@
 /**
  * ChatArea.tsx
  * Unified text and voice chat interface using WebRTC for audio
+ *
+ * ✅ IMPLEMENTED: Server VAD (Voice Activity Detection)
+ * - Uses server-side VAD for automatic turn detection
+ * - PTT (Push-to-Talk) only controls track.enabled
+ * - No manual finalization needed - server handles turn management
+ * - Supports barge-in (user can interrupt assistant)
+ *
  * @AshokSaravanan222 & @siladiea
  * 07/09/2025
  */
@@ -63,14 +70,12 @@ export default function ChatArea({
     enableServerAudio,
     disableServerAudio,
     triggerServerAudio,
-    emitFinalizeTurn, // ✨ Get the new function from the context
   } = useWebSocket();
 
   // Voice-related state
   const queryClient = useQueryClient();
   const [micActive, setMicActive] = useState(false);
-  const optimisticVoiceMessageIdRef = useRef<string | null>(null);
-  const lastFinalizeTimeRef = useRef<number>(0); // Track last finalize call time
+  const lastFinalizeTimeRef = useRef<number>(0); // Track last finalize call time for debouncing
 
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
@@ -169,6 +174,52 @@ export default function ChatArea({
     }
   }, [displayMessages, lastAIResponse]);
 
+  // ✅ NEW: Listen for server VAD events for UI feedback
+  useEffect(() => {
+    const handleServerVADEvent = (event: CustomEvent) => {
+      const { type } = event.detail;
+      if (type === "input_audio_buffer.speech_started") {
+        logInfo("Server VAD: Speech started");
+        // Could add UI feedback here like showing a "listening" indicator
+      } else if (type === "input_audio_buffer.speech_stopped") {
+        logInfo("Server VAD: Speech stopped");
+        // Could add UI feedback here like showing a "thinking" indicator
+      }
+    };
+
+    const handleAudioInterrupted = () => {
+      logInfo(
+        "Audio interrupted - user started speaking while assistant was talking"
+      );
+      // Stop any ongoing audio playback when user barges in
+      if (audioPlaybackRef.current) {
+        audioPlaybackRef.current.pause();
+        audioPlaybackRef.current.currentTime = 0;
+      }
+    };
+
+    // Listen for server VAD events
+    window.addEventListener(
+      "server_vad_event",
+      handleServerVADEvent as EventListener
+    );
+    window.addEventListener(
+      "audio_interrupted",
+      handleAudioInterrupted as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        "server_vad_event",
+        handleServerVADEvent as EventListener
+      );
+      window.removeEventListener(
+        "audio_interrupted",
+        handleAudioInterrupted as EventListener
+      );
+    };
+  }, [audioPlaybackRef]);
+
   // 👇 DEPRECATED: We will no longer re-sort the array on every render.
   /*
   const getCombinedMessages = useCallback(() => {
@@ -216,49 +267,19 @@ export default function ChatArea({
     terminateAudioStream,
   ]);
 
-  // ✅ SIMPLIFIED: "Hold to Speak" button now only controls microphone
+  // ✅ FIX: PTT now only toggles track.enabled (no optimistic messages needed with server VAD)
   const handleVoiceStart = useCallback(() => {
-    // Only control the local microphone
+    // ✅ NEW: With server VAD, we only need to enable the microphone track
+    // The server will automatically detect speech start/stop and manage turns
     setMicrophoneMuted(false);
     setMicActive(true);
-    logInfo("Microphone enabled for voice input");
+    logInfo(
+      "Microphone enabled for voice input (server VAD will handle turn management)"
+    );
 
-    // ❌ REMOVE THE PLAYBACK LOGIC FROM HERE.
-    // It's no longer needed as it's handled by the mode toggle.
-    /*
-    if (audioPlaybackRef.current && audioPlaybackRef.current.paused) {
-      audioPlaybackRef.current
-        .play()
-        .catch((e) => logError("Playback failed", e));
-    }
-    */
-
-    // ✅ FIX: Only create optimistic placeholder for user message
-    if (!chat?.id || !userPersona?.id) return;
-
-    const queryKey = trainingMessageKeys.list(chat.id);
-    const tempUserId = `temp-voice-${Date.now()}`;
-    optimisticVoiceMessageIdRef.current = tempUserId; // Store the ID to find it later
-
-    const optimisticUserMessage: Message = {
-      id: tempUserId,
-      role: "user",
-      persona_id: userPersona.id,
-      content: "...", // Placeholder content
-      completed: false, // It's in-progress
-      created_at: new Date().toISOString(),
-      chat_id: chat.id,
-      completed_at: "", // Empty string for incomplete messages
-      error: null,
-      training_id: null,
-    };
-
-    // ✅ FIX: Only add the optimistic USER message
-    queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
-      ...old,
-      optimisticUserMessage,
-    ]);
-  }, [setMicrophoneMuted, chat?.id, userPersona?.id, queryClient]);
+    // ❌ REMOVED: No optimistic message creation needed
+    // Server VAD will automatically create messages when speech is detected
+  }, [setMicrophoneMuted]);
 
   const handleVoiceStop = useCallback(() => {
     // Only process if the mic was actually active
@@ -269,13 +290,13 @@ export default function ChatArea({
     if (now - lastFinalizeTimeRef.current < 100) return; // 100ms debounce
     lastFinalizeTimeRef.current = now;
 
-    // This function's only job is to mute the microphone.
+    // ✅ FIX: With server VAD, we only need to mute the microphone
+    // The server will automatically detect when speech stops
     setMicrophoneMuted(true);
     setMicActive(false);
 
-    // ✅ FIX: Signal the server that the user is done talking.
-    emitFinalizeTurn();
-  }, [setMicrophoneMuted, emitFinalizeTurn, micActive]);
+    // ❌ REMOVED: No need to emit finalize turn - server VAD handles this automatically
+  }, [setMicrophoneMuted, micActive]);
 
   // Handle WebRTC text message sending
   // ✅ FIX: Only create optimistic user message, assistant message will be added by server
@@ -592,7 +613,7 @@ export default function ChatArea({
                         : "🎤"}
                     </span>
                     {micActive
-                      ? "Recording..."
+                      ? "Listening..."
                       : !isWebRTCConnected || !isAudioBridgeReady
                       ? "Connecting..."
                       : "Hold to Speak"}
