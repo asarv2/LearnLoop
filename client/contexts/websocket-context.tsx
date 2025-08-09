@@ -66,7 +66,6 @@ interface WebSocketContextType {
   enableServerAudio: () => void; // Enable server audio playback
   disableServerAudio: () => void; // Disable server audio playback
   triggerServerAudio: () => void; // Trigger server audio by sending silent frame
-  emitFinalizeTurn: () => void; // ✨ Add this for push-to-talk turn finalization
 
   // Training event emitters
   emitJoinTraining: (data: {
@@ -601,6 +600,32 @@ export function WebSocketProvider({
         }
       );
 
+      // ✅ NEW: Handle server VAD events
+      socket.on(
+        "server_vad_event",
+        (data: { type: string; chat_id: string; profile_id: string }) => {
+          logInfo("Server VAD event received", data);
+          window.dispatchEvent(
+            new CustomEvent("server_vad_event", {
+              detail: data,
+            })
+          );
+        }
+      );
+
+      // ✅ NEW: Handle audio interruption events
+      socket.on(
+        "audio_interrupted",
+        (data: { chat_id: string; profile_id: string }) => {
+          logInfo("Audio interrupted event received", data);
+          window.dispatchEvent(
+            new CustomEvent("audio_interrupted", {
+              detail: data,
+            })
+          );
+        }
+      );
+
       socket.on(
         "training_message_error",
         (data: { chat_id: string; message_id: string; error: string }) => {
@@ -919,16 +944,6 @@ export function WebSocketProvider({
     socketRef.current.emit("generate_feedback", data);
   }, []);
 
-  // ✨ Add the new emitter function for push-to-talk turn finalization
-  const emitFinalizeTurn = useCallback(() => {
-    if (socketRef.current?.connected && profileId) {
-      logInfo("Emitting finalize_turn");
-      socketRef.current.emit("webrtc_finalize_turn", {
-        profile_id: profileId,
-      });
-    }
-  }, [profileId]);
-
   // WebRTC functions
   const sendWebRTCMessage = useCallback(
     (chatId: string, message: string) => {
@@ -1132,7 +1147,6 @@ export function WebSocketProvider({
     enableServerAudio, // Enable server audio playback
     disableServerAudio, // Disable server audio playback
     triggerServerAudio, // Trigger server audio by sending silent frame
-    emitFinalizeTurn, // ✨ Add this for push-to-talk turn finalization
     emitJoinTraining,
     emitSendTrainingMessage,
     emitStopTraining,

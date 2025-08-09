@@ -500,10 +500,18 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                     "itemId": getattr(raw_event, "item_id", None),
                                 })
                             elif getattr(raw_event, "type", "") in ("input_audio_buffer.speech_started", "input_audio_buffer.speech_stopped"):
+                                # ✅ NEW: Emit server VAD events to client for UI feedback
+                                event_type = getattr(raw_event, "type", "")
                                 await emit_transport({
-                                    "type": getattr(raw_event, "type", ""),
+                                    "type": event_type,
                                     "itemId": getattr(raw_event, "item_id", None),
                                 })
+                                # Also emit to Socket.IO for immediate client notification
+                                await sio.emit("server_vad_event", {
+                                    "type": event_type,
+                                    "chat_id": chat_id_for_voice,
+                                    "profile_id": profile_id,
+                                }, room=chat_id_for_voice)
                             elif getattr(raw_event, "type", "") == "input_audio_transcription_completed":
                                 transcript_text = getattr(raw_event, "transcript", "") or ""
                                 item_id = getattr(raw_event, "item_id", None)
@@ -633,6 +641,15 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                                         finally:
                                             assistant_message_id = None
                                             accumulated_assistant = ""
+                        elif event.type == "audio_interrupted":
+                            # ✅ NEW: Handle audio interruption for barge-in scenarios
+                            logger.info("Audio interrupted - user started speaking while assistant was talking")
+                            await emit_transport({"type": "audio_interrupted"})
+                            # Emit to Socket.IO for immediate client notification
+                            await sio.emit("audio_interrupted", {
+                                "chat_id": chat_id_for_voice,
+                                "profile_id": profile_id,
+                            }, room=chat_id_for_voice)
                         elif event.type == "error":
                             logger.error(f"Received 'error' event from session: {event.error}")
                             # Convert the error object to a string before sending
@@ -673,7 +690,9 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                             mono_array = s16_array[0]
                             audio_bytes = mono_array.tobytes()
                             
-                            # Always send with commit=False. We will commit manually when turn ends.
+                            # ✅ FIX: With server VAD, always send with commit=False
+                            # The server VAD will automatically detect speech start/stop
+                            # and handle turn management without manual commits
                             await session.send_audio(audio_bytes, commit=False)
                         # Pace a bit to avoid flooding
                         await asyncio.sleep(0)
@@ -1270,34 +1289,16 @@ async def webrtc_stop_audio(sid: str, data: Dict[str, Any]) -> None:
 @sio.event  # type: ignore
 async def webrtc_finalize_turn(sid: str, data: Dict[str, Any]) -> None:
     """
-    Client has signaled the end of a push-to-talk utterance.
-    Finalize the turn by sending a final commit to the RealtimeSession.
+    ✅ DEPRECATED: With server VAD, turn finalization is automatic.
+    This endpoint is kept for backward compatibility but is now a no-op.
     """
     profile_id = data.get("profile_id")
     if not profile_id:
         return
 
-    pc = profiles_live.get(profile_id)
-    if not pc:
-        return
-
-    session: RealtimeSession | None = getattr(pc, "_realtime_session", None)
-    if session:
-        try:
-            silence_chunk = b'\x00' * 4800
-            await session.send_audio(silence_chunk, commit=True)
-            logger.info(f"Finalized audio turn for profile {profile_id} by sending 100ms of silence.")
-            
-        except Exception as e:
-            # If the session was already closed (e.g., due to a prior fatal error),
-            # this is not a critical error. It just means the client sent a 'finalize'
-            # signal for a session that was already terminated.
-            if "Not connected" in str(e) or isinstance(e, ConnectionClosedOK):
-                 logger.info(f"Could not finalize turn for profile {profile_id}: session was already closed.")
-            else:
-                 logger.error(f"Error finalizing audio turn for profile {profile_id}: {e}")
-    else:
-        logger.warning(f"No realtime session found for profile {profile_id} to finalize turn.")
+    # ✅ FIX: With server VAD, we don't need manual turn finalization
+    # The server VAD automatically detects speech start/stop and manages turns
+    logger.info(f"Received finalize_turn for profile {profile_id} - ignored (server VAD handles turn management)")
 
 # SPEC CHANGE: Renegotiation answer handler is no longer needed
 # The server now uses a persistent audio track, eliminating the need for renegotiation
