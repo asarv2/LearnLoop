@@ -671,6 +671,15 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
     async def on_track(track: MediaStreamTrack) -> None:
         logger.info(f"TRACK_EVENT: Received track: {track.kind} for profile {profile_id}")
         if track.kind == "audio":
+            # --- START OF FIX ---
+            # Get the socket ID to send a direct confirmation
+            sid = await get_socket_owner(profile_id)
+            if sid:
+                # Tell the client that the server's audio bridge is now running and ready
+                await sio.emit("webrtc_audio_ready", { "profile_id": profile_id }, room=sid)
+                logger.info(f"Sent webrtc_audio_ready signal to client {sid}")
+            # --- END OF FIX ---
+            
             # If an old voice task is already running for this PC, cancel it.
             if hasattr(pc, "_voice_task") and not pc._voice_task.done():
                 pc._voice_task.cancel()

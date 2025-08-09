@@ -27,6 +27,7 @@ interface WebSocketContextType {
 
   // WebRTC state
   isWebRTCConnected: boolean;
+  isAudioBridgeReady: boolean; // ✨ Add this new state
 
   // Loading states for debugging
   isStartingTraining: boolean;
@@ -121,6 +122,7 @@ export function WebSocketProvider({
 
   // WebRTC state
   const [isWebRTCConnected, setIsWebRTCConnected] = useState(false);
+  const [isAudioBridgeReady, setIsAudioBridgeReady] = useState(false); // ✨ Add state
   const webRTCPeerConnection = useRef<RTCPeerConnection | null>(null);
   const webRTCDataChannels = useRef<Map<string, RTCDataChannel>>(new Map());
   const userMediaStream = useRef<MediaStream | null>(null);
@@ -177,6 +179,7 @@ export function WebSocketProvider({
 
     setRemoteStream(null);
     setIsWebRTCConnected(false);
+    setIsAudioBridgeReady(false); // ✨ Reset on cleanup
     webRTCDataChannels.current.clear();
     pendingIce.current = [];
     webrtcStarted.current = false; // Allow handshake on the next connection
@@ -724,6 +727,14 @@ export function WebSocketProvider({
         });
       });
 
+      // ✨ Add the new event listener
+      socket.on("webrtc_audio_ready", (data: { profile_id: string }) => {
+        if (data.profile_id === profileId) {
+          logInfo("Server audio bridge is ready.");
+          setIsAudioBridgeReady(true);
+        }
+      });
+
       socket.on("webrtc_error", (data: { error: string }) => {
         logError("WebRTC error", data.error);
         toast.error(`WebRTC error: ${data.error}`);
@@ -1095,6 +1106,7 @@ export function WebSocketProvider({
     isConnected,
     socket: socketRef.current,
     isWebRTCConnected,
+    isAudioBridgeReady, // ✨ Expose the state through the context
     isStartingTraining,
     isSendingTrainingMessage,
     isStoppingTraining,

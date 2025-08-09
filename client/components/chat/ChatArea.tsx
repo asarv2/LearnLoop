@@ -54,6 +54,7 @@ export default function ChatArea({
   // WebRTC audio state
   const {
     isWebRTCConnected,
+    isAudioBridgeReady, // ✨ Get the new state from the context
     initializeAudioStream,
     setMicrophoneMuted,
     terminateAudioStream,
@@ -620,27 +621,29 @@ export default function ChatArea({
                     onMouseLeave={handleVoiceStop}
                     onTouchStart={handleVoiceStart} // For mobile
                     onTouchEnd={handleVoiceStop}
-                    // ✨ FIX: Simplified disabled logic.
-                    // We only need to know if the connection is ready.
-                    disabled={!isWebRTCConnected}
+                    // ✅ FIX: Disable the button until BOTH WebRTC is connected AND the audio bridge is ready.
+                    disabled={!isWebRTCConnected || !isAudioBridgeReady}
                     size="3"
                     style={{
                       padding: "1rem 2rem",
                       borderRadius: "30px",
                       background: micActive
                         ? "linear-gradient(135deg, #ef4444, #dc2626)"
-                        : !isWebRTCConnected
+                        : !isWebRTCConnected || !isAudioBridgeReady
                         ? "linear-gradient(135deg, #9ca3af, #6b7280)"
                         : "linear-gradient(135deg, #6366f1, #8b5cf6)",
                       color: "white",
                       border: "none",
-                      cursor: !isWebRTCConnected ? "not-allowed" : "pointer",
+                      cursor:
+                        !isWebRTCConnected || !isAudioBridgeReady
+                          ? "not-allowed"
+                          : "pointer",
                       fontSize: "1rem",
                       fontWeight: "600",
                       transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                       boxShadow: micActive
                         ? "0 8px 30px rgba(239, 68, 68, 0.4)"
-                        : !isWebRTCConnected
+                        : !isWebRTCConnected || !isAudioBridgeReady
                         ? "0 4px 15px rgba(156, 163, 175, 0.3)"
                         : "0 8px 30px rgba(99, 102, 241, 0.3)",
                       transform: micActive ? "scale(1.05)" : "scale(1)",
@@ -650,17 +653,20 @@ export default function ChatArea({
                     }}
                   >
                     <span style={{ fontSize: "1.2rem" }}>
-                      {micActive ? "🔴" : !isWebRTCConnected ? "⏳" : "🎤"}
+                      {micActive
+                        ? "🔴"
+                        : !isWebRTCConnected || !isAudioBridgeReady
+                        ? "⏳"
+                        : "🎤"}
                     </span>
                     {micActive
                       ? "Recording..."
-                      : !isWebRTCConnected
+                      : !isWebRTCConnected || !isAudioBridgeReady
                       ? "Connecting..."
                       : "Hold to Speak"}
                   </Button>
 
-                  {/* Connection Status */}
-                  {!isWebRTCConnected && (
+                  {(!isWebRTCConnected || !isAudioBridgeReady) && (
                     <Text size="2" style={{ color: "var(--amber-11)" }}>
                       Connecting to audio stream...
                     </Text>
