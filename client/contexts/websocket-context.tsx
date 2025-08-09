@@ -1143,6 +1143,14 @@ export function WebSocketProvider({
 
   return (
     <WebSocketContext.Provider value={value}>
+      {/* Hidden global audio element to ensure it's mounted before any WebRTC tracks arrive */}
+      <audio
+        ref={audioPlaybackRef}
+        autoPlay
+        playsInline
+        muted={true}
+        style={{ display: "none" }}
+      />
       {children}
     </WebSocketContext.Provider>
   );
