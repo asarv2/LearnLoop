@@ -3,6 +3,9 @@ import uuid
 from typing import List, Sequence
 
 from agents.items import TResponseInputItem
+from agents.realtime.items import (AssistantMessageItem, AssistantText,
+                                   InputText, UserMessageItem)
+from agents.realtime.model_events import RealtimeItem
 from app.models import Assessments, Messages, Questions, Rubrics, Standards
 from sqlmodel import Session, select
 
@@ -45,6 +48,56 @@ def get_conversation_history(
     )
 
     return conversation_history
+
+
+def get_text_formatted_instructions(
+    messages: Sequence[Messages],
+) -> str:
+    """
+    Get the conversation history formatted as text with YOU/USER labels.
+
+    Args:
+        messages: List of Messages objects from the database
+
+    Returns:
+        Text-formatted conversation history with YOU/USER labels
+    """
+    # Sort messages by created_at
+    sorted_messages = sorted(messages, key=lambda x: x.created_at)
+    
+    formatted_lines = []
+    
+    for message in sorted_messages:
+        if message.content:
+            if message.role == "user":
+                formatted_lines.append(f"USER: {message.content}")
+            elif message.role == "assistant":
+                formatted_lines.append(f"YOU: {message.content}")
+    
+    return "\n\n".join(formatted_lines)
+
+
+def get_realtime_instructions(
+    system_prompt: str,
+    messages: Sequence[Messages],
+) -> str:
+    """
+    Get the system prompt for a given agent.
+
+    Args:
+        messages: List of Messages objects from the database
+        system_prompt: The system prompt for the agent
+    Returns:
+        The system prompt for the agent
+    """
+
+    # Only append conversation history if there are messages
+    if len(messages) > 0:
+        conversation_text = get_text_formatted_instructions(messages)
+        return f"{system_prompt}\n\nThe following is the current history of the conversation. Continue the conversation from this point on:\n\n{conversation_text}"
+    
+    return system_prompt
+
 
 
 def get_assessment_history(

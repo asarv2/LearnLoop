@@ -9,12 +9,14 @@ from agents.realtime.config import (RealtimeInputAudioTranscriptionConfig,
                                     RealtimeSessionModelSettings,
                                     RealtimeTurnDetectionConfig)
 from agents.realtime.session import RealtimeSession
-from app.models import Personas
+from app.models import Messages, Personas
+from app.utils.chat import get_realtime_instructions
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
 async def create_realtime_voice_session(
+    chat_id: uuid.UUID,
     persona_id: uuid.UUID,
     db_session: Session,
     *,
@@ -40,9 +42,13 @@ async def create_realtime_voice_session(
         logger.error(f"Persona '{persona.name}' has no system prompt.")
         raise ValueError(f"Persona with ID {persona_id} has no system prompt")
 
+    # get all messages for the chat
+    messages = db_session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
+    realtime_instructions = get_realtime_instructions(persona.system_prompt, messages)
+        
     agent_instance = RealtimeVoiceAgent(
         name=persona.name,
-        instructions=persona.system_prompt,
+        instructions=realtime_instructions,
     )
 
     voice = persona.voice or default_voice
@@ -55,13 +61,10 @@ async def create_realtime_voice_session(
             input_audio_format="pcm16",
             output_audio_format="pcm16",
             input_audio_transcription=RealtimeInputAudioTranscriptionConfig(
-                # ✅ FIX: Use the recommended current ASR model
-                model="gpt-4o-mini-transcribe",
+                model="whisper-1",
             ),
-            # ✅ NEW: Add server VAD configuration
             turn_detection=RealtimeTurnDetectionConfig(
                 type="server_vad",
-                # Optional knobs for fine-tuning VAD sensitivity
                 silence_duration_ms=300,
                 prefix_padding_ms=150,
             )
