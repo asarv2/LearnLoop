@@ -1,4 +1,7 @@
 networks:
+  internal:
+    driver: bridge
+    internal: true
   web:
     name: web
     external: true
@@ -11,6 +14,7 @@ services:
     restart: unless-stopped
     networks:
       - web
+      - internal
     environment:
       - NODE_ENV=production
       - SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
@@ -58,3 +62,79 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+
+  server:
+    image: ${LEARNLOOP_SERVER_IMAGE:-ghcr.io/ashoksaravanan222/learnloop-server:latest}
+    pull_policy: always
+    container_name: learnloop-server
+    restart: unless-stopped
+    networks:
+      - internal
+      - web
+
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=web
+    healthcheck:
+      test: ["CMD", "curl", "-s", "http://0.0.0.0:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: ${SERVER_REPLICAS:-1}
+
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - internal
+
+  acme-extractor:
+    image: ghcr.io/kereis/traefik-certs-dumper:latest
+    container_name: webrtc-acme-extractor
+    restart: "no"
+    environment:
+      - DOMAIN=turn.learn-loop.org          # dump only this cert
+      - CERTIFICATE_FILE_NAME=fullchain         # → fullchain.pem
+      - PRIVATE_KEY_FILE_NAME=privkey           # → privkey.pem
+    volumes:
+      - ../api/acme.json:/traefik/acme.json:ro      # single-file bind mount
+      - ./certs:/output:rw                      # where the .pem/.key land
+
+  webrtc:
+    build: ./turn
+    container_name: learnloop-webrtc
+    restart: unless-stopped
+    volumes:
+      - ./certs:/etc/coturn/certs:ro
+    env_file: .env
+    depends_on:
+      - acme-extractor
+    ports:
+      - "3478:3478/udp"      # STUN/TURN over UDP (direct access)
+      - "3478:3478/tcp"      # TURN over TCP (direct access)
+      - "49152-49552:49152-49552/udp"  # UDP relay ports for media
+    expose:
+      - "5349"               # TLS port (routed through Traefik)
+    networks: [web]                
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tcp.routers.turn.rule=HostSNI(`turn.learn-loop.org`)"
+      - "traefik.tcp.routers.turn.entrypoints=websecure"
+      - "traefik.tcp.routers.turn.tls.passthrough=true"
+      - "traefik.tcp.services.turn.loadbalancer.server.port=5349"
+
+  nginx:
+    image: nginx:1.25
+    volumes:
+      - ./web/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${CLIENT_PORT}:80"
+    depends_on:
+      - client
+      - server
+    networks:
+      - internal
+      - web
