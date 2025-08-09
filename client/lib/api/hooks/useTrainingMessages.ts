@@ -56,8 +56,7 @@ export function useTrainingMessages(chatId: string, enabled = true) {
         joinedRef.current = false;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId, isConnected]);
+  }, [chatId, isConnected, joinRoom, leaveRoom]);
 
   // ✨ OPTIMIZATION: This useEffect is now much smarter and more performant.
   useEffect(() => {

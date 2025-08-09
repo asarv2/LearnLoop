@@ -59,8 +59,6 @@ export default function ChatArea({
     setMicrophoneMuted,
     terminateAudioStream,
     sendWebRTCMessage,
-    joinRoom,
-    leaveRoom,
     audioPlaybackRef,
     enableServerAudio,
     disableServerAudio,
@@ -134,7 +132,7 @@ export default function ChatArea({
   }, [showHints, hints, lastAIResponse, generateHints]);
 
   // Track if we're currently in a room to prevent duplicate joins
-  const currentRoomRef = useRef<string | null>(null);
+  // ❌ REMOVED: currentRoomRef - no longer needed since room management is centralized
 
   // Ensure audio element is properly configured for server audio
   useEffect(() => {
@@ -150,22 +148,9 @@ export default function ChatArea({
     }
   }, [audioPlaybackRef]);
 
-  // Join room when chat changes and WebRTC is connected
-  useEffect(() => {
-    if (chat?.id && isWebRTCConnected && currentRoomRef.current !== chat.id) {
-      joinRoom(chat.id);
-      currentRoomRef.current = chat.id;
-      logInfo(`Joined WebRTC room for chat ${chat.id}`);
-    }
-
-    return () => {
-      if (chat?.id && currentRoomRef.current === chat.id) {
-        leaveRoom(chat.id);
-        currentRoomRef.current = null;
-        logInfo(`Left WebRTC room for chat ${chat.id}`);
-      }
-    };
-  }, [chat?.id, isWebRTCConnected, joinRoom, leaveRoom]);
+  // ❌ REMOVED: Duplicate join/leave logic - now handled by useTrainingMessages hook
+  // This prevents race conditions on page refresh where multiple components
+  // try to join the same room simultaneously
 
   // Track AI responses for hints generation and update temporary assistant personas
   useEffect(() => {
@@ -419,23 +404,7 @@ export default function ChatArea({
         overflow: "hidden",
       }}
     >
-      {/* Audio element for continuous server audio playback */}
-      <audio
-        ref={audioPlaybackRef}
-        autoPlay
-        playsInline
-        muted={true}
-        style={{ display: "none" }}
-        onLoadedMetadata={() => {
-          logInfo("Audio element loaded metadata");
-        }}
-        onCanPlay={() => {
-          logInfo("Audio element can play");
-        }}
-        onError={(e) => {
-          logError("Audio element error", e);
-        }}
-      />
+      {/* Audio element moved to global provider to avoid race conditions */}
 
       {/* Messages */}
       <Box
