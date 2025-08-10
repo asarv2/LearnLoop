@@ -11,9 +11,9 @@ exec turnserver \
    --relay-ip="${PRIVATE_IP}" \
    --external-ip="${TURN_PUBLIC_IP}/${PRIVATE_IP}" \
    --allocation-default-address-family=ipv4 \
-   --listening-port=3478 \
-   --alt-listening-port=3479 \
-   --tls-listening-port=5349 \
+   --listening-port=3479 \
+   --alt-listening-port=3480 \
+   --tls-listening-port=5350 \
    --min-port=49553 \
    --max-port=49953 \
    --cert=/etc/coturn/certs/fullchain.pem \

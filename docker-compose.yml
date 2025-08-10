@@ -111,18 +111,18 @@ services:
     depends_on:
       - acme-extractor
     ports:
-      - "3478:3478/udp"      # STUN/TURN over UDP (direct access)
-      - "3478:3478/tcp"      # TURN over TCP (direct access)
+      - "3479:3479/udp"      # STUN/TURN over UDP (direct access)
+      - "3479:3479/tcp"      # TURN over TCP (direct access)
       - "49553-49953:49553-49953/udp"  # UDP relay ports for media
     expose:
-      - "5349"               # TLS port (routed through Traefik)
+      - "5350"               # TLS port (routed through Traefik)
     networks: [web]                
     labels:
       - "traefik.enable=true"
       - "traefik.tcp.routers.turn.rule=HostSNI(`turn.learn-loop.org`)"
       - "traefik.tcp.routers.turn.entrypoints=websecure"
       - "traefik.tcp.routers.turn.tls.passthrough=true"
-      - "traefik.tcp.services.turn.loadbalancer.server.port=5349"
+      - "traefik.tcp.services.turn.loadbalancer.server.port=5350"
 
   nginx:
     image: nginx:1.25
