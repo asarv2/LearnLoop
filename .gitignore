@@ -1,4 +1,1 @@
 .env
-certs/
-*.pem
-*.key
