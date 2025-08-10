@@ -100,14 +100,14 @@ services:
       - PRIVATE_KEY_FILE_NAME=privkey           # → privkey.pem
     volumes:
       - ../../../../../asaravan/Coding/api/acme.json:/traefik/acme.json:ro      # single-file bind mount
-      - ./certs:/output:rw                      # where the .pem/.key land
+      - ../../../certs:/output:rw                      # where the .pem/.key land (outside repo)
 
   webrtc:
     build: ./turn
     container_name: learnloop-webrtc
     restart: unless-stopped
     volumes:
-      - ./certs:/etc/coturn/certs:ro
+      - ../../../certs:/etc/coturn/certs:ro
     environment:
       - TURN_REALM=${TURN_REALM}
       - TURN_USERNAME=${TURN_USERNAME}
