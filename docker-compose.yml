@@ -70,9 +70,6 @@ services:
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
 
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=web
     depends_on:
       redis:
         condition: service_started
@@ -85,7 +82,6 @@ services:
       start_period: 30s
     deploy:
       replicas: ${SERVER_REPLICAS:-1}
-
 
   redis:
     image: redis:7-alpine
@@ -147,23 +143,14 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=web
-      # 1) HTTP -> HTTPS redirect
+      # HTTP -> HTTPS redirect
       - traefik.http.routers.learnloop-http.rule=Host(`learn-loop.org`,`www.learn-loop.org`)
       - traefik.http.routers.learnloop-http.entrypoints=web
       - traefik.http.routers.learnloop-http.middlewares=https-redirect
       - traefik.http.middlewares.https-redirect.redirectscheme.scheme=https
       - traefik.http.middlewares.https-redirect.redirectscheme.permanent=true
-      # 2) HTTPS for apex domain
-      - traefik.http.routers.learnloop-https.rule=Host(`learn-loop.org`)
+      # HTTPS routing to nginx
+      - traefik.http.routers.learnloop-https.rule=Host(`learn-loop.org`,`www.learn-loop.org`)
       - traefik.http.routers.learnloop-https.entrypoints=websecure
       - traefik.http.routers.learnloop-https.tls.certresolver=letsencrypt
-      - traefik.http.routers.learnloop-https.service=learnloop-nginx
       - traefik.http.services.learnloop-nginx.loadbalancer.server.port=80
-      # 3) www -> non-www redirect on HTTPS
-      - traefik.http.routers.learnloop-www.rule=Host(`www.learn-loop.org`)
-      - traefik.http.routers.learnloop-www.entrypoints=websecure
-      - traefik.http.routers.learnloop-www.tls.certresolver=letsencrypt
-      - traefik.http.routers.learnloop-www.middlewares=drop-www
-      - traefik.http.middlewares.drop-www.redirectregex.regex=^https?://www\\.learn-loop\\.org/(.*)
-      - traefik.http.middlewares.drop-www.redirectregex.replacement=https://learn-loop.org/$${1}
-      - traefik.http.middlewares.drop-www.redirectregex.permanent=true
