@@ -113,7 +113,7 @@ services:
     ports:
       - "3478:3478/udp"      # STUN/TURN over UDP (direct access)
       - "3478:3478/tcp"      # TURN over TCP (direct access)
-      - "49152-49552:49152-49552/udp"  # UDP relay ports for media
+      - "49553-49953:49553-49953/udp"  # UDP relay ports for media
     expose:
       - "5349"               # TLS port (routed through Traefik)
     networks: [web]                
