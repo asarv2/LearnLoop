@@ -7,6 +7,9 @@ networks:
     external: true
 
 services:
+  # -----------------------------------------------------
+  # 1. CLIENT: Handles ONLY the /_next static assets
+  # -----------------------------------------------------
   client:
     build:
       context: ./client
@@ -36,7 +39,21 @@ services:
     depends_on:
       server:
         condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      # This router has a HIGH PRIORITY. It grabs all requests for static assets
+      # and sends them DIRECTLY to the Next.js container, bypassing Nginx.
+      - "traefik.http.routers.learnloop-static.rule=Host(`learn-loop.org`) && PathPrefix(`/_next`)"
+      - "traefik.http.routers.learnloop-static.priority=100"
+      - "traefik.http.routers.learnloop-static.entrypoints=websecure"
+      - "traefik.http.routers.learnloop-static.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.learnloop-static.service=learnloop-client-svc"
+      - "traefik.http.services.learnloop-client-svc.loadbalancer.server.port=3000"
 
+  # ----------------------------------------------------------------------
+  # 3. SERVER & other services (no changes needed)
+  # ----------------------------------------------------------------------
   server:
     build:
       context: ./server
@@ -129,6 +146,9 @@ services:
       - "traefik.tcp.routers.turn.tls.passthrough=true"
       - "traefik.tcp.services.turn.loadbalancer.server.port=5350"
 
+  # ----------------------------------------------------------------------
+  # 2. NGINX: Handles the main app, API, and WebSockets
+  # ----------------------------------------------------------------------
   nginx:
     image: nginx:1.25
     container_name: learnloop-nginx
@@ -144,20 +164,28 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=web"
 
-      # --- HTTP to HTTPS Redirect Router ---
-      - "traefik.http.routers.learnloop-http.rule=Host(`learn-loop.org`,`www.learn-loop.org`)"
+      # --- Middleware to redirect WWW to non-WWW ---
+      - "traefik.http.middlewares.drop-www.redirectregex.regex=^https?://www\\.learn-loop\\.org/(.*)"
+      - "traefik.http.middlewares.drop-www.redirectregex.replacement=https://learn-loop.org/$${1}"
+      - "traefik.http.middlewares.drop-www.redirectregex.permanent=true"
+
+      # --- HTTP-to-HTTPS Redirect (for both www and non-www) ---
+      - "traefik.http.routers.learnloop-http.rule=Host(`learn-loop.org`, `www.learn-loop.org`)"
       - "traefik.http.routers.learnloop-http.entrypoints=web"
       - "traefik.http.routers.learnloop-http.middlewares=https-redirect"
       - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
-      - "traefik.http.middlewares.https-redirect.redirectscheme.permanent=true"
 
-      # --- Main HTTPS Router (Bulletproof) ---
-      # Rule is now more specific (Host + PathPrefix) to get higher default priority.
-      - "traefik.http.routers.learnloop-https.rule=Host(`learn-loop.org`, `www.learn-loop.org`) && PathPrefix(`/`)"
-      - "traefik.http.routers.learnloop-https.entrypoints=websecure"
-      - "traefik.http.routers.learnloop-https.tls.certresolver=letsencrypt"
-      # Explicitly link this router to our new service name.
-      - "traefik.http.routers.learnloop-https.service=learnloop-svc"
+      # --- Router for www.learn-loop.org (just redirects) ---
+      - "traefik.http.routers.learnloop-www.rule=Host(`www.learn-loop.org`)"
+      - "traefik.http.routers.learnloop-www.entrypoints=websecure"
+      - "traefik.http.routers.learnloop-www.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.learnloop-www.middlewares=drop-www"
 
-      # Explicitly define the service and its port.
-      - "traefik.http.services.learnloop-svc.loadbalancer.server.port=80"
+      # --- Main HTTPS Router for the App (naked domain) ---
+      # This has a lower priority and handles everything that ISN'T /_next
+      - "traefik.http.routers.learnloop-app.rule=Host(`learn-loop.org`)"
+      - "traefik.http.routers.learnloop-app.priority=50"
+      - "traefik.http.routers.learnloop-app.entrypoints=websecure"
+      - "traefik.http.routers.learnloop-app.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.learnloop-app.service=learnloop-nginx-svc"
+      - "traefik.http.services.learnloop-nginx-svc.loadbalancer.server.port=80"
