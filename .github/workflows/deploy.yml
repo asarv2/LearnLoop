@@ -2,7 +2,7 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [ main, beta ]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -24,15 +24,15 @@ jobs:
       uses: docker/login-action@v3
       with:
         registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        username: ashoksaravanan222
+        password: ${{ secrets.GHCR_PAT_LEARNLOOP }}
         
     # Build and push client image
     - name: Extract metadata for client Docker image
       id: meta-client
       uses: docker/metadata-action@v5
       with:
-        images: ghcr.io/${{ github.actor }}/learnloop-client
+        images: ghcr.io/ashoksaravanan222/learnloop-client
         tags: |
           type=raw,value=latest
           type=sha,prefix={{branch}}-
@@ -57,7 +57,7 @@ jobs:
       id: meta-server
       uses: docker/metadata-action@v5
       with:
-        images: ghcr.io/${{ github.actor }}/learnloop-server
+        images: ghcr.io/ashoksaravanan222/learnloop-server
         tags: |
           type=raw,value=latest
           type=sha,prefix={{branch}}-
