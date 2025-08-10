@@ -8,7 +8,7 @@ networks:
 
 services:
   # -----------------------------------------------------
-  # 1. CLIENT: Handles ONLY the /_next static assets
+  # CLIENT: Handles all traffic except for /socket.io
   # -----------------------------------------------------
   client:
     build:
@@ -40,42 +40,37 @@ services:
       server:
         condition: service_healthy
     labels:
-      - traefik.enable=true
-      - traefik.docker.network=web
-      
-      # --- 1️⃣  catch http (80) and push to https ---
-      - traefik.http.routers.learnloop-http.rule=Host(`learn-loop.org`,`www.learn-loop.org`)
-      - traefik.http.routers.learnloop-http.entrypoints=web
-      - traefik.http.routers.learnloop-http.middlewares=https-redirect
-      - traefik.http.middlewares.https-redirect.redirectscheme.scheme=https
-      - traefik.http.middlewares.https-redirect.redirectscheme.permanent=true
-      
-      # --- 2️⃣  naked-domain https router ---
-      - traefik.http.routers.learnloop-client.rule=Host(`learn-loop.org`)
-      - traefik.http.routers.learnloop-client.entrypoints=websecure
-      - traefik.http.routers.learnloop-client.tls.certresolver=letsencrypt
-      - traefik.http.routers.learnloop-client.service=learnloop-client
-      - traefik.http.services.learnloop-client.loadbalancer.server.port=3000
-      
-      # --- 3️⃣  www ➜ non-www redirect on https ---
-      - traefik.http.routers.learnloop-www.rule=Host(`www.learn-loop.org`)
-      - traefik.http.routers.learnloop-www.entrypoints=websecure
-      - traefik.http.routers.learnloop-www.tls.certresolver=letsencrypt
-      - traefik.http.routers.learnloop-www.middlewares=drop-www
-      - traefik.http.middlewares.drop-www.redirectregex.regex=^https?://www\\.learn-loop\\.org/(.*)
-      - traefik.http.middlewares.drop-www.redirectregex.replacement=https://learn-loop.org/$${1}
-      - traefik.http.middlewares.drop-www.redirectregex.permanent=true
-      
-      # Higher-priority router just for Next.js static assets
-      - traefik.http.routers.learnloop-client-static.rule=Host(`learn-loop.org`) && PathPrefix(`/_next`)
-      - traefik.http.routers.learnloop-client-static.priority=11
-      - traefik.http.routers.learnloop-client-static.entrypoints=websecure
-      - traefik.http.routers.learnloop-client-static.tls.certresolver=letsencrypt
-      - traefik.http.routers.learnloop-client-static.service=learnloop-client
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      # --- HTTP to HTTPS Redirect ---
+      - "traefik.http.routers.learnloop-http.rule=Host(`learn-loop.org`,`www.learn-loop.org`)"
+      - "traefik.http.routers.learnloop-http.entrypoints=web"
+      - "traefik.http.routers.learnloop-http.middlewares=https-redirect"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.permanent=true"
+      # --- Main App Router (naked domain) ---
+      - "traefik.http.routers.learnloop-client.rule=Host(`learn-loop.org`)"
+      - "traefik.http.routers.learnloop-client.entrypoints=websecure"
+      - "traefik.http.routers.learnloop-client.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.learnloop-client.service=learnloop-client-svc"
+      - "traefik.http.services.learnloop-client-svc.loadbalancer.server.port=3000"
+      # --- WWW to non-WWW Redirect ---
+      - "traefik.http.routers.learnloop-www.rule=Host(`www.learn-loop.org`)"
+      - "traefik.http.routers.learnloop-www.entrypoints=websecure"
+      - "traefik.http.routers.learnloop-www.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.learnloop-www.middlewares=drop-www"
+      - "traefik.http.middlewares.drop-www.redirectregex.regex=^https?://www\\.learn-loop\\.org/(.*)"
+      - "traefik.http.middlewares.drop-www.redirectregex.replacement=https://learn-loop.org/$${1}"
+      # --- Static Assets Router (High Priority) ---
+      - "traefik.http.routers.learnloop-client-static.rule=Host(`learn-loop.org`) && PathPrefix(`/_next`)"
+      - "traefik.http.routers.learnloop-client-static.priority=11"
+      - "traefik.http.routers.learnloop-client-static.entrypoints=websecure"
+      - "traefik.http.routers.learnloop-client-static.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.learnloop-client-static.service=learnloop-client-svc"
 
-  # ----------------------------------------------------------------------
-  # 3. SERVER & other services (no changes needed)
-  # ----------------------------------------------------------------------
+  # -----------------------------------------------------
+  # SERVER: Handles ONLY /socket.io traffic
+  # -----------------------------------------------------
   server:
     build:
       context: ./server
@@ -108,11 +103,9 @@ services:
       - STUN_URI=${STUN_URI}
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
-
     depends_on:
       redis:
         condition: service_started
-
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -121,6 +114,16 @@ services:
       start_period: 30s
     deploy:
       replicas: ${SERVER_REPLICAS:-1}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      # This router has a HIGH PRIORITY and only matches the /socket.io path.
+      - "traefik.http.routers.learnloop-socket.rule=Host(`learn-loop.org`) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.learnloop-socket.priority=20"
+      - "traefik.http.routers.learnloop-socket.entrypoints=websecure"
+      - "traefik.http.routers.learnloop-socket.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.learnloop-socket.service=learnloop-server-svc"
+      - "traefik.http.services.learnloop-server-svc.loadbalancer.server.port=8000"
 
   redis:
     image: redis:7-alpine
@@ -138,8 +141,8 @@ services:
       - CERTIFICATE_FILE_NAME=fullchain         # → fullchain.pem
       - PRIVATE_KEY_FILE_NAME=privkey           # → privkey.pem
     volumes:
-      - ../../../../../asaravan/Coding/api/acme.json:/traefik/acme.json:ro      # single-file bind mount
-      - ../../../certs:/output:rw                      # where the .pem/.key land (outside repo)
+      - ../../../../../asaravan/Coding/api/acme.json:/traefik/acme.json:ro
+      - ../../../certs:/output:rw
 
   webrtc:
     build: ./turn
