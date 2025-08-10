@@ -141,18 +141,23 @@ services:
       - internal
       - web
     labels:
-      - traefik.enable=true
-      - traefik.docker.network=web
-      # HTTP -> HTTPS redirect
-      - traefik.http.routers.learnloop-http.rule=Host(`learn-loop.org`,`www.learn-loop.org`)
-      - traefik.http.routers.learnloop-http.entrypoints=web
-      - traefik.http.routers.learnloop-http.middlewares=https-redirect
-      - traefik.http.routers.learnloop-http.priority=100
-      - traefik.http.middlewares.https-redirect.redirectscheme.scheme=https
-      - traefik.http.middlewares.https-redirect.redirectscheme.permanent=true
-      # HTTPS routing to nginx
-      - traefik.http.routers.learnloop-https.rule=Host(`learn-loop.org`,`www.learn-loop.org`)
-      - traefik.http.routers.learnloop-https.entrypoints=websecure
-      - traefik.http.routers.learnloop-https.tls.certresolver=letsencrypt
-      - traefik.http.routers.learnloop-https.priority=100
-      - traefik.http.services.learnloop-nginx.loadbalancer.server.port=80
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+
+      # --- HTTP to HTTPS Redirect Router ---
+      - "traefik.http.routers.learnloop-http.rule=Host(`learn-loop.org`,`www.learn-loop.org`)"
+      - "traefik.http.routers.learnloop-http.entrypoints=web"
+      - "traefik.http.routers.learnloop-http.middlewares=https-redirect"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.permanent=true"
+
+      # --- Main HTTPS Router (Bulletproof) ---
+      # Rule is now more specific (Host + PathPrefix) to get higher default priority.
+      - "traefik.http.routers.learnloop-https.rule=Host(`learn-loop.org`, `www.learn-loop.org`) && PathPrefix(`/`)"
+      - "traefik.http.routers.learnloop-https.entrypoints=websecure"
+      - "traefik.http.routers.learnloop-https.tls.certresolver=letsencrypt"
+      # Explicitly link this router to our new service name.
+      - "traefik.http.routers.learnloop-https.service=learnloop-svc"
+
+      # Explicitly define the service and its port.
+      - "traefik.http.services.learnloop-svc.loadbalancer.server.port=80"
