@@ -14,8 +14,8 @@ exec turnserver \
    --listening-port=3478 \
    --alt-listening-port=3479 \
    --tls-listening-port=5349 \
-   --min-port=49152 \
-   --max-port=49552 \
+   --min-port=49553 \
+   --max-port=49953 \
    --cert=/etc/coturn/certs/fullchain.pem \
    --pkey=/etc/coturn/certs/privkey.pem \
    --fingerprint \
