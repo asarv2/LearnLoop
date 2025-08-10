@@ -124,6 +124,8 @@ services:
       - "traefik.http.routers.learnloop-socket.tls.certresolver=letsencrypt"
       - "traefik.http.routers.learnloop-socket.service=learnloop-server-svc"
       - "traefik.http.services.learnloop-server-svc.loadbalancer.server.port=8000"
+      # 🚀 THE FIX: Enable sticky sessions for this service.
+      - "traefik.http.services.learnloop-server-svc.loadbalancer.sticky.cookie=true"
 
   redis:
     image: redis:7-alpine
