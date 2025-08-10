@@ -77,6 +77,12 @@ jobs:
     needs: build
     
     steps:
+    - name: Clean up certificate files before checkout
+      run: |
+        # Remove certificate files that might have permission issues
+        sudo rm -rf certs/ || true
+        sudo rm -f *.pem *.key || true
+        
     - name: Checkout code
       uses: actions/checkout@v4
       
