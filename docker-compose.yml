@@ -62,7 +62,7 @@ services:
 
       # api + socket.io
       - ORIGIN=${ORIGIN}
-      - REDIS_URL=http://redis:6379
+      - REDIS_URL=redis://redis:6379
 
       # webrtc
       - TURN_URI=${TURN_URI}
@@ -103,7 +103,7 @@ services:
       - CERTIFICATE_FILE_NAME=fullchain         # → fullchain.pem
       - PRIVATE_KEY_FILE_NAME=privkey           # → privkey.pem
     volumes:
-      - ../api/acme.json:/traefik/acme.json:ro      # single-file bind mount
+      - /home/Coding/api/acme.json:/traefik/acme.json:ro      # single-file bind mount
       - ./certs:/output:rw                      # where the .pem/.key land
 
   webrtc:
