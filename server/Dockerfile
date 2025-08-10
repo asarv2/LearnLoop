@@ -12,10 +12,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y --no-install-recommends build-essential gcc && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY pyproject.toml .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install --prefer-binary --prefix=/install -r requirements.txt
+    pip install --prefer-binary --prefix=/install .
 
 ############################################
 # 2️⃣  tester stage  (CI only – never pushed)
