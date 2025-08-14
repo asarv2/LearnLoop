@@ -20,7 +20,6 @@ map $http_x_forwarded_proto $forwarded_proto {
     ""      $scheme;
 }
 
-
 # ----------  upstreams -------------
 upstream next_client  {
   server client:3000;
@@ -32,19 +31,9 @@ upstream api_socketio {
 
 server {
     listen 80;
+    server_name _;
 
-    # API traffic (prefixed)
-    location ^~ /api/ {
-        proxy_pass         http://next_client;
-        proxy_http_version 1.1;
-        proxy_set_header   Host              $http_host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $forwarded_proto;
-        proxy_set_header   X-Forwarded-Host  $host;
-    }
-
-    # WebSocket traffic (prefixed)
+    # WebSocket traffic (prefixed) - handle this specifically
     location ^~ /socket.io/ {
         proxy_pass         http://api_socketio;
         proxy_http_version 1.1;
@@ -58,8 +47,8 @@ server {
         proxy_buffering    off;
     }
 
-    # All other app traffic (handles trailing slash correctly)
-    location ~ ^(/.*)?$ {
+    # Everything else goes to Next.js - let it handle its own routing
+    location / {
         proxy_pass         http://next_client;
         proxy_http_version 1.1;
         proxy_set_header   Host              $http_host;
