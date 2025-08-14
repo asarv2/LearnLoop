@@ -77,6 +77,39 @@ services:
     networks:
       - web
 
+  acme-extractor:
+    image: ghcr.io/kereis/traefik-certs-dumper:latest
+    container_name: learnloop-acme-extractor
+    restart: "no"
+    environment:
+      - DOMAIN=turn.learn-loop.org          # dump only this cert
+      - CERTIFICATE_FILE_NAME=fullchain         # → fullchain.pem
+      - PRIVATE_KEY_FILE_NAME=privkey           # → privkey.pem
+    volumes:
+      - ../../../../api/acme.json:/traefik/acme.json:ro
+      - ../../../certs:/output:rw
+
+  webrtc:
+    build: ./turn
+    container_name: learnloop-webrtc
+    restart: unless-stopped
+    volumes:
+      - ../../../../certs:/etc/coturn/certs:ro
+    environment:
+      - TURN_REALM=${TURN_REALM}
+      - TURN_USERNAME=${TURN_USERNAME}
+      - TURN_PASSWORD=${TURN_PASSWORD}
+      - TURN_PUBLIC_IP=${TURN_PUBLIC_IP}
+    depends_on:
+      - acme-extractor
+    ports:
+      - "3479:3479/udp"      # STUN/TURN over UDP (direct access)
+      - "3479:3479/tcp"      # TURN over TCP (direct access)
+      - "49553-49953:49553-49953/udp"  # UDP relay ports for media
+      - "5350:5350/tcp"      # TLS port (routed through Traefik)
+      - "5350:5350/udp"      # TLS port (routed through Traefik)
+    networks: [web]                
+
   nginx:
     image: nginx:1.25
     container_name: learnloop-nginx
