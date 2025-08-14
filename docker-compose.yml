@@ -94,7 +94,7 @@ services:
     container_name: learnloop-webrtc
     restart: unless-stopped
     volumes:
-      - ../../../../certs:/etc/coturn/certs:ro
+      - ../../../certs:/etc/coturn/certs:ro
     environment:
       - TURN_REALM=${TURN_REALM}
       - TURN_USERNAME=${TURN_USERNAME}
