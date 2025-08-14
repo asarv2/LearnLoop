@@ -116,6 +116,8 @@ jobs:
         STUN_URI: ${{ secrets.STUN_URI }}
         TURN_USERNAME: ${{ secrets.TURN_USERNAME }}
         TURN_PASSWORD: ${{ secrets.TURN_PASSWORD }}
+        TURN_REALM: ${{ secrets.TURN_REALM }}
+        TURN_PUBLIC_IP: ${{ secrets.TURN_PUBLIC_IP }}
         
         # Docker image references
         LEARNLOOP_CLIENT_IMAGE: ghcr.io/ashokhomepc/learnloop-client:latest
