@@ -67,4 +67,4 @@ RUN addgroup --system --gid $APP_GID appuser && \
 ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app
 EXPOSE 8000
 
-CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "--log-level", "info"]
+CMD ["gunicorn", "app.main:app", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000", "--log-level", "info"]

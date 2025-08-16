@@ -1,37 +1,27 @@
 networks:
-  internal:
-    driver: bridge
-    internal: true
   web:
     name: web
     external: true
 
 services:
-  # -----------------------------------------------------
-  # CLIENT: Handles all traffic except for /socket.io
-  # -----------------------------------------------------
   client:
-    build:
-      context: ./client
-      dockerfile: Dockerfile
-    image: ${LEARNLOOP_CLIENT_IMAGE:-ghcr.io/ashoksaravanan222/learnloop-client:latest}
+    image: ${LEARNLOOP_CLIENT_IMAGE:-ghcr.io/ashokhomepc/learnloop-client:latest}
     pull_policy: always
     container_name: learnloop-client
     restart: unless-stopped
     networks:
       - web
-      - internal
     environment:
       - NODE_ENV=production
       - SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
       - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       - NEXT_PUBLIC_SUPABASE_SCHEMA=${NEXT_PUBLIC_SUPABASE_SCHEMA}
-      - INTERNAL_API_BASE=http://server:8000
+      - INTERNAL_API_BASE=http://learnloop-server:8000
       - HOSTNAME=0.0.0.0
       - PORT=3000
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
+      test: ["CMD-SHELL", "wget -qO- http://0.0.0.0:3000/api/health >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -39,48 +29,13 @@ services:
     depends_on:
       server:
         condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=web"
-      # --- HTTP to HTTPS Redirect ---
-      - "traefik.http.routers.learnloop-http.rule=Host(`learn-loop.org`,`www.learn-loop.org`)"
-      - "traefik.http.routers.learnloop-http.entrypoints=web"
-      - "traefik.http.routers.learnloop-http.middlewares=https-redirect"
-      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
-      - "traefik.http.middlewares.https-redirect.redirectscheme.permanent=true"
-      # --- Main App Router (naked domain) ---
-      - "traefik.http.routers.learnloop-client.rule=Host(`learn-loop.org`)"
-      - "traefik.http.routers.learnloop-client.entrypoints=websecure"
-      - "traefik.http.routers.learnloop-client.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.learnloop-client.service=learnloop-client-svc"
-      - "traefik.http.services.learnloop-client-svc.loadbalancer.server.port=3000"
-      # --- WWW to non-WWW Redirect ---
-      - "traefik.http.routers.learnloop-www.rule=Host(`www.learn-loop.org`)"
-      - "traefik.http.routers.learnloop-www.entrypoints=websecure"
-      - "traefik.http.routers.learnloop-www.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.learnloop-www.middlewares=drop-www"
-      - "traefik.http.middlewares.drop-www.redirectregex.regex=^https?://www\\.learn-loop\\.org/(.*)"
-      - "traefik.http.middlewares.drop-www.redirectregex.replacement=https://learn-loop.org/$${1}"
-      # --- Static Assets Router (High Priority) ---
-      - "traefik.http.routers.learnloop-client-static.rule=Host(`learn-loop.org`) && PathPrefix(`/_next`)"
-      - "traefik.http.routers.learnloop-client-static.priority=11"
-      - "traefik.http.routers.learnloop-client-static.entrypoints=websecure"
-      - "traefik.http.routers.learnloop-client-static.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.learnloop-client-static.service=learnloop-client-svc"
 
-  # -----------------------------------------------------
-  # SERVER: Handles ONLY /socket.io traffic
-  # -----------------------------------------------------
   server:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
-    image: ${LEARNLOOP_SERVER_IMAGE:-ghcr.io/ashoksaravanan222/learnloop-server:latest}
+    image: ${LEARNLOOP_SERVER_IMAGE:-ghcr.io/ashokhomepc/learnloop-server:latest}
     pull_policy: always
     container_name: learnloop-server
     restart: unless-stopped
     networks:
-      - internal
       - web
     environment:
       # ai
@@ -96,7 +51,7 @@ services:
 
       # api + socket.io
       - ORIGIN=${ORIGIN}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://learnloop-redis:6379
 
       # webrtc
       - TURN_URI=${TURN_URI}
@@ -114,25 +69,13 @@ services:
       start_period: 30s
     deploy:
       replicas: ${SERVER_REPLICAS:-1}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=web"
-      # This router has a HIGH PRIORITY and only matches the /socket.io path.
-      - "traefik.http.routers.learnloop-socket.rule=Host(`learn-loop.org`) && PathPrefix(`/socket.io`)"
-      - "traefik.http.routers.learnloop-socket.priority=20"
-      - "traefik.http.routers.learnloop-socket.entrypoints=websecure"
-      - "traefik.http.routers.learnloop-socket.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.learnloop-socket.service=learnloop-server-svc"
-      - "traefik.http.services.learnloop-server-svc.loadbalancer.server.port=8000"
-      # 🚀 THE FIX: Enable sticky sessions for this service.
-      - "traefik.http.services.learnloop-server-svc.loadbalancer.sticky.cookie=true"
 
   redis:
     image: redis:7-alpine
     container_name: learnloop-redis
     restart: unless-stopped
     networks:
-      - internal
+      - web
 
   acme-extractor:
     image: ghcr.io/kereis/traefik-certs-dumper:latest
@@ -143,7 +86,7 @@ services:
       - CERTIFICATE_FILE_NAME=fullchain         # → fullchain.pem
       - PRIVATE_KEY_FILE_NAME=privkey           # → privkey.pem
     volumes:
-      - ../../../../../asaravan/Coding/api/acme.json:/traefik/acme.json:ro
+      - ../../../../api/acme.json:/traefik/acme.json:ro
       - ../../../certs:/output:rw
 
   webrtc:
@@ -163,12 +106,28 @@ services:
       - "3479:3479/udp"      # STUN/TURN over UDP (direct access)
       - "3479:3479/tcp"      # TURN over TCP (direct access)
       - "49553-49953:49553-49953/udp"  # UDP relay ports for media
-    expose:
-      - "5350"               # TLS port (routed through Traefik)
+      - "5350:5350/tcp"      # TLS port (routed through Traefik)
+      - "5350:5350/udp"      # TLS port (routed through Traefik)
     networks: [web]                
-    labels:
-      - "traefik.enable=true"
-      - "traefik.tcp.routers.turn.rule=HostSNI(`turn.learn-loop.org`)"
-      - "traefik.tcp.routers.turn.entrypoints=websecure"
-      - "traefik.tcp.routers.turn.tls.passthrough=true"
-      - "traefik.tcp.services.turn.loadbalancer.server.port=5350"
+
+  nginx:
+    image: nginx:1.25
+    container_name: learnloop-nginx
+    restart: unless-stopped
+    ports:
+      - "5007:80"
+    volumes:
+      - ./web/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      client:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    networks:
+      - web
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

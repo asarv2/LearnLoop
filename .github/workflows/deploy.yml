@@ -24,15 +24,15 @@ jobs:
       uses: docker/login-action@v3
       with:
         registry: ghcr.io
-        username: ashoksaravanan222
-        password: ${{ secrets.GHCR_PAT_LEARNLOOP }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
         
     # Build and push client image
     - name: Extract metadata for client Docker image
       id: meta-client
       uses: docker/metadata-action@v5
       with:
-        images: ghcr.io/ashoksaravanan222/learnloop-client
+        images: ghcr.io/ashokhomepc/learnloop-client
         tags: |
           type=raw,value=latest
           type=sha,prefix={{branch}}-
@@ -50,14 +50,14 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           NEXT_PUBLIC_SUPABASE_SCHEMA=${{ secrets.NEXT_PUBLIC_SUPABASE_SCHEMA }}
-          INTERNAL_API_BASE=http://server:8000
+          INTERNAL_API_BASE=http://learnloop-server:8000
 
     # Build and push server image
     - name: Extract metadata for server Docker image
       id: meta-server
       uses: docker/metadata-action@v5
       with:
-        images: ghcr.io/ashoksaravanan222/learnloop-server
+        images: ghcr.io/ashokhomepc/learnloop-server
         tags: |
           type=raw,value=latest
           type=sha,prefix={{branch}}-
@@ -80,16 +80,16 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    # 1️⃣ Auth to the correct GHCR account
+    # Login using the github.actor (whoever triggered the workflow)
     - name: Log in to GHCR for deploy
       env:
-        DOCKER_CONFIG: /home/srv/learnloop/.docker-ghcr
+        DOCKER_CONFIG: /srv/deploy/.docker-ghcr
       run: |
-        echo "${{ secrets.GHCR_PAT_LEARNLOOP }}" | \
-          docker login ghcr.io -u ashoksaravanan222 --password-stdin
+        echo "${{ secrets.GITHUB_TOKEN }}" | \
+          docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-    # 2️⃣ Pull and restart
-    - name: Deploy with newest images
+    # Deploy to production
+    - name: Deploy to production
       env:
         # Client environment variables
         SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
@@ -120,12 +120,13 @@ jobs:
         TURN_PUBLIC_IP: ${{ secrets.TURN_PUBLIC_IP }}
         
         # Docker image references
-        LEARNLOOP_CLIENT_IMAGE: ghcr.io/ashoksaravanan222/learnloop-client:latest
-        LEARNLOOP_SERVER_IMAGE: ghcr.io/ashoksaravanan222/learnloop-server:latest
+        LEARNLOOP_CLIENT_IMAGE: ghcr.io/ashokhomepc/learnloop-client:latest
+        LEARNLOOP_SERVER_IMAGE: ghcr.io/ashokhomepc/learnloop-server:latest
         
         # Server scaling
         SERVER_REPLICAS: ${{ secrets.SERVER_REPLICAS }}
         
+        DOCKER_CONFIG: /srv/deploy/.docker-ghcr
       run: |
         docker compose pull
         docker compose up -d
