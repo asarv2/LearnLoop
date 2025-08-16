@@ -1,0 +1,5 @@
+Rules for the Cursor Agent:
+This application is meant to help train company employees on how to communicate/interact with a person in different scenarios. The user will choose a scenario they need help with, they will enter some traits about the person, the AI model API that we have then embodies this person, and the user can either have a conversation(using real-time voice) or just a textual conversation.
+This application that you are developing is for paying customers at large corporations so make sure all the changes you make regarding the UI and professional and clean. The UX design should also be simple and intuitive. There shouldn't have to be instructions on how to use this application because it should be that easy to use. This doesn't mean there won't be lots of features, it just means all the labeling, effects(like hover), and button should be good.
+You have access to Supabase, this is where we store everything.
+Don't start until you are a 95% confident, ask any questions you may have before getting started.
