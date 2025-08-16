@@ -189,7 +189,8 @@ export default function Trainings() {
         <Paragraph type="secondary" style={{ fontSize: "16px" }}>
           Enhance your leadership and management capabilities through immersive,
           AI-powered training experiences designed for today&apos;s corporate
-          environment.
+          environment. Each scenario features focused AI personas for realistic
+          practice.
         </Paragraph>
       </div>
 
@@ -228,8 +229,8 @@ export default function Trainings() {
             <Paragraph type="secondary">
               Designed specifically for corporate environments, our modules
               focus on real-world challenges that managers and leaders face
-              daily. Build confidence through practice in a risk-free
-              environment.
+              daily. Each scenario features focused AI personas for realistic
+              practice in a risk-free environment.
             </Paragraph>
           </Col>
         </Row>

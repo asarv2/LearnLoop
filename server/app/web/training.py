@@ -5,6 +5,7 @@ Simplified version focused on core training functionality
 
 import asyncio
 import logging
+import random
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -213,6 +214,7 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
 def get_persona_id_from_chat(db_session, chat: Chats) -> Optional[uuid.UUID]:
     """
     Extract persona_id from chat's parameter_ids by finding the parameter with field_type 'persona'
+    For interview training, randomly select between regular and cheating candidate if candidate persona is not set
     """
     if not chat.parameter_ids:
         return None
@@ -241,6 +243,49 @@ def get_persona_id_from_chat(db_session, chat: Chats) -> Optional[uuid.UUID]:
                     except ValueError:
                         logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
                         continue
+        
+        # Special handling for interview training: 50/50 chance of cheating vs selected personality
+        if chat.training_type == 'interview':
+            # Check if user selected a candidate persona
+            selected_persona_id = None
+            for param in parameters:
+                if param.field_id:
+                    field = db_session.exec(
+                        select(Fields).where(Fields.id == param.field_id)
+                    ).one_or_none()
+                    
+                    if field and field.name == 'Candidate Persona' and param.value:
+                        selected_persona_id = param.value
+                        break
+            
+            if selected_persona_id:
+                # User selected a personality, now 50/50 chance of using it vs cheating
+                is_cheating = random.choice([True, False])
+                
+                if is_cheating:
+                    # Find the cheating candidate persona
+                    cheating_persona = db_session.exec(
+                        select(Personas).where(Personas.name == 'Cheating Candidate')
+                    ).one_or_none()
+                    if cheating_persona:
+                        # Store this in the chat's feedback field for reference
+                        if not chat.feedback:
+                            chat.feedback = {}
+                        chat.feedback['candidate_type'] = 'cheating'
+                        chat.feedback['candidate_persona_id'] = str(cheating_persona.id)
+                        chat.feedback['user_selected_persona'] = selected_persona_id
+                        db_session.add(chat)
+                        db_session.commit()
+                        return cheating_persona.id
+                else:
+                    # Use the personality the user actually selected
+                    if not chat.feedback:
+                        chat.feedback = {}
+                    chat.feedback['candidate_type'] = 'regular'
+                    chat.feedback['candidate_persona_id'] = selected_persona_id
+                    db_session.add(chat)
+                    db_session.commit()
+                    return uuid.UUID(selected_persona_id)
         
         return None
     except Exception as e:

@@ -42,6 +42,13 @@ import { useScenario } from "@/lib/api/hooks/useScenarios";
 
 // Types
 import { useAuth } from "@/components/auth/AuthProvider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { Tables } from "@/database.types";
 import { useCreateChat } from "@/lib/api/hooks/useChats";
 
@@ -264,7 +271,7 @@ function DocumentField({
         <Flex direction="column" align="center" gap="2">
           <FileTextIcon width="24" height="24" color="var(--gray-9)" />
           <Text size="3" weight="medium">
-            Click to upload {field.name.toLowerCase()}
+            Click to upload {field.name.toLowerCase()} (Optional)
           </Text>
           <Text size="1" color="gray">
             {field.description}
@@ -289,121 +296,45 @@ function PersonaField({
   onChange: (value: string, parameterId?: string) => void;
 }) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
-  const [personaSelections, setPersonaSelections] = useState<string[]>([""]);
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
 
   if (isLoading) return <Spinner size="2" />;
 
-  const handlePersonaSelect = (index: number, parameterId: string) => {
-    const newSelections = [...personaSelections];
-    newSelections[index] = parameterId;
-    setPersonaSelections(newSelections);
-
-    // Update parent with comma-separated parameter IDs only
-    const validSelections = newSelections.filter((id) => id && id.trim());
-    const selectedNames = validSelections.join(",");
-
-    onChange(selectedNames, selectedNames);
-  };
-
-  const addPersonaSelection = () => {
-    setPersonaSelections([...personaSelections, ""]);
-  };
-
-  const removePersonaSelection = (index: number) => {
-    // Don't allow removal if there's only one persona left
-    if (personaSelections.length <= 1) {
-      return;
-    }
-
-    const newSelections = personaSelections.filter((_, i) => i !== index);
-    setPersonaSelections(newSelections);
-
-    // Update parent with comma-separated parameter IDs only
-    const validSelections = newSelections.filter((id) => id && id.trim());
-    const selectedNames = validSelections.join(",");
-
-    onChange(selectedNames, selectedNames);
+  const handlePersonaSelect = (parameterId: string) => {
+    setSelectedPersonaId(parameterId);
+    onChange(parameterId, parameterId);
   };
 
   return (
     <Flex direction="column" gap="3">
-      {/* Existing persona selections */}
-      {personaSelections.map((selectedId, index) => {
-        const selectedParameter = parameters?.find((p) => p.id === selectedId);
-        return (
-          <Card
-            key={index}
-            style={{
-              background: "var(--gray-1)",
-              border: "1px solid var(--gray-6)",
-            }}
-          >
-            <Box p="4">
-              <Flex align="center" gap="3" justify="between">
-                <Text size="3" weight="medium">
-                  Persona {index + 1}:
-                </Text>
-                <select
-                  value={selectedId}
-                  onChange={(e) => handlePersonaSelect(index, e.target.value)}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: "6px",
-                    border: "1px solid var(--gray-6)",
-                    background: "white",
-                    fontSize: "14px",
-                    minWidth: "200px",
-                  }}
-                >
-                  <option value="">Select a persona...</option>
-                  {parameters?.map((parameter) => (
-                    <option key={parameter.id || ""} value={parameter.id || ""}>
-                      {parameter.name || "Unnamed Parameter"}
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  size="1"
-                  variant="soft"
-                  color="red"
-                  onClick={() => removePersonaSelection(index)}
-                  disabled={personaSelections.length <= 1}
-                  style={{
-                    opacity: personaSelections.length <= 1 ? 0.5 : 1,
-                    cursor:
-                      personaSelections.length <= 1 ? "not-allowed" : "pointer",
-                  }}
-                >
-                  Remove
-                </Button>
-              </Flex>
-              {selectedParameter && (
-                <Box mt="2">
-                  <Text size="2" color="gray">
-                    {selectedParameter.description ||
-                      "No description available"}
-                  </Text>
-                </Box>
-              )}
-            </Box>
-          </Card>
-        );
-      })}
-
-      {/* Add Persona button */}
-      <Button
-        size="2"
-        variant="soft"
-        onClick={addPersonaSelection}
-        style={{
-          alignSelf: "flex-start",
-          background: "var(--blue-2)",
-          border: "1px solid var(--blue-6)",
-          color: "var(--blue-9)",
-        }}
-      >
-        + Add Persona
-      </Button>
+      <Select value={selectedPersonaId} onValueChange={handlePersonaSelect}>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Choose a candidate personality..." />
+        </SelectTrigger>
+        <SelectContent>
+          {parameters?.map((parameter) => (
+            <SelectItem key={parameter.id || ""} value={parameter.id || ""}>
+              {parameter.name || "Unnamed Parameter"}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {selectedPersonaId && (
+        <Box
+          mt="2"
+          p="3"
+          style={{
+            background: "var(--gray-2)",
+            borderRadius: "8px",
+            border: "1px solid var(--gray-5)",
+          }}
+        >
+          <Text size="2" color="gray">
+            {parameters?.find((p) => p.id === selectedPersonaId)?.description ||
+              "No description available"}
+          </Text>
+        </Box>
+      )}
     </Flex>
   );
 }
@@ -454,12 +385,17 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     const fieldValue = fieldValues.find((fv) => fv.fieldId === fieldId);
     if (!fieldValue) return false;
 
-    // For persona fields, check if there's at least one valid selection
-    if (fieldValue.parameterId && fieldValue.parameterId.includes(",")) {
-      const validSelections = fieldValue.parameterId
-        .split(",")
-        .filter((id) => id.trim());
-      return validSelections.length > 0;
+    // Get the field to check its type
+    const field = scenario?.fields?.find((f) => f.id === fieldId);
+
+    // Document fields are always optional
+    if (field?.field_type === "document") {
+      return true;
+    }
+
+    // For persona fields, check if there's a valid selection
+    if (fieldValue.parameterId) {
+      return fieldValue.parameterId.trim() !== "";
     }
 
     // For other fields, check if value is not empty
@@ -467,7 +403,21 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   };
 
   const allStepsComplete =
-    fieldValues.length > 0 && fieldValues.every((fv) => fv.value !== "");
+    fieldValues.length > 0 &&
+    fieldValues.every((fv) => {
+      // Get the field to check its type
+      const field = scenario?.fields?.find((f) => f.id === fv.fieldId);
+
+      // Document fields are always optional
+      if (field?.field_type === "document") {
+        return true;
+      }
+
+      if (fv.parameterId) {
+        return fv.parameterId.trim() !== "";
+      }
+      return fv.value !== "";
+    });
 
   const startScenario = async () => {
     if (!allStepsComplete || !scenario) {
@@ -483,15 +433,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       const documentUploads: { documentId: string; file: File }[] = [];
 
       for (const fieldValue of fieldValues) {
-        // Handle multiple persona selections
-        if (fieldValue.parameterId && fieldValue.parameterId.includes(",")) {
-          // Multiple persona selections - split by comma and add all IDs
-          const personaIds = fieldValue.parameterId
-            .split(",")
-            .filter((id) => id.trim());
-          parameterIds.push(...personaIds);
-        } else if (fieldValue.parameterId) {
-          // Single parameter ID (categorical or single persona)
+        // Handle persona and categorical fields
+        if (fieldValue.parameterId) {
+          // Single parameter ID (categorical or persona)
           parameterIds.push(fieldValue.parameterId);
         } else {
           // For text, numerical, and document fields, create new parameters
