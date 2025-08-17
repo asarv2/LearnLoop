@@ -68,6 +68,16 @@ interface WebSocketContextType {
   triggerServerAudio: () => void; // Trigger server audio by sending silent frame
 
   // Training event emitters
+  emitStartTraining: (data: {
+    scenario_id: string;
+    field_values: Array<{
+      fieldId: string;
+      value: string;
+      parameterId?: string;
+      file?: File;
+    }>;
+    profile_id?: string;
+  }) => void;
   emitJoinTraining: (data: {
     attempt_id: string;
     training_id: string;
@@ -508,6 +518,29 @@ export function WebSocketProvider({
 
       // Set up training event handlers
       socket.on(
+        "training_started",
+        (data: {
+          success: boolean;
+          message: string;
+          attempt_id: string;
+          chat_id: string;
+          training_id: string;
+        }) => {
+          logInfo("Training started", data);
+          setIsStartingTraining(false);
+          if (data.success) {
+            toast.success(data.message);
+            // Navigate to the training page
+            router.push(
+              `/dashboard/trainings/t/${data.training_id}/a/${data.attempt_id}`
+            );
+          } else {
+            toast.error(data.message);
+          }
+        }
+      );
+
+      socket.on(
         "training_joined",
         (data: { success: boolean; message: string; chat_id: string }) => {
           logInfo("Training joined", data);
@@ -870,6 +903,30 @@ export function WebSocketProvider({
   }, []);
 
   // Training event emitters
+  const emitStartTraining = useCallback(
+    (data: {
+      scenario_id: string;
+      field_values: Array<{
+        fieldId: string;
+        value: string;
+        parameterId?: string;
+        file?: File;
+      }>;
+      profile_id?: string;
+    }) => {
+      if (!socketRef.current || !socketRef.current.connected) {
+        logError("Cannot start training - WebSocket not connected");
+        toast.error("WebSocket not connected. Please refresh the page.");
+        return;
+      }
+
+      setIsStartingTraining(true);
+      logInfo("Emitting start_training", data);
+      socketRef.current.emit("start_training", data);
+    },
+    []
+  );
+
   const emitJoinTraining = useCallback(
     (data: {
       attempt_id: string;
@@ -1162,6 +1219,7 @@ export function WebSocketProvider({
     enableServerAudio, // Enable server audio playback
     disableServerAudio, // Disable server audio playback
     triggerServerAudio, // Trigger server audio by sending silent frame
+    emitStartTraining,
     emitJoinTraining,
     emitSendTrainingMessage,
     emitStopTraining,

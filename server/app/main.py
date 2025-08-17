@@ -20,7 +20,6 @@ from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
                     RTCIceCandidate, RTCIceServer, RTCPeerConnection,
                     RTCSessionDescription)
 from aiortc.sdp import candidate_from_sdp  # type: ignore
-from app.utils.chat import get_realtime_instructions
 from av import AudioFrame, AudioResampler  # type: ignore
 from dotenv import load_dotenv
 from fastapi import FastAPI

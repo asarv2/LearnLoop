@@ -12,14 +12,16 @@ from typing import Any, Dict, Optional
 
 import socketio  # type: ignore
 from app.db import get_session
-from app.models import (Chats, Fields, Messages,  # ✨ Import Personas
-                        Parameters, Personas)
+from app.models import (Attempts, Chats, Documents,  # ✨ Import Personas
+                        Fields, Messages, Parameters, Personas, Scenarios)
 from app.services.agents.assesment import run_assessment_agent
 from app.services.agents.feedback import run_feedback_agent
 from app.services.agents.generic import run_generic_agent
 from app.services.agents.grade import run_grading_agent
 from app.services.agents.hint import run_hint_agent
-from app.utils.chat import get_conversation_history
+from app.services.agents.scenario import run_scenario_agent
+from app.utils.chat import (get_conversation_history, get_parameter_history,
+                            get_preamble)
 from sqlalchemy import Column
 from sqlmodel import select
 
@@ -33,6 +35,147 @@ def get_sio_instance() -> socketio.AsyncServer:
     """Get the Socket.IO server instance from main.py"""
     from app.main import get_socketio_instance
     return get_socketio_instance()
+
+
+async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
+    """
+    Handle training start requests via WebSocket
+    Creates training attempt, chat, and initial message
+    """
+    try:
+        logger.info(f"Received start_training request from {sid} with data: {data}")
+
+        scenario_id = data.get("scenario_id")
+        field_values = data.get("field_values", [])
+        profile_id = data.get("profile_id")
+
+        if not scenario_id:
+            logger.error(f"Missing scenario_id in request from {sid}")
+            await emit_error(sid, "Missing scenario_id")
+            return
+
+        # Handle empty string profile_id as None for guest mode
+        if profile_id == "" or profile_id == "null":
+            profile_id = None
+
+        logger.info(
+            f"Processing training start: scenario_id={scenario_id}, profile_id={profile_id}, sid={sid}"
+        )
+
+        # Create a new session for this operation
+        db_session = next(get_session())
+
+        try:
+            # Get the scenario to validate it exists
+            result = db_session.exec(
+                select(Scenarios).where(Scenarios.id == scenario_id)
+            )
+            scenario = result.one_or_none()
+            if not scenario:
+                await emit_error(sid, "Scenario not found")
+                return
+
+            # Create parameter records for text and numerical fields
+            parameter_ids = []
+
+            for field_value in field_values:
+                field_id = field_value.get("fieldId")
+                value = field_value.get("value", "")
+                parameter_id = field_value.get("parameterId")
+
+                # Handle persona and categorical fields
+                if parameter_id:
+                    # Single parameter ID (categorical or persona)
+                    parameter_ids.append(parameter_id)
+                else:
+                    # For text, numerical, and document fields, create new parameters
+                    # The value will be the actual text/number or document ID
+                    new_param = Parameters(
+                        field_id=field_id,
+                        name=value,
+                        value=value,
+                    )
+                    db_session.add(new_param)
+                    db_session.commit()
+                    db_session.refresh(new_param)
+                    parameter_ids.append(str(new_param.id))
+
+            # Create training attempt
+            attempt = Attempts(
+                training_id=scenario.training_id,
+                profile_id=profile_id,
+            )
+            db_session.add(attempt)
+            db_session.commit()
+            db_session.refresh(attempt)
+
+            # Create chat
+            chat = Chats(
+                attempt_id=attempt.id,
+                title=scenario.title,
+                name=scenario.title,  # Use title as name
+                position="Participant",  # Default position
+                additional_info=scenario.description or "",  # Use description as additional info
+                profile_id=profile_id,
+                user_id=profile_id,  # Add user ID
+                voice="alloy",
+                type="regular",  # Default to regular interview type
+                parameter_ids=parameter_ids,
+            )
+            db_session.add(chat)
+            db_session.commit()
+            db_session.refresh(chat)
+
+            # Document uploads are handled on the frontend before this call
+            logger.info("Document uploads completed on frontend")
+
+            # Create initial welcome message
+            welcome_message = Messages(
+                chat_id=str(chat.id),
+                content=f"Welcome to the {scenario.title} training! I'm here to help you practice. How can I assist you today?",
+                role="assistant",
+                training_id=scenario.training_id,
+                completed=True,
+                persona_id=get_persona_id_from_chat(db_session, chat)
+            )
+            db_session.add(welcome_message)
+            db_session.commit()
+
+            # Run scenario agent to update chat title and description
+            try:
+                logger.info(f"Running scenario agent for chat {chat.id}")
+                scenario_result = await run_scenario_agent(chat.id, db_session)
+                
+                if scenario_result.get("success"):
+                    logger.info(f"Successfully updated chat with scenario: {scenario_result.get('chat_title')}")
+                else:
+                    logger.warning(f"Scenario agent failed: {scenario_result.get('message')}")
+            except Exception as e:
+                logger.error(f"Error running scenario agent: {str(e)}")
+                # Continue with training even if scenario agent fails
+
+            logger.info(f"Successfully created training session: attempt_id={attempt.id}, chat_id={chat.id}")
+
+            # Send success response
+            sio = get_sio_instance()
+            await sio.emit(
+                "training_started",
+                {
+                    "success": True,
+                    "attempt_id": str(attempt.id),
+                    "chat_id": str(chat.id),
+                    "training_id": str(scenario.training_id),
+                    "message": "Training session started successfully",
+                },
+                room=sid,
+            )
+
+        finally:
+            db_session.close()
+
+    except Exception as e:
+        logger.error(f"Error starting training for {sid}: {str(e)}")
+        await emit_error(sid, f"Failed to start training: {str(e)}")
 
 
 async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
@@ -400,13 +543,17 @@ async def process_training_message_websocket(
 
         # Get conversation history
         messages = db_session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
+        preamble = get_preamble(chat)
+        parameter_history = get_parameter_history(chat, db_session)
         conversation_history = get_conversation_history(messages)
+
+        instructions = [preamble] + parameter_history + conversation_history
 
         # Stream response using generic agent
         accumulated_content = ""
         try:
             # The agent run uses the persona_id already, which is great
-            async for chunk in run_generic_agent(assistant_persona_id, conversation_history, db_session):
+            async for chunk in run_generic_agent(assistant_persona_id, instructions, db_session):
                 accumulated_content += chunk
                 
                 # Emit token update
@@ -532,6 +679,12 @@ async def handle_generate_feedback(sid: str, data: Dict[str, Any]) -> None:
 # Register training event handlers with socketio
 def register_training_events(sio: socketio.AsyncServer) -> None:
     """Register training WebSocket event handlers"""
+    
+    @sio.event  # type: ignore
+    async def start_training(sid: str, data: Dict[str, Any]) -> None:
+        """Start a new training session"""
+        logger.info(f"start_training event triggered for sid={sid}")
+        await handle_start_training(sid, data)
     
     @sio.event  # type: ignore
     async def join_training(sid: str, data: Dict[str, Any]) -> None:

@@ -9,8 +9,9 @@ from agents.realtime.config import (RealtimeInputAudioTranscriptionConfig,
                                     RealtimeSessionModelSettings,
                                     RealtimeTurnDetectionConfig)
 from agents.realtime.session import RealtimeSession
-from app.models import Messages, Personas
-from app.utils.chat import get_realtime_instructions
+from app.models import Chats, Messages, Personas
+from app.utils.chat import (get_conversation_history, get_parameter_history,
+                            get_preamble, get_text_formatted_instructions)
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,14 @@ async def create_realtime_voice_session(
 
     Returns an active session. The caller is responsible for closing it.
     """
+    chat: Optional[Chats] = db_session.exec(
+        select(Chats).where(Chats.id == chat_id)
+    ).one_or_none()
+
+    if not chat:
+        logger.error(f"Chat lookup failed for ID: {chat_id}")
+        raise ValueError(f"Chat with ID {chat_id} not found")
+
     persona: Optional[Personas] = db_session.exec(
         select(Personas).where(Personas.id == persona_id)
     ).one_or_none()
@@ -44,7 +53,14 @@ async def create_realtime_voice_session(
 
     # get all messages for the chat
     messages = db_session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
-    realtime_instructions = get_realtime_instructions(persona.system_prompt, messages)
+    preamble = get_preamble(chat)
+    parameter_history = get_parameter_history(chat, db_session)
+    conversation_history = get_conversation_history(messages)
+
+    instructions = [preamble] + parameter_history + conversation_history
+
+    realtime_instructions = get_text_formatted_instructions(instructions)
+
         
     agent_instance = RealtimeVoiceAgent(
         name=persona.name,

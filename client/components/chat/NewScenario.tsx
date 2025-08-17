@@ -28,17 +28,14 @@ import { useEffect, useState } from "react";
 
 // Hooks
 import { useWebSocket } from "@/contexts/websocket-context";
-import { useCreateAttempt } from "@/lib/api/hooks/useAttempts";
 import {
   uploadDocument,
   useCreateDocument,
 } from "@/lib/api/hooks/useDocuments";
-import { useField } from "@/lib/api/hooks/useFields";
-import {
-  useCreateParameter,
-  useParametersByField,
-} from "@/lib/api/hooks/useParameters";
+import { useField, useFields } from "@/lib/api/hooks/useFields";
+import { useParametersByField } from "@/lib/api/hooks/useParameters";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
+import { extractTextFromPDF } from "@/utils/pdf/extract";
 
 // Types
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -50,7 +47,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Tables } from "@/database.types";
-import { useCreateChat } from "@/lib/api/hooks/useChats";
 
 export interface NewScenarioProps {
   scenarioId: string;
@@ -343,17 +339,13 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [fieldValues, setFieldValues] = useState<FieldValue[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
-
+  const { data: fields } = useFields();
   // Fetch scenario data
   const { data: scenario, isLoading: scenarioLoading } =
     useScenario(scenarioId);
 
   // Hooks for mutations
-  const createParameter = useCreateParameter();
-  const createAttempt = useCreateAttempt();
-  const createChat = useCreateChat();
-  const createDocument = useCreateDocument();
-  const { emitJoinTraining } = useWebSocket();
+  const { emitStartTraining } = useWebSocket();
 
   // Initialize field values when scenario loads
   useEffect(() => {
@@ -385,14 +377,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     const fieldValue = fieldValues.find((fv) => fv.fieldId === fieldId);
     if (!fieldValue) return false;
 
-    // Get the field to check its type
-    const field = scenario?.fields?.find((f) => f.id === fieldId);
-
-    // Document fields are always optional
-    if (field?.field_type === "document") {
-      return true;
-    }
-
     // For persona fields, check if there's a valid selection
     if (fieldValue.parameterId) {
       return fieldValue.parameterId.trim() !== "";
@@ -406,7 +390,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     fieldValues.length > 0 &&
     fieldValues.every((fv) => {
       // Get the field to check its type
-      const field = scenario?.fields?.find((f) => f.id === fv.fieldId);
+      const field = fields?.find((f) => f.id === fv.fieldId);
 
       // Document fields are always optional
       if (field?.field_type === "document") {
@@ -419,6 +403,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       return fv.value !== "";
     });
 
+  const createDocument = useCreateDocument();
+
   const startScenario = async () => {
     if (!allStepsComplete || !scenario) {
       alert("Please complete all fields before starting the scenario");
@@ -428,77 +414,54 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     setIsLoading(true);
 
     try {
-      // Create parameter records for text and numerical fields
-      const parameterIds: string[] = [];
-      const documentUploads: { documentId: string; file: File }[] = [];
+      // Process field values and handle document uploads
+      const processedFieldValues = await Promise.all(
+        fieldValues.map(async (fieldValue) => {
+          // If this is a document field with a file, upload it first
+          if (fieldValue.file) {
+            try {
+              // Extract content from PDF
+              const arrayBuffer = await fieldValue.file.arrayBuffer();
+              const buffer = Buffer.from(arrayBuffer);
+              const content = await extractTextFromPDF(buffer);
 
-      for (const fieldValue of fieldValues) {
-        // Handle persona and categorical fields
-        if (fieldValue.parameterId) {
-          // Single parameter ID (categorical or persona)
-          parameterIds.push(fieldValue.parameterId);
-        } else {
-          // For text, numerical, and document fields, create new parameters
-          const newParam = await createParameter.mutateAsync({
-            field_id: fieldValue.fieldId,
-            name: fieldValue.value,
-            value: fieldValue.value,
-          });
-          parameterIds.push(newParam.id!);
-        }
+              // Create document record
+              const document = await createDocument.mutateAsync({
+                content: content,
+                profile_id: user?.id || null,
+              });
 
-        // If this is a document field with a file, create document record
-        if (fieldValue.file) {
-          const newDocument = await createDocument.mutateAsync({
-            content: null, // Will be populated after upload
-            profile_id: user?.id || null, // Use user ID as profile ID
-          });
-          documentUploads.push({
-            documentId: newDocument.id!,
-            file: fieldValue.file,
-          });
-        }
-      }
+              // Upload the file
+              const formData = new FormData();
+              formData.append("file", fieldValue.file);
+              await uploadDocument(document.id!, formData);
 
-      // Create training attempt
-      const attempt = await createAttempt.mutateAsync({
-        training_id: scenario.training_id || undefined,
-        profile_id: user?.id || null, // Use user ID as profile ID
+              // Return field value with document ID as the value
+              return {
+                ...fieldValue,
+                value: document.id!, // Use document ID as the value
+                file: undefined, // Remove file reference
+              };
+            } catch (error) {
+              console.error("Error processing document:", error);
+              throw new Error(`Failed to process document: ${error}`);
+            }
+          }
+
+          // For non-document fields, return as is
+          return fieldValue;
+        })
+      );
+
+      // Emit start training event via WebSocket with processed field values
+      emitStartTraining({
+        scenario_id: scenarioId,
+        field_values: processedFieldValues,
+        profile_id: user?.id || undefined,
       });
-
-      const chat = await createChat.mutateAsync({
-        attempt_id: attempt.id,
-        title: scenario.title,
-        name: scenario.title, // Use title as name
-        position: "Participant", // Default position
-        additional_info: scenario.description || "", // Use description as additional info
-        profile_id: user?.id || null, // Use user ID as profile ID
-        user_id: user?.id || null, // Add user ID
-        voice: "alloy",
-        type: "regular", // Default to regular interview type
-        parameter_ids: parameterIds,
-      });
-
-      // Upload documents if any
-      for (const { documentId, file } of documentUploads) {
-        const formData = new FormData();
-        formData.append("file", file);
-        await uploadDocument(documentId, formData);
-      }
-
-      // Emit training start event via WebSocket
-      if (attempt.id && chat.id) {
-        emitJoinTraining({
-          attempt_id: attempt.id,
-          training_id: scenario?.training_id || "",
-          chat_id: chat.id,
-          profile_id: user?.id || undefined,
-        });
-      }
     } catch (error) {
       console.error("Error starting scenario:", error);
       alert("Failed to start scenario. Please try again.");
-    } finally {
       setIsLoading(false);
     }
   };
