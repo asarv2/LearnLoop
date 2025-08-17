@@ -6,11 +6,26 @@ from agents.items import TResponseInputItem
 from agents.realtime.items import (AssistantMessageItem, AssistantText,
                                    InputText, UserMessageItem)
 from agents.realtime.model_events import RealtimeItem
-from app.models import Assessments, Messages, Questions, Rubrics, Standards
+from app.models import (Assessments, Chats, Documents, Fields, Messages,
+                        Parameters, Questions, Rubrics, Standards)
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
+
+def get_preamble(
+    chat: Chats
+) -> TResponseInputItem:
+    """
+    Create a user message with the chat's description and name.
+    """
+    title = getattr(chat, "title", None) or getattr(chat, "title", "")
+    description = getattr(chat, "description", None)
+    content = f"{title}\nDescription: {description}. The following is the current history of the conversation. Continue the conversation from this point on:"
+    return {
+        "role": "user",
+        "content": content
+    }
 
 def get_conversation_history(
     messages: Sequence[Messages],
@@ -50,8 +65,128 @@ def get_conversation_history(
     return conversation_history
 
 
+def get_parameter_history(
+    chat: Chats,
+    session: Session,
+) -> list[TResponseInputItem]:
+    """
+    Get the parameter history for a given chat.
+    """
+    # Find the chat and get its parameter_ids
+    if not chat.parameter_ids:
+        return []
+    
+    # Fetch all Parameters individually to avoid linter issues with UUID.in_()
+    all_parameters = []
+    for param_id in chat.parameter_ids:
+        param = session.exec(select(Parameters).where(Parameters.id == param_id)).one_or_none()
+        if param:
+            all_parameters.append(param)
+    
+    # Get all field IDs to fetch fields efficiently
+    field_ids = [param.field_id for param in all_parameters if param.field_id]
+
+    # Fetch fields individually to avoid linter issues with UUID.in_()
+    all_fields = []
+    for field_id in field_ids:
+        field = session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
+        if field:
+            all_fields.append(field)
+    
+    # Create a mapping of field_id to field for quick lookup
+    field_map = {field.id: field for field in all_fields}
+    
+    # Get all document IDs for document-type fields
+    document_ids = []
+    persona_ids = []
+    for param in all_parameters:
+        if param.field_id and param.field_id in field_map:
+            field = field_map[param.field_id]
+            if field.field_type == 'document' and param.value:
+                document_ids.append(param.value)
+            elif field.field_type == 'persona' and param.value:
+                persona_ids.append(param.value)
+    
+    # Fetch all documents individually to avoid linter issues with UUID.in_()
+    all_documents = {}
+    for doc_id in document_ids:
+        document = session.exec(select(Documents).where(Documents.id == doc_id)).one_or_none()
+        if document:
+            all_documents[str(doc_id)] = document
+    
+    # Fetch all personas individually
+    from app.models import Personas
+    all_personas = {}
+    for persona_id in persona_ids:
+        persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+        if persona:
+            all_personas[str(persona_id)] = persona
+    
+    # Separate parameters by type
+    persona_params = []
+    document_params = []
+    other_params = []
+    
+    for param in all_parameters:
+        if not param.field_id or param.field_id not in field_map:
+            continue
+            
+        field = field_map[param.field_id]
+        
+        # Handle different field types
+        if field.field_type == 'persona':
+            if param.value and param.value in all_personas:
+                persona = all_personas[param.value]
+                value = persona.description if persona.description else "No description available"
+            else:
+                value = "Persona not found"
+            field_description = field.description if field.description else ""
+            formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
+            persona_params.append(formatted_line)
+        elif field.field_type == 'document':
+            if param.value and param.value in all_documents:
+                document = all_documents[param.value]
+                value = document.content if document.content else "No content available"
+            else:
+                value = "Document not found"
+            field_description = field.description if field.description else ""
+            formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
+            document_params.append(formatted_line)
+        else:
+            # For numerical, categorical, or text fields
+            value = param.value if param.value else "No value set"
+            field_description = field.description if field.description else ""
+            formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
+            other_params.append(formatted_line)
+    
+    # Return three separate messages
+    messages = []
+    
+    if persona_params:
+        content = "\n".join(persona_params)
+        messages.append({
+            "role": "user",
+            "content": content
+        })
+    
+    if document_params:
+        content = "\n".join(document_params)
+        messages.append({
+            "role": "user",
+            "content": content
+        })
+    
+    if other_params:
+        content = "\n".join(other_params)
+        messages.append({
+            "role": "user",
+            "content": content
+        })
+    
+    return messages  # type: ignore
+
 def get_text_formatted_instructions(
-    messages: Sequence[Messages],
+    instructions: List[TResponseInputItem],
 ) -> str:
     """
     Get the conversation history formatted as text with YOU/USER labels.
@@ -62,41 +197,16 @@ def get_text_formatted_instructions(
     Returns:
         Text-formatted conversation history with YOU/USER labels
     """
-    # Sort messages by created_at
-    sorted_messages = sorted(messages, key=lambda x: x.created_at)
-    
     formatted_lines = []
     
-    for message in sorted_messages:
-        if message.content:
-            if message.role == "user":
-                formatted_lines.append(f"USER: {message.content}")
-            elif message.role == "assistant":
-                formatted_lines.append(f"YOU: {message.content}")
+    for message in instructions:
+        if message.get("content", None):
+            if message.get("role", None) == 'user':
+                formatted_lines.append(f"USER: {message.get('content', None)}")
+            elif message.get("role", None) == 'assistant':
+                formatted_lines.append(f"YOU: {message.get('content', None)}")
     
     return "\n\n".join(formatted_lines)
-
-
-def get_realtime_instructions(
-    system_prompt: str,
-    messages: Sequence[Messages],
-) -> str:
-    """
-    Get the system prompt for a given agent.
-
-    Args:
-        messages: List of Messages objects from the database
-        system_prompt: The system prompt for the agent
-    Returns:
-        The system prompt for the agent
-    """
-
-    # Only append conversation history if there are messages
-    if len(messages) > 0:
-        conversation_text = get_text_formatted_instructions(messages)
-        return f"{system_prompt}\n\nThe following is the current history of the conversation. Continue the conversation from this point on:\n\n{conversation_text}"
-    
-    return system_prompt
 
 
 
