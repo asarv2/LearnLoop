@@ -13,7 +13,8 @@ from typing import Any, Dict, Optional
 import socketio  # type: ignore
 from app.db import get_session
 from app.models import (Attempts, Chats, Documents,  # ✨ Import Personas
-                        Fields, Messages, Parameters, Personas, Scenarios)
+                        Fields, Messages, Parameters, Personas, Rubrics,
+                        Scenarios)
 from app.services.agents.assesment import run_assessment_agent
 from app.services.agents.feedback import run_feedback_agent
 from app.services.agents.generic import run_generic_agent
@@ -352,30 +353,54 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
 
             logger.info(f"Training chat {chat_id} marked as completed")
 
-            # Run assessment agent to generate questions
+            # Run assessment agent to generate questions, then grading agent
+            # This allows grades to be generated while the user takes the assessment
             try:
                 logger.info(f"Running assessment agent for chat {chat_id}")
                 assessment_result = await run_assessment_agent(uuid.UUID(chat_id))
-                
-                if assessment_result.get("success"):
-                    logger.info(f"Successfully generated assessment for chat {chat_id}")
+
+                # Send success response
+                sio = get_sio_instance()
+                await sio.emit(
+                    "training_ended",
+                    {
+                        "success": True,
+                        "chat_id": chat_id,
+                        "message": "Training session ended successfully",
+                    },
+                    room=chat_id,
+                )
+                    
+                # Now run grading agent since assessment exists
+                # This runs in the same request but allows grades to be ready when user finishes assessment
+                try:
+                    # Get the scenario to find the rubric_id
+                    scenario_result = db_session.exec(
+                        select(Scenarios).where(Scenarios.training_id == chat.training_id)
+                    ).first()
+                    
+                    if scenario_result and scenario_result.rubric_id:
+                        logger.info(f"Running grading agent for chat {chat_id} with rubric {scenario_result.rubric_id}")
+                        rubric_grade_id = await run_grading_agent(uuid.UUID(chat_id), scenario_result.rubric_id)
+                        logger.info(f"Successfully generated grades for chat {chat_id}, grade_id: {rubric_grade_id}")
+                        
+                        # Notify client that grading is complete
+                        sio = get_sio_instance()
+                        await sio.emit("grading_completed", {
+                            "chat_id": chat_id,
+                            "rubric_grade_id": rubric_grade_id,
+                            "message": "Grading completed successfully"
+                        }, room=chat_id)
+                    else:
+                        logger.warning(f"No rubric found for training {chat.training_id}, skipping grading")
+                except Exception as grading_error:
+                    logger.error(f"Error running grading agent: {str(grading_error)}")
+                    # Continue even if grading agent fails
                 else:
                     logger.warning(f"Assessment agent failed: {assessment_result.get('message')}")
             except Exception as e:
                 logger.error(f"Error running assessment agent: {str(e)}")
                 # Continue even if assessment agent fails
-
-            # Send success response
-            sio = get_sio_instance()
-            await sio.emit(
-                "training_ended",
-                {
-                    "success": True,
-                    "chat_id": chat_id,
-                    "message": "Training session ended successfully",
-                },
-                room=chat_id,
-            )
 
         finally:
             db_session.close()
