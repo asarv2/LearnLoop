@@ -41,6 +41,8 @@ interface TrainingContextType {
   isEndingTraining: boolean;
   isSubmittingAssessment: boolean;
   isGettingHints: boolean; // ✨ Add hints loading state
+  isWaitingForAssessment: boolean; // ✅ NEW: Loading state while waiting for assessment
+  isWaitingForFeedback: boolean; // ✅ NEW: Loading state while waiting for feedback
 
   // Training actions
   sendMessage: (message: string) => Promise<void>;
@@ -82,6 +84,10 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
   const [showAssessment, setShowAssessment] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
 
+  // ✅ NEW: Loading states for assessment and feedback
+  const [isWaitingForAssessment, setIsWaitingForAssessment] = useState(false);
+  const [isWaitingForFeedback, setIsWaitingForFeedback] = useState(false);
+
   // ✅ NEW: Use refs to track last processed state to prevent infinite loops
   const lastProcessedAssessmentRef = useRef<string | null>(null);
   const lastProcessedFeedbackRef = useRef<string | null>(null);
@@ -111,6 +117,9 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     lastProcessedFeedbackRef.current = null;
     setShowAssessment(false);
     setShowFeedback(false);
+    // ✅ NEW: Clear loading states when chatId changes
+    setIsWaitingForAssessment(false);
+    setIsWaitingForFeedback(false);
   }, [chatId]);
 
   // ✅ NEW: Event listeners for WebSocket events
@@ -142,6 +151,9 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         // Show assessment modal immediately and mark as processed
         setShowAssessment(true);
         lastProcessedAssessmentRef.current = "assessment";
+
+        // ✅ NEW: Clear loading state for assessment
+        setIsWaitingForAssessment(false);
       }
     };
 
@@ -156,6 +168,9 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         // Show assessment modal immediately and mark as processed
         setShowAssessment(true);
         lastProcessedAssessmentRef.current = "assessment";
+
+        // ✅ NEW: Clear loading state for assessment
+        setIsWaitingForAssessment(false);
       }
     };
 
@@ -171,6 +186,9 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         setShowAssessment(false);
         setShowFeedback(true);
         lastProcessedFeedbackRef.current = "feedback";
+
+        // ✅ NEW: Clear loading state for feedback
+        setIsWaitingForFeedback(false);
       }
     };
 
@@ -224,6 +242,8 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
       logInfo("Training completed with assessment, showing assessment modal");
       setShowAssessment(true);
       lastProcessedAssessmentRef.current = "assessment";
+      // ✅ NEW: Clear loading state for assessment
+      setIsWaitingForAssessment(false);
     }
     // Only show feedback if it exists, we haven't handled it yet, and no modals are shown
     else if (
@@ -235,6 +255,8 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
       logInfo("Feedback available, showing feedback modal");
       setShowFeedback(true);
       lastProcessedFeedbackRef.current = "feedback";
+      // ✅ NEW: Clear loading state for feedback
+      setIsWaitingForFeedback(false);
     }
   }, [chat, isTrainingCompleted, showAssessment, showFeedback]);
 
@@ -298,10 +320,14 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     if (endTrainingMutation.isPending) return;
 
     try {
+      // ✅ NEW: Set loading state for assessment
+      setIsWaitingForAssessment(true);
       await endTrainingMutation.mutateAsync({ chatId });
       logInfo(`Ended training for chat ${chatId}`);
-      // Removed automatic setShowAssessment(true) - now controlled by data existence
+      // Loading state will be cleared when assessment is received via WebSocket event
     } catch (error) {
+      // ✅ NEW: Clear loading state on error
+      setIsWaitingForAssessment(false);
       logError("Error ending training:", error);
       throw error;
     }
@@ -309,14 +335,17 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
 
   const submitAssessment = async (responses: Record<string, unknown>) => {
     try {
+      // ✅ NEW: Set loading state for feedback
+      setIsWaitingForFeedback(true);
       await submitAssessmentMutation.mutateAsync({
         chatId,
         responses,
       });
-      setShowAssessment(false);
-      // Removed automatic setShowFeedback(true) - now controlled by data existence
+      // Loading state will be cleared when feedback is received via WebSocket event
       logInfo(`Submitted assessment for chat ${chatId}`);
     } catch (error) {
+      // ✅ NEW: Clear loading state on error
+      setIsWaitingForFeedback(false);
       logError("Error submitting assessment:", error);
       throw error;
     }
@@ -347,6 +376,8 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     isEndingTraining: endTrainingMutation.isPending,
     isSubmittingAssessment: submitAssessmentMutation.isPending,
     isGettingHints: false, // Will be managed by WebSocket context
+    isWaitingForAssessment, // ✅ NEW: Expose loading state for assessment
+    isWaitingForFeedback, // ✅ NEW: Expose loading state for feedback
 
     // Training actions
     sendMessage,
