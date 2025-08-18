@@ -70,6 +70,7 @@ export default function ChatArea({
     enableServerAudio,
     disableServerAudio,
     triggerServerAudio,
+    emitGetHints, // ✨ Add hints emitter
   } = useWebSocket();
 
   // Voice-related state
@@ -98,39 +99,33 @@ export default function ChatArea({
   // 👇 DEPRECATED: The patchCache function is no longer needed.
   // We will handle the logic directly in the send function for more control.
 
-  // Generate hints function
+  // Generate hints function using WebSocket
   const generateHints = useCallback(async () => {
     if (!lastAIResponse || !displayMessages.length) return;
 
-    setIsLoadingHints(true);
-    try {
-      const response = await fetch("/api/chat/hints", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: displayMessages,
-          chatType: chat?.type || "regular",
-          chatTitle: chat?.title || "",
-          lastAIResponse: lastAIResponse,
-        }),
-      });
+    // Find the last assistant message to get its ID
+    const lastAssistantMessage = displayMessages
+      .filter((msg) => msg.role === "assistant")
+      .pop();
 
-      const data = await response.json();
-      if (data.hints) {
-        setHints(data.hints);
-      }
-    } catch (error) {
-      logError("Error generating hints:", error);
-    } finally {
-      setIsLoadingHints(false);
+    if (!lastAssistantMessage?.id) {
+      logError("No assistant message found for hints generation");
+      return;
     }
-  }, [lastAIResponse, displayMessages, chat?.type, chat?.title]);
+
+    // Use WebSocket to get hints
+    if (chat?.id) {
+      emitGetHints({
+        chat_id: chat.id,
+        message_id: lastAssistantMessage.id,
+      });
+    }
+  }, [lastAIResponse, displayMessages, chat?.id, emitGetHints]);
 
   // Handle hints button click
   const handleHintsClick = useCallback(async () => {
     if (!showHints && !hints && lastAIResponse) {
+      setIsLoadingHints(true);
       await generateHints();
     }
     setShowHints(!showHints);
@@ -198,6 +193,14 @@ export default function ChatArea({
       }
     };
 
+    const handleHintsGenerated = (event: CustomEvent) => {
+      const { hints } = event.detail;
+      if (hints && Array.isArray(hints)) {
+        setHints(hints.join("\n\n")); // Join hints with double newlines
+        setIsLoadingHints(false);
+      }
+    };
+
     // Listen for server VAD events
     window.addEventListener(
       "server_vad_event",
@@ -206,6 +209,10 @@ export default function ChatArea({
     window.addEventListener(
       "audio_interrupted",
       handleAudioInterrupted as EventListener
+    );
+    window.addEventListener(
+      "hintsGenerated",
+      handleHintsGenerated as EventListener
     );
 
     return () => {
@@ -216,6 +223,10 @@ export default function ChatArea({
       window.removeEventListener(
         "audio_interrupted",
         handleAudioInterrupted as EventListener
+      );
+      window.removeEventListener(
+        "hintsGenerated",
+        handleHintsGenerated as EventListener
       );
     };
   }, [audioPlaybackRef]);

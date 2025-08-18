@@ -35,7 +35,7 @@ interface WebSocketContextType {
   isStoppingTraining: boolean;
   isEndingTraining: boolean;
   isSubmittingAssessment: boolean;
-  isGeneratingFeedback: boolean;
+  isGettingHints: boolean; // ✨ Add hints loading state
 
   // Room management (chat_id-based)
   joinRoom: (chatId: string) => void; // should create webRTC data channel (for text) and optionally media channel (for audio)
@@ -91,7 +91,7 @@ interface WebSocketContextType {
     chat_id: string;
     responses: Record<string, unknown>;
   }) => void;
-  emitGenerateFeedback: (data: { chat_id: string }) => void;
+  emitGetHints: (data: { chat_id: string; message_id: string }) => void; // ✨ Add hints emitter
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -127,7 +127,7 @@ export function WebSocketProvider({
   const [isStoppingTraining, setIsStoppingTraining] = useState(false);
   const [isEndingTraining, setIsEndingTraining] = useState(false);
   const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false);
-  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
+  const [isGettingHints, setIsGettingHints] = useState(false); // ✨ Add hints loading state
 
   // WebRTC state
   const [isWebRTCConnected, setIsWebRTCConnected] = useState(false);
@@ -721,12 +721,25 @@ export function WebSocketProvider({
       );
 
       socket.on(
-        "feedback_generated",
-        (data: { success: boolean; message: string; chat_id: string }) => {
-          logInfo("Feedback generated", data);
-          setIsGeneratingFeedback(false);
+        "hints_generated",
+        (data: {
+          success: boolean;
+          message: string;
+          chat_id: string;
+          hints: string[];
+        }) => {
+          logInfo("Hints generated", data);
+          setIsGettingHints(false);
           if (data.success) {
-            toast.success(data.message);
+            // Dispatch event for UI components to handle hints
+            window.dispatchEvent(
+              new CustomEvent("hintsGenerated", {
+                detail: {
+                  chatId: data.chat_id,
+                  hints: data.hints,
+                },
+              })
+            );
           } else {
             toast.error(data.message);
           }
@@ -847,6 +860,7 @@ export function WebSocketProvider({
     audioPlaybackRef,
     cleanupWebRTC,
     handleOffer,
+    router,
   ]);
 
   // Room management (chat_id-based)
@@ -1004,17 +1018,20 @@ export function WebSocketProvider({
     []
   );
 
-  const emitGenerateFeedback = useCallback((data: { chat_id: string }) => {
-    if (!socketRef.current || !socketRef.current.connected) {
-      logError("Cannot generate feedback - WebSocket not connected");
-      toast.error("WebSocket not connected. Please refresh the page.");
-      return;
-    }
+  const emitGetHints = useCallback(
+    (data: { chat_id: string; message_id: string }) => {
+      if (!socketRef.current || !socketRef.current.connected) {
+        logError("Cannot get hints - WebSocket not connected");
+        toast.error("WebSocket not connected. Please refresh the page.");
+        return;
+      }
 
-    setIsGeneratingFeedback(true);
-    logInfo("Emitting generate_feedback", data);
-    socketRef.current.emit("generate_feedback", data);
-  }, []);
+      setIsGettingHints(true);
+      logInfo("Emitting get_hints", data);
+      socketRef.current.emit("get_hints", data);
+    },
+    []
+  );
 
   // WebRTC functions
   const sendWebRTCMessage = useCallback(
@@ -1206,7 +1223,7 @@ export function WebSocketProvider({
     isStoppingTraining,
     isEndingTraining,
     isSubmittingAssessment,
-    isGeneratingFeedback,
+    isGettingHints, // ✨ Expose hints loading state
     joinRoom,
     leaveRoom,
     sendWebRTCMessage,
@@ -1225,7 +1242,7 @@ export function WebSocketProvider({
     emitStopTraining,
     emitEndTraining,
     emitSubmitAssessment,
-    emitGenerateFeedback,
+    emitGetHints, // ✨ Expose hints emitter
   };
 
   return (

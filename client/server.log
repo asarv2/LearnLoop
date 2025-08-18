@@ -1,0 +1,150 @@
+yarn run v1.22.22
+$ npm run gen:all && node --no-deprecation ./node_modules/.bin/next dev --turbopack
+
+> learnloop@0.1.0 gen:all
+> npm run gen:db && npm run gen:types
+
+
+> learnloop@0.1.0 gen:db
+> npx supabase gen types typescript --project-id uslxyheljqngrofpygud --schema public > database.types.ts
+
+
+> learnloop@0.1.0 gen:types
+> node ./scripts/generate-types.js
+
+🚀 Generating dynamic database types...
+📖 Using AST-based schema extraction...
+✅ Successfully generated: types.ts
+📊 Generated types for 22 tables: assessments, attempts, chats, documents, feedback, fields, hints, interview_scores, logs, messages, offboarding_scores, parameters, personas, profiles, questions, resumes, rubric_grades, rubrics, scenarios, standard_grades, standards, trainings
+
+🎉 Dynamic type generation complete!
+   ▲ Next.js 15.3.4 (Turbopack)
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.111:3000
+
+ ✓ Starting...
+ ○ Compiling middleware ...
+ ✓ Compiled middleware in 977ms
+ ✓ Ready in 2.2s
+ ○ Compiling /dashboard/trainings ...
+ ✓ Compiled /dashboard/trainings in 6s
+ GET /dashboard/trainings 200 in 6695ms
+WebRTC disconnected, clearing remote stream state undefined
+ POST /dashboard/trainings 200 in 194ms
+Waiting for profile ID before connecting WebSocket {}
+ POST /dashboard/trainings 200 in 199ms
+ ○ Compiling /api/v1/trainings ...
+ ✓ Compiled /api/v1/trainings in 515ms
+Initializing global WebSocket connection { profileId: 'cb2146d4-6120-4cd0-9b34-08780e7d28ed', attempt: 1 }
+ GET /api/v1/trainings?practice=true 200 in 663ms
+ POST /dashboard/trainings 200 in 325ms
+ ○ Compiling /api/v1/scenarios ...
+ ✓ Compiled /api/v1/scenarios in 594ms
+ GET /api/v1/scenarios?training_id=0a7b1a2d-9fc2-4f43-8537-e817af4b30a9 200 in 649ms
+ GET /api/v1/scenarios?training_id=d11e96ea-08b4-4551-8d55-6a1308c6776a 200 in 647ms
+ GET /api/v1/scenarios?training_id=cebf476f-ad56-48b9-8e41-7c27a5e991a0 200 in 779ms
+ GET /api/v1/scenarios?training_id=d21fe021-6e25-4b6e-94b2-6b337e0af196 200 in 665ms
+ GET /api/v1/scenarios?training_id=81233636-cf63-465f-b5d5-6d26de3b94e9 200 in 577ms
+ GET /api/v1/scenarios?training_id=6eb0be63-4dfa-4f46-8d26-d520566a238c 200 in 750ms
+Global WebSocket connected successfully {
+  socketId: 'hPB9sb5pac1EDbyMAAAD',
+  profileId: 'cb2146d4-6120-4cd0-9b34-08780e7d28ed',
+  transport: 'websocket'
+}
+ POST /dashboard/trainings 200 in 156ms
+Sent webrtc_start undefined
+ POST /dashboard/trainings 200 in 165ms
+Received WebRTC offer from server. undefined
+ POST /dashboard/trainings 200 in 145ms
+Creating new PeerConnection for initial setup. undefined
+ POST /dashboard/trainings 200 in 156ms
+Received remote audio track from server {
+  streamId: '38249250-51b8-41ec-95b6-2577163da99b',
+  trackKind: 'audio',
+  readyState: 'live'
+}
+ POST /dashboard/trainings 200 in 169ms
+Attaching stream directly to audio element in ontrack handler. undefined
+ POST /dashboard/trainings 200 in 166ms
+Attaching remote stream to audio element { streamId: '38249250-51b8-41ec-95b6-2577163da99b', trackCount: 1 }
+ POST /dashboard/trainings 200 in 141ms
+Enabled audio track {
+  trackId: '97fadc84-3d70-4e31-8c09-5e6c87f42c83',
+  enabled: true,
+  muted: true,
+  readyState: 'live'
+}
+ POST /dashboard/trainings 200 in 175ms
+Sent WebRTC answer in response to offer. undefined
+ POST /dashboard/trainings 200 in 152ms
+WebRTC connection state: connecting undefined
+ POST /dashboard/trainings 200 in 158ms
+WebRTC connection ready { profileId: 'cb2146d4-6120-4cd0-9b34-08780e7d28ed' }
+ POST /dashboard/trainings 200 in 135ms
+WebRTC connection state: connected undefined
+ POST /dashboard/trainings 200 in 137ms
+Received data channel from server: signalling undefined
+ POST /dashboard/trainings 200 in 151ms
+Server data channel opened: signalling undefined
+ POST /dashboard/trainings 200 in 146ms
+Received data channel from server: text undefined
+ POST /dashboard/trainings 200 in 143ms
+Server data channel opened: text undefined
+ POST /dashboard/trainings 200 in 152ms
+ ○ Compiling /dashboard/trainings/s/[scenarioId] ...
+ ✓ Compiled /dashboard/trainings/s/[scenarioId] in 1711ms
+ GET /dashboard/trainings/s/15c6ab39-0f18-4c37-b29c-c3033c9a5f83 200 in 2136ms
+ ✓ Compiled /api/v1/fields in 439ms
+ GET /api/v1/fields 200 in 486ms
+ GET /api/v1/scenarios/15c6ab39-0f18-4c37-b29c-c3033c9a5f83 200 in 742ms
+ ✓ Compiled /api/v1/fields/[id] in 266ms
+ GET /api/v1/fields/413783b3-5b4e-4c75-ab3b-540379737d45 200 in 601ms
+ GET /api/v1/fields/159d3587-faf1-4c24-9f0b-2ad81d4eb330 200 in 647ms
+ GET /api/v1/fields/45d40269-3d8c-45db-bbb9-48ac356d1eb5 200 in 638ms
+ GET /api/v1/fields/3906ba1d-313a-419f-ab39-c5951194ef8e 200 in 722ms
+ GET /api/v1/fields/a1fd62b4-3e32-4bf2-88a0-08c6e823a849 200 in 633ms
+ GET /api/v1/fields/5829d1f9-c17f-4cd5-8ea5-bfd37c95d067 200 in 728ms
+ ✓ Compiled /api/v1/parameters in 324ms
+ GET /api/v1/parameters?field_id=5829d1f9-c17f-4cd5-8ea5-bfd37c95d067 200 in 378ms
+ GET /api/v1/parameters?field_id=a1fd62b4-3e32-4bf2-88a0-08c6e823a849 200 in 394ms
+ GET /api/v1/parameters?field_id=45d40269-3d8c-45db-bbb9-48ac356d1eb5 200 in 467ms
+ ✓ Compiled in 92ms
+ ✓ Compiled in 89ms
+ ✓ Compiled in 68ms
+ ✓ Compiled in 122ms
+ GET /api/v1/fields/3906ba1d-313a-419f-ab39-c5951194ef8e 200 in 146ms
+ GET /api/v1/fields/5829d1f9-c17f-4cd5-8ea5-bfd37c95d067 200 in 118ms
+ GET /api/v1/fields/159d3587-faf1-4c24-9f0b-2ad81d4eb330 200 in 132ms
+ GET /api/v1/fields/413783b3-5b4e-4c75-ab3b-540379737d45 200 in 132ms
+ GET /api/v1/fields/45d40269-3d8c-45db-bbb9-48ac356d1eb5 200 in 149ms
+ GET /api/v1/fields/a1fd62b4-3e32-4bf2-88a0-08c6e823a849 200 in 110ms
+ GET /api/v1/scenarios/15c6ab39-0f18-4c37-b29c-c3033c9a5f83 200 in 126ms
+ ✓ Compiled in 54ms
+Emitting start_training {
+  scenario_id: '15c6ab39-0f18-4c37-b29c-c3033c9a5f83',
+  field_values: [
+    {
+      fieldId: '3906ba1d-313a-419f-ab39-c5951194ef8e',
+      value: 'Germany'
+    },
+    {
+      fieldId: '5829d1f9-c17f-4cd5-8ea5-bfd37c95d067',
+      value: '3e7e8f48-5c66-4490-b4cf-21e591ff4346',
+      parameterId: '3e7e8f48-5c66-4490-b4cf-21e591ff4346'
+    },
+    { fieldId: '159d3587-faf1-4c24-9f0b-2ad81d4eb330', value: 'SWE' },
+    {
+      fieldId: 'a1fd62b4-3e32-4bf2-88a0-08c6e823a849',
+      value: '634ccdc4-58cd-4966-8289-e56282631e0b',
+      parameterId: '634ccdc4-58cd-4966-8289-e56282631e0b'
+    },
+    {
+      fieldId: '45d40269-3d8c-45db-bbb9-48ac356d1eb5',
+      value: 'dd2c3dc9-10c4-46b7-9fbb-4ada51f59f39',
+      parameterId: 'dd2c3dc9-10c4-46b7-9fbb-4ada51f59f39'
+    },
+    { fieldId: '413783b3-5b4e-4c75-ab3b-540379737d45', value: '' }
+  ],
+  profile_id: 'cb2146d4-6120-4cd0-9b34-08780e7d28ed'
+}
+ POST /dashboard/trainings/s/15c6ab39-0f18-4c37-b29c-c3033c9a5f83 200 in 316ms

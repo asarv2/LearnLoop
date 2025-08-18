@@ -102,6 +102,7 @@ export type Database = {
           completed: boolean
           completed_at: string | null
           created_at: string
+          description: string | null
           feedback: Json | null
           id: string
           name: string
@@ -123,6 +124,7 @@ export type Database = {
           completed?: boolean
           completed_at?: string | null
           created_at?: string
+          description?: string | null
           feedback?: Json | null
           id?: string
           name?: string
@@ -144,6 +146,7 @@ export type Database = {
           completed?: boolean
           completed_at?: string | null
           created_at?: string
+          description?: string | null
           feedback?: Json | null
           id?: string
           name?: string
