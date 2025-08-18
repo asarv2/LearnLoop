@@ -6,6 +6,7 @@ import { useAssessment } from "@/lib/api/hooks/useAssessments";
 import { useQuestionsByAssessment } from "@/lib/api/hooks/useQuestions";
 import { Chat } from "@/types";
 import { ArrowBack, ArrowForward } from "@mui/icons-material";
+import CloseIcon from "@mui/icons-material/Close";
 import {
   Alert,
   Box,
@@ -18,6 +19,7 @@ import {
   DialogTitle,
   FormControl,
   FormControlLabel,
+  IconButton,
   LinearProgress,
   Radio,
   RadioGroup,
@@ -200,13 +202,7 @@ export default function AssessmentWizard({
   // Loading state
   if (isLoading) {
     return (
-      <StyledDialog
-        open={isOpen}
-        onClose={() => {}} // Disable closing
-        maxWidth="sm"
-        fullWidth
-        disableEscapeKeyDown
-      >
+      <StyledDialog open={isOpen} onClose={onClose} maxWidth="sm" fullWidth>
         <DialogContent>
           <Box
             sx={{
@@ -236,13 +232,7 @@ export default function AssessmentWizard({
   // Error state
   if (questionsError) {
     return (
-      <StyledDialog
-        open={isOpen}
-        onClose={() => {}} // Disable closing
-        maxWidth="sm"
-        fullWidth
-        disableEscapeKeyDown
-      >
+      <StyledDialog open={isOpen} onClose={onClose} maxWidth="sm" fullWidth>
         <DialogContent>
           <Box sx={{ py: 2 }}>
             <Alert severity="error" sx={{ mb: 3 }}>
@@ -259,13 +249,7 @@ export default function AssessmentWizard({
 
   if (!currentQuestion || totalQuestions === 0) {
     return (
-      <StyledDialog
-        open={isOpen}
-        onClose={() => {}} // Disable closing
-        maxWidth="sm"
-        fullWidth
-        disableEscapeKeyDown
-      >
+      <StyledDialog open={isOpen} onClose={onClose} maxWidth="sm" fullWidth>
         <DialogContent>
           <Box sx={{ py: 2 }}>
             <Alert severity="warning" sx={{ mb: 3 }}>
@@ -281,22 +265,16 @@ export default function AssessmentWizard({
   }
 
   return (
-    <StyledDialog
-      open={isOpen}
-      onClose={() => {}} // Disable closing by clicking outside or escape key
-      maxWidth="md"
-      fullWidth
-      disableEscapeKeyDown
-    >
+    <StyledDialog open={isOpen} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>
         <Box
           sx={{
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center",
+            alignItems: "flex-start",
           }}
         >
-          <Box>
+          <Box sx={{ flex: 1 }}>
             <Typography variant="h5" component="h2" gutterBottom>
               {assessment?.title || "Assessment"}
             </Typography>
@@ -304,6 +282,19 @@ export default function AssessmentWizard({
               Session: {chat?.title}
             </Typography>
           </Box>
+          <IconButton
+            onClick={onClose}
+            sx={{
+              ml: 2,
+              color: "text.secondary",
+              "&:hover": {
+                backgroundColor: "action.hover",
+              },
+            }}
+            size="small"
+          >
+            <CloseIcon />
+          </IconButton>
         </Box>
       </DialogTitle>
 
