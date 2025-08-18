@@ -3,6 +3,10 @@ name: Deploy to Production
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'client/**'
+      - 'server/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 permissions:
@@ -10,8 +14,49 @@ permissions:
   packages: write
 
 jobs:
-  build:
+  detect-changes:
     runs-on: ubuntu-latest
+    outputs:
+      client-changed: ${{ steps.changes.outputs.client }}
+      server-changed: ${{ steps.changes.outputs.server }}
+      any-changes: ${{ steps.changes.outputs.any }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2  # Need at least 2 commits to compare
+        
+    - name: Detect changes
+      id: changes
+      run: |
+        # Get the list of changed files
+        CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+        
+        # Check if client folder has changes
+        if echo "$CHANGED_FILES" | grep -q "^client/"; then
+          echo "client=true" >> $GITHUB_OUTPUT
+        else
+          echo "client=false" >> $GITHUB_OUTPUT
+        fi
+        
+        # Check if server folder has changes
+        if echo "$CHANGED_FILES" | grep -q "^server/"; then
+          echo "server=true" >> $GITHUB_OUTPUT
+        else
+          echo "server=false" >> $GITHUB_OUTPUT
+        fi
+        
+        # Check if any relevant changes occurred
+        if echo "$CHANGED_FILES" | grep -q "^client/\|^server/\|^\.github/workflows/deploy\.yml"; then
+          echo "any=true" >> $GITHUB_OUTPUT
+        else
+          echo "any=false" >> $GITHUB_OUTPUT
+        fi
+
+  build-client:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.client-changed == 'true'
     
     steps:
     - name: Checkout code
@@ -27,7 +72,6 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
         
-    # Build and push client image
     - name: Extract metadata for client Docker image
       id: meta-client
       uses: docker/metadata-action@v5
@@ -52,7 +96,25 @@ jobs:
           NEXT_PUBLIC_SUPABASE_SCHEMA=${{ secrets.NEXT_PUBLIC_SUPABASE_SCHEMA }}
           INTERNAL_API_BASE=http://learnloop-server:8000
 
-    # Build and push server image
+  build-server:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.server-changed == 'true'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
     - name: Extract metadata for server Docker image
       id: meta-server
       uses: docker/metadata-action@v5
@@ -74,7 +136,10 @@ jobs:
 
   deploy:
     runs-on: self-hosted
-    needs: build
+    needs: [detect-changes, build-client, build-server]
+    if: |
+      always() && 
+      (needs.detect-changes.outputs.any-changes == 'true' || github.event_name == 'workflow_dispatch')
     
     steps:
     - name: Checkout code
