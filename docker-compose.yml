@@ -120,16 +120,33 @@ services:
       - "5007:80"
     volumes:
       - ./web/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      # Share the generated upstream with nginx
+      - ./web/generated:/etc/nginx/conf.d/generated:rw
     depends_on:
       client:
         condition: service_healthy
       server:
         condition: service_healthy
-    networks:
-      - web
+    networks: [web]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/health"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  docker-gen:
+    image: jwilder/docker-gen:0.7.6
+    container_name: learnloop-docker-gen
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      # template in, generated file out
+      - ./web/templates:/etc/docker-gen/templates:ro
+      - ./web/generated:/etc/nginx/conf.d/generated:rw
+    command: >
+      -notify-sighup learnloop-nginx
+      -watch
+      /etc/docker-gen/templates/api_socketio.upstream.tmpl
+      /etc/nginx/conf.d/generated/api_socketio.upstream.conf
+    networks: [web]
