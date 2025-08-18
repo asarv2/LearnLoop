@@ -280,8 +280,7 @@ class Chats(_Base, table=True):
         ForeignKeyConstraint(['profile_id'], ['profiles.id'], ondelete='CASCADE', name='chats_profile_id_fkey'),
         ForeignKeyConstraint(['training_id'], ['trainings.id'], name='chats_training_id_fkey'),
         PrimaryKeyConstraint('id', name='chats_pkey'),
-        Index('idx_chats_training_id', 'training_id'),
-        Index('idx_chats_user_id', 'user_id')
+        Index('idx_chats_training_id', 'training_id')
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
@@ -291,7 +290,6 @@ class Chats(_Base, table=True):
     voice: str = Field(sa_column=Column('voice', Text, default=r'alloy', comment='for openAI'))
     completed_at: Optional[datetime] = Field(default=None, sa_column=Column('completed_at', DateTime(True)))
     trace_id: Optional[str] = Field(default=None, sa_column=Column('trace_id', Text, comment='for openAI traces'))
-    user_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('user_id', Uuid(as_uuid=True)))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
     profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
     attempt_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('attempt_id', Uuid(as_uuid=True)))

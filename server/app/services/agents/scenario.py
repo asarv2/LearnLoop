@@ -7,7 +7,7 @@ from agents import Runner, trace
 from app.db import get_session
 from app.models import Chats, Messages
 from app.services.agents.generic import GenericAgent
-from app.utils.chat import get_parameter_history, get_persona_id_from_chat
+from app.utils.chat import get_parameter_history
 from fastapi import Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
