@@ -195,19 +195,11 @@ async def run_grading_agent(
         # get overall summary
         summary = getattr(grading_result, "summary", "")
 
-        # Create the rubric grade record
-        rubric_grade = RubricGrades(
-            chat_id=chat_id,
-            name=rubric.name,
-            description=summary,
-        )
-
-        session.add(rubric_grade)
-        session.flush()  # Get the ID without committing
-
-        # Create standard grade records for each standard
+        # Create standard grade records for each standard and calculate total score
         standard_grade_count = 0
         score = 0
+        standard_grades_to_add = []
+        
         for standard in standards:
             # Create safe field names (same logic as in model creation)
             safe_name = create_safe_field_name(standard.name)
@@ -220,19 +212,24 @@ async def run_grading_agent(
                 standard_score = getattr(grading_result, score_field, 0)
                 standard_feedback = getattr(grading_result, feedback_field, "")
 
+                # Ensure standard_score is a valid integer
+                if not isinstance(standard_score, (int, float)):
+                    logger.warning(f"Invalid standard score type for {standard.name}: {type(standard_score)}, value: {standard_score}. Defaulting to 0.")
+                    standard_score = 0
+                else:
+                    standard_score = int(standard_score)  # Ensure it's an integer
+
                 logger.info(
                     f"Standard {standard.name}: score={standard_score}, feedback_length={len(standard_feedback)}"
                 )
 
-                # Create standard grade record
-                standard_grade = StandardGrades(
-                    rubric_grade_id=rubric_grade.id,
-                    standard_id=standard.id,
-                    name=standard.name,
-                    score=standard_score,
-                    description=standard_feedback,
-                )
-                session.add(standard_grade)
+                # Store standard grade data for later creation
+                standard_grades_to_add.append({
+                    'standard_id': standard.id,
+                    'name': standard.name,
+                    'score': standard_score,
+                    'description': standard_feedback,
+                })
                 standard_grade_count += 1
                 score += standard_score
             except AttributeError as e:
@@ -241,7 +238,37 @@ async def run_grading_agent(
                 )
                 continue
 
-        rubric_grade.score = score
+        # Ensure score is a valid integer
+        if not isinstance(score, (int, float)):
+            logger.warning(f"Invalid score type: {type(score)}, value: {score}. Defaulting to 0.")
+            score = 0
+        else:
+            score = int(score)  # Ensure it's an integer
+        
+        # Create the rubric grade record with calculated score
+        logger.info(f"Creating rubric grade with score: {score}, name: {rubric.name}")
+        rubric_grade = RubricGrades(
+            chat_id=chat_id,
+            name=rubric.name,
+            description=summary,
+            score=score,  # Set the score here
+        )
+
+        session.add(rubric_grade)
+        logger.info("Flushing rubric grade to get ID...")
+        session.flush()  # Get the ID without committing
+        logger.info(f"Rubric grade created with ID: {rubric_grade.id}")
+
+        # Now create the standard grade records
+        for standard_grade_data in standard_grades_to_add:
+            standard_grade = StandardGrades(
+                rubric_grade_id=rubric_grade.id,
+                standard_id=standard_grade_data['standard_id'],
+                name=standard_grade_data['name'],
+                score=standard_grade_data['score'],
+                description=standard_grade_data['description'],
+            )
+            session.add(standard_grade)
 
         logger.info(f"Created {standard_grade_count} standard grade records")
 

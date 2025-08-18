@@ -14,9 +14,17 @@ import {
   useSubmitAssessment,
   useTrainingMessages,
 } from "@/lib/api/hooks/useTrainingMessages";
+import { chatKeys } from "@/lib/api/keys";
 import { Chat, Message } from "@/types";
 import { logError, logInfo } from "@/utils/logger";
-import React, { createContext, useContext, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 // Training context interface
 interface TrainingContextType {
@@ -74,8 +82,15 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
   const [showAssessment, setShowAssessment] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
 
+  // ✅ NEW: Use refs to track last processed state to prevent infinite loops
+  const lastProcessedAssessmentRef = useRef<string | null>(null);
+  const lastProcessedFeedbackRef = useRef<string | null>(null);
+
   // WebSocket connection
   const { isConnected } = useWebSocket();
+
+  // Query client for invalidation
+  const queryClient = useQueryClient();
 
   // API hooks
   const { data: chat } = useChat(chatId);
@@ -89,6 +104,177 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
   // Training status
   const isTrainingActive = chat ? !chat.completed : true;
   const isTrainingCompleted = chat ? chat.completed : false;
+
+  // ✅ NEW: Reset tracking when chatId changes
+  useEffect(() => {
+    lastProcessedAssessmentRef.current = null;
+    lastProcessedFeedbackRef.current = null;
+    setShowAssessment(false);
+    setShowFeedback(false);
+  }, [chatId]);
+
+  // ✅ NEW: Event listeners for WebSocket events
+  useEffect(() => {
+    const invalidateChatQueries = () => {
+      // Invalidate all chat-related queries
+      queryClient.invalidateQueries({ queryKey: ["chat", chatId] });
+      queryClient.invalidateQueries({
+        queryKey: ["chat-for-attempt", chat?.attempt_id],
+      });
+      queryClient.invalidateQueries({ queryKey: chatKeys.all });
+
+      // Also invalidate related data that might be affected
+      queryClient.invalidateQueries({ queryKey: ["messages", chatId] });
+      queryClient.invalidateQueries({ queryKey: ["assessments"] });
+      queryClient.invalidateQueries({ queryKey: ["feedback"] });
+    };
+
+    const handleTrainingEnded = (event: CustomEvent) => {
+      const { chatId: eventChatId } = event.detail;
+      if (eventChatId === chatId) {
+        logInfo(
+          "Training ended for current chat, invalidating queries and showing assessment"
+        );
+
+        // Invalidate all relevant queries
+        invalidateChatQueries();
+
+        // Show assessment modal immediately and mark as processed
+        setShowAssessment(true);
+        lastProcessedAssessmentRef.current = "assessment";
+      }
+    };
+
+    const handleGradingCompleted = (event: CustomEvent) => {
+      const { chatId: eventChatId } = event.detail;
+      if (eventChatId === chatId) {
+        logInfo("Grading completed for current chat, invalidating queries");
+
+        // Invalidate all relevant queries
+        invalidateChatQueries();
+
+        // Show assessment modal immediately and mark as processed
+        setShowAssessment(true);
+        lastProcessedAssessmentRef.current = "assessment";
+      }
+    };
+
+    const handleAssessmentSubmitted = (event: CustomEvent) => {
+      const { chatId: eventChatId } = event.detail;
+      if (eventChatId === chatId) {
+        logInfo("Assessment submitted for current chat, invalidating queries");
+
+        // Invalidate all relevant queries
+        invalidateChatQueries();
+
+        // Hide assessment modal and show feedback modal immediately
+        setShowAssessment(false);
+        setShowFeedback(true);
+        lastProcessedFeedbackRef.current = "feedback";
+      }
+    };
+
+    // Add event listeners
+    window.addEventListener(
+      "trainingEnded",
+      handleTrainingEnded as EventListener
+    );
+    window.addEventListener(
+      "gradingCompleted",
+      handleGradingCompleted as EventListener
+    );
+    window.addEventListener(
+      "assessmentSubmitted",
+      handleAssessmentSubmitted as EventListener
+    );
+
+    // Cleanup event listeners
+    return () => {
+      window.removeEventListener(
+        "trainingEnded",
+        handleTrainingEnded as EventListener
+      );
+      window.removeEventListener(
+        "gradingCompleted",
+        handleGradingCompleted as EventListener
+      );
+      window.removeEventListener(
+        "assessmentSubmitted",
+        handleAssessmentSubmitted as EventListener
+      );
+    };
+  }, [chatId, chat?.attempt_id, queryClient]);
+
+  // ✅ NEW: Fallback mechanism to check for assessment/feedback when chat data changes
+  useEffect(() => {
+    if (!chat) return;
+
+    // Check if assessment exists and we should show it
+    const hasAssessment = chat.assessments && chat.assessments.length > 0;
+    const hasFeedback = chat.feedback && chat.feedback.length > 0;
+
+    // Only show assessment if training is completed, assessment exists, and we haven't handled it yet
+    if (
+      isTrainingCompleted &&
+      hasAssessment &&
+      !lastProcessedAssessmentRef.current &&
+      !showAssessment &&
+      !showFeedback
+    ) {
+      logInfo("Training completed with assessment, showing assessment modal");
+      setShowAssessment(true);
+      lastProcessedAssessmentRef.current = "assessment";
+    }
+    // Only show feedback if it exists, we haven't handled it yet, and no modals are shown
+    else if (
+      hasFeedback &&
+      !lastProcessedFeedbackRef.current &&
+      !showAssessment &&
+      !showFeedback
+    ) {
+      logInfo("Feedback available, showing feedback modal");
+      setShowFeedback(true);
+      lastProcessedFeedbackRef.current = "feedback";
+    }
+  }, [chat, isTrainingCompleted, showAssessment, showFeedback]);
+
+  // ✅ NEW: Additional fallback with delay for when assessment is created but data hasn't refreshed yet
+  useEffect(() => {
+    if (!chat || !isTrainingCompleted || lastProcessedAssessmentRef.current)
+      return;
+
+    // If training is completed but no assessment is shown yet, wait a bit and check again
+    const timer = setTimeout(() => {
+      if (
+        !showAssessment &&
+        !showFeedback &&
+        !lastProcessedAssessmentRef.current
+      ) {
+        logInfo("Training completed, checking for assessment after delay");
+        queryClient.invalidateQueries({ queryKey: ["chat", chatId] });
+      }
+    }, 2000); // Wait 2 seconds for assessment to be created
+
+    return () => clearTimeout(timer);
+  }, [
+    chat,
+    isTrainingCompleted,
+    showAssessment,
+    showFeedback,
+    chatId,
+    queryClient,
+  ]);
+
+  // ✅ NEW: Refetch chat data when WebSocket connection is restored
+  useEffect(() => {
+    if (isConnected && chatId) {
+      logInfo("WebSocket connected, refetching chat data");
+      queryClient.invalidateQueries({ queryKey: ["chat", chatId] });
+      queryClient.invalidateQueries({
+        queryKey: ["chat-for-attempt", chat?.attempt_id],
+      });
+    }
+  }, [isConnected, chatId, chat?.attempt_id, queryClient]);
 
   // Training actions
   const sendMessage = async (message: string) => {

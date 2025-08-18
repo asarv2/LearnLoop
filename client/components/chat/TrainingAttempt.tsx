@@ -79,13 +79,8 @@ function TrainingAttemptContent() {
   const endInterview = async () => {
     try {
       await endTraining();
-      // After ending training, check if assessment exists and show it
-      if (hasAssessment()) {
-        setShowAssessment(true);
-      } else if (hasFeedback()) {
-        // If no assessment but feedback exists, show feedback directly
-        setShowFeedback(true);
-      }
+      // Modal state management is now handled by WebSocket events in the training context
+      // No need to manually set showAssessment or showFeedback here
     } catch (error) {
       logError("Error ending interview:", error);
       const errorMessage =
@@ -99,10 +94,8 @@ function TrainingAttemptContent() {
   const handleAssessmentComplete = async (responses: unknown) => {
     try {
       await submitAssessment(responses as Record<string, unknown>);
-      // After submitting assessment, check if feedback exists and show it
-      if (hasFeedback()) {
-        setShowFeedback(true);
-      }
+      // Modal state management is now handled by WebSocket events in the training context
+      // No need to manually set showFeedback here
     } catch (error) {
       logError("Error processing assessment:", error);
       const errorMessage =
