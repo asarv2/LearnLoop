@@ -23,16 +23,25 @@ class ScenarioResponse(BaseModel):
 
 async def get_scenario_prompt() -> str:
     """Read the scenario prompt from the markdown file."""
-    prompt_path = Path(__file__).parent.parent.parent.parent / "app" / "lib" / "prompts" / "scenario.md"
-    try:
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        logger.error(f"Scenario prompt file not found at {prompt_path}")
-        raise
-    except Exception as e:
-        logger.error(f"Error reading scenario prompt: {str(e)}")
-        raise
+    # Try multiple possible paths for different environments
+    possible_paths = [
+        Path(__file__).parent.parent.parent / "lib" / "prompts" / "scenario.md",  # Local development
+        Path("/app/app/lib/prompts/scenario.md"),  # Docker container
+        Path("/app/lib/prompts/scenario.md"),  # Alternative Docker path
+    ]
+    
+    for prompt_path in possible_paths:
+        if prompt_path.exists():
+            try:
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    return f.read().strip()
+            except Exception as e:
+                logger.error(f"Error reading scenario prompt from {prompt_path}: {str(e)}")
+                continue
+    
+    # If none of the paths work, log all attempted paths and raise error
+    logger.error(f"Scenario prompt file not found. Tried paths: {[str(p) for p in possible_paths]}")
+    raise FileNotFoundError(f"Scenario prompt file not found. Tried paths: {[str(p) for p in possible_paths]}")
 
 
 async def run_scenario_agent(
