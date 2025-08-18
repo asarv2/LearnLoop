@@ -701,6 +701,17 @@ export function WebSocketProvider({
           setIsEndingTraining(false);
           if (data.success) {
             toast.success(data.message);
+
+            // Dispatch event for UI components to handle training completion
+            window.dispatchEvent(
+              new CustomEvent("trainingEnded", {
+                detail: {
+                  chatId: data.chat_id,
+                  success: data.success,
+                  message: data.message,
+                },
+              })
+            );
           } else {
             toast.error(data.message);
           }
@@ -714,9 +725,43 @@ export function WebSocketProvider({
           setIsSubmittingAssessment(false);
           if (data.success) {
             toast.success(data.message);
+
+            // Dispatch event for UI components to handle assessment completion
+            window.dispatchEvent(
+              new CustomEvent("assessmentSubmitted", {
+                detail: {
+                  chatId: data.chat_id,
+                  success: data.success,
+                  message: data.message,
+                },
+              })
+            );
           } else {
             toast.error(data.message);
           }
+        }
+      );
+
+      // ✅ NEW: Handle grading completion event
+      socket.on(
+        "grading_completed",
+        (data: {
+          chat_id: string;
+          rubric_grade_id: string;
+          message: string;
+        }) => {
+          logInfo("Grading completed", data);
+
+          // Dispatch event for UI components to handle grading completion
+          window.dispatchEvent(
+            new CustomEvent("gradingCompleted", {
+              detail: {
+                chatId: data.chat_id,
+                rubricGradeId: data.rubric_grade_id,
+                message: data.message,
+              },
+            })
+          );
         }
       );
 

@@ -141,16 +141,6 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
             except Exception as e:
                 logger.error(f"Error getting persona ID for chat {chat.id}: {str(e)}")
                 persona_id = None
-                # Try to get a default persona as fallback
-                try:
-                    default_persona = db_session.exec(
-                        select(Personas).where(Personas.name == 'Default Assistant')
-                    ).one_or_none()
-                    if default_persona:
-                        persona_id = default_persona.id
-                        logger.info(f"Using default persona {persona_id} for chat {chat.id}")
-                except Exception as fallback_error:
-                    logger.error(f"Error getting default persona: {str(fallback_error)}")
 
             # Run scenario agent to update chat title and description
             try:
