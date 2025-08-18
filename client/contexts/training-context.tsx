@@ -114,7 +114,7 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     try {
       await endTrainingMutation.mutateAsync({ chatId });
       logInfo(`Ended training for chat ${chatId}`);
-      setShowAssessment(true);
+      // Removed automatic setShowAssessment(true) - now controlled by data existence
     } catch (error) {
       logError("Error ending training:", error);
       throw error;
@@ -128,7 +128,7 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         responses,
       });
       setShowAssessment(false);
-      setShowFeedback(true);
+      // Removed automatic setShowFeedback(true) - now controlled by data existence
       logInfo(`Submitted assessment for chat ${chatId}`);
     } catch (error) {
       logError("Error submitting assessment:", error);
