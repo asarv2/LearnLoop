@@ -1,7 +1,6 @@
 import logging
 import os
-import time
-from typing import Any, Callable, Generator, TypeVar
+from typing import Generator
 
 from dotenv import load_dotenv
 from sqlmodel import Session, SQLModel, create_engine
@@ -22,26 +21,14 @@ db_url = f"postgresql+psycopg://{db_user}:{db_password}@{db_host}:{db_port}/{db_
 if not db_url:
     raise ValueError("Database url is not set")
 
-# Create engine with proper connection pooling configuration
+# Create engine with standard configuration
 engine = create_engine(
     db_url,
-    # Connection pool settings to prevent prepared statement errors
-    pool_size=10,  # Number of connections to maintain in the pool
-    max_overflow=20,  # Maximum number of connections that can be created beyond pool_size
-    pool_pre_ping=True,  # Validate connections before use
-    pool_recycle=3600,  # Recycle connections after 1 hour
-    pool_timeout=30,  # Timeout for getting a connection from the pool
-    # Disable prepared statements to avoid the "_pg3_2" error
-    connect_args={
-        # psycopg3 uses prepared statements after a few executions by default.
-        # When using PgBouncer in transaction pooling (or if connections are
-        # reset/disposed), those prepared statements can disappear and cause:
-        # "psycopg.errors.InvalidSqlStatementName: prepared statement \"_pg3_*\" does not exist"
-        # Setting prepare_threshold=0 disables server-side prepared statements.
-        "prepare_threshold": 0,
-        # Keep existing timeouts
-        "options": "-c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000",
-    }
+    # Use standard connection pooling
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,
+    pool_recycle=3600,
 )
 
 # Test the connection
