@@ -31,7 +31,9 @@ from websockets.exceptions import ConnectionClosedOK  # type: ignore
 load_dotenv()
 
 import os
+
 from litellm.litellm_core_utils import litellm_logging as LL
+
 LL.get_standard_logging_object_payload = lambda *a, **k: None
 
 # Configure logging first
@@ -447,11 +449,10 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
                     logger.error(f"Chat {chat_id_for_voice} not found in DB.")
                     continue
 
-                persona_id, _ = get_persona_id_from_chat(
+                persona_id = get_persona_id_from_chat(
                     db_session, 
                     str(chat_obj.id), 
-                    [str(pid) for pid in (chat_obj.parameter_ids or [])], 
-                    getattr(chat_obj, 'training_type', None)
+                    [str(pid) for pid in (chat_obj.parameter_ids or [])]
                 )
                 if not persona_id:
                     logger.error(f"Could not find persona for chat {chat_id_for_voice}.")

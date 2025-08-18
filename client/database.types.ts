@@ -105,7 +105,6 @@ export type Database = {
           title: string
           trace_id: string | null
           training_id: string | null
-          user_id: string | null
           voice: string
         }
         Insert: {
@@ -120,7 +119,6 @@ export type Database = {
           title: string
           trace_id?: string | null
           training_id?: string | null
-          user_id?: string | null
           voice?: string
         }
         Update: {
@@ -135,7 +133,6 @@ export type Database = {
           title?: string
           trace_id?: string | null
           training_id?: string | null
-          user_id?: string | null
           voice?: string
         }
         Relationships: [

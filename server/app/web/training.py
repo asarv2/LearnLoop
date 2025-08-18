@@ -113,13 +113,8 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
             chat = Chats(
                 attempt_id=attempt.id,
                 title=scenario.title,
-                name=scenario.title,  # Use title as name
-                position="Participant",  # Default position
-                additional_info=scenario.description or "",  # Use description as additional info
                 profile_id=profile_id,
-                user_id=profile_id,  # Add user ID
                 voice="alloy",
-                type="regular",  # Default to regular interview type
                 parameter_ids=parameter_ids,
                 training_id=scenario.training_id
             )
@@ -135,19 +130,11 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                 # Create a separate session for persona extraction to avoid transaction conflicts
                 persona_session = next(get_session())
                 try:
-                    persona_id, feedback_updates = get_persona_id_from_chat(
+                    persona_id = get_persona_id_from_chat(
                         persona_session, 
                         str(chat.id), 
-                        [str(pid) for pid in (chat.parameter_ids or [])], 
-                        getattr(chat, 'training_type', None)
+                        [str(pid) for pid in (chat.parameter_ids or [])]
                     )
-                    
-                    # Apply feedback updates if any
-                    if feedback_updates:
-                        if not chat.feedback:
-                            chat.feedback = {}
-                        chat.feedback.update(feedback_updates)
-                        db_session.add(chat)
                 finally:
                     persona_session.close()
             except Exception as e:
@@ -481,41 +468,20 @@ async def process_training_message_websocket(
             # Create a separate session for persona extraction to avoid transaction conflicts
             persona_session = next(get_session())
             try:
-                assistant_persona_id, feedback_updates = get_persona_id_from_chat(
+                assistant_persona_id = get_persona_id_from_chat(
                     persona_session, 
                     str(chat.id), 
-                    [str(pid) for pid in (chat.parameter_ids or [])], 
-                    getattr(chat, 'training_type', None)
+                    [str(pid) for pid in (chat.parameter_ids or [])]
                 )
                 if not assistant_persona_id:
                     logger.error(f"No persona found for chat {chat_id}")
                     # Handle error...
                     return
-                
-                # Apply feedback updates if any
-                if feedback_updates:
-                    if not chat.feedback:
-                        chat.feedback = {}
-                    chat.feedback.update(feedback_updates)
-                    db_session.add(chat)
             finally:
                 persona_session.close()
         except Exception as e:
             logger.error(f"Error getting assistant persona ID for chat {chat_id}: {str(e)}")
-            # Try to get a default persona as fallback
-            try:
-                default_persona = db_session.exec(
-                    select(Personas).where(Personas.name == 'Default Assistant')
-                ).one_or_none()
-                if default_persona:
-                    assistant_persona_id = default_persona.id
-                    logger.info(f"Using default persona {assistant_persona_id} for chat {chat_id}")
-                else:
-                    logger.error(f"No default persona found for chat {chat_id}")
-                    return
-            except Exception as fallback_error:
-                logger.error(f"Error getting default persona: {str(fallback_error)}")
-                return
+            return
 
         # Create assistant message placeholder
         assistant_message = Messages(

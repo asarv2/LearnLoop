@@ -296,14 +296,14 @@ def get_dynamic_rubric(
 
 
 
-def get_persona_id_from_chat(db_session, chat_id: str, parameter_ids: list[str], training_type: Optional[str] = None) -> tuple[Optional[uuid.UUID], Optional[dict]]:
+def get_persona_id_from_chat(db_session, chat_id: str, parameter_ids: list[str]) -> Optional[uuid.UUID]:
     """
     Extract persona_id from chat's parameter_ids by finding the parameter with field_type 'persona'
     For interview training, randomly select between regular and cheating candidate if candidate persona is not set
     Returns (persona_id, feedback_updates) where feedback_updates should be applied to chat later
     """
     if not parameter_ids:
-        return None, None
+        return None
     
     try:
         # Get all parameters for this chat with error handling
@@ -330,61 +330,15 @@ def get_persona_id_from_chat(db_session, chat_id: str, parameter_ids: list[str],
                     if field and field.field_type == 'persona' and param.value:
                         # The value should be the persona UUID
                         try:
-                            return uuid.UUID(param.value), None
+                            return uuid.UUID(param.value)
                         except ValueError:
                             logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
                             continue
                 except Exception as e:
                     logger.warning(f"Error fetching field {param.field_id}: {e}")
                     continue
-        
-        # Special handling for interview training: 50/50 chance of cheating vs selected personality
-        if training_type == 'interview':
-            # Check if user selected a candidate persona
-            selected_persona_id = None
-            for param in parameters:
-                if param.field_id:
-                    try:
-                        field = db_session.exec(
-                            select(Fields).where(Fields.id == param.field_id)
-                        ).one_or_none()
-                        
-                        if field and field.name == 'Candidate Persona' and param.value:
-                            selected_persona_id = param.value
-                            break
-                    except Exception as e:
-                        logger.warning(f"Error fetching field {param.field_id} for candidate persona: {e}")
-                        continue
-            
-            if selected_persona_id:
-                # User selected a personality, now 50/50 chance of using it vs cheating
-                is_cheating = random.choice([True, False])
-                
-                if is_cheating:
-                    # Find the cheating candidate persona
-                    try:
-                        cheating_persona = db_session.exec(
-                            select(Personas).where(Personas.name == 'Cheating Candidate')
-                        ).one_or_none()
-                        if cheating_persona:
-                            # Return feedback updates to be applied later
-                            feedback_updates = {
-                                'candidate_type': 'cheating',
-                                'candidate_persona_id': str(cheating_persona.id),
-                                'user_selected_persona': selected_persona_id
-                            }
-                            return cheating_persona.id, feedback_updates
-                    except Exception as e:
-                        logger.warning(f"Error fetching cheating persona: {e}")
-                else:
-                    # Use the personality the user actually selected
-                    feedback_updates = {
-                        'candidate_type': 'regular',
-                        'candidate_persona_id': selected_persona_id
-                    }
-                    return uuid.UUID(selected_persona_id), feedback_updates
-        
-        return None, None
+
+        return None
     except Exception as e:
         logger.error(f"Error extracting persona_id from chat {chat_id}: {str(e)}")
-        return None, None
+        return None

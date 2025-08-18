@@ -1,23 +1,17 @@
 "use client";
 
-import React, { useState } from 'react';
-import { 
-  Box, 
-  Flex, 
-  Heading, 
-  Text, 
-  Button,
-  Badge
-} from '@radix-ui/themes';
-import * as Dialog from '@radix-ui/react-dialog';
-import { 
-  Cross2Icon, 
+import type { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
+import type { Chat, Feedback, RubricGrade, StandardGrade } from "@/types";
+import * as Dialog from "@radix-ui/react-dialog";
+import {
   ChevronLeftIcon,
   ChevronRightIcon,
-  DotFilledIcon
-} from '@radix-ui/react-icons';
-import { Feedback, Chat } from '@/types';
-import ScoreDisplay from './ScoreDisplay';
+  Cross2Icon,
+  DotFilledIcon,
+} from "@radix-ui/react-icons";
+import { Badge, Box, Button, Flex, Heading, Text } from "@radix-ui/themes";
+import { useState } from "react";
+import ScoreDisplay from "./ScoreDisplay";
 
 interface FeedbackModalProps {
   isOpen: boolean;
@@ -32,13 +26,13 @@ export default function FeedbackModal({
   onClose,
   feedback,
   score,
-  chat
+  chat,
 }: FeedbackModalProps) {
   const [currentPage, setCurrentPage] = useState(0);
 
   const cleanText = (text: string) => {
     // Remove markdown bold formatting (**text**)
-    return text.replace(/\*\*(.*?)\*\*/g, '$1');
+    return text.replace(/\*\*(.*?)\*\*/g, "$1");
   };
 
   // If no feedback is available, show a loading/empty state
@@ -46,37 +40,50 @@ export default function FeedbackModal({
     return (
       <Dialog.Root open={isOpen} onOpenChange={onClose}>
         <Dialog.Portal>
-          <Dialog.Overlay 
+          <Dialog.Overlay
             style={{
-              position: 'fixed',
+              position: "fixed",
               inset: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.6)',
-              animation: 'fadeIn 0.2s ease-out'
+              backgroundColor: "rgba(0, 0, 0, 0.6)",
+              animation: "fadeIn 0.2s ease-out",
             }}
           />
           <Dialog.Content
             style={{
-              position: 'fixed',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              padding: '32px',
-              width: '90vw',
-              maxWidth: '500px',
-              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
-              border: '1px solid var(--gray-6)'
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              backgroundColor: "white",
+              borderRadius: "8px",
+              padding: "32px",
+              width: "90vw",
+              maxWidth: "500px",
+              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
+              border: "1px solid var(--gray-6)",
             }}
           >
-            <Flex direction="column" gap="6" align="center" style={{ textAlign: 'center' }}>
+            <Flex
+              direction="column"
+              gap="6"
+              align="center"
+              style={{ textAlign: "center" }}
+            >
               <Dialog.Title asChild>
-                <Heading size="5" weight="medium" style={{ color: 'var(--gray-12)' }}>
+                <Heading
+                  size="5"
+                  weight="medium"
+                  style={{ color: "var(--gray-12)" }}
+                >
                   No Feedback Available
                 </Heading>
               </Dialog.Title>
-              <Text size="3" style={{ color: 'var(--gray-11)', lineHeight: '1.6' }}>
-                Feedback for {chat?.title} is not available yet. Please complete the {chat?.title?.startsWith('Offboarding:') ? 'offboarding session' : 'interview'} first to generate feedback.
+              <Text
+                size="3"
+                style={{ color: "var(--gray-11)", lineHeight: "1.6" }}
+              >
+                Feedback for {chat?.title} is not available yet. Please complete
+                the session first to generate feedback.
               </Text>
               <Dialog.Close asChild>
                 <Button variant="soft" size="3">
@@ -89,10 +96,10 @@ export default function FeedbackModal({
 
         <style jsx global>{`
           @keyframes fadeIn {
-            from { 
+            from {
               opacity: 0;
             }
-            to { 
+            to {
               opacity: 1;
             }
           }
@@ -101,252 +108,351 @@ export default function FeedbackModal({
     );
   }
 
-  // Determine if this is offboarding training
-  const isOffboardingTraining = chat?.title?.startsWith('Offboarding:');
+  // Extract rubric and standard grades if present on chat include
+  const chatWithIncludes = chat as unknown as ChatWithAllIncludes | undefined;
+  const rubricGrades: RubricGrade[] =
+    (chatWithIncludes?.rubric_grades as unknown as RubricGrade[]) || [];
+  const firstRubricGrade = rubricGrades[0];
+  const standardGrades: StandardGrade[] =
+    (firstRubricGrade &&
+      (firstRubricGrade as unknown as { standard_grades?: StandardGrade[] })
+        .standard_grades) ||
+    [];
 
   const pages = [
     {
-      title: "Performance Score",
+      title: "Performance Scores",
       icon: "📊",
       color: "blue",
       content: (
-        <ScoreDisplay score={score} chat={chat || undefined} />
-      )
+        <Box style={{ padding: "24px" }}>
+          <ScoreDisplay
+            score={score ?? firstRubricGrade?.score ?? null}
+            chat={chat || undefined}
+          />
+          {standardGrades && standardGrades.length > 0 && (
+            <Box style={{ marginTop: "16px" }}>
+              <Heading size="3" style={{ marginBottom: "8px" }}>
+                Standards
+              </Heading>
+              <Flex direction="column" gap="2">
+                {standardGrades.map((sg) => (
+                  <Flex
+                    key={sg.id}
+                    align="center"
+                    justify="between"
+                    style={{
+                      border: "1px solid var(--gray-6)",
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                    }}
+                  >
+                    <Text size="2">{sg.name}</Text>
+                    <Badge variant="soft" color="blue">
+                      {sg.score}/5
+                    </Badge>
+                  </Flex>
+                ))}
+              </Flex>
+            </Box>
+          )}
+        </Box>
+      ),
     },
     {
       title: "Strengths",
       icon: "✓",
       color: "green",
       content: (
-        <Box style={{ 
-          padding: '48px',
-          background: 'white',
-          height: '100%'
-        }}>
+        <Box
+          style={{
+            padding: "48px",
+            background: "white",
+            height: "100%",
+          }}
+        >
           <Flex direction="column" gap="6">
             {feedback.strengths.length > 0 ? (
               <Flex direction="column" gap="4">
                 {feedback.strengths.map((strength: string, index: number) => (
-                  <Box key={index} style={{ 
-                    position: 'relative',
-                    padding: '28px 32px',
-                    backgroundColor: 'white',
-                    borderRadius: '16px',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)',
-                    border: '1px solid rgba(22, 163, 74, 0.1)',
-                    transition: 'all 0.2s ease',
-                    cursor: 'default'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)';
-                  }}>
-                     <Flex align="start" gap="4">
-                       <Box style={{
-                         width: '6px',
-                         height: '6px',
-                         backgroundColor: '#16a34a',
-                         borderRadius: '50%',
-                         marginTop: '12px',
-                         flexShrink: 0
-                       }} />
-                       <Text size="3" style={{ 
-                         lineHeight: '1.7', 
-                         color: '#1f2937',
-                         fontWeight: '400',
-                         fontSize: '15px'
-                       }}>
-                         {cleanText(strength)}
-                       </Text>
-                     </Flex>
-                     <Box style={{
-                       position: 'absolute',
-                       top: 0,
-                       left: 0,
-                       bottom: 0,
-                       width: '4px',
-                       backgroundColor: '#16a34a',
-                       borderTopLeftRadius: '16px',
-                       borderBottomLeftRadius: '16px'
-                     }} />
+                  <Box
+                    key={index}
+                    style={{
+                      position: "relative",
+                      padding: "28px 32px",
+                      backgroundColor: "white",
+                      borderRadius: "16px",
+                      boxShadow:
+                        "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)",
+                      border: "1px solid rgba(22, 163, 74, 0.1)",
+                      transition: "all 0.2s ease",
+                      cursor: "default",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                      e.currentTarget.style.boxShadow =
+                        "0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.1)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow =
+                        "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)";
+                    }}
+                  >
+                    <Flex align="start" gap="4">
+                      <Box
+                        style={{
+                          width: "6px",
+                          height: "6px",
+                          backgroundColor: "#16a34a",
+                          borderRadius: "50%",
+                          marginTop: "12px",
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Text
+                        size="3"
+                        style={{
+                          lineHeight: "1.7",
+                          color: "#1f2937",
+                          fontWeight: "400",
+                          fontSize: "15px",
+                        }}
+                      >
+                        {cleanText(strength)}
+                      </Text>
+                    </Flex>
+                    <Box
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        bottom: 0,
+                        width: "4px",
+                        backgroundColor: "#16a34a",
+                        borderTopLeftRadius: "16px",
+                        borderBottomLeftRadius: "16px",
+                      }}
+                    />
                   </Box>
                 ))}
               </Flex>
             ) : (
-              <Box style={{ 
-                padding: '48px',
-                textAlign: 'center',
-                backgroundColor: 'white',
-                borderRadius: '16px',
-                border: '2px dashed #d1d5db'
-              }}>
-                <Text size="3" style={{ color: '#6b7280', fontStyle: 'italic' }}>
+              <Box
+                style={{
+                  padding: "48px",
+                  textAlign: "center",
+                  backgroundColor: "white",
+                  borderRadius: "16px",
+                  border: "2px dashed #d1d5db",
+                }}
+              >
+                <Text
+                  size="3"
+                  style={{ color: "#6b7280", fontStyle: "italic" }}
+                >
                   No specific strengths identified in this session.
                 </Text>
               </Box>
             )}
           </Flex>
         </Box>
-      )
+      ),
     },
     {
       title: "Missteps & Say This Instead",
       icon: "⚡",
       color: "amber",
       content: (
-        <Box style={{ 
-          padding: '48px',
-          background: 'white',
-          height: '100%'
-        }}>
+        <Box
+          style={{
+            padding: "48px",
+            background: "white",
+            height: "100%",
+          }}
+        >
           <Flex direction="column" gap="6">
             {feedback.errors && feedback.errors.length > 0 ? (
               <Flex direction="column" gap="4">
                 {feedback.errors.map((error: string, index: number) => (
-                  <Box key={index} style={{ 
-                    position: 'relative',
-                    padding: '28px 32px',
-                    backgroundColor: 'white',
-                    borderRadius: '16px',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)',
-                    border: '1px solid rgba(245, 158, 11, 0.1)',
-                    transition: 'all 0.2s ease',
-                    cursor: 'default'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)';
-                  }}>
-                     <Text size="3" style={{ 
-                       lineHeight: '1.7', 
-                       color: '#1f2937',
-                       fontWeight: '400',
-                       fontSize: '15px'
-                     }}>
-                       {cleanText(error)}
-                     </Text>
-                     <Box style={{
-                       position: 'absolute',
-                       top: 0,
-                       left: 0,
-                       bottom: 0,
-                       width: '4px',
-                       backgroundColor: '#f59e0b',
-                       borderTopLeftRadius: '16px',
-                       borderBottomLeftRadius: '16px'
-                     }} />
+                  <Box
+                    key={index}
+                    style={{
+                      position: "relative",
+                      padding: "28px 32px",
+                      backgroundColor: "white",
+                      borderRadius: "16px",
+                      boxShadow:
+                        "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)",
+                      border: "1px solid rgba(245, 158, 11, 0.1)",
+                      transition: "all 0.2s ease",
+                      cursor: "default",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                      e.currentTarget.style.boxShadow =
+                        "0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.1)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow =
+                        "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)";
+                    }}
+                  >
+                    <Text
+                      size="3"
+                      style={{
+                        lineHeight: "1.7",
+                        color: "#1f2937",
+                        fontWeight: "400",
+                        fontSize: "15px",
+                      }}
+                    >
+                      {cleanText(error)}
+                    </Text>
+                    <Box
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        bottom: 0,
+                        width: "4px",
+                        backgroundColor: "#f59e0b",
+                        borderTopLeftRadius: "16px",
+                        borderBottomLeftRadius: "16px",
+                      }}
+                    />
                   </Box>
                 ))}
               </Flex>
             ) : (
-              <Box style={{ 
-                padding: '48px',
-                textAlign: 'center',
-                backgroundColor: 'white',
-                borderRadius: '16px',
-                border: '2px dashed #d1d5db'
-              }}>
-                <Text size="3" style={{ color: '#6b7280', fontStyle: 'italic' }}>
+              <Box
+                style={{
+                  padding: "48px",
+                  textAlign: "center",
+                  backgroundColor: "white",
+                  borderRadius: "16px",
+                  border: "2px dashed #d1d5db",
+                }}
+              >
+                <Text
+                  size="3"
+                  style={{ color: "#6b7280", fontStyle: "italic" }}
+                >
                   No specific missteps identified.
                 </Text>
               </Box>
             )}
           </Flex>
         </Box>
-      )
-    }
+      ),
+    },
   ];
 
-  // Only add flags section for interview training
-  if (!isOffboardingTraining) {
+  // Add flags section (generalized to show feedback arrays)
+  {
     pages.push({
       title: "Flags to Watch Out For",
       icon: "🚩",
       color: "purple",
       content: (
-        <Box style={{ 
-          padding: '48px',
-          background: 'white',
-          height: '100%'
-        }}>
+        <Box
+          style={{
+            padding: "48px",
+            background: "white",
+            height: "100%",
+          }}
+        >
           <Flex direction="column" gap="8">
             {/* Green Flags Section */}
             <Box>
               <Flex align="center" gap="3" mb="4">
-                <Box style={{
-                  width: '24px',
-                  height: '24px',
-                  backgroundColor: '#16a34a',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <Text size="2" style={{ color: 'white', fontWeight: 'bold' }}>✓</Text>
+                <Box
+                  style={{
+                    width: "24px",
+                    height: "24px",
+                    backgroundColor: "#16a34a",
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text size="2" style={{ color: "white", fontWeight: "bold" }}>
+                    ✓
+                  </Text>
                 </Box>
-                <Text size="4" weight="bold" style={{ color: '#16a34a' }}>
+                <Text size="4" weight="bold" style={{ color: "#16a34a" }}>
                   Green Flags
                 </Text>
               </Flex>
-              {feedback.green_flags.length > 0 ? (
+              {feedback.green_flags && feedback.green_flags.length > 0 ? (
                 <Flex direction="column" gap="3">
                   {feedback.green_flags.map((flag: string, index: number) => (
-                    <Box key={index} style={{ 
-                      position: 'relative',
-                      padding: '20px 24px',
-                      backgroundColor: 'white',
-                      borderRadius: '12px',
-                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)',
-                      border: '1px solid rgba(22, 163, 74, 0.1)',
-                      transition: 'all 0.2s ease',
-                      cursor: 'default'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.08)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)';
-                    }}>
-                       <Text size="3" style={{ 
-                         lineHeight: '1.6', 
-                         color: '#1f2937',
-                         fontWeight: '400',
-                         fontSize: '14px'
-                       }}>
-                         {cleanText(flag)}
-                       </Text>
-                       <Box style={{
-                         position: 'absolute',
-                         top: 0,
-                         left: 0,
-                         bottom: 0,
-                         width: '3px',
-                         backgroundColor: '#16a34a',
-                         borderTopLeftRadius: '12px',
-                         borderBottomLeftRadius: '12px'
-                       }} />
+                    <Box
+                      key={index}
+                      style={{
+                        position: "relative",
+                        padding: "20px 24px",
+                        backgroundColor: "white",
+                        borderRadius: "12px",
+                        boxShadow:
+                          "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)",
+                        border: "1px solid rgba(22, 163, 74, 0.1)",
+                        transition: "all 0.2s ease",
+                        cursor: "default",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "translateY(-1px)";
+                        e.currentTarget.style.boxShadow =
+                          "0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.08)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "translateY(0)";
+                        e.currentTarget.style.boxShadow =
+                          "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)";
+                      }}
+                    >
+                      <Text
+                        size="3"
+                        style={{
+                          lineHeight: "1.6",
+                          color: "#1f2937",
+                          fontWeight: "400",
+                          fontSize: "14px",
+                        }}
+                      >
+                        {cleanText(flag)}
+                      </Text>
+                      <Box
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          bottom: 0,
+                          width: "3px",
+                          backgroundColor: "#16a34a",
+                          borderTopLeftRadius: "12px",
+                          borderBottomLeftRadius: "12px",
+                        }}
+                      />
                     </Box>
                   ))}
                 </Flex>
               ) : (
-                <Box style={{ 
-                  padding: '24px',
-                  textAlign: 'center',
-                  backgroundColor: 'rgba(22, 163, 74, 0.05)',
-                  borderRadius: '12px',
-                  border: '1px dashed rgba(22, 163, 74, 0.3)'
-                }}>
-                  <Text size="3" style={{ color: '#16a34a', fontStyle: 'italic' }}>
+                <Box
+                  style={{
+                    padding: "24px",
+                    textAlign: "center",
+                    backgroundColor: "rgba(22, 163, 74, 0.05)",
+                    borderRadius: "12px",
+                    border: "1px dashed rgba(22, 163, 74, 0.3)",
+                  }}
+                >
+                  <Text
+                    size="3"
+                    style={{ color: "#16a34a", fontStyle: "italic" }}
+                  >
                     No green flags identified.
                   </Text>
                 </Box>
@@ -356,72 +462,92 @@ export default function FeedbackModal({
             {/* Red Flags Section */}
             <Box>
               <Flex align="center" gap="3" mb="4">
-                <Box style={{
-                  width: '24px',
-                  height: '24px',
-                  backgroundColor: '#dc2626',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <Text size="2" style={{ color: 'white', fontWeight: 'bold' }}>!</Text>
+                <Box
+                  style={{
+                    width: "24px",
+                    height: "24px",
+                    backgroundColor: "#dc2626",
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text size="2" style={{ color: "white", fontWeight: "bold" }}>
+                    !
+                  </Text>
                 </Box>
-                <Text size="4" weight="bold" style={{ color: '#dc2626' }}>
+                <Text size="4" weight="bold" style={{ color: "#dc2626" }}>
                   Red Flags
                 </Text>
               </Flex>
-              {feedback.red_flags.length > 0 ? (
+              {feedback.red_flags && feedback.red_flags.length > 0 ? (
                 <Flex direction="column" gap="3">
                   {feedback.red_flags.map((flag: string, index: number) => (
-                    <Box key={index} style={{ 
-                      position: 'relative',
-                      padding: '20px 24px',
-                      backgroundColor: 'white',
-                      borderRadius: '12px',
-                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)',
-                      border: '1px solid rgba(220, 38, 38, 0.1)',
-                      transition: 'all 0.2s ease',
-                      cursor: 'default'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.08)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)';
-                    }}>
-                       <Text size="3" style={{ 
-                         lineHeight: '1.6', 
-                         color: '#1f2937',
-                         fontWeight: '400',
-                         fontSize: '14px'
-                       }}>
-                         {cleanText(flag)}
-                       </Text>
-                       <Box style={{
-                         position: 'absolute',
-                         top: 0,
-                         left: 0,
-                         bottom: 0,
-                         width: '3px',
-                         backgroundColor: '#dc2626',
-                         borderTopLeftRadius: '12px',
-                         borderBottomLeftRadius: '12px'
-                       }} />
+                    <Box
+                      key={index}
+                      style={{
+                        position: "relative",
+                        padding: "20px 24px",
+                        backgroundColor: "white",
+                        borderRadius: "12px",
+                        boxShadow:
+                          "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)",
+                        border: "1px solid rgba(220, 38, 38, 0.1)",
+                        transition: "all 0.2s ease",
+                        cursor: "default",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "translateY(-1px)";
+                        e.currentTarget.style.boxShadow =
+                          "0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.08)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "translateY(0)";
+                        e.currentTarget.style.boxShadow =
+                          "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)";
+                      }}
+                    >
+                      <Text
+                        size="3"
+                        style={{
+                          lineHeight: "1.6",
+                          color: "#1f2937",
+                          fontWeight: "400",
+                          fontSize: "14px",
+                        }}
+                      >
+                        {cleanText(flag)}
+                      </Text>
+                      <Box
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          bottom: 0,
+                          width: "3px",
+                          backgroundColor: "#dc2626",
+                          borderTopLeftRadius: "12px",
+                          borderBottomLeftRadius: "12px",
+                        }}
+                      />
                     </Box>
                   ))}
                 </Flex>
               ) : (
-                <Box style={{ 
-                  padding: '24px',
-                  textAlign: 'center',
-                  backgroundColor: 'rgba(220, 38, 38, 0.05)',
-                  borderRadius: '12px',
-                  border: '1px dashed rgba(220, 38, 38, 0.3)'
-                }}>
-                  <Text size="3" style={{ color: '#dc2626', fontStyle: 'italic' }}>
+                <Box
+                  style={{
+                    padding: "24px",
+                    textAlign: "center",
+                    backgroundColor: "rgba(220, 38, 38, 0.05)",
+                    borderRadius: "12px",
+                    border: "1px dashed rgba(220, 38, 38, 0.3)",
+                  }}
+                >
+                  <Text
+                    size="3"
+                    style={{ color: "#dc2626", fontStyle: "italic" }}
+                  >
                     No red flags identified.
                   </Text>
                 </Box>
@@ -429,7 +555,7 @@ export default function FeedbackModal({
             </Box>
           </Flex>
         </Box>
-      )
+      ),
     });
   }
 
@@ -448,68 +574,65 @@ export default function FeedbackModal({
   return (
     <Dialog.Root open={isOpen} onOpenChange={onClose}>
       <Dialog.Portal>
-        <Dialog.Overlay 
+        <Dialog.Overlay
           style={{
-            position: 'fixed',
+            position: "fixed",
             inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.6)',
-            animation: 'fadeIn 0.2s ease-out'
+            backgroundColor: "rgba(0, 0, 0, 0.6)",
+            animation: "fadeIn 0.2s ease-out",
           }}
         />
         <Dialog.Content
           style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            backgroundColor: 'white',
-            borderRadius: '8px',
-            padding: '0',
-            width: '90vw',
-            maxWidth: '600px',
-            height: '70vh',
-            overflow: 'hidden',
-            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
-            border: '1px solid var(--gray-6)'
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            backgroundColor: "white",
+            borderRadius: "8px",
+            padding: "0",
+            width: "90vw",
+            maxWidth: "600px",
+            height: "70vh",
+            overflow: "hidden",
+            boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
+            border: "1px solid var(--gray-6)",
           }}
         >
           {/* Header */}
-          <Box style={{ 
-            background: 'var(--gray-1)',
-            padding: '20px 32px',
-            borderBottom: '1px solid var(--gray-6)'
-          }}>
+          <Box
+            style={{
+              background: "var(--gray-1)",
+              padding: "20px 32px",
+              borderBottom: "1px solid var(--gray-6)",
+            }}
+          >
             <Flex align="center" justify="between">
               <Flex direction="column" gap="1">
                 <Dialog.Title asChild>
-                  <Heading size="4" weight="medium" style={{ color: 'var(--gray-12)' }}>
-                    {chat?.title?.startsWith('Offboarding:') ? 'Offboarding Feedback' : 'Interview Feedback'}
+                  <Heading
+                    size="4"
+                    weight="medium"
+                    style={{ color: "var(--gray-12)" }}
+                  >
+                    Assessment Feedback
                   </Heading>
                 </Dialog.Title>
                 <Flex direction="column" align="center" gap="2">
-                  <Text size="2" style={{ color: 'var(--gray-11)' }}>
-                    {chat?.title?.startsWith('Offboarding:') ? 'Employee' : 'Candidate'}: {chat?.title}
+                  <Text size="2" style={{ color: "var(--gray-11)" }}>
+                    Session: {chat?.title}
                   </Text>
-                  {chat && !chat.title?.startsWith('Offboarding:') && (
-                    <Badge 
-                      size="1" 
-                      variant="soft" 
-                      color={chat.title === 'Cheating' ? 'red' : 'blue'}
-                    >
-                      {chat.title === 'Cheating' ? 'Dishonest Candidate' : 'Regular Candidate'}
-                    </Badge>
-                  )}
                 </Flex>
               </Flex>
               <Dialog.Close asChild>
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   size="2"
-                  style={{ 
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                    color: '#ef4444',
-                    border: '1px solid rgba(239, 68, 68, 0.2)',
-                    borderRadius: '6px'
+                  style={{
+                    backgroundColor: "rgba(239, 68, 68, 0.1)",
+                    color: "#ef4444",
+                    border: "1px solid rgba(239, 68, 68, 0.2)",
+                    borderRadius: "6px",
                   }}
                 >
                   <Cross2Icon width="16" height="16" />
@@ -519,27 +642,39 @@ export default function FeedbackModal({
           </Box>
 
           {/* Page Navigation Tabs */}
-          <Box style={{ 
-            background: 'var(--gray-1)',
-            borderBottom: '1px solid var(--gray-6)'
-          }}>
+          <Box
+            style={{
+              background: "var(--gray-1)",
+              borderBottom: "1px solid var(--gray-6)",
+            }}
+          >
             <Flex align="center" justify="center">
               {pages.map((page, index) => (
                 <Box
                   key={index}
                   onClick={() => goToPage(index)}
                   style={{
-                    padding: '16px 24px',
-                    cursor: 'pointer',
-                    borderBottom: currentPage === index ? '3px solid var(--blue-9)' : '3px solid transparent',
-                    backgroundColor: currentPage === index ? 'white' : 'transparent',
-                    transition: 'all 0.2s ease',
-                    fontWeight: currentPage === index ? '600' : '500'
+                    padding: "16px 24px",
+                    cursor: "pointer",
+                    borderBottom:
+                      currentPage === index
+                        ? "3px solid var(--blue-9)"
+                        : "3px solid transparent",
+                    backgroundColor:
+                      currentPage === index ? "white" : "transparent",
+                    transition: "all 0.2s ease",
+                    fontWeight: currentPage === index ? "600" : "500",
                   }}
                 >
-                  <Text size="2" style={{ 
-                    color: currentPage === index ? 'var(--blue-11)' : 'var(--gray-11)' 
-                  }}>
+                  <Text
+                    size="2"
+                    style={{
+                      color:
+                        currentPage === index
+                          ? "var(--blue-11)"
+                          : "var(--gray-11)",
+                    }}
+                  >
                     {page.title}
                   </Text>
                 </Box>
@@ -548,21 +683,25 @@ export default function FeedbackModal({
           </Box>
 
           {/* Page Content */}
-          <Box style={{ 
-            flex: 1,
-            overflow: 'auto',
-            height: 'calc(70vh - 160px)',
-            background: 'white'
-          }}>
+          <Box
+            style={{
+              flex: 1,
+              overflow: "auto",
+              height: "calc(70vh - 160px)",
+              background: "white",
+            }}
+          >
             {pages[currentPage].content}
           </Box>
 
           {/* Footer Navigation */}
-          <Box style={{ 
-            background: 'var(--gray-1)',
-            padding: '16px 32px',
-            borderTop: '1px solid var(--gray-6)'
-          }}>
+          <Box
+            style={{
+              background: "var(--gray-1)",
+              padding: "16px 32px",
+              borderTop: "1px solid var(--gray-6)",
+            }}
+          >
             <Flex align="center" justify="between">
               <Button
                 variant="soft"
@@ -581,8 +720,10 @@ export default function FeedbackModal({
                     key={index}
                     width="12"
                     height="12"
-                    color={currentPage === index ? 'var(--gray-12)' : 'var(--gray-8)'}
-                    style={{ cursor: 'pointer' }}
+                    color={
+                      currentPage === index ? "var(--gray-12)" : "var(--gray-8)"
+                    }
+                    style={{ cursor: "pointer" }}
                     onClick={() => goToPage(index)}
                   />
                 ))}
@@ -604,14 +745,14 @@ export default function FeedbackModal({
 
       <style jsx global>{`
         @keyframes fadeIn {
-          from { 
+          from {
             opacity: 0;
           }
-          to { 
+          to {
             opacity: 1;
           }
         }
       `}</style>
     </Dialog.Root>
   );
-} 
+}

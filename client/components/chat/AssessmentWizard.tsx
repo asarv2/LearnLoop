@@ -1,6 +1,7 @@
 //Assessment Wizard for the interview assessment
 "use client";
 
+import { api } from "@/lib/api/fetcher";
 import { useAssessment } from "@/lib/api/hooks/useAssessments";
 import { useQuestionsByAssessment } from "@/lib/api/hooks/useQuestions";
 import { Chat } from "@/types";
@@ -100,15 +101,27 @@ export default function AssessmentWizard({
     }));
   };
 
-  const handleNext = () => {
+  const persistCurrentAnswer = async () => {
+    if (!currentQuestion || !currentQuestion.id) return;
+    const qid = currentQuestion.id as string;
+    const value = responses[qid];
+    if (value === undefined) return;
+    try {
+      await api(`/api/v1/questions/${qid}`, {
+        method: "PATCH",
+        body: JSON.stringify({ value: String(value) }),
+      });
+    } catch {
+      // Silent fail for now; UI still allows navigation
+    }
+  };
+
+  const handleNext = async () => {
+    // Persist the answer for the current question before navigating
+    await persistCurrentAnswer();
     if (isLastQuestion) {
-      // Convert responses to the format expected by the API
-      const assessmentResponses: unknown = Object.entries(
-        responses
-      ).map(([question_id, response]) => ({
-        question_id,
-        response,
-      }));
+      // Convert responses to the expected map shape: { [question_id]: response }
+      const assessmentResponses: Record<string, unknown> = { ...responses };
       onComplete(assessmentResponses);
     } else {
       setCurrentStep((prev) => prev + 1);
@@ -124,7 +137,9 @@ export default function AssessmentWizard({
   const renderQuestionInput = () => {
     if (!currentQuestion || !currentQuestion.id) return null;
 
-    const currentResponse = responses[currentQuestion.id];
+    const currentResponse =
+      responses[currentQuestion.id] ??
+      (currentQuestion.value as string | number | null | undefined);
     const isMcq =
       currentQuestion.question_type === "mcq" &&
       currentQuestion.options &&
@@ -269,10 +284,7 @@ export default function AssessmentWizard({
               {assessment?.title || "Assessment"}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              {chat?.title?.startsWith("Offboarding:")
-                ? "Offboarding"
-                : "Interview"}
-              : {chat?.title}
+              Session: {chat?.title}
             </Typography>
           </Box>
         </Box>
@@ -339,7 +351,7 @@ export default function AssessmentWizard({
             {isSubmitting && isLastQuestion ? (
               <>
                 <CircularProgress size={20} color="inherit" sx={{ mr: 1 }} />
-                Generating score and feedback...
+                Submitting assessment...
               </>
             ) : isLastQuestion ? (
               "Complete Assessment"
