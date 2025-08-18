@@ -21,7 +21,7 @@ from app.services.agents.grade import run_grading_agent
 from app.services.agents.hint import run_hint_agent
 from app.services.agents.scenario import run_scenario_agent
 from app.utils.chat import (get_conversation_history, get_parameter_history,
-                            get_preamble)
+                            get_persona_id_from_chat, get_preamble)
 from sqlalchemy import Column
 from sqlmodel import select
 
@@ -162,23 +162,16 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                         logger.info(f"Using default persona {persona_id} for chat {chat.id}")
                 except Exception as fallback_error:
                     logger.error(f"Error getting default persona: {str(fallback_error)}")
-            
-            # Create initial welcome message
-            welcome_message = Messages(
-                chat_id=str(chat.id),
-                content=f"Welcome to the {scenario.title} training! I'm here to help you practice. How can I assist you today?",
-                role="assistant",
-                training_id=scenario.training_id,
-                completed=True,
-                persona_id=persona_id
-            )
-            db_session.add(welcome_message)
-            db_session.commit()
 
             # Run scenario agent to update chat title and description
             try:
+                if not persona_id:
+                    logger.error(f"No persona ID found for chat {chat.id}")
+                    await emit_error(sid, "No persona ID found")
+                    return
+                
                 logger.info(f"Running scenario agent for chat {chat.id}")
-                scenario_result = await run_scenario_agent(chat.id, db_session)
+                scenario_result = await run_scenario_agent(chat.id, persona_id, db_session)
                 
                 if scenario_result.get("success"):
                     logger.info(f"Successfully updated chat with scenario: {scenario_result.get('chat_title')}")
@@ -402,85 +395,6 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
     except Exception as e:
         logger.error(f"Error ending training for {sid}: {str(e)}")
         await emit_error(sid, f"Failed to end training: {str(e)}")
-
-
-def get_persona_id_from_chat(db_session, chat_id: str, parameter_ids: list[str], training_type: Optional[str] = None) -> tuple[Optional[uuid.UUID], Optional[dict]]:
-    """
-    Extract persona_id from chat's parameter_ids by finding the parameter with field_type 'persona'
-    For interview training, randomly select between regular and cheating candidate if candidate persona is not set
-    Returns (persona_id, feedback_updates) where feedback_updates should be applied to chat later
-    """
-    if not parameter_ids:
-        return None, None
-    
-    try:
-        # Get all parameters for this chat
-        parameters = []
-        for param_id in parameter_ids:
-            param = db_session.exec(
-                select(Parameters).where(Parameters.id == param_id)
-            ).one_or_none()
-            if param:
-                parameters.append(param)
-        
-        # Find the parameter that has a field with field_type 'persona'
-        for param in parameters:
-            if param.field_id:
-                field = db_session.exec(
-                    select(Fields).where(Fields.id == param.field_id)
-                ).one_or_none()
-                
-                if field and field.field_type == 'persona' and param.value:
-                    # The value should be the persona UUID
-                    try:
-                        return uuid.UUID(param.value), None
-                    except ValueError:
-                        logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
-                        continue
-        
-        # Special handling for interview training: 50/50 chance of cheating vs selected personality
-        if training_type == 'interview':
-            # Check if user selected a candidate persona
-            selected_persona_id = None
-            for param in parameters:
-                if param.field_id:
-                    field = db_session.exec(
-                        select(Fields).where(Fields.id == param.field_id)
-                    ).one_or_none()
-                    
-                    if field and field.name == 'Candidate Persona' and param.value:
-                        selected_persona_id = param.value
-                        break
-            
-            if selected_persona_id:
-                # User selected a personality, now 50/50 chance of using it vs cheating
-                is_cheating = random.choice([True, False])
-                
-                if is_cheating:
-                    # Find the cheating candidate persona
-                    cheating_persona = db_session.exec(
-                        select(Personas).where(Personas.name == 'Cheating Candidate')
-                    ).one_or_none()
-                    if cheating_persona:
-                        # Return feedback updates to be applied later
-                        feedback_updates = {
-                            'candidate_type': 'cheating',
-                            'candidate_persona_id': str(cheating_persona.id),
-                            'user_selected_persona': selected_persona_id
-                        }
-                        return cheating_persona.id, feedback_updates
-                else:
-                    # Use the personality the user actually selected
-                    feedback_updates = {
-                        'candidate_type': 'regular',
-                        'candidate_persona_id': selected_persona_id
-                    }
-                    return uuid.UUID(selected_persona_id), feedback_updates
-        
-        return None, None
-    except Exception as e:
-        logger.error(f"Error extracting persona_id from chat {chat_id}: {str(e)}")
-        return None, None
 
 
 async def process_training_message_websocket(

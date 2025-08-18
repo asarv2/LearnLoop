@@ -119,6 +119,8 @@ function TrainingAttemptContent() {
             onBack={() => router.push("/dashboard/trainings")}
             interviewStartTimeIso={chat?.created_at}
             completedAtIso={chat?.completed_at}
+            chatTitle={chat?.title || ""}
+            chatDescription={chat?.description || ""}
           />
 
           <ChatArea

@@ -31,7 +31,6 @@ import { useWebSocket } from "@/contexts/websocket-context";
 import {
   uploadDocument,
   useCreateDocument,
-  useUpdateDocument,
 } from "@/lib/api/hooks/useDocuments";
 import { useField, useFields } from "@/lib/api/hooks/useFields";
 import { useParametersByField } from "@/lib/api/hooks/useParameters";
@@ -404,8 +403,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     });
 
   const createDocument = useCreateDocument();
-  const updateDocument = useUpdateDocument(scenarioId);
-  
+
   const startScenario = async () => {
     if (!allStepsComplete || !scenario) {
       alert("Please complete all fields before starting the scenario");
@@ -430,16 +428,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               // Upload the file
               const formData = new FormData();
               formData.append("file", fieldValue.file);
-              const { text, success } = await uploadDocument(document.id!, formData);
-              if (!success) {
-                throw new Error("Failed to upload document");
-              }
-
-              // Update the document with the text
-              await updateDocument.mutateAsync({
-                content: text,
-              });
-
+              await uploadDocument(document.id!, formData);
+              
               // Return field value with document ID as the value
               return {
                 ...fieldValue,
