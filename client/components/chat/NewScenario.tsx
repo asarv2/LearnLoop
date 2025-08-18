@@ -31,11 +31,11 @@ import { useWebSocket } from "@/contexts/websocket-context";
 import {
   uploadDocument,
   useCreateDocument,
+  useUpdateDocument,
 } from "@/lib/api/hooks/useDocuments";
 import { useField, useFields } from "@/lib/api/hooks/useFields";
 import { useParametersByField } from "@/lib/api/hooks/useParameters";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
-import { extractTextFromPDF } from "@/utils/pdf/extract";
 
 // Types
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -404,7 +404,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     });
 
   const createDocument = useCreateDocument();
-
+  const updateDocument = useUpdateDocument(scenarioId);
+  
   const startScenario = async () => {
     if (!allStepsComplete || !scenario) {
       alert("Please complete all fields before starting the scenario");
@@ -420,21 +421,24 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           // If this is a document field with a file, upload it first
           if (fieldValue.file) {
             try {
-              // Extract content from PDF
-              const arrayBuffer = await fieldValue.file.arrayBuffer();
-              const buffer = Buffer.from(arrayBuffer);
-              const content = await extractTextFromPDF(buffer);
-
               // Create document record
               const document = await createDocument.mutateAsync({
-                content: content,
+                content: "", // will be populated when uploading the file
                 profile_id: user?.id || null,
               });
 
               // Upload the file
               const formData = new FormData();
               formData.append("file", fieldValue.file);
-              await uploadDocument(document.id!, formData);
+              const { text, success } = await uploadDocument(document.id!, formData);
+              if (!success) {
+                throw new Error("Failed to upload document");
+              }
+
+              // Update the document with the text
+              await updateDocument.mutateAsync({
+                content: text,
+              });
 
               // Return field value with document ID as the value
               return {

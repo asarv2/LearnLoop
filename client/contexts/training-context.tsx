@@ -10,7 +10,6 @@ import { useWebSocket } from "@/contexts/websocket-context";
 import { useChat } from "@/lib/api/hooks/useChats";
 import {
   useEndTraining,
-  useGenerateFeedback,
   useSendTrainingMessage,
   useSubmitAssessment,
   useTrainingMessages,
@@ -33,13 +32,13 @@ interface TrainingContextType {
   isSendingMessage: boolean;
   isEndingTraining: boolean;
   isSubmittingAssessment: boolean;
-  isGeneratingFeedback: boolean;
+  isGettingHints: boolean; // ✨ Add hints loading state
 
   // Training actions
   sendMessage: (message: string) => Promise<void>;
   endTraining: () => Promise<void>;
   submitAssessment: (responses: Record<string, unknown>) => Promise<void>;
-  generateFeedback: () => Promise<void>;
+  getHints: (messageId: string) => Promise<void>; // ✨ Add hints action
 
   // UI state
   currentMessage: string;
@@ -86,7 +85,6 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
   const sendMessageMutation = useSendTrainingMessage();
   const endTrainingMutation = useEndTraining();
   const submitAssessmentMutation = useSubmitAssessment();
-  const generateFeedbackMutation = useGenerateFeedback();
 
   // Training status
   const isTrainingActive = chat ? !chat.completed : true;
@@ -130,9 +128,6 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         responses,
       });
       setShowAssessment(false);
-
-      // Generate feedback after assessment
-      await generateFeedback();
       setShowFeedback(true);
       logInfo(`Submitted assessment for chat ${chatId}`);
     } catch (error) {
@@ -141,12 +136,12 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     }
   };
 
-  const generateFeedback = async () => {
+  const getHints = async (messageId: string) => {
     try {
-      await generateFeedbackMutation.mutateAsync({ chatId });
-      logInfo(`Generated feedback for chat ${chatId}`);
+      // This will be handled by WebSocket
+      logInfo(`Getting hints for message ${messageId} in chat ${chatId}`);
     } catch (error) {
-      logError("Error generating feedback:", error);
+      logError("Error getting hints:", error);
       throw error;
     }
   };
@@ -165,13 +160,13 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     isSendingMessage: sendMessageMutation.isPending,
     isEndingTraining: endTrainingMutation.isPending,
     isSubmittingAssessment: submitAssessmentMutation.isPending,
-    isGeneratingFeedback: generateFeedbackMutation.isPending,
+    isGettingHints: false, // Will be managed by WebSocket context
 
     // Training actions
     sendMessage,
     endTraining,
     submitAssessment,
-    generateFeedback,
+    getHints,
 
     // UI state
     currentMessage,

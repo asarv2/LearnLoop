@@ -63,7 +63,7 @@ export function useDeleteDocument(id: string) {
 }
 
 export async function uploadDocument(id: string, formData: FormData) {
-  return await api<{ success: boolean; key: string; message: string }>(
+  return await api<{ success: boolean; key: string; message: string; }>(
     `/api/v1/documents/${id}/upload`,
     {
       method: "POST",

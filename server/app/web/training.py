@@ -304,7 +304,7 @@ async def handle_stop_training(sid: str, data: Dict[str, Any]) -> None:
 async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
     """
     Handle training end requests via WebSocket
-    Ends the training session and marks chat as completed
+    Ends the training session, marks chat as completed, and runs assessment agent
     """
     try:
         chat_id = data.get("chat_id")
@@ -333,6 +333,19 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
             db_session.commit()
 
             logger.info(f"Training chat {chat_id} marked as completed")
+
+            # Run assessment agent to generate questions
+            try:
+                logger.info(f"Running assessment agent for chat {chat_id}")
+                assessment_result = await run_assessment_agent(uuid.UUID(chat_id))
+                
+                if assessment_result.get("success"):
+                    logger.info(f"Successfully generated assessment for chat {chat_id}")
+                else:
+                    logger.warning(f"Assessment agent failed: {assessment_result.get('message')}")
+            except Exception as e:
+                logger.error(f"Error running assessment agent: {str(e)}")
+                # Continue even if assessment agent fails
 
             # Send success response
             sio = get_sio_instance()
@@ -626,54 +639,56 @@ async def handle_send_training_message(sid: str, data: Dict[str, Any]) -> None:
         await emit_error(sid, f"Failed to process message: {str(e)}")
 
 
-# Handler functions for assessment and feedback
-async def handle_submit_assessment(sid: str, data: Dict[str, Any]) -> None:
-    """Handle assessment submission"""
+# Handler functions for hints and assessment
+async def handle_get_hints(sid: str, data: Dict[str, Any]) -> None:
+    """Handle hints generation"""
     try:
         chat_id = data.get("chat_id")
-        responses = data.get("responses", {})
+        message_id = data.get("message_id")
+        
+        if not chat_id or not message_id:
+            await emit_error(sid, "Missing chat_id or message_id")
+            return
+            
+        # Process hints generation
+        result = await run_hint_agent(uuid.UUID(message_id))
+        
+        sio = get_sio_instance()
+        await sio.emit("hints_generated", {
+            "chat_id": chat_id,
+            "success": result.get("success", False),
+            "hints": result.get("hints", []),
+            "message": result.get("message", "")
+        }, room=chat_id)
+        
+    except Exception as e:
+        logger.error(f"Error generating hints: {str(e)}")
+        await emit_error(sid, f"Failed to generate hints: {str(e)}")
+
+
+async def handle_submit_assessment(sid: str, data: Dict[str, Any]) -> None:
+    """Handle assessment submission and feedback generation"""
+    try:
+        chat_id = data.get("chat_id")
         
         if not chat_id:
             await emit_error(sid, "Missing chat_id")
             return
             
-        # Process assessment submission
-        result = await run_assessment_agent(chat_id)
+        # Run feedback agent to generate feedback (assessment already generated when training ended)
+        feedback_result = await run_feedback_agent(uuid.UUID(chat_id))
         
         sio = get_sio_instance()
         await sio.emit("assessment_submitted", {
             "chat_id": chat_id,
-            "success": result.get("success", False),
-            "assessment_id": result.get("assessment_id")
+            "success": True,
+            "feedback_id": feedback_result.get("feedback_id"),
+            "message": "Assessment submitted and feedback generated successfully"
         }, room=chat_id)
         
     except Exception as e:
         logger.error(f"Error submitting assessment: {str(e)}")
         await emit_error(sid, f"Failed to submit assessment: {str(e)}")
-
-
-async def handle_generate_feedback(sid: str, data: Dict[str, Any]) -> None:
-    """Handle feedback generation"""
-    try:
-        chat_id = data.get("chat_id")
-        
-        if not chat_id:
-            await emit_error(sid, "Missing chat_id")
-            return
-            
-        # Process feedback generation  
-        result = await run_feedback_agent(chat_id)
-        
-        sio = get_sio_instance()
-        await sio.emit("feedback_generated", {
-            "chat_id": chat_id,
-            "success": result.get("success", False),
-            "feedback_id": result.get("feedback_id")
-        }, room=chat_id)
-        
-    except Exception as e:
-        logger.error(f"Error generating feedback: {str(e)}")
-        await emit_error(sid, f"Failed to generate feedback: {str(e)}")
 
 
 # Register training event handlers with socketio
@@ -711,16 +726,16 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
         await handle_end_training(sid, data)
     
     @sio.event  # type: ignore
-    async def submit_assessment(sid: str, data: Dict[str, Any]) -> None:
-        """Submit assessment responses"""
-        logger.info(f"submit_assessment event triggered for sid={sid}")
-        await handle_submit_assessment(sid, data)
+    async def get_hints(sid: str, data: Dict[str, Any]) -> None:
+        """Get hints for a message"""
+        logger.info(f"get_hints event triggered for sid={sid}")
+        await handle_get_hints(sid, data)
     
     @sio.event  # type: ignore
-    async def generate_feedback(sid: str, data: Dict[str, Any]) -> None:
-        """Generate feedback"""
-        logger.info(f"generate_feedback event triggered for sid={sid}")
-        await handle_generate_feedback(sid, data)
+    async def submit_assessment(sid: str, data: Dict[str, Any]) -> None:
+        """Submit assessment responses and generate feedback"""
+        logger.info(f"submit_assessment event triggered for sid={sid}")
+        await handle_submit_assessment(sid, data)
     
     logger.info("Successfully registered training WebSocket event handlers")
 

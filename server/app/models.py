@@ -337,6 +337,7 @@ class Chats(_Base, table=True):
     profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
     attempt_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('attempt_id', Uuid(as_uuid=True)))
     parameter_ids: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('parameter_ids', ARRAY(Uuid(as_uuid=True))))
+    description: Optional[str] = Field(default=None, sa_column=Column('description', Text, comment='description of chat, i.e, scenario'))
 
     attempt: Optional['Attempts'] = Relationship(back_populates='chats')
     profile: Optional['Profiles'] = Relationship(back_populates='chats')
