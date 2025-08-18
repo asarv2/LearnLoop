@@ -381,16 +381,21 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
                     
                     if scenario_result and scenario_result.rubric_id:
                         logger.info(f"Running grading agent for chat {chat_id} with rubric {scenario_result.rubric_id}")
-                        rubric_grade_id = await run_grading_agent(uuid.UUID(chat_id), scenario_result.rubric_id)
-                        logger.info(f"Successfully generated grades for chat {chat_id}, grade_id: {rubric_grade_id}")
-                        
-                        # Notify client that grading is complete
-                        sio = get_sio_instance()
-                        await sio.emit("grading_completed", {
-                            "chat_id": chat_id,
-                            "rubric_grade_id": rubric_grade_id,
-                            "message": "Grading completed successfully"
-                        }, room=chat_id)
+                        # Create a new session for the grading agent to avoid conflicts
+                        grading_session = next(get_session())
+                        try:
+                            rubric_grade_id = await run_grading_agent(uuid.UUID(chat_id), scenario_result.rubric_id, grading_session)
+                            logger.info(f"Successfully generated grades for chat {chat_id}, grade_id: {rubric_grade_id}")
+                            
+                            # Notify client that grading is complete
+                            sio = get_sio_instance()
+                            await sio.emit("grading_completed", {
+                                "chat_id": chat_id,
+                                "rubric_grade_id": rubric_grade_id,
+                                "message": "Grading completed successfully"
+                            }, room=chat_id)
+                        finally:
+                            grading_session.close()
                     else:
                         logger.warning(f"No rubric found for training {chat.training_id}, skipping grading")
                 except Exception as grading_error:

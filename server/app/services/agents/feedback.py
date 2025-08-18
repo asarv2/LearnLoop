@@ -110,18 +110,14 @@ async def run_feedback_agent(
         )
 
         # Consolidate feedback into strengths and weaknesses
-        all_strengths = feedback_result.strengths + feedback_result.greenFlags
-        all_weaknesses = feedback_result.errors + feedback_result.redFlags
-        
         # Create the Feedback record
         feedback = Feedback(
             chat_id=chat_id,
             training_id=chat.training_id,
-            strengths=all_strengths,
-            errors=[],  # Empty array
-            green_flags=[],  # Empty array
-            red_flags=[],  # Empty array
-            weaknesses=all_weaknesses
+            strengths=feedback_result.strengths,
+            errors=feedback_result.errors,
+            green_flags=feedback_result.greenFlags,
+            red_flags=feedback_result.redFlags,
         )
         session.add(feedback)
         session.commit()
@@ -137,8 +133,10 @@ async def run_feedback_agent(
             "chat_id": str(chat_id),
             "chat_title": chat.title,
             "feedback": {
-                "strengths": all_strengths,
-                "weaknesses": all_weaknesses,
+                "strengths": feedback_result.strengths,
+                "errors": feedback_result.errors,
+                "green_flags": feedback_result.greenFlags,
+                "red_flags": feedback_result.redFlags,
             }
         }
 

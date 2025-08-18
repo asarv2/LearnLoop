@@ -11,7 +11,6 @@ from app.models import (Assessments, Chats, Messages, RubricGrades, Rubrics,
                         StandardGrades, Standards)
 from app.services.agents.generic import GenericAgent
 from app.utils.chat import get_conversation_history, get_dynamic_rubric
-from fastapi import Depends
 from pydantic import BaseModel, Field, create_model
 from sqlmodel import Session, select
 
@@ -86,7 +85,7 @@ async def get_grade_prompt() -> str:
 async def run_grading_agent(
     chat_id: uuid.UUID,
     rubric_id: uuid.UUID,
-    session: Session = Depends(get_session),
+    session: Session,
 ) -> str:
     """
     This function is used to run the grading agent for assessment chats.
