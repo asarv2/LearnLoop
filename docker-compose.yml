@@ -33,7 +33,6 @@ services:
   server:
     image: ${LEARNLOOP_SERVER_IMAGE:-ghcr.io/ashokhomepc/learnloop-server:latest}
     pull_policy: always
-    container_name: learnloop-server
     restart: unless-stopped
     networks:
       - web
