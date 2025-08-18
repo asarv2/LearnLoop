@@ -1,22 +1,24 @@
 // lib/repos/hintRepo.ts
-import { cookies } from "next/headers";
-import { z } from "zod";
-import supabaseServer from "@/utils/supabase/supabase-server";
 import type { Database } from "@/database.types";
 import { HttpError } from "@/utils/HttpError";
+import supabaseServer from "@/utils/supabase/supabase-server";
+import { cookies } from "next/headers";
+import { z } from "zod";
 
-export type HintCreate = Database['public']['Tables']['hints']['Insert'];
-export type HintUpdate = Database['public']['Tables']['hints']['Update'];
+export type HintCreate = Database["public"]["Tables"]["hints"]["Insert"];
+export type HintUpdate = Database["public"]["Tables"]["hints"]["Update"];
 
-// Runtime validators for API requests
+// Runtime validators for API requests - Updated to match database schema
 export const HintCreateSchema = z.object({
   contents: z.array(z.string()).nullable().optional(),
   message_id: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
 });
 
 export const HintUpdateSchema = z.object({
   contents: z.array(z.string()).nullable().optional(),
   message_id: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
 });
 
 async function getSupabase() {
@@ -28,7 +30,7 @@ export const hintRepo = {
   async create(payload: HintCreate) {
     const supabase = await getSupabase();
     const { data, error } = await supabase
-      .from('hints')
+      .from("hints")
       .insert(payload)
       .select()
       .single();
@@ -38,16 +40,23 @@ export const hintRepo = {
 
   async list() {
     const supabase = await getSupabase();
-    const { data, error } = await supabase.from('hints').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from("hints")
+      .select("*")
+      .order("created_at", { ascending: false });
     if (error) throw new HttpError(500, error.message);
     return data;
   },
 
   async find(id: string) {
     const supabase = await getSupabase();
-    const { data, error } = await supabase.from('hints').select('*').eq('id', id).single();
+    const { data, error } = await supabase
+      .from("hints")
+      .select("*")
+      .eq("id", id)
+      .single();
     if (error) {
-      if (error.code === 'PGRST116') {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Hint with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
@@ -57,9 +66,14 @@ export const hintRepo = {
 
   async update(id: string, patch: HintUpdate) {
     const supabase = await getSupabase();
-    const { data, error } = await supabase.from('hints').update(patch).eq('id', id).select().single();
+    const { data, error } = await supabase
+      .from("hints")
+      .update(patch)
+      .eq("id", id)
+      .select()
+      .single();
     if (error) {
-      if (error.code === 'PGRST116') {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Hint with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
@@ -69,12 +83,12 @@ export const hintRepo = {
 
   async remove(id: string) {
     const supabase = await getSupabase();
-    const { error } = await supabase.from('hints').delete().eq('id', id);
+    const { error } = await supabase.from("hints").delete().eq("id", id);
     if (error) {
-      if (error.code === 'PGRST116') {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Hint with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
     }
-  }
-}; 
+  },
+};

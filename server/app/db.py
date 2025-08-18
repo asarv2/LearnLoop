@@ -33,7 +33,14 @@ engine = create_engine(
     pool_timeout=30,  # Timeout for getting a connection from the pool
     # Disable prepared statements to avoid the "_pg3_2" error
     connect_args={
-        "options": "-c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000"
+        # psycopg3 uses prepared statements after a few executions by default.
+        # When using PgBouncer in transaction pooling (or if connections are
+        # reset/disposed), those prepared statements can disappear and cause:
+        # "psycopg.errors.InvalidSqlStatementName: prepared statement \"_pg3_*\" does not exist"
+        # Setting prepare_threshold=0 disables server-side prepared statements.
+        "prepare_threshold": 0,
+        # Keep existing timeouts
+        "options": "-c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000",
     }
 )
 

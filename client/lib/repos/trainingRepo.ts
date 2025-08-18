@@ -27,25 +27,25 @@ export type TrainingWithAllIncludes = TrainingRow & {
   })[];
 };
 
-// Runtime validators for API requests
+// Runtime validators for API requests - Updated to match database schema
 export const TrainingCreateSchema = z.object({
   title: z.string().min(1, "Title is required"),
-  description: z.string().optional(),
-  what_to_do: z.array(z.string()).optional(),
-  what_not_to_do: z.array(z.string()).optional(),
-  active: z.boolean().default(false),
-  practice: z.boolean().default(false),
-  type: z.string().min(1, "Type is required"),
+  description: z.string().nullable().optional(),
+  what_to_do: z.array(z.string()).nullable().optional(),
+  what_not_to_do: z.array(z.string()).nullable().optional(),
+  active: z.boolean().nullable().optional(),
+  practice: z.boolean().optional(),
+  updated_at: z.string().optional(),
 });
 
 export const TrainingUpdateSchema = z.object({
   title: z.string().min(1, "Title is required").optional(),
-  description: z.string().optional(),
-  what_to_do: z.array(z.string()).optional(),
-  what_not_to_do: z.array(z.string()).optional(),
-  active: z.boolean().optional(),
+  description: z.string().nullable().optional(),
+  what_to_do: z.array(z.string()).nullable().optional(),
+  what_not_to_do: z.array(z.string()).nullable().optional(),
+  active: z.boolean().nullable().optional(),
   practice: z.boolean().optional(),
-  type: z.string().min(1, "Type is required").optional(),
+  updated_at: z.string().optional(),
 });
 
 async function getSupabase() {
