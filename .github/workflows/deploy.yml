@@ -198,5 +198,5 @@ jobs:
         chmod 777 web/generated
 
         docker compose pull
-        docker compose up -d
+        docker compose up -d --scale server="${SERVER_REPLICAS:-1}"
         docker image prune -f
