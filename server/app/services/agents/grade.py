@@ -70,7 +70,7 @@ def create_dynamic_rubric_model(standards: List[Standards]) -> type[BaseModel]:
 
 async def get_grade_prompt() -> str:
     """Read the grade prompt from the markdown file."""
-    prompt_path = Path(__file__).parent.parent.parent / "lib" / "prompts" / "grade.md"
+    prompt_path = Path(__file__).parent.parent.parent.parent / "app" / "lib" / "prompts" / "grade.md"
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
             return f.read().strip()

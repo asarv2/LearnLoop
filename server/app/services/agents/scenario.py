@@ -23,7 +23,7 @@ class ScenarioResponse(BaseModel):
 
 async def get_scenario_prompt() -> str:
     """Read the scenario prompt from the markdown file."""
-    prompt_path = Path(__file__).parent.parent.parent / "lib" / "prompts" / "scenario.md"
+    prompt_path = Path(__file__).parent.parent.parent.parent / "app" / "lib" / "prompts" / "scenario.md"
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
             return f.read().strip()

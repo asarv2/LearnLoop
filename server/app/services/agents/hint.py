@@ -20,7 +20,7 @@ class HintResponse(BaseModel):
 
 async def get_hint_prompt() -> str:
     """Read the hint prompt from the markdown file."""
-    prompt_path = Path(__file__).parent.parent.parent / "lib" / "prompts" / "hint.md"
+    prompt_path = Path(__file__).parent.parent.parent.parent / "app" / "lib" / "prompts" / "hint.md"
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
             return f.read().strip()
