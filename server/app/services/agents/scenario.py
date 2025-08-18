@@ -5,9 +5,9 @@ from typing import Any
 
 from agents import Runner, trace
 from app.db import get_session
-from app.models import Chats
+from app.models import Chats, Messages
 from app.services.agents.generic import GenericAgent
-from app.utils.chat import get_parameter_history
+from app.utils.chat import get_parameter_history, get_persona_id_from_chat
 from fastapi import Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 class ScenarioResponse(BaseModel):
     title: str
     scenario: str
+    message: str
 
 
 async def get_scenario_prompt() -> str:
@@ -36,6 +37,7 @@ async def get_scenario_prompt() -> str:
 
 async def run_scenario_agent(
     chat_id: uuid.UUID,
+    persona_id: uuid.UUID,
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """
@@ -44,6 +46,7 @@ async def run_scenario_agent(
 
     Args:
         chat_id: The ID of the chat
+        persona_id: The ID of the persona
         session: Database session
 
     Returns:
@@ -87,11 +90,19 @@ async def run_scenario_agent(
         # Consolidate feedback into strengths and weaknesses
         title = scenario_result.title
         scenario = scenario_result.scenario
-
+        message = scenario_result.message
         # update scenario for chat
         chat.title = title
         chat.description = scenario
 
+        # create a new chat message
+        message_object = Messages(
+            chat_id=chat.id,
+            content=message,
+            role="assistant",
+            persona_id=persona_id,
+        )
+        session.add(message_object)
         session.add(chat)
         session.commit()
 

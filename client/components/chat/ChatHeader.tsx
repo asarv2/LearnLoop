@@ -18,6 +18,8 @@ interface InterviewHeaderProps {
   completedAtIso?: string | null;
   isAudioMode?: boolean;
   onToggleAudioMode?: () => void;
+  chatTitle: string;
+  chatDescription: string;
 }
 
 export default function ChatHeader({
@@ -33,6 +35,8 @@ export default function ChatHeader({
   completedAtIso,
   isAudioMode = false,
   onToggleAudioMode,
+  chatTitle,
+  chatDescription,
 }: InterviewHeaderProps) {
   // Suppress lint warning for interviewType - keeping for future use
   void interviewType;
@@ -109,16 +113,6 @@ export default function ChatHeader({
       .padStart(2, "0")}`;
   };
 
-  // Header text logic
-  let headerText = "Training with " + candidateName;
-
-  // Add candidate type information for interview training
-  if (interviewType && interviewType !== "regular") {
-    const candidateType =
-      interviewType === "cheating" ? "Cheating Candidate" : "Regular Candidate";
-    headerText += ` (${candidateType})`;
-  }
-
   // End button text
   const endButtonText = "End Training";
 
@@ -143,10 +137,10 @@ export default function ChatHeader({
             )}
             <Box>
               <Heading size="5" weight="bold" color="blue">
-                LearnLoop Training Platform
+                {chatTitle}
               </Heading>
               <Text size="2" color="gray">
-                {headerText}
+                {chatDescription}
               </Text>
             </Box>
           </Flex>
