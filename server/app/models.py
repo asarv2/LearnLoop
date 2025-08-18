@@ -67,8 +67,6 @@ class Users(_Base, table=True):
     deleted_at: Optional[datetime] = Field(default=None, sa_column=Column('deleted_at', DateTime(True)))
 
     logs: List['Logs'] = Relationship(back_populates='user')
-    resumes: List['Resumes'] = Relationship(back_populates='user')
-    chats: List['Chats'] = Relationship(back_populates='user')
 
 
 class Fields(_Base, table=True):
@@ -106,34 +104,26 @@ class Rubrics(_Base, table=True):
 class Trainings(_Base, table=True):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='trainings_pkey'),
-        Index('idx_trainings_created_at', 'created_at'),
-        Index('idx_trainings_type', 'type'),
-        Index('idx_trainings_user_id', 'user_id')
+        Index('idx_trainings_created_at', 'created_at')
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    type: str = Field(sa_column=Column('type', Text))
     title: str = Field(sa_column=Column('title', Text))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     practice: bool = Field(sa_column=Column('practice', Boolean, default=False))
-    user_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('user_id', Uuid(as_uuid=True)))
-    additional_info: Optional[Dict[str, Any]] = Field(default_factory=dict, sa_column=Column('additional_info', JSONB))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
     active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
     what_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_to_do', ARRAY(Text())))
     what_not_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_not_to_do', ARRAY(Text())))
 
     logs: List['Logs'] = Relationship(back_populates='training')
-    resumes: List['Resumes'] = Relationship(back_populates='training')
     scenarios: List['Scenarios'] = Relationship(back_populates='training')
     attempts: List['Attempts'] = Relationship(back_populates='training')
     chats: List['Chats'] = Relationship(back_populates='training')
     assessments: List['Assessments'] = Relationship(back_populates='training')
     feedback: List['Feedback'] = Relationship(back_populates='training')
-    interview_scores: List['InterviewScores'] = Relationship(back_populates='training')
     messages: List['Messages'] = Relationship(back_populates='training')
-    offboarding_scores: List['OffboardingScores'] = Relationship(back_populates='training')
 
 
 class Logs(_Base, table=True):
@@ -191,27 +181,6 @@ class Profiles(_Base, table=True):
     documents: List['Documents'] = Relationship(back_populates='profile')
     personas: List['Personas'] = Relationship(back_populates='profile')
     chats: List['Chats'] = Relationship(back_populates='profile')
-
-
-class Resumes(_Base, table=True):
-    __table_args__ = (
-        ForeignKeyConstraint(['training_id'], ['trainings.id'], name='resumes_training_id_fkey'),
-        ForeignKeyConstraint(['user_id'], ['auth.users.id'], ondelete='CASCADE', name='resumes_user_id_fkey'),
-        PrimaryKeyConstraint('id', name='resumes_pkey'),
-        Index('idx_resumes_training_id', 'training_id'),
-        Index('idx_resumes_user_id', 'user_id')
-    )
-
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
-    google_file_id: Optional[str] = Field(default=None, sa_column=Column('google_file_id', Text))
-    content: Optional[str] = Field(default=None, sa_column=Column('content', Text))
-    user_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('user_id', Uuid(as_uuid=True)))
-    training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
-
-    training: Optional['Trainings'] = Relationship(back_populates='resumes')
-    user: Optional['Users'] = Relationship(back_populates='resumes')
-    chats: List['Chats'] = Relationship(back_populates='resume')
 
 
 class Scenarios(_Base, table=True):
@@ -279,7 +248,6 @@ class Documents(_Base, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
-    google_file_id: Optional[str] = Field(default=None, sa_column=Column('google_file_id', Text))
     content: Optional[str] = Field(default=None, sa_column=Column('content', Text))
     profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
 
@@ -310,9 +278,7 @@ class Chats(_Base, table=True):
     __table_args__ = (
         ForeignKeyConstraint(['attempt_id'], ['attempts.id'], ondelete='CASCADE', name='chats_attempt_id_fkey'),
         ForeignKeyConstraint(['profile_id'], ['profiles.id'], ondelete='CASCADE', name='chats_profile_id_fkey'),
-        ForeignKeyConstraint(['resume_id'], ['resumes.id'], ondelete='SET NULL', onupdate='CASCADE', name='chats_resume_id_fkey'),
         ForeignKeyConstraint(['training_id'], ['trainings.id'], name='chats_training_id_fkey'),
-        ForeignKeyConstraint(['user_id'], ['auth.users.id'], ondelete='CASCADE', name='chats_user_id_fkey'),
         PrimaryKeyConstraint('id', name='chats_pkey'),
         Index('idx_chats_training_id', 'training_id'),
         Index('idx_chats_user_id', 'user_id')
@@ -322,18 +288,11 @@ class Chats(_Base, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     title: str = Field(sa_column=Column('title', Text))
     completed: bool = Field(sa_column=Column('completed', Boolean, default=False))
-    name: str = Field(sa_column=Column('name', Text, server_default=text("''::text"), comment='candidate name'))
-    position: str = Field(sa_column=Column('position', Text, server_default=text("''::text"), comment='candidate position'))
-    additional_info: str = Field(sa_column=Column('additional_info', Text, server_default=text("''::text")))
-    type: str = Field(sa_column=Column('type', Enum('regular', 'cheating', 'ai-assisted', name='interview_type'), default=r'regular', comment='cheating or regular'))
     voice: str = Field(sa_column=Column('voice', Text, default=r'alloy', comment='for openAI'))
     completed_at: Optional[datetime] = Field(default=None, sa_column=Column('completed_at', DateTime(True)))
-    feedback: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column('feedback', JSONB, comment='fallback'))
-    resume_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('resume_id', Uuid(as_uuid=True)))
     trace_id: Optional[str] = Field(default=None, sa_column=Column('trace_id', Text, comment='for openAI traces'))
     user_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('user_id', Uuid(as_uuid=True)))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
-    training_type: Optional[str] = Field(default=None, sa_column=Column('training_type', Enum('interview', 'offboarding', name='training_type'), default=r'interview'))
     profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
     attempt_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('attempt_id', Uuid(as_uuid=True)))
     parameter_ids: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('parameter_ids', ARRAY(Uuid(as_uuid=True))))
@@ -341,14 +300,10 @@ class Chats(_Base, table=True):
 
     attempt: Optional['Attempts'] = Relationship(back_populates='chats')
     profile: Optional['Profiles'] = Relationship(back_populates='chats')
-    resume: Optional['Resumes'] = Relationship(back_populates='chats')
     training: Optional['Trainings'] = Relationship(back_populates='chats')
-    user: Optional['Users'] = Relationship(back_populates='chats')
     assessments: List['Assessments'] = Relationship(back_populates='chat')
-    feedback_: List['Feedback'] = Relationship(back_populates='chat')
-    interview_scores: List['InterviewScores'] = Relationship(back_populates='chat')
+    feedback: List['Feedback'] = Relationship(back_populates='chat')
     messages: List['Messages'] = Relationship(back_populates='chat')
-    offboarding_scores: List['OffboardingScores'] = Relationship(back_populates='chat')
     rubric_grades: List['RubricGrades'] = Relationship(back_populates='chat')
 
 
@@ -363,7 +318,6 @@ class Assessments(_Base, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
-    responses: Dict[str, Any] = Field(sa_column=Column('responses', JSONB, server_default=text("'[]'::jsonb")))
     title: str = Field(sa_column=Column('title', Text, default=r'Untitled Assessment'))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
@@ -389,50 +343,9 @@ class Feedback(_Base, table=True):
     red_flags: List[str] = Field(sa_column=Column('red_flags', ARRAY(Text()), server_default=text("'{}'::text[]")))
     chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
-    weaknesses: Optional[List[str]] = Field(default=None, sa_column=Column('weaknesses', ARRAY(Text())))
 
-    chat: Optional['Chats'] = Relationship(back_populates='feedback_')
+    chat: Optional['Chats'] = Relationship(back_populates='feedback')
     training: Optional['Trainings'] = Relationship(back_populates='feedback')
-
-
-class InterviewScores(_Base, table=True):
-    __tablename__ = 'interview_scores'
-    __table_args__ = (
-        CheckConstraint('assessment_thoughtfulness >= 1 AND assessment_thoughtfulness <= 5', name='interview_scores_assessment_thoughtfulness_check'),
-        CheckConstraint('communication_rapport >= 1 AND communication_rapport <= 5', name='interview_scores_communication_rapport_check'),
-        CheckConstraint('followup_skills >= 1 AND followup_skills <= 5', name='interview_scores_followup_skills_check'),
-        CheckConstraint('interview_conduct >= 1 AND interview_conduct <= 5', name='interview_scores_interview_conduct_check'),
-        CheckConstraint('overall_score >= 1 AND overall_score <= 100', name='interview_scores_overall_score_check'),
-        CheckConstraint('professional_judgment >= 1 AND professional_judgment <= 5', name='interview_scores_professional_judgment_check'),
-        CheckConstraint('question_quality >= 1 AND question_quality <= 5', name='interview_scores_question_quality_check'),
-        ForeignKeyConstraint(['chat_id'], ['chats.id'], ondelete='CASCADE', name='interview_scores_chat_id_fkey'),
-        ForeignKeyConstraint(['training_id'], ['trainings.id'], name='interview_scores_training_id_fkey'),
-        PrimaryKeyConstraint('id', name='interview_scores_pkey'),
-        Index('idx_interview_scores_chat_id', 'chat_id'),
-        Index('idx_interview_scores_created_at', 'created_at'),
-        Index('idx_interview_scores_overall_score', 'overall_score'),
-        Index('idx_interview_scores_training_id', 'training_id')
-    )
-
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
-    question_quality: int = Field(sa_column=Column('question_quality', Integer))
-    followup_skills: int = Field(sa_column=Column('followup_skills', Integer))
-    assessment_thoughtfulness: int = Field(sa_column=Column('assessment_thoughtfulness', Integer))
-    interview_conduct: int = Field(sa_column=Column('interview_conduct', Integer))
-    communication_rapport: int = Field(sa_column=Column('communication_rapport', Integer))
-    professional_judgment: int = Field(sa_column=Column('professional_judgment', Integer))
-    overall_score: int = Field(sa_column=Column('overall_score', Integer))
-    category_feedback: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('category_feedback', JSONB))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
-    overall_feedback: Optional[str] = Field(default=None, sa_column=Column('overall_feedback', Text))
-    strengths: Optional[List[str]] = Field(default=None, sa_column=Column('strengths', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    improvement_areas: Optional[List[str]] = Field(default=None, sa_column=Column('improvement_areas', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
-
-    chat: Optional['Chats'] = Relationship(back_populates='interview_scores')
-    training: Optional['Trainings'] = Relationship(back_populates='interview_scores')
 
 
 class Messages(_Base, table=True):
@@ -459,45 +372,6 @@ class Messages(_Base, table=True):
     persona: Optional['Personas'] = Relationship(back_populates='messages')
     training: Optional['Trainings'] = Relationship(back_populates='messages')
     hints: List['Hints'] = Relationship(back_populates='message')
-
-
-class OffboardingScores(_Base, table=True):
-    __tablename__ = 'offboarding_scores'
-    __table_args__ = (
-        CheckConstraint('assessment_thoughtfulness >= 1 AND assessment_thoughtfulness <= 5', name='offboarding_scores_assessment_thoughtfulness_check'),
-        CheckConstraint('communication_professionalism >= 1 AND communication_professionalism <= 5', name='offboarding_scores_communication_professionalism_check'),
-        CheckConstraint('conflict_resolution >= 1 AND conflict_resolution <= 5', name='offboarding_scores_conflict_resolution_check'),
-        CheckConstraint('empathy_emotional_intelligence >= 1 AND empathy_emotional_intelligence <= 5', name='offboarding_scores_empathy_emotional_intelligence_check'),
-        CheckConstraint('overall_score >= 1 AND overall_score <= 100', name='offboarding_scores_overall_score_check'),
-        CheckConstraint('transition_planning_logistics >= 1 AND transition_planning_logistics <= 5', name='offboarding_scores_transition_planning_logistics_check'),
-        ForeignKeyConstraint(['chat_id'], ['chats.id'], ondelete='CASCADE', name='offboarding_scores_chat_id_fkey'),
-        ForeignKeyConstraint(['training_id'], ['trainings.id'], name='offboarding_scores_training_id_fkey'),
-        PrimaryKeyConstraint('id', name='offboarding_scores_pkey'),
-        Index('idx_offboarding_scores_chat_id', 'chat_id'),
-        Index('idx_offboarding_scores_created_at', 'created_at'),
-        Index('idx_offboarding_scores_overall_score', 'overall_score'),
-        Index('idx_offboarding_scores_training_id', 'training_id')
-    )
-
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
-    empathy_emotional_intelligence: int = Field(sa_column=Column('empathy_emotional_intelligence', Integer))
-    communication_professionalism: int = Field(sa_column=Column('communication_professionalism', Integer))
-    transition_planning_logistics: int = Field(sa_column=Column('transition_planning_logistics', Integer))
-    conflict_resolution: int = Field(sa_column=Column('conflict_resolution', Integer))
-    assessment_thoughtfulness: int = Field(sa_column=Column('assessment_thoughtfulness', Integer))
-    overall_score: int = Field(sa_column=Column('overall_score', Integer))
-    category_feedback: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('category_feedback', JSONB))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
-    clarity_of_next_steps: int = Field(sa_column=Column('clarity_of_next_steps', Integer, default=1))
-    overall_feedback: Optional[str] = Field(default=None, sa_column=Column('overall_feedback', Text))
-    strengths: Optional[List[str]] = Field(default=None, sa_column=Column('strengths', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    improvement_areas: Optional[List[str]] = Field(default=None, sa_column=Column('improvement_areas', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
-
-    chat: Optional['Chats'] = Relationship(back_populates='offboarding_scores')
-    training: Optional['Trainings'] = Relationship(back_populates='offboarding_scores')
 
 
 class RubricGrades(_Base, table=True):

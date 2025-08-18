@@ -20,14 +20,10 @@ export type Feedback = Tables<'feedback'>;
 export type Field = Tables<'fields'>;
 // --- HINTS ---
 export type Hint = Tables<'hints'>;
-// --- INTERVIEW_SCORES ---
-export type InterviewScore = Tables<'interview_scores'>;
 // --- LOGS ---
 export type Log = Tables<'logs'>;
 // --- MESSAGES ---
 export type Message = Tables<'messages'>;
-// --- OFFBOARDING_SCORES ---
-export type OffboardingScore = Tables<'offboarding_scores'>;
 // --- PARAMETERS ---
 export type Parameter = Tables<'parameters'>;
 // --- PERSONAS ---
@@ -36,8 +32,6 @@ export type Persona = Tables<'personas'>;
 export type Profile = Tables<'profiles'>;
 // --- QUESTIONS ---
 export type Question = Tables<'questions'>;
-// --- RESUMES ---
-export type Resume = Tables<'resumes'>;
 // --- RUBRIC_GRADES ---
 export type RubricGrade = Tables<'rubric_grades'>;
 // --- RUBRICS ---
@@ -67,7 +61,7 @@ export type TrainingType = "interview" | "offboarding";
 // =============================================
 
 // Union type of all table names
-export type TableName = 'assessments' | 'attempts' | 'chats' | 'documents' | 'feedback' | 'fields' | 'hints' | 'interview_scores' | 'logs' | 'messages' | 'offboarding_scores' | 'parameters' | 'personas' | 'profiles' | 'questions' | 'resumes' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings';
+export type TableName = 'assessments' | 'attempts' | 'chats' | 'documents' | 'feedback' | 'fields' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'profiles' | 'questions' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings';
 
 // Union type of all entity types
-export type Entity = Assessment | Attempt | Chat | Document | Feedback | Field | Hint | InterviewScore | Log | Message | OffboardingScore | Parameter | Persona | Profile | Question | Resume | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training;
+export type Entity = Assessment | Attempt | Chat | Document | Feedback | Field | Hint | Log | Message | Parameter | Persona | Profile | Question | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training;

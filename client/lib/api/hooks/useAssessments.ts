@@ -1,19 +1,19 @@
 // lib/api/hooks/useAssessments.ts
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { assessmentKeys } from '../keys';
 import type {
   AssessmentCreate,
-  AssessmentUpdate,
   AssessmentFeedback,
-} from '@/lib/repos/assessmentRepo';
-import { api } from '../fetcher';
+  AssessmentUpdate,
+} from "@/lib/repos/assessmentRepo";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "../fetcher";
+import { assessmentKeys } from "../keys";
 
 // ---------- Queries ----------
 export function useAssessments() {
   return useQuery({
     queryKey: assessmentKeys.list(),
-    queryFn: () => api<AssessmentCreate[]>('/api/v1/assessments'),
-    staleTime: 5 * 60_000,      // 5 minutes
+    queryFn: () => api<AssessmentCreate[]>("/api/v1/assessments"),
+    staleTime: 5 * 60_000, // 5 minutes
   });
 }
 
@@ -27,8 +27,9 @@ export function useAssessment(id: string, enabled = true) {
 
 export function useAssessmentFeedback(assessmentId: string, enabled = true) {
   return useQuery({
-    queryKey: [...assessmentKeys.detail(assessmentId), 'feedback'],
-    queryFn: () => api<AssessmentFeedback[]>(`/api/v1/assessments/${assessmentId}/feedback`),
+    queryKey: [...assessmentKeys.detail(assessmentId), "feedback"],
+    queryFn: () =>
+      api<AssessmentFeedback[]>(`/api/v1/assessments/${assessmentId}/feedback`),
     enabled,
   });
 }
@@ -38,8 +39,8 @@ export function useCreateAssessment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: AssessmentCreate) =>
-      api<AssessmentCreate>('/api/v1/assessments', {
-        method: 'POST',
+      api<AssessmentCreate>("/api/v1/assessments", {
+        method: "POST",
         body: JSON.stringify(payload),
       }),
     onSuccess() {
@@ -53,7 +54,7 @@ export function useUpdateAssessment(id: string) {
   return useMutation({
     mutationFn: (patch: AssessmentUpdate) =>
       api<AssessmentCreate>(`/api/v1/assessments/${id}`, {
-        method: 'PATCH',
+        method: "PATCH",
         body: JSON.stringify(patch),
       }),
     onSuccess() {
@@ -66,10 +67,10 @@ export function useDeleteAssessment(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      api<void>(`/api/v1/assessments/${id}`, { method: 'DELETE' }),
+      api<void>(`/api/v1/assessments/${id}`, { method: "DELETE" }),
     onSuccess() {
       // remove both list & detail caches
       qc.invalidateQueries({ queryKey: assessmentKeys.all });
     },
   });
-} 
+}
