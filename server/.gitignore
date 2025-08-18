@@ -13,6 +13,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# Allow app/lib directory (contains prompts)
+!app/lib/
 parts/
 sdist/
 var/
