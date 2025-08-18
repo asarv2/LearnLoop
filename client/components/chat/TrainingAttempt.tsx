@@ -52,6 +52,22 @@ function TrainingAttemptContent() {
     return chatWithIncludes.assessments?.[0]?.id || "";
   };
 
+  // Helper function to check if assessment exists for this chat
+  const hasAssessment = () => {
+    if (!chat) return false;
+    const chatWithIncludes = chat as ChatWithAllIncludes;
+    return (
+      chatWithIncludes.assessments && chatWithIncludes.assessments.length > 0
+    );
+  };
+
+  // Helper function to check if feedback exists for this chat
+  const hasFeedback = () => {
+    if (!chat) return false;
+    const chatWithIncludes = chat as ChatWithAllIncludes;
+    return chatWithIncludes.feedback && chatWithIncludes.feedback.length > 0;
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -63,6 +79,13 @@ function TrainingAttemptContent() {
   const endInterview = async () => {
     try {
       await endTraining();
+      // After ending training, check if assessment exists and show it
+      if (hasAssessment()) {
+        setShowAssessment(true);
+      } else if (hasFeedback()) {
+        // If no assessment but feedback exists, show feedback directly
+        setShowFeedback(true);
+      }
     } catch (error) {
       logError("Error ending interview:", error);
       const errorMessage =
@@ -73,11 +96,13 @@ function TrainingAttemptContent() {
     }
   };
 
-  const handleAssessmentComplete = async (
-    responses: unknown
-  ) => {
+  const handleAssessmentComplete = async (responses: unknown) => {
     try {
       await submitAssessment(responses as Record<string, unknown>);
+      // After submitting assessment, check if feedback exists and show it
+      if (hasFeedback()) {
+        setShowFeedback(true);
+      }
     } catch (error) {
       logError("Error processing assessment:", error);
       const errorMessage =
@@ -130,24 +155,28 @@ function TrainingAttemptContent() {
             messagesEndRef={messagesEndRef}
           />
 
-          {/* Assessment Wizard */}
-          <AssessmentWizard
-            isOpen={showAssessment}
-            onClose={() => setShowAssessment(false)}
-            onComplete={handleAssessmentComplete}
-            isSubmitting={isSubmittingAssessment}
-            assessmentId={getAssessmentId()}
-            chat={chat}
-          />
+          {/* Assessment Wizard - only show if assessment exists */}
+          {hasAssessment() && (
+            <AssessmentWizard
+              isOpen={showAssessment}
+              onClose={() => setShowAssessment(false)}
+              onComplete={handleAssessmentComplete}
+              isSubmitting={isSubmittingAssessment}
+              assessmentId={getAssessmentId()}
+              chat={chat}
+            />
+          )}
 
-          {/* Feedback Modal */}
-          <FeedbackModal
-            isOpen={showFeedback}
-            onClose={() => setShowFeedback(false)}
-            feedback={(chat as ChatWithAllIncludes)?.feedback?.[0] || null}
-            score={null}
-            chat={chat}
-          />
+          {/* Feedback Modal - only show if feedback exists */}
+          {hasFeedback() && (
+            <FeedbackModal
+              isOpen={showFeedback}
+              onClose={() => setShowFeedback(false)}
+              feedback={(chat as ChatWithAllIncludes)?.feedback?.[0] || null}
+              score={null}
+              chat={chat}
+            />
+          )}
         </>
       )}
     </Box>

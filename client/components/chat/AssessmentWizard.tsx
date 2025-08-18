@@ -25,7 +25,7 @@ import {
   Typography,
 } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 // Styled components for professional look
 const StyledDialog = styled(Dialog)(() => ({
@@ -92,6 +92,23 @@ export default function AssessmentWizard({
     currentQuestion &&
     currentQuestion.id &&
     responses[currentQuestion.id] !== undefined;
+
+  // Initialize responses with existing question values
+  useEffect(() => {
+    if (questions.length > 0) {
+      const existingResponses: { [key: string]: string | number } = {};
+      questions.forEach((question) => {
+        if (
+          question.id &&
+          question.value !== null &&
+          question.value !== undefined
+        ) {
+          existingResponses[question.id] = question.value as string | number;
+        }
+      });
+      setResponses(existingResponses);
+    }
+  }, [questions]);
 
   const handleResponse = (value: string | number) => {
     if (!currentQuestion || !currentQuestion.id) return;
