@@ -34,49 +34,31 @@ export type ChatWithAllIncludes = ChatRow & {
   })[];
 };
 
-// Runtime validators for API requests
+// Runtime validators for API requests - Updated to match database schema
 export const ChatCreateSchema = z.object({
   title: z.string().min(1, "Title is required"),
-  name: z.string().optional(),
-  position: z.string().optional(),
-  type: z.enum(["regular", "cheating", "ai-assisted"]),
+  description: z.string().nullable().optional(),
   voice: z.string().optional(),
-  additional_info: z.string().optional(),
   attempt_id: z.string().nullable().optional(),
   profile_id: z.string().nullable().optional(),
-  resume_id: z.string().nullable().optional(),
   training_id: z.string().nullable().optional(),
-  training_type: z
-    .enum(["interview", "offboarding"])
-    .nullable()
-    .optional(),
-  user_id: z.string().nullable().optional(),
-  completed: z.boolean().optional(),
-  feedback: z.any().optional(), // Json type
   parameter_ids: z.array(z.string()).nullable().optional(),
+  completed: z.boolean().optional(),
+  completed_at: z.string().nullable().optional(),
+  trace_id: z.string().nullable().optional(),
 });
 
 export const ChatUpdateSchema = z.object({
   title: z.string().min(1, "Title is required").optional(),
-  name: z.string().optional(),
-  position: z.string().optional(),
-  type: z
-    .enum(["regular", "cheating", "ai-assisted"])
-    .optional(),
+  description: z.string().nullable().optional(),
   voice: z.string().optional(),
-  additional_info: z.string().optional(),
   attempt_id: z.string().nullable().optional(),
   profile_id: z.string().nullable().optional(),
-  resume_id: z.string().nullable().optional(),
   training_id: z.string().nullable().optional(),
-  training_type: z
-    .enum(["interview", "offboarding"])
-    .nullable()
-    .optional(),
-  user_id: z.string().nullable().optional(),
-  completed: z.boolean().optional(),
-  feedback: z.any().optional(), // Json type
   parameter_ids: z.array(z.string()).nullable().optional(),
+  completed: z.boolean().optional(),
+  completed_at: z.string().nullable().optional(),
+  trace_id: z.string().nullable().optional(),
 });
 
 async function getSupabase() {
