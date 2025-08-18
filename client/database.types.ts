@@ -19,7 +19,6 @@ export type Database = {
           chat_id: string
           created_at: string | null
           id: string
-          responses: Json
           title: string
           training_id: string | null
         }
@@ -27,7 +26,6 @@ export type Database = {
           chat_id: string
           created_at?: string | null
           id?: string
-          responses?: Json
           title?: string
           training_id?: string | null
         }
@@ -35,7 +33,6 @@ export type Database = {
           chat_id?: string
           created_at?: string | null
           id?: string
-          responses?: Json
           title?: string
           training_id?: string | null
         }
@@ -97,68 +94,47 @@ export type Database = {
       }
       chats: {
         Row: {
-          additional_info: string
           attempt_id: string | null
           completed: boolean
           completed_at: string | null
           created_at: string
           description: string | null
-          feedback: Json | null
           id: string
-          name: string
           parameter_ids: string[] | null
-          position: string
           profile_id: string | null
-          resume_id: string | null
           title: string
           trace_id: string | null
           training_id: string | null
-          training_type: Database["public"]["Enums"]["training_type"] | null
-          type: Database["public"]["Enums"]["interview_type"]
           user_id: string | null
           voice: string
         }
         Insert: {
-          additional_info?: string
           attempt_id?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
           description?: string | null
-          feedback?: Json | null
           id?: string
-          name?: string
           parameter_ids?: string[] | null
-          position?: string
           profile_id?: string | null
-          resume_id?: string | null
           title: string
           trace_id?: string | null
           training_id?: string | null
-          training_type?: Database["public"]["Enums"]["training_type"] | null
-          type?: Database["public"]["Enums"]["interview_type"]
           user_id?: string | null
           voice?: string
         }
         Update: {
-          additional_info?: string
           attempt_id?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
           description?: string | null
-          feedback?: Json | null
           id?: string
-          name?: string
           parameter_ids?: string[] | null
-          position?: string
           profile_id?: string | null
-          resume_id?: string | null
           title?: string
           trace_id?: string | null
           training_id?: string | null
-          training_type?: Database["public"]["Enums"]["training_type"] | null
-          type?: Database["public"]["Enums"]["interview_type"]
           user_id?: string | null
           voice?: string
         }
@@ -178,13 +154,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "chats_resume_id_fkey"
-            columns: ["resume_id"]
-            isOneToOne: false
-            referencedRelation: "resumes"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "chats_training_id_fkey"
             columns: ["training_id"]
             isOneToOne: false
@@ -197,7 +166,6 @@ export type Database = {
         Row: {
           content: string | null
           created_at: string | null
-          google_file_id: string | null
           id: string
           profile_id: string | null
           updated_at: string | null
@@ -205,7 +173,6 @@ export type Database = {
         Insert: {
           content?: string | null
           created_at?: string | null
-          google_file_id?: string | null
           id?: string
           profile_id?: string | null
           updated_at?: string | null
@@ -213,7 +180,6 @@ export type Database = {
         Update: {
           content?: string | null
           created_at?: string | null
-          google_file_id?: string | null
           id?: string
           profile_id?: string | null
           updated_at?: string | null
@@ -238,7 +204,6 @@ export type Database = {
           red_flags: string[]
           strengths: string[]
           training_id: string | null
-          weaknesses: string[] | null
         }
         Insert: {
           chat_id: string
@@ -249,7 +214,6 @@ export type Database = {
           red_flags?: string[]
           strengths?: string[]
           training_id?: string | null
-          weaknesses?: string[] | null
         }
         Update: {
           chat_id?: string
@@ -260,7 +224,6 @@ export type Database = {
           red_flags?: string[]
           strengths?: string[]
           training_id?: string | null
-          weaknesses?: string[] | null
         }
         Relationships: [
           {
@@ -334,78 +297,6 @@ export type Database = {
             columns: ["message_id"]
             isOneToOne: false
             referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      interview_scores: {
-        Row: {
-          assessment_thoughtfulness: number
-          category_feedback: Json
-          chat_id: string
-          communication_rapport: number
-          created_at: string
-          followup_skills: number
-          id: string
-          improvement_areas: string[] | null
-          interview_conduct: number
-          overall_feedback: string | null
-          overall_score: number
-          professional_judgment: number
-          question_quality: number
-          strengths: string[] | null
-          training_id: string | null
-          updated_at: string
-        }
-        Insert: {
-          assessment_thoughtfulness: number
-          category_feedback?: Json
-          chat_id: string
-          communication_rapport: number
-          created_at?: string
-          followup_skills: number
-          id?: string
-          improvement_areas?: string[] | null
-          interview_conduct: number
-          overall_feedback?: string | null
-          overall_score: number
-          professional_judgment: number
-          question_quality: number
-          strengths?: string[] | null
-          training_id?: string | null
-          updated_at?: string
-        }
-        Update: {
-          assessment_thoughtfulness?: number
-          category_feedback?: Json
-          chat_id?: string
-          communication_rapport?: number
-          created_at?: string
-          followup_skills?: number
-          id?: string
-          improvement_areas?: string[] | null
-          interview_conduct?: number
-          overall_feedback?: string | null
-          overall_score?: number
-          professional_judgment?: number
-          question_quality?: number
-          strengths?: string[] | null
-          training_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "interview_scores_chat_id_fkey"
-            columns: ["chat_id"]
-            isOneToOne: false
-            referencedRelation: "chats"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "interview_scores_training_id_fkey"
-            columns: ["training_id"]
-            isOneToOne: false
-            referencedRelation: "trainings"
             referencedColumns: ["id"]
           },
         ]
@@ -499,78 +390,6 @@ export type Database = {
           },
           {
             foreignKeyName: "messages_training_id_fkey"
-            columns: ["training_id"]
-            isOneToOne: false
-            referencedRelation: "trainings"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      offboarding_scores: {
-        Row: {
-          assessment_thoughtfulness: number
-          category_feedback: Json
-          chat_id: string
-          clarity_of_next_steps: number
-          communication_professionalism: number
-          conflict_resolution: number
-          created_at: string
-          empathy_emotional_intelligence: number
-          id: string
-          improvement_areas: string[] | null
-          overall_feedback: string | null
-          overall_score: number
-          strengths: string[] | null
-          training_id: string | null
-          transition_planning_logistics: number
-          updated_at: string
-        }
-        Insert: {
-          assessment_thoughtfulness: number
-          category_feedback?: Json
-          chat_id: string
-          clarity_of_next_steps?: number
-          communication_professionalism: number
-          conflict_resolution: number
-          created_at?: string
-          empathy_emotional_intelligence: number
-          id?: string
-          improvement_areas?: string[] | null
-          overall_feedback?: string | null
-          overall_score: number
-          strengths?: string[] | null
-          training_id?: string | null
-          transition_planning_logistics: number
-          updated_at?: string
-        }
-        Update: {
-          assessment_thoughtfulness?: number
-          category_feedback?: Json
-          chat_id?: string
-          clarity_of_next_steps?: number
-          communication_professionalism?: number
-          conflict_resolution?: number
-          created_at?: string
-          empathy_emotional_intelligence?: number
-          id?: string
-          improvement_areas?: string[] | null
-          overall_feedback?: string | null
-          overall_score?: number
-          strengths?: string[] | null
-          training_id?: string | null
-          transition_planning_logistics?: number
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "offboarding_scores_chat_id_fkey"
-            columns: ["chat_id"]
-            isOneToOne: false
-            referencedRelation: "chats"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "offboarding_scores_training_id_fkey"
             columns: ["training_id"]
             isOneToOne: false
             referencedRelation: "trainings"
@@ -727,41 +546,6 @@ export type Database = {
             columns: ["assessment_id"]
             isOneToOne: false
             referencedRelation: "assessments"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      resumes: {
-        Row: {
-          content: string | null
-          created_at: string
-          google_file_id: string | null
-          id: string
-          training_id: string | null
-          user_id: string | null
-        }
-        Insert: {
-          content?: string | null
-          created_at?: string
-          google_file_id?: string | null
-          id?: string
-          training_id?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          content?: string | null
-          created_at?: string
-          google_file_id?: string | null
-          id?: string
-          training_id?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "resumes_training_id_fkey"
-            columns: ["training_id"]
-            isOneToOne: false
-            referencedRelation: "trainings"
             referencedColumns: ["id"]
           },
         ]
@@ -971,43 +755,34 @@ export type Database = {
       trainings: {
         Row: {
           active: boolean | null
-          additional_info: Json | null
           created_at: string
           description: string | null
           id: string
           practice: boolean
           title: string
-          type: string
           updated_at: string
-          user_id: string | null
           what_not_to_do: string[] | null
           what_to_do: string[] | null
         }
         Insert: {
           active?: boolean | null
-          additional_info?: Json | null
           created_at?: string
           description?: string | null
           id?: string
           practice?: boolean
           title: string
-          type: string
           updated_at?: string
-          user_id?: string | null
           what_not_to_do?: string[] | null
           what_to_do?: string[] | null
         }
         Update: {
           active?: boolean | null
-          additional_info?: Json | null
           created_at?: string
           description?: string | null
           id?: string
           practice?: boolean
           title?: string
-          type?: string
           updated_at?: string
-          user_id?: string | null
           what_not_to_do?: string[] | null
           what_to_do?: string[] | null
         }

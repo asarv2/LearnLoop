@@ -121,6 +121,7 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                 voice="alloy",
                 type="regular",  # Default to regular interview type
                 parameter_ids=parameter_ids,
+                training_id=scenario.training_id
             )
             db_session.add(chat)
             db_session.commit()

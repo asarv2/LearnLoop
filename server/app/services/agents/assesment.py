@@ -7,7 +7,8 @@ from agents import Runner, trace
 from app.db import get_session
 from app.models import Assessments, Chats, Messages, Questions
 from app.services.agents.generic import GenericAgent
-from app.utils.chat import get_conversation_history
+from app.utils.chat import (get_conversation_history, get_parameter_history,
+                            get_preamble)
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -75,7 +76,11 @@ async def run_assessment_agent(
     # get messages from the chat
     messages = session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
 
+    preamble = get_preamble(chat)
+    parameter_history = get_parameter_history(chat, session)
     conversation_history = get_conversation_history(messages)
+
+    context = [preamble] + parameter_history + conversation_history
 
     # Get the assessment prompt from the markdown file
     system_prompt = await get_assessment_prompt()
@@ -91,7 +96,7 @@ async def run_assessment_agent(
         with trace("Assessment"):
             result = await Runner.run(
                 assessment_agent.agent(), 
-                input=conversation_history
+                input=context
             )
             assessment_result = result.final_output_as(AssessmentQuestions)
             questions = assessment_result.questions
