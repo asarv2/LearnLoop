@@ -23,16 +23,25 @@ class FeedbackResponse(BaseModel):
 
 async def get_feedback_prompt() -> str:
     """Read the feedback prompt from the markdown file."""
-    prompt_path = Path(__file__).parent.parent.parent.parent / "app" / "lib" / "prompts" / "feedback.md"
-    try:
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        logger.error(f"Feedback prompt file not found at {prompt_path}")
-        raise
-    except Exception as e:
-        logger.error(f"Error reading feedback prompt: {str(e)}")
-        raise
+    # Try multiple possible paths for different environments
+    possible_paths = [
+        Path(__file__).parent.parent.parent / "lib" / "prompts" / "feedback.md",  # Local development
+        Path("/app/app/lib/prompts/feedback.md"),  # Docker container
+        Path("/app/lib/prompts/feedback.md"),  # Alternative Docker path
+    ]
+    
+    for prompt_path in possible_paths:
+        if prompt_path.exists():
+            try:
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    return f.read().strip()
+            except Exception as e:
+                logger.error(f"Error reading feedback prompt from {prompt_path}: {str(e)}")
+                continue
+    
+    # If none of the paths work, log all attempted paths and raise error
+    logger.error(f"Feedback prompt file not found. Tried paths: {[str(p) for p in possible_paths]}")
+    raise FileNotFoundError(f"Feedback prompt file not found. Tried paths: {[str(p) for p in possible_paths]}")
 
 
 async def run_feedback_agent(
