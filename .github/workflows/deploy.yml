@@ -193,6 +193,10 @@ jobs:
         
         DOCKER_CONFIG: /srv/deploy/.docker-ghcr
       run: |
+
+        mkdir -p web/generated
+        chmod 777 web/generated
+
         docker compose pull
         docker compose up -d
         docker image prune -f
