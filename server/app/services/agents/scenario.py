@@ -5,9 +5,9 @@ from typing import Any
 
 from agents import Runner, trace
 from app.db import get_session
-from app.models import Assessments, Chats, Messages
+from app.models import Chats
 from app.services.agents.generic import GenericAgent
-from app.utils.chat import get_assessment_history, get_conversation_history
+from app.utils.chat import get_parameter_history
 from fastapi import Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -58,24 +58,9 @@ async def run_scenario_agent(
             "message": f"Chat not found with ID {chat_id}",
         }
     
-    # Get messages from the chat
-    messages = session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
-    conversation_history = get_conversation_history(messages)
+    parameter_history = get_parameter_history(chat, session)
 
-    # Get assessment and responses if available
-    assessment = session.exec(
-        select(Assessments).where(Assessments.chat_id == chat_id)
-    ).first()
-
-    if not assessment:
-        return {
-            "success": False,
-            "message": f"No assessment found for chat {chat_id}",
-        }
-
-    assessment_context = get_assessment_history(assessment, session)
-
-    history = conversation_history + assessment_context
+    history = parameter_history
 
     # Get the scenario prompt from the markdown file
     system_prompt = await get_scenario_prompt()

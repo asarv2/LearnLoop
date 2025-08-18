@@ -129,6 +129,40 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
             # Document uploads are handled on the frontend before this call
             logger.info("Document uploads completed on frontend")
 
+            # Get persona ID and any feedback updates using a separate session
+            try:
+                # Create a separate session for persona extraction to avoid transaction conflicts
+                persona_session = next(get_session())
+                try:
+                    persona_id, feedback_updates = get_persona_id_from_chat(
+                        persona_session, 
+                        str(chat.id), 
+                        [str(pid) for pid in (chat.parameter_ids or [])], 
+                        getattr(chat, 'training_type', None)
+                    )
+                    
+                    # Apply feedback updates if any
+                    if feedback_updates:
+                        if not chat.feedback:
+                            chat.feedback = {}
+                        chat.feedback.update(feedback_updates)
+                        db_session.add(chat)
+                finally:
+                    persona_session.close()
+            except Exception as e:
+                logger.error(f"Error getting persona ID for chat {chat.id}: {str(e)}")
+                persona_id = None
+                # Try to get a default persona as fallback
+                try:
+                    default_persona = db_session.exec(
+                        select(Personas).where(Personas.name == 'Default Assistant')
+                    ).one_or_none()
+                    if default_persona:
+                        persona_id = default_persona.id
+                        logger.info(f"Using default persona {persona_id} for chat {chat.id}")
+                except Exception as fallback_error:
+                    logger.error(f"Error getting default persona: {str(fallback_error)}")
+            
             # Create initial welcome message
             welcome_message = Messages(
                 chat_id=str(chat.id),
@@ -136,7 +170,7 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                 role="assistant",
                 training_id=scenario.training_id,
                 completed=True,
-                persona_id=get_persona_id_from_chat(db_session, chat)
+                persona_id=persona_id
             )
             db_session.add(welcome_message)
             db_session.commit()
@@ -171,7 +205,10 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
             )
 
         finally:
-            db_session.close()
+            try:
+                db_session.close()
+            except Exception as close_error:
+                logger.error(f"Error closing database session: {str(close_error)}")
 
     except Exception as e:
         logger.error(f"Error starting training for {sid}: {str(e)}")
@@ -367,18 +404,19 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
         await emit_error(sid, f"Failed to end training: {str(e)}")
 
 
-def get_persona_id_from_chat(db_session, chat: Chats) -> Optional[uuid.UUID]:
+def get_persona_id_from_chat(db_session, chat_id: str, parameter_ids: list[str], training_type: Optional[str] = None) -> tuple[Optional[uuid.UUID], Optional[dict]]:
     """
     Extract persona_id from chat's parameter_ids by finding the parameter with field_type 'persona'
     For interview training, randomly select between regular and cheating candidate if candidate persona is not set
+    Returns (persona_id, feedback_updates) where feedback_updates should be applied to chat later
     """
-    if not chat.parameter_ids:
-        return None
+    if not parameter_ids:
+        return None, None
     
     try:
         # Get all parameters for this chat
         parameters = []
-        for param_id in chat.parameter_ids:
+        for param_id in parameter_ids:
             param = db_session.exec(
                 select(Parameters).where(Parameters.id == param_id)
             ).one_or_none()
@@ -395,13 +433,13 @@ def get_persona_id_from_chat(db_session, chat: Chats) -> Optional[uuid.UUID]:
                 if field and field.field_type == 'persona' and param.value:
                     # The value should be the persona UUID
                     try:
-                        return uuid.UUID(param.value)
+                        return uuid.UUID(param.value), None
                     except ValueError:
                         logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
                         continue
         
         # Special handling for interview training: 50/50 chance of cheating vs selected personality
-        if chat.training_type == 'interview':
+        if training_type == 'interview':
             # Check if user selected a candidate persona
             selected_persona_id = None
             for param in parameters:
@@ -424,29 +462,25 @@ def get_persona_id_from_chat(db_session, chat: Chats) -> Optional[uuid.UUID]:
                         select(Personas).where(Personas.name == 'Cheating Candidate')
                     ).one_or_none()
                     if cheating_persona:
-                        # Store this in the chat's feedback field for reference
-                        if not chat.feedback:
-                            chat.feedback = {}
-                        chat.feedback['candidate_type'] = 'cheating'
-                        chat.feedback['candidate_persona_id'] = str(cheating_persona.id)
-                        chat.feedback['user_selected_persona'] = selected_persona_id
-                        db_session.add(chat)
-                        db_session.commit()
-                        return cheating_persona.id
+                        # Return feedback updates to be applied later
+                        feedback_updates = {
+                            'candidate_type': 'cheating',
+                            'candidate_persona_id': str(cheating_persona.id),
+                            'user_selected_persona': selected_persona_id
+                        }
+                        return cheating_persona.id, feedback_updates
                 else:
                     # Use the personality the user actually selected
-                    if not chat.feedback:
-                        chat.feedback = {}
-                    chat.feedback['candidate_type'] = 'regular'
-                    chat.feedback['candidate_persona_id'] = selected_persona_id
-                    db_session.add(chat)
-                    db_session.commit()
-                    return uuid.UUID(selected_persona_id)
+                    feedback_updates = {
+                        'candidate_type': 'regular',
+                        'candidate_persona_id': selected_persona_id
+                    }
+                    return uuid.UUID(selected_persona_id), feedback_updates
         
-        return None
+        return None, None
     except Exception as e:
-        logger.error(f"Error extracting persona_id from chat {chat.id}: {str(e)}")
-        return None
+        logger.error(f"Error extracting persona_id from chat {chat_id}: {str(e)}")
+        return None, None
 
 
 async def process_training_message_websocket(
@@ -528,11 +562,45 @@ async def process_training_message_websocket(
         }, room=chat_id)
 
         # ✨ 3. Get assistant's persona_id from chat parameters
-        assistant_persona_id = get_persona_id_from_chat(db_session, chat)
-        if not assistant_persona_id:
-            logger.error(f"No persona found for chat {chat_id}")
-            # Handle error...
-            return
+        try:
+            # Create a separate session for persona extraction to avoid transaction conflicts
+            persona_session = next(get_session())
+            try:
+                assistant_persona_id, feedback_updates = get_persona_id_from_chat(
+                    persona_session, 
+                    str(chat.id), 
+                    [str(pid) for pid in (chat.parameter_ids or [])], 
+                    getattr(chat, 'training_type', None)
+                )
+                if not assistant_persona_id:
+                    logger.error(f"No persona found for chat {chat_id}")
+                    # Handle error...
+                    return
+                
+                # Apply feedback updates if any
+                if feedback_updates:
+                    if not chat.feedback:
+                        chat.feedback = {}
+                    chat.feedback.update(feedback_updates)
+                    db_session.add(chat)
+            finally:
+                persona_session.close()
+        except Exception as e:
+            logger.error(f"Error getting assistant persona ID for chat {chat_id}: {str(e)}")
+            # Try to get a default persona as fallback
+            try:
+                default_persona = db_session.exec(
+                    select(Personas).where(Personas.name == 'Default Assistant')
+                ).one_or_none()
+                if default_persona:
+                    assistant_persona_id = default_persona.id
+                    logger.info(f"Using default persona {assistant_persona_id} for chat {chat_id}")
+                else:
+                    logger.error(f"No default persona found for chat {chat_id}")
+                    return
+            except Exception as fallback_error:
+                logger.error(f"Error getting default persona: {str(fallback_error)}")
+                return
 
         # Create assistant message placeholder
         assistant_message = Messages(
@@ -609,10 +677,19 @@ async def process_training_message_websocket(
 
     except Exception as e:
         logger.error(f"Error processing training message: {str(e)}")
+        # Try to rollback if we have a session
+        if db_session and should_close_session:
+            try:
+                db_session.rollback()
+            except Exception as rollback_error:
+                logger.error(f"Error rolling back transaction: {str(rollback_error)}")
         raise
     finally:
         if should_close_session:
-            db_session.close()
+            try:
+                db_session.close()
+            except Exception as close_error:
+                logger.error(f"Error closing database session: {str(close_error)}")
 
 
 # Simplified training message handler 
@@ -670,6 +747,7 @@ async def handle_submit_assessment(sid: str, data: Dict[str, Any]) -> None:
     """Handle assessment submission and feedback generation"""
     try:
         chat_id = data.get("chat_id")
+        responses = data.get("responses", {})
         
         if not chat_id:
             await emit_error(sid, "Missing chat_id")
