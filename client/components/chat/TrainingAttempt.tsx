@@ -137,11 +137,14 @@ function TrainingAttemptContent() {
             isInterviewActive={isTrainingActive}
             isEndingInterview={isEndingTraining}
             onShowFeedback={() => setShowFeedback(true)}
+            onShowAssessment={() => setShowAssessment(true)}
             onBack={() => router.push("/dashboard/trainings")}
             interviewStartTimeIso={chat?.created_at}
             completedAtIso={chat?.completed_at}
             chatTitle={chat?.title || ""}
             chatDescription={chat?.description || ""}
+            hasAssessment={hasAssessment()}
+            hasFeedback={hasFeedback()}
           />
 
           <ChatArea
