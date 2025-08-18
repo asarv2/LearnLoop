@@ -112,8 +112,8 @@ jobs:
         ORIGIN: ${{ secrets.ORIGIN }}
         
         # WebRTC environment variables
-        TURN_URI: ${{ secrets.TURN_URI }}
-        STUN_URI: ${{ secrets.STUN_URI }}
+        TURN_URI_PUBLIC: ${{ secrets.TURN_URI_PUBLIC }}
+        STUN_URI_PUBLIC: ${{ secrets.STUN_URI_PUBLIC }}
         TURN_USERNAME: ${{ secrets.TURN_USERNAME }}
         TURN_PASSWORD: ${{ secrets.TURN_PASSWORD }}
         TURN_REALM: ${{ secrets.TURN_REALM }}

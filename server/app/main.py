@@ -189,45 +189,29 @@ def force_opus_codec(sdp: str) -> str:
 # ---------------------------------------------------------------------------+
 # 4.  Empty ICE list when disabled                                           +
 # ---------------------------------------------------------------------------+
-def _build_ice_servers() -> List[Dict[str, Any]]:
-        
-    turn_uri = os.getenv("TURN_URI", "")
-    stun_uri = os.getenv("STUN_URI", "")
-    user = os.getenv("TURN_USERNAME")
-    pwd  = os.getenv("TURN_PASSWORD")
-
+def _build_server_ice() -> List[Dict[str, Any]]:
+    turn_uri = os.getenv("TURN_URI_INTERNAL") or os.getenv("TURN_URI") or ""
+    stun_uri = os.getenv("STUN_URI_INTERNAL") or os.getenv("STUN_URI") or ""
+    user = os.getenv("TURN_USERNAME"); pwd = os.getenv("TURN_PASSWORD")
     if not (turn_uri and stun_uri):
-        raise ValueError(
-            "No ICE servers found in environment variables (TURN_URI/STUN_URI)."
-        )
-
-    # split on commas (and strip any whitespace)
+        raise ValueError("Missing TURN/STUN envs for server ICE")
     stun_uris = [u.strip() for u in stun_uri.split(",")]
     turn_uris = [u.strip() for u in turn_uri.split(",")]
-
-    # Pre-warm TURN: Include both STUN and TURN in the same config
-    # This allows the browser to start connecting to TURN in parallel with STUN
-    ice_servers: List[Dict[str, Any]] = []
-    
     if user and pwd:
-        # Combined server config for parallel connection attempts
-        ice_servers.append({
-            "urls": stun_uris + turn_uris,
-            "username": user,
-            "credential": pwd,
-        })
-    else:
-        # Fallback to STUN only
-        ice_servers.append({
-            "urls": stun_uris
-        })
+        return [{"urls": stun_uris + turn_uris, "username": user, "credential": pwd}]
+    return [{"urls": stun_uris}]
 
-    logger.info(
-        "Using ICE servers for WebRTC (pre-warmed): %s",
-        ", ".join(stun_uris + (turn_uris if user and pwd else [])),
-    )
-
-    return ice_servers
+def _build_client_ice() -> List[Dict[str, Any]]:
+    turn_uri = os.getenv("TURN_URI_PUBLIC") or os.getenv("TURN_URI") or ""
+    stun_uri = os.getenv("STUN_URI_PUBLIC") or os.getenv("STUN_URI") or ""
+    user = os.getenv("TURN_USERNAME"); pwd = os.getenv("TURN_PASSWORD")
+    if not (turn_uri and stun_uri):
+        raise ValueError("Missing TURN/STUN envs for client ICE")
+    stun_uris = [u.strip() for u in stun_uri.split(",")]
+    turn_uris = [u.strip() for u in turn_uri.split(",")]
+    if user and pwd:
+        return [{"urls": stun_uris + turn_uris, "username": user, "credential": pwd}]
+    return [{"urls": stun_uris}]
 
 async def cleanup_profile_connection(profile_id: str, reason: str = "cleanup") -> None:
     """Clean up all connections for a profile."""
@@ -288,16 +272,11 @@ async def get_pc(profile_id: str) -> RTCPeerConnection:
 
     # Convert our dict format to aiortc's RTCIceServer objects
     ice_servers_list = []
-    for server_config in _build_ice_servers():
-        if "username" in server_config and "credential" in server_config:
-            ice_servers_list.append(RTCIceServer(
-                urls=server_config["urls"],
-                username=server_config["username"],
-                credential=server_config["credential"]
-            ))
+    for s in _build_server_ice():
+        if "username" in s:
+            ice_servers_list.append(RTCIceServer(urls=s["urls"], username=s["username"], credential=s["credential"]))
         else:
-            ice_servers_list.append(RTCIceServer(urls=server_config["urls"]))
-    
+            ice_servers_list.append(RTCIceServer(urls=s["urls"]))
     config = RTCConfiguration(iceServers=ice_servers_list)
     pc = RTCPeerConnection(configuration=config)
     
@@ -1113,7 +1092,7 @@ async def webrtc_start(sid: str, data: Dict[str, Any]) -> None:
                 'sdp': offer.sdp,
                 'type': offer.type
             },
-            'ice_config': _build_ice_servers()
+            'ice_config': _build_client_ice()
         }, room=sid)
         
         logger.info(f"Sent WebRTC offer to profile {profile_id}")
@@ -1288,7 +1267,7 @@ async def webrtc_start_audio(sid: str, data: Dict[str, Any]) -> None:
                 'sdp': offer.sdp,
                 'type': offer.type
             },
-            'ice_config': _build_ice_servers() # Resending config might be needed by client
+            'ice_config': _build_client_ice() # Resending config might be needed by client
         }, room=sid)
         
         logger.info(f"Sent renegotiation offer to profile {profile_id} for chat {chat_id}")

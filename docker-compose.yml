@@ -54,8 +54,11 @@ services:
       - REDIS_URL=redis://learnloop-redis:6379
 
       # webrtc
-      - TURN_URI=${TURN_URI}
-      - STUN_URI=${STUN_URI}
+      - STUN_URI_INTERNAL=stun:learnloop-webrtc:3479
+      - TURN_URI_INTERNAL=turn:learnloop-webrtc:3479?transport=udp
+      - STUN_URI_PUBLIC=${STUN_URI_PUBLIC}
+      - TURN_URI_PUBLIC=${TURN_URI_PUBLIC}
+      
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
     depends_on:
