@@ -10,6 +10,7 @@ interface InterviewHeaderProps {
   onEndInterview: () => void;
   isInterviewActive: boolean;
   onShowFeedback?: () => void;
+  onShowAssessment?: () => void;
   onBack?: () => void;
   interviewStartTimeIso?: string;
   completedAtIso?: string | null;
@@ -17,6 +18,8 @@ interface InterviewHeaderProps {
   onToggleAudioMode?: () => void;
   chatTitle: string;
   chatDescription: string;
+  hasAssessment?: boolean;
+  hasFeedback?: boolean;
 }
 
 export default function ChatHeader({
@@ -24,6 +27,7 @@ export default function ChatHeader({
   onEndInterview,
   isInterviewActive,
   onShowFeedback,
+  onShowAssessment,
   onBack,
   interviewStartTimeIso,
   completedAtIso,
@@ -31,6 +35,8 @@ export default function ChatHeader({
   onToggleAudioMode,
   chatTitle,
   chatDescription,
+  hasAssessment = false,
+  hasFeedback = false,
 }: InterviewHeaderProps) {
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -148,15 +154,26 @@ export default function ChatHeader({
                 <Text size="2" weight="medium" color="gray">
                   Duration: {formatTime(elapsedTime)}
                 </Text>
-                <Button
-                  variant="soft"
-                  color="blue"
-                  size="2"
-                  onClick={onShowFeedback}
-                  disabled={!onShowFeedback}
-                >
-                  View Feedback
-                </Button>
+                {hasAssessment && onShowAssessment && (
+                  <Button
+                    variant="soft"
+                    color="blue"
+                    size="2"
+                    onClick={onShowAssessment}
+                  >
+                    View Assessment
+                  </Button>
+                )}
+                {hasFeedback && onShowFeedback && (
+                  <Button
+                    variant="soft"
+                    color="green"
+                    size="2"
+                    onClick={onShowFeedback}
+                  >
+                    View Feedback
+                  </Button>
+                )}
               </>
             )}
 
