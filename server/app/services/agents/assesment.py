@@ -1,14 +1,13 @@
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, List, Literal
+from typing import Any, List, Literal, Optional
 
 from agents import Runner, trace
 from app.db import get_session
 from app.models import Assessments, Chats, Messages, Questions
 from app.services.agents.generic import GenericAgent
 from app.utils.chat import get_conversation_history
-from fastapi import Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -42,7 +41,7 @@ async def get_assessment_prompt() -> str:
 
 async def run_assessment_agent(
     chat_id: uuid.UUID,
-    session: Session = Depends(get_session),
+    session: Optional[Session] = None,
 ) -> dict[str, Any]:
     """
     This function is used to run the assessment agent.
@@ -55,6 +54,13 @@ async def run_assessment_agent(
     Returns:
         A dictionary containing assessment questions and metadata.
     """
+
+    # Get a session if none is provided
+    if session is None:
+        session = next(get_session())
+    
+    # Type assertion to help linter understand session is not None
+    assert session is not None
 
     # Get the chat object
     chat = session.exec(select(Chats).where(Chats.id == chat_id)).first()
