@@ -7,6 +7,7 @@ from agents.items import TResponseInputItem
 from agents.realtime.items import (AssistantMessageItem, AssistantText,
                                    InputText, UserMessageItem)
 from agents.realtime.model_events import RealtimeItem
+from app.db import get_session, reset_connection_pool
 from app.models import (Assessments, Chats, Documents, Fields, Messages,
                         Parameters, Personas, Questions, Rubrics, Standards)
 from sqlmodel import Session, select
@@ -77,114 +78,122 @@ def get_parameter_history(
     if not chat.parameter_ids:
         return []
     
-    # Fetch all Parameters individually to avoid linter issues with UUID.in_()
-    all_parameters = []
-    for param_id in chat.parameter_ids:
-        param = session.exec(select(Parameters).where(Parameters.id == param_id)).one_or_none()
-        if param:
-            all_parameters.append(param)
-    
-    # Get all field IDs to fetch fields efficiently
-    field_ids = [param.field_id for param in all_parameters if param.field_id]
-
-    # Fetch fields individually to avoid linter issues with UUID.in_()
-    all_fields = []
-    for field_id in field_ids:
-        field = session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
-        if field:
-            all_fields.append(field)
-    
-    # Create a mapping of field_id to field for quick lookup
-    field_map = {field.id: field for field in all_fields}
-    
-    # Get all document IDs for document-type fields
-    document_ids = []
-    persona_ids = []
-    for param in all_parameters:
-        if param.field_id and param.field_id in field_map:
-            field = field_map[param.field_id]
-            if field.field_type == 'document' and param.value:
-                document_ids.append(param.value)
-            elif field.field_type == 'persona' and param.value:
-                persona_ids.append(param.value)
-    
-    # Fetch all documents individually to avoid linter issues with UUID.in_()
-    all_documents = {}
-    for doc_id in document_ids:
-        document = session.exec(select(Documents).where(Documents.id == doc_id)).one_or_none()
-        if document:
-            all_documents[str(doc_id)] = document
-    
-    # Fetch all personas individually
-    from app.models import Personas
-    all_personas = {}
-    for persona_id in persona_ids:
-        persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
-        if persona:
-            all_personas[str(persona_id)] = persona
-    
-    # Separate parameters by type
-    persona_params = []
-    document_params = []
-    other_params = []
-    
-    for param in all_parameters:
-        if not param.field_id or param.field_id not in field_map:
-            continue
-            
-        field = field_map[param.field_id]
+    # Use a fresh session for this operation to avoid prepared statement conflicts
+    fresh_session = next(get_session())
+    try:
+        # Fetch all Parameters individually to avoid linter issues with UUID.in_()
+        all_parameters = []
+        for param_id in chat.parameter_ids:
+            param = fresh_session.exec(select(Parameters).where(Parameters.id == param_id)).one_or_none()
+            if param:
+                all_parameters.append(param)
         
-        # Handle different field types
-        if field.field_type == 'persona':
-            if param.value and param.value in all_personas:
-                persona = all_personas[param.value]
-                value = persona.description if persona.description else "No description available"
+        # Get all field IDs to fetch fields efficiently
+        field_ids = [param.field_id for param in all_parameters if param.field_id]
+
+        # Fetch all fields with a single query using string conversion to avoid UUID.in_() issues
+        all_fields: list[Fields] = []
+        if field_ids:
+            # Use individual queries but with a fresh session to avoid prepared statement issues
+            for field_id in field_ids:
+                field = fresh_session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
+                if field:
+                    all_fields.append(field)
+        
+        # Create a mapping of field_id to field for quick lookup
+        field_map = {field.id: field for field in all_fields}
+        
+        # Get all document IDs for document-type fields
+        document_ids = []
+        persona_ids = []
+        for param in all_parameters:
+            if param.field_id and param.field_id in field_map:
+                field = field_map[param.field_id]
+                if field.field_type == 'document' and param.value:
+                    document_ids.append(param.value)
+                elif field.field_type == 'persona' and param.value:
+                    persona_ids.append(param.value)
+        
+        # Fetch all documents individually with fresh session
+        all_documents = {}
+        for doc_id in document_ids:
+            document = fresh_session.exec(select(Documents).where(Documents.id == doc_id)).one_or_none()
+            if document:
+                all_documents[str(doc_id)] = document
+        
+        # Fetch all personas individually with fresh session
+        from app.models import Personas
+        all_personas = {}
+        for persona_id in persona_ids:
+            persona = fresh_session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+            if persona:
+                all_personas[str(persona_id)] = persona
+        
+        # Separate parameters by type
+        persona_params = []
+        document_params = []
+        other_params = []
+        
+        for param in all_parameters:
+            if not param.field_id or param.field_id not in field_map:
+                continue
+                
+            field = field_map[param.field_id]
+            
+            # Handle different field types
+            if field.field_type == 'persona':
+                if param.value and param.value in all_personas:
+                    persona = all_personas[param.value]
+                    value = persona.description if persona.description else "No description available"
+                else:
+                    value = "Persona not found"
+                field_description = field.description if field.description else ""
+                formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
+                persona_params.append(formatted_line)
+            elif field.field_type == 'document':
+                if param.value and param.value in all_documents:
+                    document = all_documents[param.value]
+                    value = document.content if document.content else "No content available"
+                else:
+                    value = "Document not found"
+                field_description = field.description if field.description else ""
+                formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
+                document_params.append(formatted_line)
             else:
-                value = "Persona not found"
-            field_description = field.description if field.description else ""
-            formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
-            persona_params.append(formatted_line)
-        elif field.field_type == 'document':
-            if param.value and param.value in all_documents:
-                document = all_documents[param.value]
-                value = document.content if document.content else "No content available"
-            else:
-                value = "Document not found"
-            field_description = field.description if field.description else ""
-            formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
-            document_params.append(formatted_line)
-        else:
-            # For numerical, categorical, or text fields
-            value = param.value if param.value else "No value set"
-            field_description = field.description if field.description else ""
-            formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
-            other_params.append(formatted_line)
-    
-    # Return three separate messages
-    messages = []
-    
-    if persona_params:
-        content = "\n".join(persona_params)
-        messages.append({
-            "role": "user",
-            "content": content
-        })
-    
-    if document_params:
-        content = "\n".join(document_params)
-        messages.append({
-            "role": "user",
-            "content": content
-        })
-    
-    if other_params:
-        content = "\n".join(other_params)
-        messages.append({
-            "role": "user",
-            "content": content
-        })
-    
-    return messages  # type: ignore
+                # For numerical, categorical, or text fields
+                value = param.value if param.value else "No value set"
+                field_description = field.description if field.description else ""
+                formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
+                other_params.append(formatted_line)
+        
+        # Return three separate messages
+        messages = []
+        
+        if persona_params:
+            content = "\n".join(persona_params)
+            messages.append({
+                "role": "user",
+                "content": content
+            })
+        
+        if document_params:
+            content = "\n".join(document_params)
+            messages.append({
+                "role": "user",
+                "content": content
+            })
+        
+        if other_params:
+            content = "\n".join(other_params)
+            messages.append({
+                "role": "user",
+                "content": content
+            })
+        
+        return messages  # type: ignore
+    except Exception as e:
+        logger.error(f"Error fetching parameter history for chat {chat.id}: {e}")
+        return []
 
 def get_text_formatted_instructions(
     instructions: List[TResponseInputItem],
@@ -305,12 +314,14 @@ def get_persona_id_from_chat(db_session, chat_id: str, parameter_ids: list[str])
     if not parameter_ids:
         return None
     
+    # Use a fresh session for this operation to avoid prepared statement conflicts
+    fresh_session = next(get_session())
     try:
         # Get all parameters for this chat with error handling
         parameters = []
         for param_id in parameter_ids:
             try:
-                param = db_session.exec(
+                param = fresh_session.exec(
                     select(Parameters).where(Parameters.id == param_id)
                 ).one_or_none()
                 if param:
@@ -319,26 +330,38 @@ def get_persona_id_from_chat(db_session, chat_id: str, parameter_ids: list[str])
                 logger.warning(f"Error fetching parameter {param_id}: {e}")
                 continue
         
+        # Get all field IDs to fetch fields efficiently
+        field_ids = [param.field_id for param in parameters if param.field_id]
+        
+        # Fetch all fields individually with fresh session to avoid prepared statement issues
+        field_map = {}
+        if field_ids:
+            try:
+                # Use individual queries to avoid UUID.in_() issues
+                for field_id in field_ids:
+                    field = fresh_session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
+                    if field:
+                        field_map[field.id] = field
+            except Exception as e:
+                logger.warning(f"Error fetching fields: {e}")
+                return None
+        
         # Find the parameter that has a field with field_type 'persona'
         for param in parameters:
-            if param.field_id:
-                try:
-                    field = db_session.exec(
-                        select(Fields).where(Fields.id == param.field_id)
-                    ).one_or_none()
-                    
-                    if field and field.field_type == 'persona' and param.value:
-                        # The value should be the persona UUID
-                        try:
-                            return uuid.UUID(param.value)
-                        except ValueError:
-                            logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
-                            continue
-                except Exception as e:
-                    logger.warning(f"Error fetching field {param.field_id}: {e}")
-                    continue
+            if param.field_id and param.field_id in field_map:
+                field = field_map[param.field_id]
+                
+                if field.field_type == 'persona' and param.value:
+                    # The value should be the persona UUID
+                    try:
+                        return uuid.UUID(param.value)
+                    except ValueError:
+                        logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
+                        continue
 
         return None
     except Exception as e:
         logger.error(f"Error extracting persona_id from chat {chat_id}: {str(e)}")
         return None
+    finally:
+        fresh_session.close()
