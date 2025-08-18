@@ -1,14 +1,13 @@
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Optional
 
 from agents import Runner, trace
 from app.db import get_session
 from app.models import Chats, Hints, Messages
 from app.services.agents.generic import GenericAgent
 from app.utils.chat import get_conversation_history
-from fastapi import Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -35,7 +34,7 @@ async def get_hint_prompt() -> str:
 
 async def run_hint_agent(
     message_id: uuid.UUID,
-    session: Session = Depends(get_session),
+    session: Optional[Session] = None,
 ) -> dict[str, Any]:
     """
     This function is used to run the hint agent.
@@ -48,6 +47,13 @@ async def run_hint_agent(
     Returns:
         A dictionary containing hint analysis and metadata.
     """
+
+    # Get a session if none is provided
+    if session is None:
+        session = next(get_session())
+    
+    # Type assertion to help linter understand session is not None
+    assert session is not None
 
     # Get the message object
     message = session.exec(select(Messages).where(Messages.id == message_id)).first()
