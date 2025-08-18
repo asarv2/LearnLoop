@@ -9,7 +9,6 @@
 import { TrainingProvider, useTraining } from "@/contexts/training-context";
 import { useChatForAttempt } from "@/lib/api/hooks/useChats";
 import { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
-import { Assessment } from "@/types";
 import { logError } from "@/utils/logger";
 import { Box, Text } from "@radix-ui/themes";
 import { useRouter } from "next/navigation";
@@ -75,7 +74,7 @@ function TrainingAttemptContent() {
   };
 
   const handleAssessmentComplete = async (
-    responses: Assessment["responses"]
+    responses: unknown
   ) => {
     try {
       await submitAssessment(responses as Record<string, unknown>);
@@ -109,9 +108,6 @@ function TrainingAttemptContent() {
       ) : (
         <>
           <ChatHeader
-            candidateName={chat?.name || "John Doe"}
-            interviewType={chat?.type || ""}
-            resumeId={chat?.resume_id || ""}
             onEndInterview={endInterview}
             isInterviewActive={isTrainingActive}
             isEndingInterview={isEndingTraining}
@@ -139,7 +135,6 @@ function TrainingAttemptContent() {
             isOpen={showAssessment}
             onClose={() => setShowAssessment(false)}
             onComplete={handleAssessmentComplete}
-            candidateName={chat?.name || "John Doe"}
             isSubmitting={isSubmittingAssessment}
             assessmentId={getAssessmentId()}
             chat={chat}
@@ -150,8 +145,7 @@ function TrainingAttemptContent() {
             isOpen={showFeedback}
             onClose={() => setShowFeedback(false)}
             feedback={(chat as ChatWithAllIncludes)?.feedback?.[0] || null}
-            candidateName={chat?.name || "John Doe"}
-            interviewScore={null}
+            score={null}
             chat={chat}
           />
         </>

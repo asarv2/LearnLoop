@@ -1,9 +1,9 @@
 import React from 'react';
 import { Box, Flex, Text, Card } from '@radix-ui/themes';
-import { Chat, InterviewScore, OffboardingScore } from '@/types';
+import { Chat } from '@/types';
 
 interface ScoreDisplayProps {
-  score: InterviewScore | OffboardingScore | null | undefined;
+  score: number | null | undefined;
   chat?: Chat;
 }
 
@@ -35,7 +35,7 @@ const getCategoryScoreColor = () => PRIMARY_COLOR;
 
 export default function ScoreDisplay({ score, chat }: ScoreDisplayProps) {
   // Use training_type field, fallback to title parsing for backward compatibility
-  const isOffboardingTraining = chat?.training_type === 'offboarding' || chat?.title?.startsWith('Offboarding:');
+  const isOffboardingTraining = chat?.title?.startsWith('Offboarding:');
   const categoryNames = isOffboardingTraining ? offboardingCategoryNames : interviewCategoryNames;
 
   if (!score) {
@@ -47,22 +47,6 @@ export default function ScoreDisplay({ score, chat }: ScoreDisplayProps) {
       </Box>
     );
   }
-
-  const categories = isOffboardingTraining ? [
-    { key: 'empathy_emotional_intelligence', score: (score as OffboardingScore).empathy_emotional_intelligence },
-    { key: 'communication_professionalism', score: (score as OffboardingScore).communication_professionalism },
-    { key: 'clarity_of_next_steps', score: (score as OffboardingScore).clarity_of_next_steps },
-    { key: 'transition_planning_logistics', score: (score as OffboardingScore).transition_planning_logistics },
-    { key: 'conflict_resolution', score: (score as OffboardingScore).conflict_resolution },
-    { key: 'assessment_thoughtfulness', score: (score as OffboardingScore).assessment_thoughtfulness }
-  ] as const : [
-    { key: 'question_quality', score: (score as InterviewScore).question_quality },
-    { key: 'followup_skills', score: (score as InterviewScore).followup_skills },
-    { key: 'assessment_thoughtfulness', score: (score as InterviewScore).assessment_thoughtfulness },
-    { key: 'interview_conduct', score: (score as InterviewScore).interview_conduct },
-    { key: 'communication_rapport', score: (score as InterviewScore).communication_rapport },
-    { key: 'professional_judgment', score: (score as InterviewScore).professional_judgment }
-  ] as const;
 
   return (
     <Box style={{ padding: '2rem', background: '#fff', color: TEXT_COLOR }}>
@@ -78,7 +62,7 @@ export default function ScoreDisplay({ score, chat }: ScoreDisplayProps) {
           marginBottom: '0.5rem',
           letterSpacing: '-1px',
         }}>
-          {score.overall_score}
+          {score}
         </Box>
         <Text size="2" style={{ color: SUBTLE_TEXT }}>
           out of 100
@@ -91,7 +75,7 @@ export default function ScoreDisplay({ score, chat }: ScoreDisplayProps) {
           Category Breakdown
         </Text>
         <Flex direction="column" gap="3">
-          {categories.map(({ key, score: categoryScore }) => (
+          {[{ key: 'overall', score: score }].map(({ key, score: categoryScore }) => (
             <Card key={key} size="2" style={{ padding: '1rem', background: CARD_BG, boxShadow: 'none' }}>
               <Flex justify="between" align="center">
                 <Text size="2" weight="medium" style={{ color: TEXT_COLOR }}>

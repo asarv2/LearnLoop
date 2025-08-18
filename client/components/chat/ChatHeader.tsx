@@ -6,10 +6,7 @@ import { Box, Button, Flex, Heading, Separator, Text } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
 
 interface InterviewHeaderProps {
-  candidateName: string;
-  interviewType: string;
   isEndingInterview: boolean;
-  resumeId: string;
   onEndInterview: () => void;
   isInterviewActive: boolean;
   onShowFeedback?: () => void;
@@ -23,10 +20,7 @@ interface InterviewHeaderProps {
 }
 
 export default function ChatHeader({
-  candidateName,
-  interviewType, // Keep for future use
   isEndingInterview,
-  resumeId,
   onEndInterview,
   isInterviewActive,
   onShowFeedback,
@@ -38,8 +32,6 @@ export default function ChatHeader({
   chatTitle,
   chatDescription,
 }: InterviewHeaderProps) {
-  // Suppress lint warning for interviewType - keeping for future use
-  void interviewType;
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
 
@@ -198,7 +190,7 @@ export default function ChatHeader({
             )}
 
             {/* Resume Button - only for interview training and if resumeId exists */}
-            {resumeId && (
+            {false && (
               <Dialog.Root
                 open={isResumeModalOpen}
                 onOpenChange={setIsResumeModalOpen}
@@ -243,7 +235,7 @@ export default function ChatHeader({
                             weight="bold"
                             style={{ color: "var(--gray-12)" }}
                           >
-                            Resume - {candidateName}
+                            Document - {chatTitle}
                           </Heading>
                         </Dialog.Title>
                         <Dialog.Close asChild>
@@ -270,15 +262,15 @@ export default function ChatHeader({
                           overflow: "hidden",
                         }}
                       >
-                        {resumeId ? (
+                        {false ? (
                           <iframe
-                            src={`/api/resume/${resumeId}`}
+                            src={`/api/resume/`}
                             style={{
                               width: "100%",
                               height: "100%",
                               border: "none",
                             }}
-                            title={`Resume - ${candidateName}`}
+                            title={`Document - ${chatTitle}`}
                           />
                         ) : (
                           <Flex
