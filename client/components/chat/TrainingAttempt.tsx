@@ -34,6 +34,8 @@ function TrainingAttemptContent() {
     isSendingMessage,
     isEndingTraining,
     isSubmittingAssessment,
+    isWaitingForAssessment, // ✅ NEW: Loading state while waiting for assessment
+    isWaitingForFeedback, // ✅ NEW: Loading state while waiting for feedback
     isTrainingActive,
     currentMessage,
     setCurrentMessage,
@@ -128,7 +130,7 @@ function TrainingAttemptContent() {
           <ChatHeader
             onEndInterview={endInterview}
             isInterviewActive={isTrainingActive}
-            isEndingInterview={isEndingTraining}
+            isEndingInterview={isEndingTraining || isWaitingForAssessment} // ✅ NEW: Show loading while waiting for assessment
             onShowFeedback={() => setShowFeedback(true)}
             onShowAssessment={() => setShowAssessment(true)}
             onBack={() => router.push("/dashboard/trainings")}
@@ -157,7 +159,7 @@ function TrainingAttemptContent() {
               isOpen={showAssessment}
               onClose={() => setShowAssessment(false)}
               onComplete={handleAssessmentComplete}
-              isSubmitting={isSubmittingAssessment}
+              isSubmitting={isSubmittingAssessment || isWaitingForFeedback} // ✅ NEW: Show loading while waiting for feedback
               assessmentId={getAssessmentId()}
               chat={chat}
             />

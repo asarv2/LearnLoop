@@ -180,9 +180,9 @@ export default function History() {
     });
   };
 
-  const columns: ColumnsType<AttemptWithChatInfo> = [
+  const columns: ColumnsType<AttemptWithChatInfo> = [ 
     {
-      title: "Person",
+      title: "Scenario",
       dataIndex: "chatInfo",
       key: "person",
       render: (chatInfo) => (
@@ -194,11 +194,11 @@ export default function History() {
       width: 220,
     },
     {
-      title: "Type",
-      dataIndex: "chatType",
-      key: "type",
-      render: (chatType: string | null) => (
-        <Text style={{ textTransform: "capitalize" }}>{chatType || "-"}</Text>
+      title: "Training",
+      dataIndex: "training",
+      key: "training",
+      render: (training: Training | null) => (
+        <Text style={{ textTransform: "capitalize" }}>{training?.title || "-"}</Text>
       ),
       width: 140,
     },
