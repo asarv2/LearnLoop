@@ -87,8 +87,8 @@ export default function History() {
         attemptChats.length > 0
           ? {
               title: latestChat?.title || "Untitled Interview",
-              name: latestChat?.name || "Unknown Candidate",
-              position: latestChat?.position || "",
+              name: latestChat?.title || "Unknown Candidate",
+              position: latestChat?.title || "",
               isCompleted: attemptChats.every((chat) => chat.completed),
               completedAt: attemptChats.every((chat) => chat.completed)
                 ? attemptChats[attemptChats.length - 1]?.completed_at
@@ -107,7 +107,7 @@ export default function History() {
             };
 
       // Determine chat type and score (if any)
-      const chatType = latestChat?.training_type || null;
+      const chatType = latestChat?.title || null;
       const score: number | null = null;
 
       return {

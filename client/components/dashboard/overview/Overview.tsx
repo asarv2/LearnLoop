@@ -136,7 +136,7 @@ export default function Overview() {
           if (trainingId) {
             const training = (trainings || []).find((t) => t.id === trainingId);
             highestInterviewTrainingName =
-              training?.title || training?.type || null;
+              training?.title || null;
           } else {
             highestInterviewTrainingName = "Interview";
           }
@@ -158,7 +158,7 @@ export default function Overview() {
     const hoursThisMonth = (() => {
       const typeNorm = hoursType.toLowerCase();
       const sessions = (chats || []).filter((c) => {
-        const t = (c.training_type || "").toLowerCase();
+        const t = (c.title || "").toLowerCase();
         if (t !== typeNorm) return false;
         if (!c.created_at) return false;
         const createdAt = new Date(c.created_at);

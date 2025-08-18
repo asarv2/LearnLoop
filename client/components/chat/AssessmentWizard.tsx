@@ -3,7 +3,7 @@
 
 import { useAssessment } from "@/lib/api/hooks/useAssessments";
 import { useQuestionsByAssessment } from "@/lib/api/hooks/useQuestions";
-import { Assessment, Chat } from "@/types";
+import { Chat } from "@/types";
 import { ArrowBack, ArrowForward } from "@mui/icons-material";
 import {
   Alert,
@@ -53,8 +53,7 @@ const StyledButton = styled(Button)(() => ({
 interface AssessmentWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: (responses: Assessment["responses"]) => void;
-  candidateName: string;
+  onComplete: (responses: unknown) => void;
   isSubmitting?: boolean;
   assessmentId: string;
   chat: Chat;
@@ -64,7 +63,6 @@ export default function AssessmentWizard({
   isOpen,
   onClose,
   onComplete,
-  candidateName,
   isSubmitting = false,
   assessmentId,
   chat,
@@ -105,7 +103,7 @@ export default function AssessmentWizard({
   const handleNext = () => {
     if (isLastQuestion) {
       // Convert responses to the format expected by the API
-      const assessmentResponses: Assessment["responses"] = Object.entries(
+      const assessmentResponses: unknown = Object.entries(
         responses
       ).map(([question_id, response]) => ({
         question_id,
@@ -272,9 +270,9 @@ export default function AssessmentWizard({
             </Typography>
             <Typography variant="body2" color="text.secondary">
               {chat?.title?.startsWith("Offboarding:")
-                ? "Employee"
-                : "Candidate"}
-              : {candidateName}
+                ? "Offboarding"
+                : "Interview"}
+              : {chat?.title}
             </Typography>
           </Box>
         </Box>

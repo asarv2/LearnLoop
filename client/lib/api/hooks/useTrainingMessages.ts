@@ -313,18 +313,3 @@ export function useSubmitAssessment() {
     },
   });
 }
-
-// Hook for generating feedback
-export function useGenerateFeedback() {
-  const { emitGenerateFeedback } = useWebSocket();
-
-  return useMutation({
-    mutationFn: async ({ chatId }: { chatId: string }) => {
-      emitGenerateFeedback({ chat_id: chatId });
-      return { success: true };
-    },
-    onError: (error) => {
-      logError("Error generating feedback:", error);
-    },
-  });
-}

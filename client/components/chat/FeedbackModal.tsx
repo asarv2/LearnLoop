@@ -16,15 +16,14 @@ import {
   ChevronRightIcon,
   DotFilledIcon
 } from '@radix-ui/react-icons';
-import { Feedback, Chat, InterviewScore, OffboardingScore } from '@/types';
+import { Feedback, Chat } from '@/types';
 import ScoreDisplay from './ScoreDisplay';
 
 interface FeedbackModalProps {
   isOpen: boolean;
   onClose: () => void;
   feedback: Feedback | null;
-  candidateName: string;
-  interviewScore?: InterviewScore | OffboardingScore | null;
+  score?: number | null;
   chat?: Chat | null;
 }
 
@@ -32,8 +31,7 @@ export default function FeedbackModal({
   isOpen,
   onClose,
   feedback,
-  candidateName,
-  interviewScore,
+  score,
   chat
 }: FeedbackModalProps) {
   const [currentPage, setCurrentPage] = useState(0);
@@ -78,7 +76,7 @@ export default function FeedbackModal({
                 </Heading>
               </Dialog.Title>
               <Text size="3" style={{ color: 'var(--gray-11)', lineHeight: '1.6' }}>
-                Feedback for {candidateName} is not available yet. Please complete the {chat?.title?.startsWith('Offboarding:') ? 'offboarding session' : 'interview'} first to generate feedback.
+                Feedback for {chat?.title} is not available yet. Please complete the {chat?.title?.startsWith('Offboarding:') ? 'offboarding session' : 'interview'} first to generate feedback.
               </Text>
               <Dialog.Close asChild>
                 <Button variant="soft" size="3">
@@ -112,7 +110,7 @@ export default function FeedbackModal({
       icon: "📊",
       color: "blue",
       content: (
-        <ScoreDisplay score={interviewScore} chat={chat || undefined} />
+        <ScoreDisplay score={score} chat={chat || undefined} />
       )
     },
     {
@@ -490,15 +488,15 @@ export default function FeedbackModal({
                 </Dialog.Title>
                 <Flex direction="column" align="center" gap="2">
                   <Text size="2" style={{ color: 'var(--gray-11)' }}>
-                    {chat?.title?.startsWith('Offboarding:') ? 'Employee' : 'Candidate'}: {candidateName}
+                    {chat?.title?.startsWith('Offboarding:') ? 'Employee' : 'Candidate'}: {chat?.title}
                   </Text>
                   {chat && !chat.title?.startsWith('Offboarding:') && (
                     <Badge 
                       size="1" 
                       variant="soft" 
-                      color={chat.type === 'cheating' ? 'red' : 'blue'}
+                      color={chat.title === 'Cheating' ? 'red' : 'blue'}
                     >
-                      {chat.type === 'cheating' ? 'Dishonest Candidate' : 'Regular Candidate'}
+                      {chat.title === 'Cheating' ? 'Dishonest Candidate' : 'Regular Candidate'}
                     </Badge>
                   )}
                 </Flex>
