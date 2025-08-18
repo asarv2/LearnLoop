@@ -28,7 +28,7 @@ class AssessmentQuestions(BaseModel):
 
 async def get_assessment_prompt() -> str:
     """Read the assessment prompt from the markdown file."""
-    prompt_path = Path(__file__).parent.parent.parent / "lib" / "prompts" / "assessment.md"
+    prompt_path = Path(__file__).parent.parent.parent.parent / "app" / "lib" / "prompts" / "assessment.md"
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
             return f.read().strip()

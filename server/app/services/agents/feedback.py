@@ -23,7 +23,7 @@ class FeedbackResponse(BaseModel):
 
 async def get_feedback_prompt() -> str:
     """Read the feedback prompt from the markdown file."""
-    prompt_path = Path(__file__).parent.parent.parent / "lib" / "prompts" / "feedback.md"
+    prompt_path = Path(__file__).parent.parent.parent.parent / "app" / "lib" / "prompts" / "feedback.md"
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
             return f.read().strip()
