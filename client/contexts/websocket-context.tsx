@@ -696,7 +696,13 @@ export function WebSocketProvider({
 
       socket.on(
         "training_ended",
-        (data: { success: boolean; message: string; chat_id: string }) => {
+        (data: {
+          success: boolean;
+          message: string;
+          chat_id: string;
+          assessment_ready?: boolean;
+          assessment_id?: string;
+        }) => {
           logInfo("Training ended", data);
           setIsEndingTraining(false);
           if (data.success) {
@@ -709,6 +715,8 @@ export function WebSocketProvider({
                   chatId: data.chat_id,
                   success: data.success,
                   message: data.message,
+                  assessmentReady: data.assessment_ready || false,
+                  assessmentId: data.assessment_id,
                 },
               })
             );
@@ -762,6 +770,34 @@ export function WebSocketProvider({
               },
             })
           );
+        }
+      );
+
+      // ✅ NEW: Handle assessment completion event (when all 7 questions are ready)
+      socket.on(
+        "assessment_completed",
+        (data: {
+          success: boolean;
+          message: string;
+          chat_id: string;
+          assessment_id: string;
+        }) => {
+          logInfo("Assessment completed", data);
+          if (data.success) {
+            // Dispatch event for UI components to handle assessment completion
+            window.dispatchEvent(
+              new CustomEvent("assessmentCompleted", {
+                detail: {
+                  chatId: data.chat_id,
+                  success: data.success,
+                  message: data.message,
+                  assessmentId: data.assessment_id,
+                },
+              })
+            );
+          } else {
+            toast.error(data.message);
+          }
         }
       );
 

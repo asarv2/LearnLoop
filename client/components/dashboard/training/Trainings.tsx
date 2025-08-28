@@ -72,24 +72,28 @@ function TrainingCard({
 
   const color = trainingColors[index % trainingColors.length];
   const icon = trainingIcons[index % trainingIcons.length];
-  const status = training.active ? "available" : "coming-soon";
+
+  // Check if this is Offboarding Practice
+  const isOffboardingPractice = training.title
+    .toLowerCase()
+    .includes("offboarding practice");
 
   // Get the first scenario if available
   const firstScenario = scenarios?.[0];
   const href =
-    training.active && firstScenario && firstScenario.id
+    isOffboardingPractice && firstScenario && firstScenario.id
       ? `/dashboard/trainings/s/${firstScenario.id}`
       : "#";
 
   return (
     <Col xs={24} sm={12} lg={8} key={training.id}>
       <Card
-        hoverable={status === "available"}
+        hoverable={isOffboardingPractice}
         style={{
           height: "100%",
-          cursor: status === "available" ? "pointer" : "default",
+          cursor: isOffboardingPractice ? "pointer" : "default",
           transition: "all 0.3s ease",
-          opacity: status === "coming-soon" ? 0.8 : 1,
+          opacity: isOffboardingPractice ? 1 : 0.8,
         }}
       >
         <div style={{ textAlign: "center", marginBottom: "16px" }}>
@@ -104,7 +108,7 @@ function TrainingCard({
           </div>
           <Title level={4} style={{ margin: 0 }}>
             {training.title}
-            {status === "coming-soon" && (
+            {!isOffboardingPractice && (
               <div style={{ marginTop: "8px" }}>
                 <Badge count="Soon" style={{ backgroundColor: "#fa8c16" }} />
               </div>
@@ -129,7 +133,7 @@ function TrainingCard({
         </div>
 
         <div style={{ textAlign: "center" }}>
-          {status === "available" ? (
+          {isOffboardingPractice ? (
             <Link href={href}>
               <Button
                 type="primary"
@@ -198,9 +202,11 @@ export default function Trainings() {
       <Row gutter={[24, 24]}>
         {trainings
           ?.sort((a, b) => {
-            // Sort active trainings first, then inactive ones
-            if (a.active && !b.active) return -1;
-            if (!a.active && b.active) return 1;
+            // Sort "Offboarding Practice" first, then other trainings
+            if (a.title.toLowerCase().includes("offboarding practice"))
+              return -1;
+            if (b.title.toLowerCase().includes("offboarding practice"))
+              return 1;
             return 0;
           })
           .map((training, index) => (

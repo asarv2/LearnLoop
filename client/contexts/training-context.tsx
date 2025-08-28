@@ -135,25 +135,35 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
       // Also invalidate related data that might be affected
       queryClient.invalidateQueries({ queryKey: ["messages", chatId] });
       queryClient.invalidateQueries({ queryKey: ["assessments"] });
+      queryClient.invalidateQueries({ queryKey: ["questions"] }); // ✅ Add questions invalidation
       queryClient.invalidateQueries({ queryKey: ["feedback"] });
     };
 
     const handleTrainingEnded = (event: CustomEvent) => {
-      const { chatId: eventChatId } = event.detail;
+      const {
+        chatId: eventChatId,
+        assessmentReady = false,
+        assessmentId,
+      } = event.detail;
       if (eventChatId === chatId) {
-        logInfo(
-          "Training ended for current chat, invalidating queries and showing assessment"
-        );
+        logInfo("Training ended for current chat, invalidating queries", {
+          assessmentReady,
+          assessmentId,
+        });
 
         // Invalidate all relevant queries
         invalidateChatQueries();
 
-        // Show assessment modal immediately and mark as processed
-        setShowAssessment(true);
-        lastProcessedAssessmentRef.current = "assessment";
-
-        // ✅ NEW: Clear loading state for assessment
-        setIsWaitingForAssessment(false);
+        // Only show assessment if it's ready (has all 7 questions)
+        if (assessmentReady) {
+          logInfo("Assessment is ready, showing assessment modal immediately");
+          setShowAssessment(true);
+          lastProcessedAssessmentRef.current = "assessment";
+          setIsWaitingForAssessment(false);
+        } else {
+          logInfo("Assessment not ready yet, waiting for completion");
+          setIsWaitingForAssessment(true);
+        }
       }
     };
 
@@ -165,11 +175,30 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         // Invalidate all relevant queries
         invalidateChatQueries();
 
-        // Show assessment modal immediately and mark as processed
+        // If we were waiting for assessment, show it now
+        if (isWaitingForAssessment) {
+          logInfo(
+            "Assessment should now be complete, showing assessment modal"
+          );
+          setShowAssessment(true);
+          lastProcessedAssessmentRef.current = "assessment";
+          setIsWaitingForAssessment(false);
+        }
+      }
+    };
+
+    // ✅ NEW: Handle assessment completion event (when all 7 questions are ready)
+    const handleAssessmentCompleted = (event: CustomEvent) => {
+      const { chatId: eventChatId, assessmentId } = event.detail;
+      if (eventChatId === chatId) {
+        logInfo("Assessment completed for current chat", { assessmentId });
+
+        // Invalidate all relevant queries
+        invalidateChatQueries();
+
+        // Show assessment modal immediately
         setShowAssessment(true);
         lastProcessedAssessmentRef.current = "assessment";
-
-        // ✅ NEW: Clear loading state for assessment
         setIsWaitingForAssessment(false);
       }
     };
@@ -202,6 +231,10 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
       handleGradingCompleted as EventListener
     );
     window.addEventListener(
+      "assessmentCompleted",
+      handleAssessmentCompleted as EventListener
+    );
+    window.addEventListener(
       "assessmentSubmitted",
       handleAssessmentSubmitted as EventListener
     );
@@ -215,6 +248,10 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
       window.removeEventListener(
         "gradingCompleted",
         handleGradingCompleted as EventListener
+      );
+      window.removeEventListener(
+        "assessmentCompleted",
+        handleAssessmentCompleted as EventListener
       );
       window.removeEventListener(
         "assessmentSubmitted",

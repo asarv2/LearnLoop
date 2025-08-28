@@ -120,12 +120,15 @@ function CategoricalField({
   field,
   value,
   onChange,
+  selectedParameterId,
 }: {
   field: NonNullable<Tables<"fields">>;
   value: string;
   onChange: (value: string, parameterId?: string) => void;
+  selectedParameterId?: string;
 }) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
+  const [customValue, setCustomValue] = useState("");
 
   if (isLoading) return <Spinner size="2" />;
 
@@ -156,11 +159,42 @@ function CategoricalField({
     "var(--gold-9)",
   ];
 
+  const handleParameterSelect = (
+    parameterId: string,
+    parameterName: string
+  ) => {
+    if (parameterName.toLowerCase() === "custom") {
+      // For custom, set the value to indicate it's selected, but no parameter ID
+      setCustomValue("");
+      onChange("Custom", undefined);
+    } else {
+      setCustomValue("");
+      onChange(parameterName, parameterId);
+    }
+  };
+
+  // Handle custom input change
+  const handleCustomInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    setCustomValue(newValue);
+    // Pass the custom value without a parameter ID to indicate it's custom
+    // If there's actual content, use it; otherwise keep "Custom" to show it's selected
+    onChange(newValue.trim() !== "" ? newValue : "Custom", undefined);
+  };
+
   return (
     <Flex direction="column" gap="3">
       {parameters?.map((parameter, index) => {
-        const isSelected = value === parameter.id;
+        // Check if selected by parameter ID (preferred) or by parameter name/value (fallback)
+        const isSelected =
+          selectedParameterId === parameter.id ||
+          value === parameter.id ||
+          value === parameter.name ||
+          (parameter.name?.toLowerCase() === "custom" &&
+            (value === "Custom" ||
+              (value && value.trim() !== "" && !selectedParameterId)));
         const colorIndex = index % colors.length;
+        const isCustom = parameter.name?.toLowerCase() === "custom";
 
         return (
           <Card
@@ -173,40 +207,72 @@ function CategoricalField({
               cursor: "pointer",
               transition: "all 0.2s ease",
             }}
-            onClick={() => onChange(parameter.id!, parameter.id!)}
+            onClick={() =>
+              handleParameterSelect(parameter.id!, parameter.name!)
+            }
           >
             <Box p="4">
-              <Flex align="center" gap="3">
-                <Box
-                  style={{
-                    width: "20px",
-                    height: "20px",
-                    borderRadius: "50%",
-                    border: `2px solid ${
-                      isSelected ? dotColors[colorIndex] : "var(--gray-6)"
-                    }`,
-                    background: isSelected
-                      ? dotColors[colorIndex]
-                      : "transparent",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  {isSelected && (
-                    <CheckIcon width="12" height="12" color="white" />
-                  )}
-                </Box>
-                <Box>
-                  <Text size="3" weight="bold">
-                    {parameter.name}:
-                  </Text>
-                  {parameter.description && (
-                    <Text size="2" color="gray">
-                      {` ${parameter.description}`}
+              <Flex direction="column" gap="3">
+                <Flex align="center" gap="3">
+                  <Box
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      borderRadius: "50%",
+                      border: `2px solid ${
+                        isSelected ? dotColors[colorIndex] : "var(--gray-6)"
+                      }`,
+                      background: isSelected
+                        ? dotColors[colorIndex]
+                        : "transparent",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {isSelected && (
+                      <CheckIcon width="12" height="12" color="white" />
+                    )}
+                  </Box>
+                  <Box>
+                    <Text size="3" weight="bold">
+                      {parameter.name}:
                     </Text>
-                  )}
-                </Box>
+                    {parameter.description && (
+                      <Text size="2" color="gray">
+                        {` ${parameter.description}`}
+                      </Text>
+                    )}
+                  </Box>
+                </Flex>
+
+                {/* Custom Input Field - shows inline when Custom is selected */}
+                {isCustom && isSelected && (
+                  <Box style={{ marginLeft: "44px" }}>
+                    <input
+                      type="text"
+                      placeholder="Enter your own custom offboarding scenario to practice..."
+                      value={value === "Custom" ? customValue : value}
+                      onChange={handleCustomInputChange}
+                      onClick={(e) => e.stopPropagation()} // Prevent card click when clicking input
+                      style={{
+                        width: "100%",
+                        padding: "12px 16px",
+                        borderRadius: "8px",
+                        border: `1px solid ${
+                          (value === "Custom" ? customValue : value)
+                            ? "var(--blue-7)"
+                            : "var(--gray-6)"
+                        }`,
+                        fontSize: "16px",
+                        outline: "none",
+                        background: "white",
+                        transition: "all 0.2s ease",
+                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                      }}
+                    />
+                  </Box>
+                )}
               </Flex>
             </Box>
           </Card>
@@ -286,12 +352,21 @@ function DocumentField({
 function PersonaField({
   field,
   onChange,
+  selectedParameterId,
 }: {
   field: NonNullable<Tables<"fields">>;
   onChange: (value: string, parameterId?: string) => void;
+  selectedParameterId?: string;
 }) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
+
+  // Sync internal state with parent when selectedParameterId changes
+  useEffect(() => {
+    if (selectedParameterId && selectedParameterId !== selectedPersonaId) {
+      setSelectedPersonaId(selectedParameterId);
+    }
+  }, [selectedParameterId, selectedPersonaId]);
 
   if (isLoading) return <Spinner size="2" />;
 
@@ -349,15 +424,25 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   // Initialize field values when scenario loads
   useEffect(() => {
     if (scenario?.field_ids) {
+      // Filter out document fields for Employee Offboarding Training
+      const filteredFieldIds = scenario.field_ids.filter((fieldId) => {
+        const field = fields?.find((f) => f.id === fieldId);
+        // If this is Employee Offboarding Training, exclude document fields
+        if (scenario.title?.toLowerCase().includes("employee offboarding")) {
+          return field?.field_type !== "document";
+        }
+        return true; // Keep all fields for other trainings
+      });
+
       setFieldValues(
-        scenario.field_ids.map((fieldId) => ({
+        filteredFieldIds.map((fieldId) => ({
           fieldId,
           value: "",
           parameterId: undefined,
         }))
       );
     }
-  }, [scenario]);
+  }, [scenario, fields]);
 
   const updateFieldValue = (
     fieldId: string,
@@ -372,6 +457,54 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     );
   };
 
+  const handleAutoFill = () => {
+    // Auto-fill mapping based on field names and database values
+    const autoFillMappings = [
+      {
+        fieldName: "Offboarding Scenario",
+        value: "Involuntary Termination",
+        parameterId: "bb58fdaf-0846-4951-8d16-4e17ec029ed3",
+      },
+      {
+        fieldName: "Employee Name",
+        value: "John Doe",
+      },
+      {
+        fieldName: "Employee Role",
+        value: "Software Engineer",
+      },
+      {
+        fieldName: "Employee Level",
+        value: "Junior",
+        parameterId: "c4edcb88-2197-4d41-9e15-00c25713e034",
+      },
+      {
+        fieldName: "Employee Persona",
+        value: "Defensive Employee",
+        parameterId: "fbc90488-613e-4692-934d-9d791558d226",
+      },
+    ];
+
+    // Apply auto-fill values to matching fields
+    setFieldValues((prev) =>
+      prev.map((fv) => {
+        const field = fields?.find((f) => f.id === fv.fieldId);
+        const autoFill = autoFillMappings.find(
+          (mapping) => mapping.fieldName === field?.name
+        );
+
+        if (autoFill) {
+          return {
+            ...fv,
+            value: autoFill.value,
+            parameterId: autoFill.parameterId,
+          };
+        }
+        return fv;
+      })
+    );
+  };
+
   const isStepComplete = (fieldId: string) => {
     const fieldValue = fieldValues.find((fv) => fv.fieldId === fieldId);
     if (!fieldValue) return false;
@@ -379,6 +512,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     // For persona fields, check if there's a valid selection
     if (fieldValue.parameterId) {
       return fieldValue.parameterId.trim() !== "";
+    }
+
+    // For custom fields, check if the value is not just "Custom" but has actual content
+    if (fieldValue.value === "Custom") {
+      return false; // Custom is selected but no actual custom text entered
     }
 
     // For other fields, check if value is not empty
@@ -399,6 +537,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       if (fv.parameterId) {
         return fv.parameterId.trim() !== "";
       }
+
+      // For custom fields, check if the value is not just "Custom" but has actual content
+      if (fv.value === "Custom") {
+        return false; // Custom is selected but no actual custom text entered
+      }
+
       return fv.value !== "";
     });
 
@@ -429,7 +573,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               const formData = new FormData();
               formData.append("file", fieldValue.file);
               await uploadDocument(document.id!, formData);
-              
+
               // Return field value with document ID as the value
               return {
                 ...fieldValue,
@@ -462,7 +606,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
   if (scenarioLoading) {
     return (
-      <Box style={{ minHeight: "100vh", background: "var(--gray-1)" }}>
+      <Box style={{ minHeight: "100vh", background: "transparent" }}>
         <Container size="4" py="8">
           <Flex justify="center" align="center" style={{ minHeight: "50vh" }}>
             <Spinner size="3" />
@@ -474,7 +618,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
   if (!scenario) {
     return (
-      <Box style={{ minHeight: "100vh", background: "var(--gray-1)" }}>
+      <Box style={{ minHeight: "100vh", background: "transparent" }}>
         <Container size="4" py="8">
           <Text>Scenario not found</Text>
         </Container>
@@ -483,7 +627,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   }
 
   return (
-    <Box style={{ minHeight: "100vh", background: "var(--gray-1)" }}>
+    <Box style={{ minHeight: "100vh", background: "transparent" }}>
       {/* Header */}
 
       {/* Back Button */}
@@ -500,9 +644,53 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       <Container size="4" py="8">
         {/* Hero Section */}
         <Box mb="10" style={{ textAlign: "center" }}>
-          <Heading size="9" weight="bold" mb="4">
-            {scenario.title}
-          </Heading>
+          {/* Title with Auto-Fill Button */}
+          <Box style={{ position: "relative", marginBottom: "16px" }}>
+            <Heading size="9" weight="bold">
+              {scenario.title}
+            </Heading>
+            {/* Auto-Fill Button */}
+            <Box
+              style={{
+                position: "absolute",
+                top: "50%",
+                right: "0",
+                transform: "translateY(-50%)",
+              }}
+            >
+              <Button
+                variant="solid"
+                size="3"
+                onClick={handleAutoFill}
+                style={{
+                  backgroundColor: "var(--violet-9)",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "12px 20px",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+                  transition: "all 0.2s ease",
+                  cursor: "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "var(--violet-10)";
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                  e.currentTarget.style.boxShadow =
+                    "0 4px 12px rgba(0, 0, 0, 0.2)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "var(--violet-9)";
+                  e.currentTarget.style.transform = "translateY(0px)";
+                  e.currentTarget.style.boxShadow =
+                    "0 2px 8px rgba(0, 0, 0, 0.15)";
+                }}
+              >
+                Auto-Fill
+              </Button>
+            </Box>
+          </Box>
           <Text size="4" color="gray">
             {scenario.description}
           </Text>
@@ -510,21 +698,35 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
         {/* Dynamic Field Cards */}
         <Box maxWidth="800px" mx="auto">
-          {scenario.field_ids?.map((fieldId, index) => (
+          {fieldValues.map((fieldValue, index) => (
             <FieldCard
-              key={fieldId}
-              fieldId={fieldId}
+              key={fieldValue.fieldId}
+              fieldId={fieldValue.fieldId}
               index={index}
-              isComplete={isStepComplete(fieldId)}
-              value={
-                fieldValues.find((fv) => fv.fieldId === fieldId)?.value || ""
-              }
+              isComplete={isStepComplete(fieldValue.fieldId)}
+              value={fieldValue.value}
               onChange={(value, parameterId, file) =>
-                updateFieldValue(fieldId, value, parameterId, file)
+                updateFieldValue(fieldValue.fieldId, value, parameterId, file)
               }
-              isLast={index === (scenario.field_ids?.length || 0) - 1}
+              isLast={index === fieldValues.length - 1}
+              scenario={scenario}
+              selectedParameterId={fieldValue.parameterId}
             />
           ))}
+
+          {/* Progress Bar between last field and Start Scenario */}
+          {fieldValues.length > 0 && (
+            <Flex justify="center" mb="4">
+              <Box
+                style={{
+                  width: "2px",
+                  height: "24px",
+                  background: "var(--gray-6)",
+                  borderRadius: "2px",
+                }}
+              />
+            </Flex>
+          )}
 
           {/* Start Button */}
           <Box>
@@ -615,6 +817,7 @@ function FieldCard({
   value,
   onChange,
   isLast,
+  selectedParameterId,
 }: {
   fieldId: string;
   index: number;
@@ -622,6 +825,7 @@ function FieldCard({
   value: string;
   onChange: (value: string, parameterId?: string, file?: File) => void;
   isLast: boolean;
+  selectedParameterId?: string;
 }) {
   const { data: field, isLoading } = useField(fieldId);
 
@@ -681,6 +885,7 @@ function FieldCard({
             field={safeField}
             value={value}
             onChange={handleChange}
+            selectedParameterId={selectedParameterId}
           />
         );
       case "document":
@@ -692,7 +897,13 @@ function FieldCard({
           />
         );
       case "persona":
-        return <PersonaField field={safeField} onChange={handleChange} />;
+        return (
+          <PersonaField
+            field={safeField}
+            onChange={handleChange}
+            selectedParameterId={selectedParameterId}
+          />
+        );
       default:
         return <Text>Unknown field type: {field.field_type}</Text>;
     }

@@ -12,10 +12,14 @@ from typing import Any, Dict, Optional
 
 import socketio  # type: ignore
 from app.db import get_session
-from app.models import (Attempts, Chats, Documents,  # ✨ Import Personas
-                        Fields, Messages, Parameters, Personas, Rubrics,
+from app.models import (Assessments, Attempts, Chats, Documents,  # ✨ Import Personas
+                        Fields, Messages, Parameters, Personas, Questions, Rubrics,
                         Scenarios)
-from app.services.agents.assesment import run_assessment_agent
+from app.services.agents.assesment import (
+    run_assessment_agent, 
+    run_training_specific_assessment,
+    create_initial_assessment_with_training_questions
+)
 from app.services.agents.feedback import run_feedback_agent
 from app.services.agents.generic import run_generic_agent
 from app.services.agents.grade import run_grading_agent
@@ -159,6 +163,40 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
             except Exception as e:
                 logger.error(f"Error running scenario agent: {str(e)}")
                 # Continue with training even if scenario agent fails
+
+            # Generate training-specific assessment questions early (3 questions)
+            # This allows them to be ready instantly when training ends
+            try:
+                logger.info(f"🔍 DEBUG: Starting training-specific assessment generation for chat {chat.id}")
+                training_questions_result = await run_training_specific_assessment(chat.id, db_session)
+                
+                logger.info(f"🔍 DEBUG: Training questions result: {training_questions_result}")
+                
+                if training_questions_result.get("success"):
+                    # Create assessment with training-specific questions only (3 questions)
+                    # The remaining questions will be added when training ends
+                    training_questions = training_questions_result.get("questions", [])
+                    logger.info(f"🔍 DEBUG: Got {len(training_questions)} training questions: {[q.get('question', 'No question text') for q in training_questions]}")
+                    
+                    assessment_result = await create_initial_assessment_with_training_questions(
+                        chat.id, 
+                        training_questions,
+                        db_session
+                    )
+                    
+                    logger.info(f"🔍 DEBUG: Assessment creation result: {assessment_result}")
+                    
+                    if assessment_result.get("success"):
+                        logger.info(f"✅ Successfully created assessment {assessment_result.get('assessment_id')} with {len(training_questions)} training-specific questions")
+                    else:
+                        logger.error(f"❌ Failed to create assessment: {assessment_result.get('message')}")
+                else:
+                    logger.error(f"❌ Training-specific assessment generation failed: {training_questions_result.get('message')}")
+            except Exception as e:
+                logger.error(f"❌ Error generating training-specific assessment questions: {str(e)}")
+                import traceback
+                logger.error(f"❌ Traceback: {traceback.format_exc()}")
+                # Continue with training even if assessment generation fails
 
             logger.info(f"Successfully created training session: attempt_id={attempt.id}, chat_id={chat.id}")
 
@@ -343,13 +381,25 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
 
             logger.info(f"Training chat {chat_id} marked as completed")
 
-            # Run assessment agent to generate questions, then grading agent
-            # This allows grades to be generated while the user takes the assessment
-            try:
-                logger.info(f"Running assessment agent for chat {chat_id}")
-                assessment_result = await run_assessment_agent(uuid.UUID(chat_id))
+            # Check if assessment with training questions already exists
+            existing_assessment = db_session.exec(
+                select(Assessments).where(Assessments.chat_id == chat_id)
+            ).first()
 
-                # Send success response
+            logger.info(f"🔍 DEBUG: Looking for existing assessment for chat {chat_id}")
+            
+            if existing_assessment:
+                # Count existing questions
+                existing_questions = db_session.exec(
+                    select(Questions).where(Questions.assessment_id == existing_assessment.id)
+                ).all()
+                
+                logger.info(f"🔍 DEBUG: Found existing assessment {existing_assessment.id} with {len(existing_questions)} questions")
+                logger.info(f"🔍 DEBUG: Questions: {[(q.stem[:50] + '...' if len(q.stem) > 50 else q.stem, q.default_question) for q in existing_questions]}")
+                
+                logger.info(f"✅ Found existing assessment {existing_assessment.id}, sending immediate response")
+                
+                # Send immediate success response with assessment ready
                 sio = get_sio_instance()
                 await sio.emit(
                     "training_ended",
@@ -357,12 +407,29 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
                         "success": True,
                         "chat_id": chat_id,
                         "message": "Training session ended successfully",
+                        "assessment_ready": True,  # Assessment is immediately available (3 questions)
+                        "assessment_id": str(existing_assessment.id),
                     },
                     room=chat_id,
                 )
+                
+                # Now add conversation-specific and general questions in the background
+                # This doesn't block the user interface
+                try:
+                    logger.info(f"Adding conversation-specific questions to assessment {existing_assessment.id}")
+                    assessment_result = await run_assessment_agent(uuid.UUID(chat_id), db_session)
                     
-                # Now run grading agent since assessment exists
-                # This runs in the same request but allows grades to be ready when user finishes assessment
+                    if assessment_result.get("success"):
+                        logger.info(f"Successfully completed assessment with all 7 questions")
+                        # The assessment_completed event will be emitted by run_assessment_agent
+                    else:
+                        logger.warning(f"Failed to add conversation questions: {assessment_result.get('message')}")
+                except Exception as e:
+                    logger.error(f"Error adding conversation questions: {str(e)}")
+                    # Continue even if this fails - user can still take the 3-question assessment
+
+                # Run grading agent since assessment exists
+                # This runs in the background and allows grades to be ready when user finishes assessment
                 try:
                     # Get the scenario to find the rubric_id
                     scenario_result = db_session.exec(
@@ -391,11 +458,21 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
                 except Exception as grading_error:
                     logger.error(f"Error running grading agent: {str(grading_error)}")
                     # Continue even if grading agent fails
-                else:
-                    logger.warning(f"Assessment agent failed: {assessment_result.get('message')}")
-            except Exception as e:
-                logger.error(f"Error running assessment agent: {str(e)}")
-                # Continue even if assessment agent fails
+                    
+            else:
+                logger.warning(f"No existing assessment found for chat {chat_id}")
+                # Fallback - send response indicating assessment may not be ready
+                sio = get_sio_instance()
+                await sio.emit(
+                    "training_ended",
+                    {
+                        "success": True,
+                        "chat_id": chat_id,
+                        "message": "Training session ended successfully",
+                        "assessment_ready": False,  # Assessment may not be complete
+                    },
+                    room=chat_id,
+                )
 
         finally:
             db_session.close()

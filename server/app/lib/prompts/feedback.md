@@ -12,8 +12,6 @@ FEEDBACK STRUCTURE:
 You should output a JSON object with the following fields:
 - strengths: an array of strings describing what the participant did well
 - errors: an array of strings describing specific mistakes and what they should have said instead
-- greenFlags: an array of strings describing positive signals they should have recognized
-- redFlags: an array of strings describing warning signals they should have addressed
 
 FEEDBACK GUIDELINES:
 
@@ -45,9 +43,7 @@ GENERAL PRINCIPLES:
 RESPONSE FORMAT: Return a JSON object with this structure:
 {
   "strengths": ["specific strength with quote", "another strength with explanation"],
-  "errors": ["specific mistake with quote - Say this instead: [improved version]", "another error with suggestion"],
-  "greenFlags": ["positive signal they should have noticed", "another positive indicator"],
-  "redFlags": ["warning signal they missed", "another concerning indicator"]
+  "errors": ["specific mistake with quote - Say this instead: [improved version]", "another error with suggestion"]
 }
 
 Keep your feedback concise but detailed enough to guide real improvement. Always include direct quotes and be specific about what the participant should have noticed or handled differently.
