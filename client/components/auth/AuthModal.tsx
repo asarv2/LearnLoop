@@ -1,32 +1,26 @@
 "use client";
 
-import React, { useState } from 'react';
-import { 
-  Modal, 
-  Form, 
-  Input, 
-  Button, 
-  Typography, 
-  Alert
-} from 'antd';
-import {
-  UserOutlined,
-  LockOutlined,
-  MailOutlined
-} from '@ant-design/icons';
-import useSupabaseBrowser from '@/utils/supabase/supabase-browser';
-import { useRouter } from 'next/navigation';
+import useSupabaseBrowser from "@/utils/supabase/supabase-browser";
+import { LockOutlined, MailOutlined, UserOutlined } from "@ant-design/icons";
+import { Alert, Button, Form, Input, Modal, Typography } from "antd";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 const { Title, Text, Link } = Typography;
 
 interface AuthModalProps {
   open: boolean;
   onClose: () => void;
-  mode: 'login' | 'signup';
-  onModeChange: (mode: 'login' | 'signup') => void;
+  mode: "login" | "signup";
+  onModeChange: (mode: "login" | "signup") => void;
 }
 
-export default function AuthModal({ open, onClose, mode, onModeChange }: AuthModalProps) {
+export default function AuthModal({
+  open,
+  onClose,
+  mode,
+  onModeChange,
+}: AuthModalProps) {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,28 +32,32 @@ export default function AuthModal({ open, onClose, mode, onModeChange }: AuthMod
     alert(content);
   };
 
-  const handleSubmit = async (values: { email: string; password: string; fullName?: string }) => {
+  const handleSubmit = async (values: {
+    email: string;
+    password: string;
+    fullName?: string;
+  }) => {
     setLoading(true);
     setError(null);
 
     try {
-      if (mode === 'signup') {
+      if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
           email: values.email,
           password: values.password,
           options: {
             data: {
               full_name: values.fullName,
-            }
-          }
+            },
+          },
         });
 
         if (error) throw error;
 
         // For signup, always redirect to dashboard (no email verification required)
         if (data.user) {
-          showSuccess('Account created successfully!');
-          router.push('/dashboard/overview');
+          showSuccess("Account created successfully!");
+          router.push("/dashboard/trainings");
           onClose();
         }
       } else {
@@ -70,13 +68,17 @@ export default function AuthModal({ open, onClose, mode, onModeChange }: AuthMod
 
         if (error) throw error;
 
-        showSuccess('Welcome back!');
-        router.push('/dashboard/overview');
+        showSuccess("Welcome back!");
+        router.push("/dashboard/trainings");
         onClose();
       }
     } catch (error: unknown) {
-      console.error('Auth error:', error);
-      setError(error instanceof Error ? error.message : 'An error occurred during authentication');
+      console.error("Auth error:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "An error occurred during authentication"
+      );
     } finally {
       setLoading(false);
     }
@@ -87,7 +89,7 @@ export default function AuthModal({ open, onClose, mode, onModeChange }: AuthMod
     setError(null);
   };
 
-  const handleModeSwitch = (newMode: 'login' | 'signup') => {
+  const handleModeSwitch = (newMode: "login" | "signup") => {
     resetForm();
     onModeChange(newMode);
   };
@@ -99,116 +101,114 @@ export default function AuthModal({ open, onClose, mode, onModeChange }: AuthMod
 
   return (
     <Modal
-        open={open}
-        onCancel={handleClose}
-        footer={null}
-        width={400}
-        centered
-        destroyOnHidden
-      >
-        <div style={{ padding: '20px 0' }}>
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, #1890ff 0%, #722ed1 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 16px',
-              color: 'white',
-              fontSize: '20px',
-              fontWeight: 'bold'
-            }}>
-              L
-            </div>
-            <Title level={3} style={{ margin: 0 }}>
-              {mode === 'login' ? 'Welcome Back' : 'Create Account'}
-            </Title>
-            <Text type="secondary">
-              {mode === 'login' 
-                ? 'Sign in to continue your training' 
-                : 'Start your interview training journey'
-              }
-            </Text>
+      open={open}
+      onCancel={handleClose}
+      footer={null}
+      width={400}
+      centered
+      destroyOnHidden
+    >
+      <div style={{ padding: "20px 0" }}>
+        <div style={{ textAlign: "center", marginBottom: "32px" }}>
+          <div
+            style={{
+              width: "48px",
+              height: "48px",
+              borderRadius: "12px",
+              background: "linear-gradient(135deg, #1890ff 0%, #722ed1 100%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 16px",
+              color: "white",
+              fontSize: "20px",
+              fontWeight: "bold",
+            }}
+          >
+            L
           </div>
+          <Title level={3} style={{ margin: 0 }}>
+            {mode === "login" ? "Welcome Back" : "Create Account"}
+          </Title>
+          <Text type="secondary">
+            {mode === "login"
+              ? "Sign in to continue your training"
+              : "Start your interview training journey"}
+          </Text>
+        </div>
 
-          {error && (
-            <Alert
-              message={error}
-              type="error"
-              style={{ marginBottom: '16px' }}
-              closable
-              onClose={() => setError(null)}
-            />
+        {error && (
+          <Alert
+            message={error}
+            type="error"
+            style={{ marginBottom: "16px" }}
+            closable
+            onClose={() => setError(null)}
+          />
+        )}
+
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+          size="large"
+        >
+          {mode === "signup" && (
+            <Form.Item
+              name="fullName"
+              label="Full Name"
+              rules={[
+                { required: true, message: "Please enter your full name" },
+                { min: 2, message: "Name must be at least 2 characters" },
+              ]}
+            >
+              <Input
+                prefix={<UserOutlined />}
+                placeholder="Enter your full name"
+              />
+            </Form.Item>
           )}
 
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={handleSubmit}
-            size="large"
+          <Form.Item
+            name="email"
+            label="Email"
+            rules={[
+              { required: true, message: "Please enter your email" },
+              { type: "email", message: "Please enter a valid email" },
+            ]}
           >
-            {mode === 'signup' && (
-              <Form.Item
-                name="fullName"
-                label="Full Name"
-                rules={[
-                  { required: true, message: 'Please enter your full name' },
-                  { min: 2, message: 'Name must be at least 2 characters' }
-                ]}
-              >
-                <Input 
-                  prefix={<UserOutlined />} 
-                  placeholder="Enter your full name"
-                />
-              </Form.Item>
-            )}
+            <Input prefix={<MailOutlined />} placeholder="Enter your email" />
+          </Form.Item>
 
-            <Form.Item
-              name="email"
-              label="Email"
-              rules={[
-                { required: true, message: 'Please enter your email' },
-                { type: 'email', message: 'Please enter a valid email' }
-              ]}
+          <Form.Item
+            name="password"
+            label="Password"
+            rules={[
+              { required: true, message: "Please enter your password" },
+              { min: 6, message: "Password must be at least 6 characters" },
+            ]}
+          >
+            <Input.Password
+              prefix={<LockOutlined />}
+              placeholder="Enter your password"
+            />
+          </Form.Item>
+
+          <Form.Item style={{ marginBottom: "16px" }}>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={loading}
+              block
+              style={{ height: "48px", fontSize: "16px" }}
             >
-              <Input 
-                prefix={<MailOutlined />} 
-                placeholder="Enter your email"
-              />
-            </Form.Item>
+              {mode === "login" ? "Sign In" : "Create Account"}
+            </Button>
+          </Form.Item>
+        </Form>
 
-            <Form.Item
-              name="password"
-              label="Password"
-              rules={[
-                { required: true, message: 'Please enter your password' },
-                { min: 6, message: 'Password must be at least 6 characters' }
-              ]}
-            >
-              <Input.Password 
-                prefix={<LockOutlined />} 
-                placeholder="Enter your password"
-              />
-            </Form.Item>
-
-            <Form.Item style={{ marginBottom: '16px' }}>
-              <Button 
-                type="primary" 
-                htmlType="submit" 
-                loading={loading}
-                block
-                style={{ height: '48px', fontSize: '16px' }}
-              >
-                {mode === 'login' ? 'Sign In' : 'Create Account'}
-              </Button>
-            </Form.Item>
-          </Form>
-
-          {/* Google OAuth temporarily disabled - configure in Supabase Dashboard */}
-          {/* 
+        {/* Google OAuth temporarily disabled - configure in Supabase Dashboard */}
+        {/* 
           <Divider style={{ margin: '16px 0' }}>
             <Text type="secondary">or</Text>
           </Divider>
@@ -236,18 +236,22 @@ export default function AuthModal({ open, onClose, mode, onModeChange }: AuthMod
           </Button>
           */}
 
-          <div style={{ textAlign: 'center' }}>
-            <Text type="secondary">
-              {mode === 'login' ? "Don't have an account?" : "Already have an account?"}
-            </Text>{' '}
-            <Link 
-              onClick={() => handleModeSwitch(mode === 'login' ? 'signup' : 'login')}
-              style={{ fontWeight: 'bold' }}
-            >
-              {mode === 'login' ? 'Sign up' : 'Sign in'}
-            </Link>
-          </div>
+        <div style={{ textAlign: "center" }}>
+          <Text type="secondary">
+            {mode === "login"
+              ? "Don't have an account?"
+              : "Already have an account?"}
+          </Text>{" "}
+          <Link
+            onClick={() =>
+              handleModeSwitch(mode === "login" ? "signup" : "login")
+            }
+            style={{ fontWeight: "bold" }}
+          >
+            {mode === "login" ? "Sign up" : "Sign in"}
+          </Link>
         </div>
-      </Modal>
+      </div>
+    </Modal>
   );
-} 
+}

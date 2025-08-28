@@ -118,7 +118,7 @@ export default function ChatHeader({
     <>
       <Box
         style={{
-          background: "var(--gray-1)",
+          background: "transparent",
           borderBottom: "1px solid var(--gray-6)",
           padding: "16px 24px",
           width: "100%",
@@ -135,11 +135,17 @@ export default function ChatHeader({
             )}
             <Box>
               <Heading size="5" weight="bold" color="blue">
-                {chatTitle}
+                {chatTitle}:{" "}
+                <span
+                  style={{
+                    color: "var(--gray-11)",
+                    fontWeight: "normal",
+                    fontSize: "16px",
+                  }}
+                >
+                  {chatDescription}
+                </span>
               </Heading>
-              <Text size="2" color="gray">
-                {chatDescription}
-              </Text>
             </Box>
           </Flex>
 
@@ -156,22 +162,54 @@ export default function ChatHeader({
                 </Text>
                 {hasAssessment && onShowAssessment && (
                   <Button
-                    variant="soft"
-                    color="blue"
-                    size="2"
                     onClick={onShowAssessment}
+                    variant="outline"
+                    size="2"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "12px 16px",
+                      borderRadius: "12px",
+                      border: "1px solid var(--gray-6)",
+                      fontSize: "14px",
+                      fontWeight: "500",
+                      background: "white",
+                      color: "var(--gray-12)",
+                      cursor: "pointer",
+                      outline: "none",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                      transition: "all 0.2s ease",
+                      height: "48px",
+                      flexShrink: 0,
+                    }}
                   >
-                    View Assessment
+                    Assessment
                   </Button>
                 )}
                 {hasFeedback && onShowFeedback && (
                   <Button
-                    variant="soft"
-                    color="green"
-                    size="2"
                     onClick={onShowFeedback}
+                    variant="outline"
+                    size="2"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "12px 16px",
+                      borderRadius: "12px",
+                      border: "1px solid var(--gray-6)",
+                      fontSize: "14px",
+                      fontWeight: "500",
+                      background: "white",
+                      color: "var(--gray-12)",
+                      cursor: "pointer",
+                      outline: "none",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                      transition: "all 0.2s ease",
+                      height: "48px",
+                      flexShrink: 0,
+                    }}
                   >
-                    View Feedback
+                    Feedback
                   </Button>
                 )}
               </>

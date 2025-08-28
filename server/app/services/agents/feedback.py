@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 class FeedbackResponse(BaseModel):
     strengths: List[str]
     errors: List[str]
-    greenFlags: List[str]
-    redFlags: List[str]
 
 
 async def get_feedback_prompt() -> str:
@@ -125,8 +123,8 @@ async def run_feedback_agent(
             training_id=chat.training_id,
             strengths=feedback_result.strengths,
             errors=feedback_result.errors,
-            green_flags=feedback_result.greenFlags,
-            red_flags=feedback_result.redFlags,
+            green_flags=[],  # Empty array since we're not using flags anymore
+            red_flags=[],   # Empty array since we're not using flags anymore
         )
         session.add(feedback)
         session.commit()
@@ -144,8 +142,8 @@ async def run_feedback_agent(
             "feedback": {
                 "strengths": feedback_result.strengths,
                 "errors": feedback_result.errors,
-                "green_flags": feedback_result.greenFlags,
-                "red_flags": feedback_result.redFlags,
+                "green_flags": [],
+                "red_flags": [],
             }
         }
 

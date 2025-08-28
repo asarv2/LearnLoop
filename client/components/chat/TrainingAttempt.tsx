@@ -113,7 +113,14 @@ function TrainingAttemptContent() {
   const displayMessages = messages;
 
   return (
-    <Box style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+    <Box
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "calc(100vh - 96px)",
+        overflow: "hidden",
+      }}
+    >
       {!chat ? (
         <Box
           style={{

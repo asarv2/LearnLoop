@@ -32,14 +32,14 @@ const { Text } = Typography;
 
 const menuItems = [
   {
-    key: "/dashboard/overview",
-    icon: <DashboardOutlined />,
-    label: <Link href="/dashboard/overview">Overview</Link>,
-  },
-  {
     key: "/dashboard/trainings",
     icon: <PlayCircleOutlined />,
     label: <Link href="/dashboard/trainings">Trainings</Link>,
+  },
+  {
+    key: "/dashboard/overview",
+    icon: <DashboardOutlined />,
+    label: <Link href="/dashboard/overview">Overview</Link>,
   },
   {
     key: "/dashboard/history",
@@ -115,6 +115,11 @@ export default function DashboardLayout({
           background: "#fafafa",
           boxShadow: "2px 0 8px rgba(0,0,0,0.06)",
           borderRight: "1px solid #f0f0f0",
+          position: "fixed",
+          left: 0,
+          top: 0,
+          height: "100vh",
+          zIndex: 1000,
         }}
         width={280}
       >
@@ -124,7 +129,7 @@ export default function DashboardLayout({
             marginBottom: "8px",
           }}
         >
-          <Link href="/dashboard/overview" style={{ textDecoration: "none" }}>
+          <Link href="/dashboard/trainings" style={{ textDecoration: "none" }}>
             <Space align="center">
               <div
                 style={{
@@ -161,7 +166,14 @@ export default function DashboardLayout({
 
         <Menu
           mode="inline"
-          selectedKeys={[pathname]}
+          selectedKeys={[
+            pathname.startsWith("/dashboard/trainings") ||
+            pathname.startsWith("/dashboard/s/") ||
+            pathname.startsWith("/dashboard/t/") ||
+            pathname.startsWith("/dashboard/a/")
+              ? "/dashboard/trainings"
+              : pathname,
+          ]}
           items={menuItems}
           style={{
             border: "none",
@@ -170,12 +182,11 @@ export default function DashboardLayout({
         />
       </Sider>
 
-      <Layout>
+      <Layout style={{ marginLeft: collapsed ? 80 : 280 }}>
         <Content
           style={{
             margin: "24px",
             padding: 0,
-            minHeight: 280,
             background: colorBgContainer,
             borderRadius: borderRadiusLG,
           }}
@@ -215,7 +226,7 @@ export default function DashboardLayout({
           </div>
 
           {/* Main content */}
-          <div style={{ padding: "24px" }}>{children}</div>
+          <div style={{ padding: "0px 24px" }}>{children}</div>
         </Content>
       </Layout>
     </Layout>

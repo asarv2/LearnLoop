@@ -19,7 +19,6 @@ import { useAllRubricGrades } from "@/lib/api/hooks/useRubrics";
 import { useScenarios } from "@/lib/api/hooks/useScenarios";
 import { useStandards } from "@/lib/api/hooks/useStandards";
 import { useTrainings } from "@/lib/api/hooks/useTrainings";
-import { Flame, LineChartIcon, Timer } from "lucide-react";
 import { type ComponentType, useCallback, useMemo, useState } from "react";
 import {
   Area,
@@ -135,8 +134,7 @@ export default function Overview() {
           const trainingId = chat?.training_id || null;
           if (trainingId) {
             const training = (trainings || []).find((t) => t.id === trainingId);
-            highestInterviewTrainingName =
-              training?.title || null;
+            highestInterviewTrainingName = training?.title || null;
           } else {
             highestInterviewTrainingName = "Interview";
           }
@@ -399,7 +397,6 @@ export default function Overview() {
               <CardTitle className="text-xs font-medium text-slate-500">
                 Trainings Completed
               </CardTitle>
-              <LineChartIcon className="h-5 w-5 text-slate-400" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl md:text-4xl font-bold text-indigo-600">
@@ -412,7 +409,7 @@ export default function Overview() {
           <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-xs font-medium text-slate-500">
-                Highest Interview Score (This Month)
+                Highest Score
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -421,7 +418,7 @@ export default function Overview() {
               </div>
               <p className="text-xs text-slate-500">
                 {totals.highestInterviewTrainingName
-                  ? `From ${totals.highestInterviewTrainingName}`
+                  ? `${totals.highestInterviewTrainingName}`
                   : "Interview"}
               </p>
             </CardContent>
@@ -430,15 +427,15 @@ export default function Overview() {
           <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-xs font-medium text-slate-500">
-                Total Hours Practiced
+                Hours Practiced
               </CardTitle>
               <div className="flex items-center gap-2">
                 <Select
                   value={hoursType}
                   onValueChange={(v) => setHoursType(v as TrainingTypeOption)}
                 >
-                  <SelectTrigger className="w-40 rounded-full shadow-sm bg-white text-slate-900 border-slate-200 h-8 px-3">
-                    <SelectValue placeholder="Training" />
+                  <SelectTrigger className="w-32 rounded-full shadow-sm bg-white text-slate-900 border-slate-200 h-8 px-3 text-xs">
+                    <SelectValue placeholder="Type" />
                   </SelectTrigger>
                   <SelectContent className="bg-white text-slate-900 border border-slate-200">
                     {TRAINING_TYPES.map((t) => (
@@ -448,7 +445,6 @@ export default function Overview() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Timer className="h-5 w-5 text-slate-400" />
               </div>
             </CardHeader>
             <CardContent>
@@ -464,7 +460,6 @@ export default function Overview() {
               <CardTitle className="text-xs font-medium text-slate-500">
                 Training Streak
               </CardTitle>
-              <Flame className="h-5 w-5 text-slate-400" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl md:text-4xl font-bold text-indigo-600">

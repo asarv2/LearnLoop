@@ -16,9 +16,8 @@ import Markdown from "@/components/common/Markdown";
 import { Chat, Message } from "@/types";
 import {
   ChatBubbleIcon,
-  InfoCircledIcon,
+  ChevronUpIcon,
   PaperPlaneIcon,
-  Pencil1Icon,
   PersonIcon,
   SpeakerLoudIcon,
 } from "@radix-ui/react-icons";
@@ -28,6 +27,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 // ✨ Import necessary hooks
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
+import { useField } from "@/lib/api/hooks/useFields";
+import { useParameter } from "@/lib/api/hooks/useParameters";
 import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
 import { trainingMessageKeys } from "@/lib/api/hooks/useTrainingMessages";
 import { logError, logInfo } from "@/utils/logger";
@@ -56,7 +57,7 @@ export default function ChatArea({
   chat,
 }: ChatAreaProps) {
   // Mode toggle state
-  const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const [isVoiceMode, setIsVoiceMode] = useState(true);
 
   // WebRTC audio state
   const {
@@ -84,10 +85,51 @@ export default function ChatArea({
   const [isLoadingHints, setIsLoadingHints] = useState(false);
   const [lastAIResponse, setLastAIResponse] = useState<string>("");
 
+  // Custom dropdown state
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   // ✨ Get the current user and their associated persona
   const { user } = useAuth();
   const { data: userPersona } = useUserPersona(user?.id);
   const { data: allPersonas } = usePersonas();
+
+  // ✨ Get Employee Name from chat parameters (simple approach)
+  // Use the first parameter ID to check for Employee Name field
+  // This is a simplified approach - we'll iterate through each parameter
+  const firstParamId = chat?.parameter_ids?.[0];
+  const { data: firstParam } = useParameter(firstParamId || "", !!firstParamId);
+  const { data: firstField } = useField(
+    firstParam?.field_id || "",
+    !!firstParam?.field_id
+  );
+
+  const secondParamId = chat?.parameter_ids?.[1];
+  const { data: secondParam } = useParameter(
+    secondParamId || "",
+    !!secondParamId
+  );
+  const { data: secondField } = useField(
+    secondParam?.field_id || "",
+    !!secondParam?.field_id
+  );
+
+  const thirdParamId = chat?.parameter_ids?.[2];
+  const { data: thirdParam } = useParameter(thirdParamId || "", !!thirdParamId);
+  const { data: thirdField } = useField(
+    thirdParam?.field_id || "",
+    !!thirdParam?.field_id
+  );
+
+  // Find which parameter has the "Employee Name" field
+  const employeeName =
+    firstField?.name === "Employee Name"
+      ? firstParam?.value
+      : secondField?.name === "Employee Name"
+      ? secondParam?.value
+      : thirdField?.name === "Employee Name"
+      ? thirdParam?.value
+      : null;
 
   // ✨ 1. Create a memoized map for efficient and stable persona lookup.
   // This prevents re-calculations on every render and ensures consistency.
@@ -124,12 +166,13 @@ export default function ChatArea({
 
   // Handle hints button click
   const handleHintsClick = useCallback(async () => {
-    if (!showHints && !hints && lastAIResponse) {
+    // If hints aren't available and not currently loading, generate them
+    if (!showHints && !hints && !isLoadingHints && lastAIResponse) {
       setIsLoadingHints(true);
       await generateHints();
     }
     setShowHints(!showHints);
-  }, [showHints, hints, lastAIResponse, generateHints]);
+  }, [showHints, hints, isLoadingHints, lastAIResponse, generateHints]);
 
   // Track if we're currently in a room to prevent duplicate joins
   // ❌ REMOVED: currentRoomRef - no longer needed since room management is centralized
@@ -165,9 +208,35 @@ export default function ChatArea({
       if (newResponse !== lastAIResponse) {
         setLastAIResponse(newResponse);
         setHints("");
+
+        // Automatically generate hints in the background for instant access
+        if (lastMessage.id && chat?.id) {
+          setIsLoadingHints(true);
+          emitGetHints({
+            chat_id: chat.id,
+            message_id: lastMessage.id,
+          });
+        }
       }
     }
-  }, [displayMessages, lastAIResponse]);
+  }, [displayMessages, lastAIResponse, chat?.id, emitGetHints]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   // ✅ NEW: Listen for server VAD events for UI feedback
   useEffect(() => {
@@ -280,6 +349,8 @@ export default function ChatArea({
 
   // ✅ FIX: PTT now creates an optimistic message for immediate UI feedback
   const handleVoiceStart = useCallback(() => {
+    // Close hints panel if open when user starts speaking
+    if (showHints) setShowHints(false);
     setMicrophoneMuted(false);
     setMicActive(true);
     logInfo("Microphone enabled for voice input.");
@@ -302,7 +373,14 @@ export default function ChatArea({
         } as Message,
       ]);
     }
-  }, [setMicrophoneMuted, chat?.id, userPersona?.id, queryClient]);
+  }, [
+    showHints,
+    setShowHints,
+    setMicrophoneMuted,
+    chat?.id,
+    userPersona?.id,
+    queryClient,
+  ]);
 
   const handleVoiceStop = useCallback(() => {
     // Only process if the mic was actually active
@@ -326,6 +404,9 @@ export default function ChatArea({
   const handleWebRTCTextMessage = useCallback(
     (message: string) => {
       if (!chat?.id || !message.trim() || !userPersona?.id) return;
+
+      // Close hints panel if open when user sends a text message
+      if (showHints) setShowHints(false);
 
       sendWebRTCMessage(chat.id, message);
 
@@ -355,16 +436,34 @@ export default function ChatArea({
       queryClient,
       setCurrentMessage,
       userPersona?.id,
+      showHints,
+      setShowHints,
     ]
   );
 
   // ✨ 3. Use the memoized map in the lookup function for stability.
   const getPersonaName = useCallback(
-    (personaId: string | null) => {
+    (personaId: string | null, isAssistantMessage: boolean = false) => {
+      // For assistant messages, use Employee Name if available
+      if (isAssistantMessage && employeeName) {
+        return employeeName;
+      }
       if (!personaId) return null;
       return personaMap.get(personaId) || null;
     },
-    [personaMap] // Dependency is now the stable map
+    [personaMap, employeeName] // Add employeeName to dependencies
+  );
+
+  // Handle dropdown option selection
+  const handleModeSelect = useCallback(
+    (mode: "text" | "voice") => {
+      const newIsVoiceMode = mode === "voice";
+      if (newIsVoiceMode !== isVoiceMode) {
+        handleModeToggle();
+      }
+      setIsDropdownOpen(false);
+    },
+    [isVoiceMode, handleModeToggle]
   );
 
   // Early return if chat is not available
@@ -395,6 +494,7 @@ export default function ChatArea({
         flexDirection: "column",
         background: "transparent",
         overflow: "hidden",
+        height: "100%",
       }}
     >
       {/* Audio element moved to global provider to avoid race conditions */}
@@ -406,6 +506,9 @@ export default function ChatArea({
           padding: "24px",
           overflow: "auto",
           background: "white",
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
         }}
       >
         <Flex direction="column" gap="4">
@@ -466,7 +569,10 @@ export default function ChatArea({
                           {/* Handle generic assistant persona */}
                           {isUserMessage
                             ? "You"
-                            : getPersonaName(message.persona_id) || "Assistant"}
+                            : getPersonaName(
+                                message.persona_id,
+                                isAssistantMessage
+                              ) || "Assistant"}
                         </Text>
                         <Text
                           size="2"
@@ -478,8 +584,10 @@ export default function ChatArea({
                             !message.content &&
                             isAssistantMessage
                               ? `${
-                                  getPersonaName(message.persona_id) ||
-                                  "Assistant"
+                                  getPersonaName(
+                                    message.persona_id,
+                                    isAssistantMessage
+                                  ) || "Assistant"
                                 } is thinking...`
                               : message.content || ""}
                           </Markdown>
@@ -518,205 +626,347 @@ export default function ChatArea({
             }}
           >
             <Flex direction="column" gap="3">
-              {/* Mode Toggle */}
-              <Flex justify="center" gap="2">
-                <Button
-                  onClick={handleModeToggle}
-                  variant={isVoiceMode ? "outline" : "solid"}
-                  size="2"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                    padding: "0.5rem 1rem",
-                    borderRadius: "20px",
-                    background: !isVoiceMode ? "var(--blue-9)" : "transparent",
-                    color: !isVoiceMode ? "white" : "var(--blue-9)",
-                    border: `1px solid var(--blue-9)`,
-                    cursor: "pointer",
-                  }}
-                >
-                  <Pencil1Icon width="16" height="16" />
-                  Text
-                </Button>
-                <Button
-                  onClick={handleModeToggle}
-                  variant={!isVoiceMode ? "outline" : "solid"}
-                  size="2"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                    padding: "0.5rem 1rem",
-                    borderRadius: "20px",
-                    background: isVoiceMode ? "var(--green-9)" : "transparent",
-                    color: isVoiceMode ? "white" : "var(--green-9)",
-                    border: `1px solid var(--green-9)`,
-                    cursor: "pointer",
-                  }}
-                >
-                  <SpeakerLoudIcon width="16" height="16" />
-                  Voice
-                </Button>
-                {/* Hints Button */}
-                {lastAIResponse && (
+              {/* Input Mode Selection and Interface */}
+              <Flex gap="3" align="center">
+                {/* Custom Mode Dropdown */}
+                <Box style={{ position: "relative" }} ref={dropdownRef}>
                   <Button
-                    onClick={handleHintsClick}
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                     variant="outline"
                     size="2"
-                    disabled={isLoadingHints}
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: "0.5rem",
-                      padding: "0.5rem 1rem",
-                      borderRadius: "20px",
-                      background: "transparent",
-                      color: "var(--purple-9)",
-                      border: `1px solid var(--purple-9)`,
-                      cursor: isLoadingHints ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    <InfoCircledIcon width="16" height="16" />
-                    {isLoadingHints
-                      ? "Loading..."
-                      : hints
-                      ? "Hints"
-                      : "Get Hints"}
-                  </Button>
-                )}
-              </Flex>
-
-              {isVoiceMode ? (
-                // Voice Input with WebRTC
-                <Flex direction="column" gap="3" align="center">
-                  {/* Voice Button */}
-                  <Button
-                    onMouseDown={handleVoiceStart}
-                    onMouseUp={handleVoiceStop}
-                    onMouseLeave={handleVoiceStop}
-                    onTouchStart={handleVoiceStart} // For mobile
-                    onTouchEnd={handleVoiceStop}
-                    // ✅ FIX: Disable the button until BOTH WebRTC is connected AND the audio bridge is ready.
-                    disabled={!isWebRTCConnected || !isAudioBridgeReady}
-                    size="3"
-                    style={{
-                      padding: "1rem 2rem",
-                      borderRadius: "30px",
-                      background: micActive
-                        ? "linear-gradient(135deg, #ef4444, #dc2626)"
-                        : !isWebRTCConnected || !isAudioBridgeReady
-                        ? "linear-gradient(135deg, #9ca3af, #6b7280)"
-                        : "linear-gradient(135deg, #6366f1, #8b5cf6)",
-                      color: "white",
-                      border: "none",
-                      cursor:
-                        !isWebRTCConnected || !isAudioBridgeReady
-                          ? "not-allowed"
-                          : "pointer",
-                      fontSize: "1rem",
-                      fontWeight: "600",
-                      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                      boxShadow: micActive
-                        ? "0 8px 30px rgba(239, 68, 68, 0.4)"
-                        : !isWebRTCConnected || !isAudioBridgeReady
-                        ? "0 4px 15px rgba(156, 163, 175, 0.3)"
-                        : "0 8px 30px rgba(99, 102, 241, 0.3)",
-                      transform: micActive ? "scale(1.05)" : "scale(1)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
-                    }}
-                  >
-                    <span style={{ fontSize: "1.2rem" }}>
-                      {micActive
-                        ? "🔴"
-                        : !isWebRTCConnected || !isAudioBridgeReady
-                        ? "⏳"
-                        : "🎤"}
-                    </span>
-                    {micActive
-                      ? "Listening..."
-                      : !isWebRTCConnected || !isAudioBridgeReady
-                      ? "Connecting..."
-                      : "Hold to Speak"}
-                  </Button>
-
-                  {(!isWebRTCConnected || !isAudioBridgeReady) && (
-                    <Text size="2" style={{ color: "var(--amber-11)" }}>
-                      Connecting to audio stream...
-                    </Text>
-                  )}
-                </Flex>
-              ) : (
-                // Text Input
-                <Box style={{ position: "relative" }}>
-                  <input
-                    type="text"
-                    placeholder="Type your message..."
-                    value={currentMessage}
-                    onChange={(e) => setCurrentMessage(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        if (currentMessage.trim() && !isSendingMessage) {
-                          handleWebRTCTextMessage(currentMessage);
-                        }
-                      }
-                    }}
-                    disabled={isSendingMessage}
-                    style={{
-                      width: "100%",
-                      padding: "12px 50px 12px 16px",
-                      borderRadius: "24px",
+                      justifyContent: "space-between",
+                      gap: "0.75rem",
+                      padding: "12px 16px",
+                      borderRadius: "12px",
                       border: "1px solid var(--gray-6)",
-                      fontSize: "16px",
-                      outline: "none",
+                      fontSize: "14px",
+                      fontWeight: "500",
                       background: "white",
+                      color: "var(--gray-12)",
+                      cursor: "pointer",
+                      outline: "none",
+                      minWidth: "100px",
+                      height: "48px",
                       boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                      transition:
-                        "border-color 0.2s ease, box-shadow 0.2s ease",
-                    }}
-                    onFocus={(e) => {
-                      e.target.style.borderColor = "var(--blue-7)";
-                      e.target.style.boxShadow =
-                        "0 1px 3px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(59, 130, 246, 0.1)";
-                    }}
-                    onBlur={(e) => {
-                      e.target.style.borderColor = "var(--gray-6)";
-                      e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.1)";
-                    }}
-                  />
-                  <Button
-                    onClick={() => handleWebRTCTextMessage(currentMessage)}
-                    disabled={!currentMessage.trim() || isSendingMessage}
-                    size="1"
-                    style={{
-                      position: "absolute",
-                      right: "6px",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      borderRadius: "20px",
-                      background:
-                        currentMessage.trim() && !isSendingMessage
-                          ? "var(--blue-9)"
-                          : "var(--gray-6)",
-                      border: "none",
-                      width: "36px",
-                      height: "36px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor:
-                        currentMessage.trim() && !isSendingMessage
-                          ? "pointer"
-                          : "not-allowed",
+                      transition: "all 0.2s ease",
                     }}
                   >
-                    <PaperPlaneIcon width="16" height="16" />
+                    <span>{isVoiceMode ? "Voice" : "Text"}</span>
+                    <ChevronUpIcon
+                      width="16"
+                      height="16"
+                      style={{
+                        transform: isDropdownOpen
+                          ? "rotate(0deg)"
+                          : "rotate(180deg)",
+                        transition: "transform 0.2s ease",
+                      }}
+                    />
                   </Button>
+
+                  {/* Dropdown Options */}
+                  {isDropdownOpen && (
+                    <Box
+                      style={{
+                        position: "absolute",
+                        bottom: "100%",
+                        left: "0",
+                        right: "0",
+                        marginBottom: "4px",
+                        background: "white",
+                        border: "1px solid var(--gray-6)",
+                        borderRadius: "12px",
+                        boxShadow: "0 8px 30px rgba(0, 0, 0, 0.12)",
+                        zIndex: 1000,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <Button
+                        onClick={() => handleModeSelect("text")}
+                        variant="ghost"
+                        size="1"
+                        style={{
+                          width: "100%",
+                          justifyContent: "flex-start",
+                          padding: "12px 16px",
+                          borderRadius: "0",
+                          background: "transparent",
+                          color: !isVoiceMode
+                            ? "var(--blue-11)"
+                            : "var(--gray-12)",
+                          fontWeight: !isVoiceMode ? "600" : "500",
+                          fontSize: "14px",
+                          border: "none",
+                        }}
+                      >
+                        Text
+                      </Button>
+
+                      {/* Divider Line */}
+                      <Box
+                        style={{
+                          width: "100%",
+                          height: "1px",
+                          background: "var(--gray-4)",
+                          margin: "0",
+                        }}
+                      />
+
+                      <Button
+                        onClick={() => handleModeSelect("voice")}
+                        variant="ghost"
+                        size="1"
+                        style={{
+                          width: "100%",
+                          justifyContent: "flex-start",
+                          padding: "12px 16px",
+                          borderRadius: "0",
+                          background: "transparent",
+                          color: isVoiceMode
+                            ? "var(--green-11)"
+                            : "var(--gray-12)",
+                          fontWeight: isVoiceMode ? "600" : "500",
+                          fontSize: "14px",
+                          border: "none",
+                          borderBottom: "1px solid var(--gray-4)",
+                        }}
+                      >
+                        Voice
+                      </Button>
+                    </Box>
+                  )}
                 </Box>
-              )}
+
+                {/* Input Interface */}
+                <Box style={{ flex: 1 }}>
+                  {isVoiceMode ? (
+                    // Voice Input with WebRTC
+                    <Flex direction="column" gap="3" align="center">
+                      {/* Voice Button */}
+                      <Flex
+                        gap="3"
+                        align="center"
+                        justify="center"
+                        style={{ width: "100%" }}
+                      >
+                        <Button
+                          onMouseDown={handleVoiceStart}
+                          onMouseUp={handleVoiceStop}
+                          onMouseLeave={handleVoiceStop}
+                          onTouchStart={handleVoiceStart} // For mobile
+                          onTouchEnd={handleVoiceStop}
+                          // ✅ FIX: Disable the button until BOTH WebRTC is connected AND the audio bridge is ready.
+                          disabled={!isWebRTCConnected || !isAudioBridgeReady}
+                          size="3"
+                          style={{
+                            padding: "12px 16px",
+                            height: "48px",
+                            borderRadius: "12px",
+                            background: micActive
+                              ? "#ef4444"
+                              : !isWebRTCConnected || !isAudioBridgeReady
+                              ? "#9ca3af"
+                              : "white",
+                            color: micActive
+                              ? "white"
+                              : !isWebRTCConnected || !isAudioBridgeReady
+                              ? "white"
+                              : "var(--gray-12)",
+                            border: micActive
+                              ? "none"
+                              : "1px solid var(--gray-6)",
+                            cursor:
+                              !isWebRTCConnected || !isAudioBridgeReady
+                                ? "not-allowed"
+                                : "pointer",
+                            fontSize: "14px",
+                            fontWeight: "500",
+                            transition: "all 0.2s ease",
+                            boxShadow: micActive
+                              ? "0 8px 30px rgba(239, 68, 68, 0.4)"
+                              : "0 1px 3px rgba(0, 0, 0, 0.1)",
+                            transform: micActive ? "scale(1.05)" : "scale(1)",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {micActive ? (
+                            <Box
+                              style={{
+                                width: "12px",
+                                height: "12px",
+                                borderRadius: "50%",
+                                background: "#ef4444",
+                                animation: "pulse 1.5s ease-in-out infinite",
+                              }}
+                            />
+                          ) : !isWebRTCConnected || !isAudioBridgeReady ? (
+                            <Box
+                              style={{
+                                width: "16px",
+                                height: "16px",
+                                borderRadius: "50%",
+                                background: "#9ca3af",
+                              }}
+                            />
+                          ) : (
+                            <SpeakerLoudIcon width="16" height="16" />
+                          )}
+                          {micActive
+                            ? "Listening..."
+                            : !isWebRTCConnected || !isAudioBridgeReady
+                            ? "Connecting..."
+                            : "Hold to Speak"}
+                        </Button>
+
+                        {/* Hints Button for Voice Mode */}
+                        {lastAIResponse && (
+                          <Button
+                            onClick={handleHintsClick}
+                            variant="outline"
+                            size="2"
+                            disabled={isLoadingHints}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              padding: "12px 16px",
+                              borderRadius: "12px",
+                              border: "1px solid var(--gray-6)",
+                              fontSize: "14px",
+                              fontWeight: "500",
+                              background: "white",
+                              color: "var(--gray-12)",
+                              cursor: isLoadingHints
+                                ? "not-allowed"
+                                : "pointer",
+                              outline: "none",
+                              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                              transition: "all 0.2s ease",
+                              height: "48px",
+                              flexShrink: 0,
+                            }}
+                          >
+                            Hints
+                          </Button>
+                        )}
+                      </Flex>
+
+                      {(!isWebRTCConnected || !isAudioBridgeReady) && (
+                        <Text size="2" style={{ color: "var(--amber-11)" }}>
+                          Connecting to audio stream...
+                        </Text>
+                      )}
+                    </Flex>
+                  ) : (
+                    // Text Input
+                    <Flex align="center" gap="3">
+                      <Box style={{ position: "relative", flex: 1 }}>
+                        <input
+                          type="text"
+                          placeholder="Type your message..."
+                          value={currentMessage}
+                          onChange={(e) => setCurrentMessage(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              if (currentMessage.trim() && !isSendingMessage) {
+                                handleWebRTCTextMessage(currentMessage);
+                              }
+                            }
+                          }}
+                          disabled={isSendingMessage}
+                          style={{
+                            width: "100%",
+                            padding: "12px 50px 12px 16px",
+                            borderRadius: "24px",
+                            border: "1px solid var(--gray-6)",
+                            fontSize: "16px",
+                            outline: "none",
+                            background: "white",
+                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                            transition:
+                              "border-color 0.2s ease, box-shadow 0.2s ease",
+                          }}
+                          onFocus={(e) => {
+                            e.target.style.borderColor = "var(--blue-7)";
+                            e.target.style.boxShadow =
+                              "0 1px 3px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(59, 130, 246, 0.1)";
+                          }}
+                          onBlur={(e) => {
+                            e.target.style.borderColor = "var(--gray-6)";
+                            e.target.style.boxShadow =
+                              "0 1px 3px rgba(0, 0, 0, 0.1)";
+                          }}
+                        />
+                        <Button
+                          onClick={() =>
+                            handleWebRTCTextMessage(currentMessage)
+                          }
+                          disabled={!currentMessage.trim() || isSendingMessage}
+                          size="1"
+                          style={{
+                            position: "absolute",
+                            right: "6px",
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            borderRadius: "20px",
+                            background:
+                              currentMessage.trim() && !isSendingMessage
+                                ? "var(--blue-9)"
+                                : "var(--gray-6)",
+                            border: "none",
+                            width: "36px",
+                            height: "36px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor:
+                              currentMessage.trim() && !isSendingMessage
+                                ? "pointer"
+                                : "not-allowed",
+                          }}
+                        >
+                          <PaperPlaneIcon width="16" height="16" />
+                        </Button>
+                      </Box>
+
+                      {lastAIResponse && (
+                        <Button
+                          onClick={handleHintsClick}
+                          variant="outline"
+                          size="2"
+                          disabled={isLoadingHints}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            padding: "12px 16px",
+                            borderRadius: "12px",
+                            border: "1px solid var(--gray-6)",
+                            fontSize: "14px",
+                            fontWeight: "500",
+                            background: "white",
+                            color: "var(--gray-12)",
+                            cursor: isLoadingHints ? "not-allowed" : "pointer",
+                            outline: "none",
+                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                            transition: "all 0.2s ease",
+                            height: "48px",
+                            flexShrink: 0,
+                          }}
+                        >
+                          Hints
+                        </Button>
+                      )}
+                    </Flex>
+                  )}
+                </Box>
+              </Flex>
             </Flex>
           </Box>
         </Box>
@@ -751,10 +1001,7 @@ export default function ChatArea({
                   weight="bold"
                   style={{ color: "var(--purple-9)" }}
                 >
-                  💡{" "}
-                  {chat?.title?.startsWith("Offboarding:")
-                    ? "Offboarding Hints"
-                    : "Interview Hints"}
+                  Hints
                 </Text>
                 <Button
                   onClick={() => setShowHints(false)}
