@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from fractions import Fraction
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 import av  # type: ignore
 import numpy as np
@@ -16,6 +16,12 @@ from .bus import PCM_SR, SAMPLES_PER_CHUNK
 from .room import get_room
 from .utils.audio_convert import frame_to_i16_mono_safe
 
+# ── Emitter hook for RTC layer ─────────────────────────────────────────────────
+_emit_to_sid: Optional[Callable[[str, str, dict], Awaitable[None]]] = None
+
+def set_emitter(fn: Callable[[str, str, dict], Awaitable[None]]):
+    global _emit_to_sid
+    _emit_to_sid = fn
 
 def build_ice_servers():
     def parse_csv(env):
@@ -74,6 +80,11 @@ class WebRTCSession:
         async def on_track(track: MediaStreamTrack):
             print(f"[RTC] got track kind={track.kind}")
             if track.kind != "audio": return
+
+            # tell client "audio bridge ready" (your UI uses this)
+            if _emit_to_sid:
+                await _emit_to_sid(self.sid, "webrtc_audio_ready", {"profile_id": None})
+
             async def consume():
                 buf = np.empty(0, dtype=np.int16)
                 frames = 0
@@ -92,8 +103,10 @@ class WebRTCSession:
         @self.pc.on("datachannel")
         def on_datachannel(ch: RTCDataChannel):
             print(f"[RTC] datachannel label={ch.label}")
-            if ch.label != "text": return
+            if ch.label != "text": 
+                return
             self._text_channel = ch
+
             @ch.on("message")
             async def on_msg(raw):
                 try:
@@ -101,12 +114,33 @@ class WebRTCSession:
                 except Exception:
                     obj = {"text": str(raw), "chunk_idx": 0, "is_final": True}
 
+                # Prefer the training pipeline when a chat_id is provided
+                chat_id = obj.get("chat_id")
+                text = obj.get("text", "")
+                is_final = bool(obj.get("is_final", True))
+
+                if chat_id and text and is_final:
+                    # lazy imports to avoid circulars
+                    from app.main import get_profile_id_for_sid
+                    from app.web.training import \
+                        process_training_message_websocket
+
+                    profile_id = get_profile_id_for_sid(self.sid)
+                    # route to your existing training handler
+                    await process_training_message_websocket(
+                        chat_id=str(chat_id),
+                        message=text,
+                        profile_id=profile_id,
+                    )
+                    return
+
+                # fallback: if no chat_id or not final, keep existing room append (optional)
                 await self.room.append_text_chunk(
                     source_id=self.sid, role="user",
-                    text=obj.get("text",""),
+                    text=text,
                     message_id=obj.get("message_id"),
                     chunk_idx=int(obj.get("chunk_idx", 0)),
-                    is_final=bool(obj.get("is_final", True)),
+                    is_final=is_final,
                 )
 
     async def handle_offer(self, offer: Dict[str, Any]):

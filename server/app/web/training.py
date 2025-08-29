@@ -12,14 +12,12 @@ from typing import Any, Dict, Optional
 
 import socketio  # type: ignore
 from app.db import get_session
-from app.models import (Assessments, Attempts, Chats, Documents,  # ✨ Import Personas
-                        Fields, Messages, Parameters, Personas, Questions, Rubrics,
-                        Scenarios)
+from app.models import (Assessments, Attempts, Chats,  # ✨ Import Personas
+                        Documents, Fields, Messages, Parameters, Personas,
+                        Questions, Rubrics, Scenarios)
 from app.services.agents.assesment import (
-    run_assessment_agent, 
-    run_training_specific_assessment,
-    create_initial_assessment_with_training_questions
-)
+    create_initial_assessment_with_training_questions, run_assessment_agent,
+    run_training_specific_assessment)
 from app.services.agents.feedback import run_feedback_agent
 from app.services.agents.generic import run_generic_agent
 from app.services.agents.grade import run_grading_agent
@@ -683,10 +681,15 @@ async def handle_send_training_message(sid: str, data: Dict[str, Any]) -> None:
             
         logger.info(f"Processing training message for chat {chat_id}")
         
+        # Get profile_id from sid
+        from app.main import get_profile_id_for_sid
+        profile_id = get_profile_id_for_sid(sid)
+        
         # Process the message
         await process_training_message_websocket(
             chat_id=chat_id,
-            message=message
+            message=message,
+            profile_id=profile_id
         )
         
     except Exception as e:
