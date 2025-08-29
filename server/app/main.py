@@ -136,6 +136,10 @@ async def offer(sid, data: Dict[str, Any]):
     ans = await sessions[sid].handle_offer(data)
     await sio.emit("answer", ans, room=sid)
 
+    # ✅ tell the client the server's out track is ready to play
+    pid = get_profile_id_for_sid(sid)
+    await sio.emit("webrtc_audio_ready", {"profile_id": pid}, room=sid)
+
 @sio.event
 async def ice_candidate(sid, data: Dict[str, Any]):
     if sid in sessions:

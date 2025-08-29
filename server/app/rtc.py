@@ -83,7 +83,10 @@ class WebRTCSession:
 
             # tell client "audio bridge ready" (your UI uses this)
             if _emit_to_sid:
-                await _emit_to_sid(self.sid, "webrtc_audio_ready", {"profile_id": None})
+                # lazy import to avoid circular
+                from app.main import get_profile_id_for_sid
+                pid = get_profile_id_for_sid(self.sid)
+                await _emit_to_sid(self.sid, "webrtc_audio_ready", {"profile_id": pid})
 
             async def consume():
                 buf = np.empty(0, dtype=np.int16)
