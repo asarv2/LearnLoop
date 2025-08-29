@@ -437,6 +437,7 @@ export function WebSocketProvider({
       setIsConnected(false);
       cleanupRTC();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId, router]);
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -609,6 +610,7 @@ export function WebSocketProvider({
         socket.on("connect", onceConnect);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [isRTCConnected]
   );
 

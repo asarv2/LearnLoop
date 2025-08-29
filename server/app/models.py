@@ -180,6 +180,7 @@ class Profiles(_Base, table=True):
     attempts: List['Attempts'] = Relationship(back_populates='profile')
     documents: List['Documents'] = Relationship(back_populates='profile')
     personas: List['Personas'] = Relationship(back_populates='profile')
+    user_feedback: List['UserFeedback'] = Relationship(back_populates='user')
     chats: List['Chats'] = Relationship(back_populates='profile')
 
 
@@ -272,6 +273,22 @@ class Personas(_Base, table=True):
 
     profile: Optional['Profiles'] = Relationship(back_populates='personas')
     messages: List['Messages'] = Relationship(back_populates='persona')
+
+
+class UserFeedback(_Base, table=True):
+    __tablename__ = 'user_feedback'
+    __table_args__ = (
+        ForeignKeyConstraint(['user_id'], ['profiles.id'], name='user_feedback_user_id_fkey'),
+        PrimaryKeyConstraint('id', name='user_feedback_pkey')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    feedback_text: str = Field(sa_column=Column('feedback_text', Text, server_default=text("''::text")))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    user_id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('user_id', Uuid(as_uuid=True)))
+
+    user: Optional['Profiles'] = Relationship(back_populates='user_feedback')
 
 
 class Chats(_Base, table=True):

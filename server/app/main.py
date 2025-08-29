@@ -55,10 +55,39 @@ register_training_events(sio)
 from app.rtc import (WebRTCSession, get_room,  # get_room from your new code
                      sessions)
 
+# ── sid <-> profile map (very light; OK to keep in-memory or back by Redis) ──
+SID_TO_PROFILE: dict[str, str] = {}
+PROFILE_TO_SID: dict[str, str] = {}
+
+def get_socketio_instance() -> socketio.AsyncServer:
+    return sio
+
+def get_profile_id_for_sid(sid: str) -> Optional[str]:
+    return SID_TO_PROFILE.get(sid)
+
+# ── Wire RTC emitter ──────────────────────────────────────────────────────────
+from app import rtc
+
+rtc.set_emitter(lambda sid, event, payload: sio.emit(event, payload, room=sid))
 
 # ── Socket lifecycle (very light) ─────────────────────────────────────────────
 @sio.event
 async def connect(sid, environ, auth):
+    # read profileId from query string (?profileId=...)
+    q = environ.get("QUERY_STRING", "") or ""
+    profile_id = None
+    if "profileId=" in q:
+        try:
+            profile_id = q.split("profileId=")[1].split("&")[0]
+        except Exception:
+            profile_id = None
+
+    if profile_id:
+        SID_TO_PROFILE[sid] = profile_id
+        PROFILE_TO_SID[profile_id] = sid
+
+    # (optional, but handy)
+    await sio.emit("server_capabilities", {"webrtc": True, "audio": True}, room=sid)
     await sio.emit("connection_confirmed", {"sid": sid, "server_time": time.time()}, room=sid)
     return True
 
@@ -68,6 +97,10 @@ async def disconnect(sid):
     if s:
         await sio.leave_room(sid, s.room.id)
         await s.close()
+    # clean sid/profile maps
+    pid = SID_TO_PROFILE.pop(sid, None)
+    if pid:
+        PROFILE_TO_SID.pop(pid, None)
 
 # ── WebRTC events (thin shim) ─────────────────────────────────────────────────
 @sio.event
