@@ -199,7 +199,7 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
 
             # Send success response
             sio = get_sio_instance()
-            await sio.emit(
+            sio.start_background_task(sio.emit,
                 "training_started",
                 {
                     "success": True,
@@ -266,7 +266,7 @@ async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
             await sio.enter_room(sid, chat_id)
 
             # Send success response
-            await sio.emit(
+            sio.start_background_task(sio.emit,
                 "training_joined",
                 {
                     "success": True,
@@ -327,7 +327,7 @@ async def handle_stop_training(sid: str, data: Dict[str, Any]) -> None:
             sio_instance = get_sio_instance()
 
             # Emit stop signal via WebSocket
-            await sio_instance.emit(
+            sio_instance.start_background_task(sio_instance.emit,
                 "training_stopped",
                 {
                     "chat_id": chat_id,
@@ -398,7 +398,7 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
                 
                 # Send immediate success response with assessment ready
                 sio = get_sio_instance()
-                await sio.emit(
+                sio.start_background_task(sio.emit,
                     "training_ended",
                     {
                         "success": True,
@@ -410,57 +410,51 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
                     room=chat_id,
                 )
                 
-                # Now add conversation-specific and general questions in the background
-                # This doesn't block the user interface
-                try:
-                    logger.info(f"Adding conversation-specific questions to assessment {existing_assessment.id}")
-                    assessment_result = await run_assessment_agent(uuid.UUID(chat_id), db_session)
-                    
-                    if assessment_result.get("success"):
-                        logger.info(f"Successfully completed assessment with all 7 questions")
-                        # The assessment_completed event will be emitted by run_assessment_agent
-                    else:
-                        logger.warning(f"Failed to add conversation questions: {assessment_result.get('message')}")
-                except Exception as e:
-                    logger.error(f"Error adding conversation questions: {str(e)}")
-                    # Continue even if this fails - user can still take the 3-question assessment
+                # Move heavy operations to background to avoid blocking the event loop
+                async def _bg_assessment_and_grading():
+                    try:
+                        def _run_assessment_sync(cid: uuid.UUID):
+                            import asyncio as _asyncio
 
-                # Run grading agent since assessment exists
-                # This runs in the background and allows grades to be ready when user finishes assessment
-                try:
-                    # Get the scenario to find the rubric_id
-                    scenario_result = db_session.exec(
-                        select(Scenarios).where(Scenarios.training_id == chat.training_id)
-                    ).first()
-                    
-                    if scenario_result and scenario_result.rubric_id:
-                        logger.info(f"Running grading agent for chat {chat_id} with rubric {scenario_result.rubric_id}")
-                        # Create a new session for the grading agent to avoid conflicts
-                        grading_session = next(get_session())
-                        try:
-                            rubric_grade_id = await run_grading_agent(uuid.UUID(chat_id), scenario_result.rubric_id, grading_session)
-                            logger.info(f"Successfully generated grades for chat {chat_id}, grade_id: {rubric_grade_id}")
-                            
-                            # Notify client that grading is complete
+                            # ❌ don't pass db_session across threads
+                            return _asyncio.run(run_assessment_agent(cid))
+                        await asyncio.to_thread(_run_assessment_sync, uuid.UUID(chat_id))
+                    except Exception:
+                        logger.exception("Assessment background job failed")
+                    try:
+                        # Fresh session inside background task
+                        def _run_grading_sync(cid: uuid.UUID, rubric_id):
+                            import asyncio as _asyncio
+
+                            from app.db import get_session as _gs
+                            sess = next(_gs())
+                            try:
+                                return _asyncio.run(run_grading_agent(cid, rubric_id, sess))
+                            finally:
+                                sess.close()
+                        
+                        # Get the scenario to find the rubric_id
+                        scenario_result = db_session.exec(
+                            select(Scenarios).where(Scenarios.training_id == chat.training_id)
+                        ).first()
+                        
+                        if scenario_result and scenario_result.rubric_id:
+                            rubric_grade_id = await asyncio.to_thread(_run_grading_sync, uuid.UUID(chat_id), scenario_result.rubric_id)
                             sio = get_sio_instance()
                             await sio.emit("grading_completed", {
                                 "chat_id": chat_id,
                                 "rubric_grade_id": rubric_grade_id,
                                 "message": "Grading completed successfully"
                             }, room=chat_id)
-                        finally:
-                            grading_session.close()
-                    else:
-                        logger.warning(f"No rubric found for training {chat.training_id}, skipping grading")
-                except Exception as grading_error:
-                    logger.error(f"Error running grading agent: {str(grading_error)}")
-                    # Continue even if grading agent fails
+                    except Exception:
+                        logger.exception("Grading background job failed")
+                asyncio.create_task(_bg_assessment_and_grading())
                     
             else:
                 logger.warning(f"No existing assessment found for chat {chat_id}")
                 # Fallback - send response indicating assessment may not be ready
                 sio = get_sio_instance()
-                await sio.emit(
+                sio.start_background_task(sio.emit,
                     "training_ended",
                     {
                         "success": True,
@@ -536,55 +530,66 @@ async def handle_send_training_message(sid: str, data: Dict[str, Any]) -> None:
 
 # Handler functions for hints and assessment
 async def handle_get_hints(sid: str, data: Dict[str, Any]) -> None:
-    """Handle hints generation"""
-    try:
-        chat_id = data.get("chat_id")
-        message_id = data.get("message_id")
-        
-        if not chat_id or not message_id:
-            await emit_error(sid, "Missing chat_id or message_id")
-            return
-            
-        # Process hints generation
-        result = await run_hint_agent(uuid.UUID(message_id))
-        
-        sio = get_sio_instance()
-        await sio.emit("hints_generated", {
-            "chat_id": chat_id,
-            "success": result.get("success", False),
-            "hints": result.get("hints", []),
-            "message": result.get("message", "")
-        }, room=chat_id)
-        
-    except Exception as e:
-        logger.error(f"Error generating hints: {str(e)}")
-        await emit_error(sid, f"Failed to generate hints: {str(e)}")
+    """Handle hints generation without blocking the event loop."""
+    chat_id = data.get("chat_id")
+    message_id = data.get("message_id")
+    if not chat_id or not message_id:
+        await emit_error(sid, "Missing chat_id or message_id")
+        return
+
+    # Fire a background job in a thread so the main loop stays hot.
+    async def _bg():
+        try:
+            def _sync_wrapper(msg_id: uuid.UUID):
+                # Run the async hint routine on a dedicated loop in this worker thread
+                import asyncio as _asyncio
+                return _asyncio.run(run_hint_agent(msg_id))
+
+            result = await asyncio.to_thread(_sync_wrapper, uuid.UUID(message_id))
+
+            sio = get_sio_instance()
+            await sio.emit("hints_generated", {
+                "chat_id": chat_id,
+                "success": result.get("success", False),
+                "hints": result.get("hints", []),
+                "message": result.get("message", "")
+            }, room=chat_id)
+        except Exception as e:
+            logger.exception("Error generating hints (bg)")
+            await emit_error(sid, f"Failed to generate hints: {e}")
+
+    # Don't await; schedule and return immediately.
+    asyncio.create_task(_bg())
 
 
 async def handle_submit_assessment(sid: str, data: Dict[str, Any]) -> None:
-    """Handle assessment submission and feedback generation"""
-    try:
-        chat_id = data.get("chat_id")
-        responses = data.get("responses", {})
+    """Handle assessment submission and feedback generation without blocking the event loop."""
+    chat_id = data.get("chat_id")
+    responses = data.get("responses", {})
+    
+    if not chat_id:
+        await emit_error(sid, "Missing chat_id")
+        return
         
-        if not chat_id:
-            await emit_error(sid, "Missing chat_id")
-            return
-            
-        # Run feedback agent to generate feedback (assessment already generated when training ended)
-        feedback_result = await run_feedback_agent(uuid.UUID(chat_id))
-        
-        sio = get_sio_instance()
-        await sio.emit("assessment_submitted", {
-            "chat_id": chat_id,
-            "success": True,
-            "feedback_id": feedback_result.get("feedback_id"),
-            "message": "Assessment submitted and feedback generated successfully"
-        }, room=chat_id)
-        
-    except Exception as e:
-        logger.error(f"Error submitting assessment: {str(e)}")
-        await emit_error(sid, f"Failed to submit assessment: {str(e)}")
+    # Fire a background job in a thread so the main loop stays hot.
+    async def _bg():
+        try:
+            def _sync_wrapper(cid: uuid.UUID):
+                import asyncio as _asyncio
+                return _asyncio.run(run_feedback_agent(cid))
+            feedback_result = await asyncio.to_thread(_sync_wrapper, uuid.UUID(chat_id))
+            sio = get_sio_instance()
+            await sio.emit("assessment_submitted", {
+                "chat_id": chat_id,
+                "success": True,
+                "feedback_id": feedback_result.get("feedback_id"),
+                "message": "Assessment submitted and feedback generated successfully"
+            }, room=chat_id)
+        except Exception as e:
+            logger.exception("Error submitting assessment (bg)")
+            await emit_error(sid, f"Failed to submit assessment: {e}")
+    asyncio.create_task(_bg())
+    return
 
 
 # Register training event handlers with socketio

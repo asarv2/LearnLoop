@@ -1,9 +1,17 @@
 # server/app/main.py (REFRESHED, slim)
+import asyncio
 import logging
 import os
 import sys
 import time
 from typing import Any, Dict, Optional
+
+# Use uvloop for better performance
+try:
+    import uvloop
+    uvloop.install()
+except ImportError:
+    pass  # Fall back to default event loop
 
 import socketio  # type: ignore
 from dotenv import load_dotenv
@@ -55,6 +63,20 @@ register_training_events(sio)
 from app.rtc import (WebRTCSession, get_room,  # get_room from your new code
                      sessions)
 
+
+# ── Loop lag watchdog ─────────────────────────────────────────────────────────
+async def _loop_lag_watchdog(threshold_ms=40, period_ms=20):
+    """Monitor event loop lag and log warnings if it exceeds threshold."""
+    last = time.perf_counter()
+    period = period_ms / 1000.0
+    while True:
+        await asyncio.sleep(period)
+        now = time.perf_counter()
+        lag_ms = (now - last - period) * 1000
+        if lag_ms > threshold_ms:
+            logger.warning("Event loop lag: %.1f ms", lag_ms)
+        last = now
+
 # ── sid <-> profile map (very light; OK to keep in-memory or back by Redis) ──
 SID_TO_PROFILE: dict[str, str] = {}
 PROFILE_TO_SID: dict[str, str] = {}
@@ -72,7 +94,8 @@ from app.store import set_emitter
 
 # Set up the emitter for both RTC and store
 async def emit_to_room(room_id: str, event: str, payload: dict) -> None:
-    await sio.emit(event, payload, room=room_id)
+    # Don't block the loop on broadcast/fanout
+    sio.start_background_task(sio.emit, event, payload, room=room_id)
 
 rtc.set_emitter(lambda sid, event, payload: sio.emit(event, payload, room=sid))
 set_emitter(emit_to_room)
@@ -80,6 +103,11 @@ set_emitter(emit_to_room)
 # ── Socket lifecycle (very light) ─────────────────────────────────────────────
 @sio.event
 async def connect(sid, environ, auth):
+    # Start the loop lag watchdog on first connection (only once)
+    if not hasattr(connect, '_watchdog_started'):
+        asyncio.create_task(_loop_lag_watchdog())
+        connect._watchdog_started = True
+    
     # read profileId from query string (?profileId=...)
     q = environ.get("QUERY_STRING", "") or ""
     profile_id = None
@@ -160,4 +188,5 @@ async def health_check() -> JSONResponse:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True, log_level="info")
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000,
+                reload=False, log_level="info", loop="uvloop")
