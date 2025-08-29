@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 from typing import Optional
 
 import redis.asyncio as redis
@@ -7,6 +8,11 @@ from agents.extensions.models.litellm_model import LitellmModel
 from dotenv import load_dotenv
 
 load_dotenv()
+
+BASE = Path(__file__).resolve().parents[2]
+AUDIO_DIR = BASE / "audio"
+
+AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
