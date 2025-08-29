@@ -48,7 +48,6 @@ export default function ChatArea({
   // WebSocket context
   const {
     isRTCConnected,
-    isAudioBridgeReady,
     micOn,
     connectRTC,
     toggleMic,
@@ -427,7 +426,7 @@ export default function ChatArea({
 
                 <Button
                   onClick={onToggleMic}
-                  disabled={!isRTCConnected || !isAudioBridgeReady}
+                  disabled={!isRTCConnected}
                   size="2"
                   title={micOn ? "Mute mic" : "Unmute mic"}
                   style={{
@@ -440,10 +439,7 @@ export default function ChatArea({
                     background: micOn ? "#ef4444" : "white",
                     color: micOn ? "white" : "var(--gray-12)",
                     border: "1px solid var(--gray-6)",
-                    cursor:
-                      !isRTCConnected || !isAudioBridgeReady
-                        ? "not-allowed"
-                        : "pointer",
+                    cursor: !isRTCConnected ? "not-allowed" : "pointer",
                     outline: "none",
                     boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
                     transition: "all 0.2s ease",
@@ -563,11 +559,9 @@ export default function ChatArea({
                 </Box>
               </Flex>
 
-              {(!isRTCConnected || !isAudioBridgeReady) && (
+              {!isRTCConnected && (
                 <Text size="2" style={{ color: "var(--amber-11)" }}>
-                  {!isRTCConnected
-                    ? "Click Connect to start"
-                    : "Connecting to audio stream..."}
+                  Click Connect to start
                 </Text>
               )}
             </Flex>
