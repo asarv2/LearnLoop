@@ -1,12 +1,6 @@
 /**
  * ChatArea.tsx
- * Unified text and voice chat interface using WebRTC for audio
- *
- * ✅ IMPLEMENTED: Server VAD (Voice Activity Detection)
- * - Uses server-side VAD for automatic turn detection
- * - PTT (Push-to-Talk) only controls track.enabled
- * - No manual finalization needed - server handles turn management
- * - Supports barge-in (user can interrupt assistant)
+ * Simplified chat interface with text and voice modes
  *
  * @AshokSaravanan222 & @siladiea
  * 07/09/2025
@@ -24,7 +18,7 @@ import {
 import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-// ✨ Import necessary hooks
+// Import necessary hooks
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { useField } from "@/lib/api/hooks/useFields";
@@ -33,7 +27,6 @@ import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
 import { trainingMessageKeys } from "@/lib/api/hooks/useTrainingMessages";
 import { logError, logInfo } from "@/utils/logger";
 import { useQueryClient } from "@tanstack/react-query";
-import WebRTCDebugPanel from "./WebRTCDebugPanel";
 
 interface ChatAreaProps {
   displayMessages: Message[];
@@ -59,25 +52,21 @@ export default function ChatArea({
   // Mode toggle state
   const [isVoiceMode, setIsVoiceMode] = useState(true);
 
-  // WebRTC audio state
+  // WebSocket context
   const {
-    isWebRTCConnected,
-    isAudioBridgeReady, // ✨ Get the new state from the context
-    initializeAudioStream,
-    setMicrophoneMuted,
-    terminateAudioStream,
+    isRTCConnected,
+    isAudioBridgeReady,
+    connectRTC,
+    disconnectRTC,
+    toggleMic,
     sendWebRTCMessage,
-    audioPlaybackRef,
-    enableServerAudio,
-    disableServerAudio,
-    triggerServerAudio,
-    emitGetHints, // ✨ Add hints emitter
+    emitGetHints,
   } = useWebSocket();
 
   // Voice-related state
   const queryClient = useQueryClient();
   const [micActive, setMicActive] = useState(false);
-  const lastFinalizeTimeRef = useRef<number>(0); // Track last finalize call time for debouncing
+  const lastFinalizeTimeRef = useRef<number>(0);
 
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
@@ -89,14 +78,12 @@ export default function ChatArea({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // ✨ Get the current user and their associated persona
+  // Get the current user and their associated persona
   const { user } = useAuth();
   const { data: userPersona } = useUserPersona(user?.id);
   const { data: allPersonas } = usePersonas();
 
-  // ✨ Get Employee Name from chat parameters (simple approach)
-  // Use the first parameter ID to check for Employee Name field
-  // This is a simplified approach - we'll iterate through each parameter
+  // Get Employee Name from chat parameters
   const firstParamId = chat?.parameter_ids?.[0];
   const { data: firstParam } = useParameter(firstParamId || "", !!firstParamId);
   const { data: firstField } = useField(
@@ -131,21 +118,16 @@ export default function ChatArea({
       ? thirdParam?.value
       : null;
 
-  // ✨ 1. Create a memoized map for efficient and stable persona lookup.
-  // This prevents re-calculations on every render and ensures consistency.
+  // Create a memoized map for efficient persona lookup
   const personaMap = React.useMemo(() => {
     if (!allPersonas) return new Map<string, string>();
     return new Map(allPersonas.map((p) => [p.id, p.name]));
   }, [allPersonas]);
 
-  // 👇 DEPRECATED: The patchCache function is no longer needed.
-  // We will handle the logic directly in the send function for more control.
-
   // Generate hints function using WebSocket
   const generateHints = useCallback(async () => {
     if (!lastAIResponse || !displayMessages.length) return;
 
-    // Find the last assistant message to get its ID
     const lastAssistantMessage = displayMessages
       .filter((msg) => msg.role === "assistant")
       .pop();
@@ -155,7 +137,6 @@ export default function ChatArea({
       return;
     }
 
-    // Use WebSocket to get hints
     if (chat?.id) {
       emitGetHints({
         chat_id: chat.id,
@@ -166,34 +147,12 @@ export default function ChatArea({
 
   // Handle hints button click
   const handleHintsClick = useCallback(async () => {
-    // If hints aren't available and not currently loading, generate them
     if (!showHints && !hints && !isLoadingHints && lastAIResponse) {
       setIsLoadingHints(true);
       await generateHints();
     }
     setShowHints(!showHints);
   }, [showHints, hints, isLoadingHints, lastAIResponse, generateHints]);
-
-  // Track if we're currently in a room to prevent duplicate joins
-  // ❌ REMOVED: currentRoomRef - no longer needed since room management is centralized
-
-  // Ensure audio element is properly configured for server audio
-  useEffect(() => {
-    const audio = audioPlaybackRef.current;
-    if (audio) {
-      // Set volume but keep muted initially - will be controlled by voice mode
-      audio.volume = 1;
-      logInfo("Audio element configured for server playback", {
-        muted: audio.muted,
-        volume: audio.volume,
-        readyState: audio.readyState,
-      });
-    }
-  }, [audioPlaybackRef]);
-
-  // ❌ REMOVED: Duplicate join/leave logic - now handled by useTrainingMessages hook
-  // This prevents race conditions on page refresh where multiple components
-  // try to join the same room simultaneously
 
   // Track AI responses for hints generation
   useEffect(() => {
@@ -209,7 +168,6 @@ export default function ChatArea({
         setLastAIResponse(newResponse);
         setHints("");
 
-        // Automatically generate hints in the background for instant access
         if (lastMessage.id && chat?.id) {
           setIsLoadingHints(true);
           emitGetHints({
@@ -238,47 +196,16 @@ export default function ChatArea({
     };
   }, []);
 
-  // ✅ NEW: Listen for server VAD events for UI feedback
+  // Listen for hints generated events
   useEffect(() => {
-    const handleServerVADEvent = (event: CustomEvent) => {
-      const { type } = event.detail;
-      if (type === "input_audio_buffer.speech_started") {
-        logInfo("Server VAD: Speech started");
-        // Could add UI feedback here like showing a "listening" indicator
-      } else if (type === "input_audio_buffer.speech_stopped") {
-        logInfo("Server VAD: Speech stopped");
-        // Could add UI feedback here like showing a "thinking" indicator
-      }
-    };
-
-    const handleAudioInterrupted = () => {
-      logInfo(
-        "Audio interrupted - user started speaking while assistant was talking"
-      );
-      // Stop any ongoing audio playback when user barges in
-      if (audioPlaybackRef.current) {
-        audioPlaybackRef.current.pause();
-        audioPlaybackRef.current.currentTime = 0;
-      }
-    };
-
     const handleHintsGenerated = (event: CustomEvent) => {
       const { hints } = event.detail;
       if (hints && Array.isArray(hints)) {
-        setHints(hints.join("\n\n")); // Join hints with double newlines
+        setHints(hints.join("\n\n"));
         setIsLoadingHints(false);
       }
     };
 
-    // Listen for server VAD events
-    window.addEventListener(
-      "server_vad_event",
-      handleServerVADEvent as EventListener
-    );
-    window.addEventListener(
-      "audio_interrupted",
-      handleAudioInterrupted as EventListener
-    );
     window.addEventListener(
       "hintsGenerated",
       handleHintsGenerated as EventListener
@@ -286,76 +213,40 @@ export default function ChatArea({
 
     return () => {
       window.removeEventListener(
-        "server_vad_event",
-        handleServerVADEvent as EventListener
-      );
-      window.removeEventListener(
-        "audio_interrupted",
-        handleAudioInterrupted as EventListener
-      );
-      window.removeEventListener(
         "hintsGenerated",
         handleHintsGenerated as EventListener
       );
     };
-  }, [audioPlaybackRef]);
+  }, []);
 
-  // 👇 DEPRECATED: We will no longer re-sort the array on every render.
-  /*
-  const getCombinedMessages = useCallback(() => {
-    const messages = [...displayMessages];
-    return messages.sort(
-      (a, b) =>
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
-  }, [displayMessages]);
-  */
-
-  // ✅ ENHANCED: Voice mode toggle now handles audio playback setup
+  // Voice mode toggle
   const handleModeToggle = useCallback(async () => {
     const nextIsVoiceMode = !isVoiceMode;
     setIsVoiceMode(nextIsVoiceMode);
     setCurrentMessage("");
 
     if (nextIsVoiceMode) {
-      // ✅ STEP 1: Enable server audio playback immediately on click.
-      // This is a valid user gesture, so the .play() call inside enableServerAudio will work.
-      enableServerAudio();
-
-      // ✅ STEP 2: Initialize the microphone stream as before.
+      // Connect to RTC when switching to voice mode
       if (chat?.id) {
-        await initializeAudioStream(chat.id);
-        // This is still useful to prime the connection if needed.
-        triggerServerAudio();
+        await connectRTC();
       }
     } else {
-      // Cleanup remains the same when leaving voice mode.
+      // Disconnect when leaving voice mode
       if (chat?.id) {
-        disableServerAudio();
-        terminateAudioStream(chat.id);
+        disconnectRTC();
         setMicActive(false);
       }
     }
-  }, [
-    isVoiceMode,
-    chat?.id,
-    setCurrentMessage,
-    enableServerAudio,
-    initializeAudioStream,
-    triggerServerAudio,
-    disableServerAudio,
-    terminateAudioStream,
-  ]);
+  }, [isVoiceMode, chat?.id, setCurrentMessage, connectRTC, disconnectRTC]);
 
-  // ✅ FIX: PTT now creates an optimistic message for immediate UI feedback
+  // Voice input handlers
   const handleVoiceStart = useCallback(() => {
-    // Close hints panel if open when user starts speaking
     if (showHints) setShowHints(false);
-    setMicrophoneMuted(false);
     setMicActive(true);
+    toggleMic();
     logInfo("Microphone enabled for voice input.");
 
-    // ✅ FIX: Create an optimistic user message placeholder
+    // Create optimistic user message placeholder
     if (chat?.id && userPersona?.id) {
       const queryKey = trainingMessageKeys.list(chat.id);
       const tempId = `temp-voice-${Date.now()}`;
@@ -366,8 +257,8 @@ export default function ChatArea({
           id: tempId,
           role: "user",
           persona_id: userPersona.id,
-          content: "🎤 Listening...", // Placeholder content
-          completed: false, // It's not completed yet
+          content: "🎤 Listening...",
+          completed: false,
           created_at: new Date().toISOString(),
           chat_id: chat.id,
         } as Message,
@@ -376,36 +267,28 @@ export default function ChatArea({
   }, [
     showHints,
     setShowHints,
-    setMicrophoneMuted,
+    toggleMic,
     chat?.id,
     userPersona?.id,
     queryClient,
   ]);
 
   const handleVoiceStop = useCallback(() => {
-    // Only process if the mic was actually active
     if (!micActive) return;
 
-    // Prevent rapid successive calls (debounce)
     const now = Date.now();
-    if (now - lastFinalizeTimeRef.current < 100) return; // 100ms debounce
+    if (now - lastFinalizeTimeRef.current < 100) return;
     lastFinalizeTimeRef.current = now;
 
-    // ✅ FIX: With server VAD, we only need to mute the microphone
-    // The server will automatically detect when speech stops
-    setMicrophoneMuted(true);
+    toggleMic();
     setMicActive(false);
-
-    // ❌ REMOVED: No need to emit finalize turn - server VAD handles this automatically
-  }, [setMicrophoneMuted, micActive]);
+  }, [toggleMic, micActive]);
 
   // Handle WebRTC text message sending
-  // ✅ FIX: Only create optimistic user message, assistant message will be added by server
   const handleWebRTCTextMessage = useCallback(
     (message: string) => {
       if (!chat?.id || !message.trim() || !userPersona?.id) return;
 
-      // Close hints panel if open when user sends a text message
       if (showHints) setShowHints(false);
 
       sendWebRTCMessage(chat.id, message);
@@ -414,7 +297,6 @@ export default function ChatArea({
       const baseTimestamp = new Date();
       const tempUserId = `temp-${baseTimestamp.getTime()}`;
 
-      // ✅ FIX: Only add the optimistic USER message
       queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
         ...old,
         {
@@ -441,17 +323,16 @@ export default function ChatArea({
     ]
   );
 
-  // ✨ 3. Use the memoized map in the lookup function for stability.
+  // Persona name lookup
   const getPersonaName = useCallback(
     (personaId: string | null, isAssistantMessage: boolean = false) => {
-      // For assistant messages, use Employee Name if available
       if (isAssistantMessage && employeeName) {
         return employeeName;
       }
       if (!personaId) return null;
       return personaMap.get(personaId) || null;
     },
-    [personaMap, employeeName] // Add employeeName to dependencies
+    [personaMap, employeeName]
   );
 
   // Handle dropdown option selection
@@ -497,8 +378,6 @@ export default function ChatArea({
         height: "100%",
       }}
     >
-      {/* Audio element moved to global provider to avoid race conditions */}
-
       {/* Messages */}
       <Box
         style={{
@@ -512,9 +391,7 @@ export default function ChatArea({
         }}
       >
         <Flex direction="column" gap="4">
-          {/* ✨ FIX: Map directly over the displayMessages prop */}
           {displayMessages.map((message) => {
-            // Determine if this is a user message or assistant message
             const isUserMessage = message.persona_id === userPersona?.id;
             const isAssistantMessage = message.role === "assistant";
 
@@ -566,7 +443,6 @@ export default function ChatArea({
                           style={{ color: "var(--gray-11)" }}
                           weight="medium"
                         >
-                          {/* Handle generic assistant persona */}
                           {isUserMessage
                             ? "You"
                             : getPersonaName(
@@ -579,7 +455,6 @@ export default function ChatArea({
                           style={{ lineHeight: "1.5", color: "var(--gray-12)" }}
                         >
                           <Markdown>
-                            {/* Handle "thinking" message for assistant */}
                             {!message.completed &&
                             !message.content &&
                             isAssistantMessage
@@ -743,7 +618,7 @@ export default function ChatArea({
                 {/* Input Interface */}
                 <Box style={{ flex: 1 }}>
                   {isVoiceMode ? (
-                    // Voice Input with WebRTC
+                    // Voice Input
                     <Flex direction="column" gap="3" align="center">
                       {/* Voice Button */}
                       <Flex
@@ -756,10 +631,9 @@ export default function ChatArea({
                           onMouseDown={handleVoiceStart}
                           onMouseUp={handleVoiceStop}
                           onMouseLeave={handleVoiceStop}
-                          onTouchStart={handleVoiceStart} // For mobile
+                          onTouchStart={handleVoiceStart}
                           onTouchEnd={handleVoiceStop}
-                          // ✅ FIX: Disable the button until BOTH WebRTC is connected AND the audio bridge is ready.
-                          disabled={!isWebRTCConnected || !isAudioBridgeReady}
+                          disabled={!isRTCConnected || !isAudioBridgeReady}
                           size="3"
                           style={{
                             padding: "12px 16px",
@@ -767,19 +641,19 @@ export default function ChatArea({
                             borderRadius: "12px",
                             background: micActive
                               ? "#ef4444"
-                              : !isWebRTCConnected || !isAudioBridgeReady
+                              : !isRTCConnected || !isAudioBridgeReady
                               ? "#9ca3af"
                               : "white",
                             color: micActive
                               ? "white"
-                              : !isWebRTCConnected || !isAudioBridgeReady
+                              : !isRTCConnected || !isAudioBridgeReady
                               ? "white"
                               : "var(--gray-12)",
                             border: micActive
                               ? "none"
                               : "1px solid var(--gray-6)",
                             cursor:
-                              !isWebRTCConnected || !isAudioBridgeReady
+                              !isRTCConnected || !isAudioBridgeReady
                                 ? "not-allowed"
                                 : "pointer",
                             fontSize: "14px",
@@ -806,7 +680,7 @@ export default function ChatArea({
                                 animation: "pulse 1.5s ease-in-out infinite",
                               }}
                             />
-                          ) : !isWebRTCConnected || !isAudioBridgeReady ? (
+                          ) : !isRTCConnected || !isAudioBridgeReady ? (
                             <Box
                               style={{
                                 width: "16px",
@@ -820,7 +694,7 @@ export default function ChatArea({
                           )}
                           {micActive
                             ? "Listening..."
-                            : !isWebRTCConnected || !isAudioBridgeReady
+                            : !isRTCConnected || !isAudioBridgeReady
                             ? "Connecting..."
                             : "Hold to Speak"}
                         </Button>
@@ -857,7 +731,7 @@ export default function ChatArea({
                         )}
                       </Flex>
 
-                      {(!isWebRTCConnected || !isAudioBridgeReady) && (
+                      {(!isRTCConnected || !isAudioBridgeReady) && (
                         <Text size="2" style={{ color: "var(--amber-11)" }}>
                           Connecting to audio stream...
                         </Text>
@@ -1035,11 +909,6 @@ export default function ChatArea({
             </Flex>
           </Card>
         </Box>
-      )}
-
-      {/* ✨ DEBUG: Add WebRTC debug panel for troubleshooting */}
-      {false && process.env.NODE_ENV === "development" && (
-        <WebRTCDebugPanel audioPlaybackRef={audioPlaybackRef} />
       )}
 
       {isEndingInterview && (

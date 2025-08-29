@@ -258,7 +258,7 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         handleAssessmentSubmitted as EventListener
       );
     };
-  }, [chatId, chat?.attempt_id, queryClient]);
+  }, [chatId, chat?.attempt_id, queryClient, isWaitingForAssessment, isWaitingForFeedback]);
 
   // ✅ NEW: Fallback mechanism to check for assessment/feedback when chat data changes
   useEffect(() => {
