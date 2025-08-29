@@ -9,18 +9,8 @@ function parseCsv(v?: string | null): string[] {
 }
 
 export async function GET() {
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
-
   try {
-    // Call the server's /rtc/boot endpoint
-    const bootRes = await fetch(`${apiBase}/rtc/boot`);
-    if (!bootRes.ok) {
-      throw new Error(`Server boot request failed: ${bootRes.status}`);
-    }
-
-    const bootData = await bootRes.json();
-
-    // Get ICE servers from environment (not from server)
+    // Get ICE servers from environment
     const stunUris = parseCsv(process.env.STUN_URI); // e.g. stun:stun.l.google.com:19302
     const turnUris = parseCsv(process.env.TURN_URI); // e.g. turns:turn.example.com:5349?transport=tcp
     const username = process.env.TURN_USERNAME || undefined;
@@ -32,16 +22,12 @@ export async function GET() {
       iceServers.push({ urls: turnUris, username, credential });
     }
 
-    // Return combined data: ICE servers from env + boot data from server
-    return NextResponse.json({
-      iceServers,
-      roomId: bootData.roomId,
-      messages: bootData.messages || [],
-    });
+    // Return only ICE servers configuration
+    return NextResponse.json({ iceServers });
   } catch (error) {
-    console.error("Error fetching boot data:", error);
+    console.error("Error loading ICE config:", error);
     return NextResponse.json(
-      { error: "Failed to fetch boot data" },
+      { error: "Failed to load ICE config" },
       { status: 500 }
     );
   }

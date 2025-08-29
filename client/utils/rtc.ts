@@ -1,7 +1,6 @@
 // utils/rtc.ts
 export type RtcBoot = {
   iceServers: RTCIceServer[];
-  roomId: string;
 };
 
 export async function fetchRtcBoot(): Promise<RtcBoot> {

@@ -1,6 +1,6 @@
 /**
  * ChatArea.tsx
- * Simplified chat interface with text and voice modes
+ * Simplified chat interface with explicit connect and mic controls
  *
  * @AshokSaravanan222 & @siladiea
  * 07/09/2025
@@ -10,13 +10,11 @@ import Markdown from "@/components/common/Markdown";
 import { Chat, Message } from "@/types";
 import {
   ChatBubbleIcon,
-  ChevronUpIcon,
   PaperPlaneIcon,
   PersonIcon,
-  SpeakerLoudIcon,
 } from "@radix-ui/react-icons";
 import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 
 // Import necessary hooks
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -24,9 +22,7 @@ import { useWebSocket } from "@/contexts/websocket-context";
 import { useField } from "@/lib/api/hooks/useFields";
 import { useParameter } from "@/lib/api/hooks/useParameters";
 import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
-import { trainingMessageKeys } from "@/lib/api/hooks/useTrainingMessages";
-import { logError, logInfo } from "@/utils/logger";
-import { useQueryClient } from "@tanstack/react-query";
+import { logError } from "@/utils/logger";
 
 interface ChatAreaProps {
   displayMessages: Message[];
@@ -49,34 +45,22 @@ export default function ChatArea({
   messagesEndRef,
   chat,
 }: ChatAreaProps) {
-  // Mode toggle state
-  const [isVoiceMode, setIsVoiceMode] = useState(true);
-
   // WebSocket context
   const {
     isRTCConnected,
     isAudioBridgeReady,
+    micOn,
     connectRTC,
-    disconnectRTC,
     toggleMic,
     sendWebRTCMessage,
     emitGetHints,
   } = useWebSocket();
-
-  // Voice-related state
-  const queryClient = useQueryClient();
-  const [micActive, setMicActive] = useState(false);
-  const lastFinalizeTimeRef = useRef<number>(0);
 
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
   const [hints, setHints] = useState<string>("");
   const [isLoadingHints, setIsLoadingHints] = useState(false);
   const [lastAIResponse, setLastAIResponse] = useState<string>("");
-
-  // Custom dropdown state
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Get the current user and their associated persona
   const { user } = useAuth();
@@ -179,23 +163,6 @@ export default function ChatArea({
     }
   }, [displayMessages, lastAIResponse, chat?.id, emitGetHints]);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
-
   // Listen for hints generated events
   useEffect(() => {
     const handleHintsGenerated = (event: CustomEvent) => {
@@ -219,109 +186,33 @@ export default function ChatArea({
     };
   }, []);
 
-  // Voice mode toggle
-  const handleModeToggle = useCallback(async () => {
-    const nextIsVoiceMode = !isVoiceMode;
-    setIsVoiceMode(nextIsVoiceMode);
+  // Connect handler
+  const onConnect = useCallback(() => {
+    if (!chat?.id) return;
+    connectRTC(chat.id);
+  }, [chat?.id, connectRTC]);
+
+  // Toggle mic handler
+  const onToggleMic = useCallback(() => {
+    if (!isRTCConnected) return;
+    toggleMic();
+  }, [isRTCConnected, toggleMic]);
+
+  // Send message handler
+  const onSend = useCallback(() => {
+    const message = currentMessage.trim();
+    if (!message || !chat?.id || !isRTCConnected) return;
+
+    // No optimistic message
+    sendWebRTCMessage(chat.id, message);
     setCurrentMessage("");
-
-    if (nextIsVoiceMode) {
-      // Connect to RTC when switching to voice mode
-      if (chat?.id) {
-        await connectRTC();
-      }
-    } else {
-      // Disconnect when leaving voice mode
-      if (chat?.id) {
-        disconnectRTC();
-        setMicActive(false);
-      }
-    }
-  }, [isVoiceMode, chat?.id, setCurrentMessage, connectRTC, disconnectRTC]);
-
-  // Voice input handlers
-  const handleVoiceStart = useCallback(() => {
-    if (showHints) setShowHints(false);
-    setMicActive(true);
-    toggleMic();
-    logInfo("Microphone enabled for voice input.");
-
-    // Create optimistic user message placeholder
-    if (chat?.id && userPersona?.id) {
-      const queryKey = trainingMessageKeys.list(chat.id);
-      const tempId = `temp-voice-${Date.now()}`;
-
-      queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
-        ...old,
-        {
-          id: tempId,
-          role: "user",
-          persona_id: userPersona.id,
-          content: "🎤 Listening...",
-          completed: false,
-          created_at: new Date().toISOString(),
-          chat_id: chat.id,
-        } as Message,
-      ]);
-    }
   }, [
-    showHints,
-    setShowHints,
-    toggleMic,
     chat?.id,
-    userPersona?.id,
-    queryClient,
+    currentMessage,
+    isRTCConnected,
+    sendWebRTCMessage,
+    setCurrentMessage,
   ]);
-
-  const handleVoiceStop = useCallback(() => {
-    if (!micActive) return;
-
-    const now = Date.now();
-    if (now - lastFinalizeTimeRef.current < 100) return;
-    lastFinalizeTimeRef.current = now;
-
-    toggleMic();
-    setMicActive(false);
-  }, [toggleMic, micActive]);
-
-  // Handle WebRTC text message sending
-  const handleWebRTCTextMessage = useCallback(
-    (message: string) => {
-      if (!chat?.id || !message.trim() || !userPersona?.id) return;
-
-      if (showHints) setShowHints(false);
-
-      sendWebRTCMessage(chat.id, message);
-
-      const queryKey = trainingMessageKeys.list(chat.id);
-      const baseTimestamp = new Date();
-      const tempUserId = `temp-${baseTimestamp.getTime()}`;
-
-      queryClient.setQueryData<Message[]>(queryKey, (old = []) => [
-        ...old,
-        {
-          id: tempUserId,
-          role: "user",
-          persona_id: userPersona.id,
-          content: message,
-          completed: true,
-          created_at: baseTimestamp.toISOString(),
-          chat_id: chat.id,
-        } as Message,
-      ]);
-
-      setCurrentMessage("");
-    },
-    [
-      chat?.id,
-      sendWebRTCMessage,
-      queryClient,
-      setCurrentMessage,
-      userPersona?.id,
-      showHints,
-      setShowHints,
-    ]
-  );
 
   // Persona name lookup
   const getPersonaName = useCallback(
@@ -333,18 +224,6 @@ export default function ChatArea({
       return personaMap.get(personaId) || null;
     },
     [personaMap, employeeName]
-  );
-
-  // Handle dropdown option selection
-  const handleModeSelect = useCallback(
-    (mode: "text" | "voice") => {
-      const newIsVoiceMode = mode === "voice";
-      if (newIsVoiceMode !== isVoiceMode) {
-        handleModeToggle();
-      }
-      setIsDropdownOpen(false);
-    },
-    [isVoiceMode, handleModeToggle]
   );
 
   // Early return if chat is not available
@@ -501,19 +380,74 @@ export default function ChatArea({
             }}
           >
             <Flex direction="column" gap="3">
-              {/* Input Mode Selection and Interface */}
+              {/* Connect and Mic Controls */}
               <Flex gap="3" align="center">
-                {/* Custom Mode Dropdown */}
-                <Box style={{ position: "relative" }} ref={dropdownRef}>
+                <Button
+                  onClick={onConnect}
+                  disabled={isRTCConnected}
+                  size="2"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "12px 16px",
+                    borderRadius: "12px",
+                    fontSize: "14px",
+                    fontWeight: "500",
+                    background: isRTCConnected ? "var(--green-3)" : "white",
+                    color: isRTCConnected
+                      ? "var(--green-11)"
+                      : "var(--gray-12)",
+                    border: "1px solid var(--gray-6)",
+                    cursor: isRTCConnected ? "default" : "pointer",
+                    outline: "none",
+                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                    transition: "all 0.2s ease",
+                    height: "48px",
+                    flexShrink: 0,
+                  }}
+                >
+                  {isRTCConnected ? "Connected" : "Connect"}
+                </Button>
+
+                <Button
+                  onClick={onToggleMic}
+                  disabled={!isRTCConnected || !isAudioBridgeReady}
+                  size="2"
+                  title={micOn ? "Mute mic" : "Unmute mic"}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "12px 16px",
+                    borderRadius: "12px",
+                    fontSize: "14px",
+                    fontWeight: "500",
+                    background: micOn ? "#ef4444" : "white",
+                    color: micOn ? "white" : "var(--gray-12)",
+                    border: "1px solid var(--gray-6)",
+                    cursor:
+                      !isRTCConnected || !isAudioBridgeReady
+                        ? "not-allowed"
+                        : "pointer",
+                    outline: "none",
+                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                    transition: "all 0.2s ease",
+                    height: "48px",
+                    flexShrink: 0,
+                  }}
+                >
+                  {micOn ? "🎙️ Mute" : "🔇 Unmute"}
+                </Button>
+
+                {/* Hints Button */}
+                {lastAIResponse && (
                   <Button
-                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    onClick={handleHintsClick}
                     variant="outline"
                     size="2"
+                    disabled={isLoadingHints}
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "0.75rem",
                       padding: "12px 16px",
                       borderRadius: "12px",
                       border: "1px solid var(--gray-6)",
@@ -521,326 +455,105 @@ export default function ChatArea({
                       fontWeight: "500",
                       background: "white",
                       color: "var(--gray-12)",
-                      cursor: "pointer",
+                      cursor: isLoadingHints ? "not-allowed" : "pointer",
                       outline: "none",
-                      minWidth: "100px",
-                      height: "48px",
                       boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
                       transition: "all 0.2s ease",
+                      height: "48px",
+                      flexShrink: 0,
                     }}
                   >
-                    <span>{isVoiceMode ? "Voice" : "Text"}</span>
-                    <ChevronUpIcon
-                      width="16"
-                      height="16"
-                      style={{
-                        transform: isDropdownOpen
-                          ? "rotate(0deg)"
-                          : "rotate(180deg)",
-                        transition: "transform 0.2s ease",
-                      }}
-                    />
+                    Hints
                   </Button>
+                )}
+              </Flex>
 
-                  {/* Dropdown Options */}
-                  {isDropdownOpen && (
-                    <Box
-                      style={{
-                        position: "absolute",
-                        bottom: "100%",
-                        left: "0",
-                        right: "0",
-                        marginBottom: "4px",
-                        background: "white",
-                        border: "1px solid var(--gray-6)",
-                        borderRadius: "12px",
-                        boxShadow: "0 8px 30px rgba(0, 0, 0, 0.12)",
-                        zIndex: 1000,
-                        overflow: "hidden",
-                      }}
-                    >
-                      <Button
-                        onClick={() => handleModeSelect("text")}
-                        variant="ghost"
-                        size="1"
-                        style={{
-                          width: "100%",
-                          justifyContent: "flex-start",
-                          padding: "12px 16px",
-                          borderRadius: "0",
-                          background: "transparent",
-                          color: !isVoiceMode
-                            ? "var(--blue-11)"
-                            : "var(--gray-12)",
-                          fontWeight: !isVoiceMode ? "600" : "500",
-                          fontSize: "14px",
-                          border: "none",
-                        }}
-                      >
-                        Text
-                      </Button>
-
-                      {/* Divider Line */}
-                      <Box
-                        style={{
-                          width: "100%",
-                          height: "1px",
-                          background: "var(--gray-4)",
-                          margin: "0",
-                        }}
-                      />
-
-                      <Button
-                        onClick={() => handleModeSelect("voice")}
-                        variant="ghost"
-                        size="1"
-                        style={{
-                          width: "100%",
-                          justifyContent: "flex-start",
-                          padding: "12px 16px",
-                          borderRadius: "0",
-                          background: "transparent",
-                          color: isVoiceMode
-                            ? "var(--green-11)"
-                            : "var(--gray-12)",
-                          fontWeight: isVoiceMode ? "600" : "500",
-                          fontSize: "14px",
-                          border: "none",
-                          borderBottom: "1px solid var(--gray-4)",
-                        }}
-                      >
-                        Voice
-                      </Button>
-                    </Box>
-                  )}
-                </Box>
-
-                {/* Input Interface */}
-                <Box style={{ flex: 1 }}>
-                  {isVoiceMode ? (
-                    // Voice Input
-                    <Flex direction="column" gap="3" align="center">
-                      {/* Voice Button */}
-                      <Flex
-                        gap="3"
-                        align="center"
-                        justify="center"
-                        style={{ width: "100%" }}
-                      >
-                        <Button
-                          onMouseDown={handleVoiceStart}
-                          onMouseUp={handleVoiceStop}
-                          onMouseLeave={handleVoiceStop}
-                          onTouchStart={handleVoiceStart}
-                          onTouchEnd={handleVoiceStop}
-                          disabled={!isRTCConnected || !isAudioBridgeReady}
-                          size="3"
-                          style={{
-                            padding: "12px 16px",
-                            height: "48px",
-                            borderRadius: "12px",
-                            background: micActive
-                              ? "#ef4444"
-                              : !isRTCConnected || !isAudioBridgeReady
-                              ? "#9ca3af"
-                              : "white",
-                            color: micActive
-                              ? "white"
-                              : !isRTCConnected || !isAudioBridgeReady
-                              ? "white"
-                              : "var(--gray-12)",
-                            border: micActive
-                              ? "none"
-                              : "1px solid var(--gray-6)",
-                            cursor:
-                              !isRTCConnected || !isAudioBridgeReady
-                                ? "not-allowed"
-                                : "pointer",
-                            fontSize: "14px",
-                            fontWeight: "500",
-                            transition: "all 0.2s ease",
-                            boxShadow: micActive
-                              ? "0 8px 30px rgba(239, 68, 68, 0.4)"
-                              : "0 1px 3px rgba(0, 0, 0, 0.1)",
-                            transform: micActive ? "scale(1.05)" : "scale(1)",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.5rem",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                          }}
-                        >
-                          {micActive ? (
-                            <Box
-                              style={{
-                                width: "12px",
-                                height: "12px",
-                                borderRadius: "50%",
-                                background: "#ef4444",
-                                animation: "pulse 1.5s ease-in-out infinite",
-                              }}
-                            />
-                          ) : !isRTCConnected || !isAudioBridgeReady ? (
-                            <Box
-                              style={{
-                                width: "16px",
-                                height: "16px",
-                                borderRadius: "50%",
-                                background: "#9ca3af",
-                              }}
-                            />
-                          ) : (
-                            <SpeakerLoudIcon width="16" height="16" />
-                          )}
-                          {micActive
-                            ? "Listening..."
-                            : !isRTCConnected || !isAudioBridgeReady
-                            ? "Connecting..."
-                            : "Hold to Speak"}
-                        </Button>
-
-                        {/* Hints Button for Voice Mode */}
-                        {lastAIResponse && (
-                          <Button
-                            onClick={handleHintsClick}
-                            variant="outline"
-                            size="2"
-                            disabled={isLoadingHints}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              padding: "12px 16px",
-                              borderRadius: "12px",
-                              border: "1px solid var(--gray-6)",
-                              fontSize: "14px",
-                              fontWeight: "500",
-                              background: "white",
-                              color: "var(--gray-12)",
-                              cursor: isLoadingHints
-                                ? "not-allowed"
-                                : "pointer",
-                              outline: "none",
-                              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                              transition: "all 0.2s ease",
-                              height: "48px",
-                              flexShrink: 0,
-                            }}
-                          >
-                            Hints
-                          </Button>
-                        )}
-                      </Flex>
-
-                      {(!isRTCConnected || !isAudioBridgeReady) && (
-                        <Text size="2" style={{ color: "var(--amber-11)" }}>
-                          Connecting to audio stream...
-                        </Text>
-                      )}
-                    </Flex>
-                  ) : (
-                    // Text Input
-                    <Flex align="center" gap="3">
-                      <Box style={{ position: "relative", flex: 1 }}>
-                        <input
-                          type="text"
-                          placeholder="Type your message..."
-                          value={currentMessage}
-                          onChange={(e) => setCurrentMessage(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault();
-                              if (currentMessage.trim() && !isSendingMessage) {
-                                handleWebRTCTextMessage(currentMessage);
-                              }
-                            }
-                          }}
-                          disabled={isSendingMessage}
-                          style={{
-                            width: "100%",
-                            padding: "12px 50px 12px 16px",
-                            borderRadius: "24px",
-                            border: "1px solid var(--gray-6)",
-                            fontSize: "16px",
-                            outline: "none",
-                            background: "white",
-                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                            transition:
-                              "border-color 0.2s ease, box-shadow 0.2s ease",
-                          }}
-                          onFocus={(e) => {
-                            e.target.style.borderColor = "var(--blue-7)";
-                            e.target.style.boxShadow =
-                              "0 1px 3px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(59, 130, 246, 0.1)";
-                          }}
-                          onBlur={(e) => {
-                            e.target.style.borderColor = "var(--gray-6)";
-                            e.target.style.boxShadow =
-                              "0 1px 3px rgba(0, 0, 0, 0.1)";
-                          }}
-                        />
-                        <Button
-                          onClick={() =>
-                            handleWebRTCTextMessage(currentMessage)
-                          }
-                          disabled={!currentMessage.trim() || isSendingMessage}
-                          size="1"
-                          style={{
-                            position: "absolute",
-                            right: "6px",
-                            top: "50%",
-                            transform: "translateY(-50%)",
-                            borderRadius: "20px",
-                            background:
-                              currentMessage.trim() && !isSendingMessage
-                                ? "var(--blue-9)"
-                                : "var(--gray-6)",
-                            border: "none",
-                            width: "36px",
-                            height: "36px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            cursor:
-                              currentMessage.trim() && !isSendingMessage
-                                ? "pointer"
-                                : "not-allowed",
-                          }}
-                        >
-                          <PaperPlaneIcon width="16" height="16" />
-                        </Button>
-                      </Box>
-
-                      {lastAIResponse && (
-                        <Button
-                          onClick={handleHintsClick}
-                          variant="outline"
-                          size="2"
-                          disabled={isLoadingHints}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            padding: "12px 16px",
-                            borderRadius: "12px",
-                            border: "1px solid var(--gray-6)",
-                            fontSize: "14px",
-                            fontWeight: "500",
-                            background: "white",
-                            color: "var(--gray-12)",
-                            cursor: isLoadingHints ? "not-allowed" : "pointer",
-                            outline: "none",
-                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                            transition: "all 0.2s ease",
-                            height: "48px",
-                            flexShrink: 0,
-                          }}
-                        >
-                          Hints
-                        </Button>
-                      )}
-                    </Flex>
-                  )}
+              {/* Text Input */}
+              <Flex align="center" gap="3" style={{ marginTop: 12 }}>
+                <Box style={{ position: "relative", flex: 1 }}>
+                  <input
+                    type="text"
+                    placeholder="Type your message..."
+                    value={currentMessage}
+                    onChange={(e) => setCurrentMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        onSend();
+                      }
+                    }}
+                    disabled={!isRTCConnected || isSendingMessage}
+                    style={{
+                      width: "100%",
+                      padding: "12px 50px 12px 16px",
+                      borderRadius: "24px",
+                      border: "1px solid var(--gray-6)",
+                      fontSize: "16px",
+                      outline: "none",
+                      background: "white",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                      transition:
+                        "border-color 0.2s ease, box-shadow 0.2s ease",
+                      opacity: !isRTCConnected ? 0.6 : 1,
+                    }}
+                    onFocus={(e) => {
+                      if (isRTCConnected) {
+                        e.target.style.borderColor = "var(--blue-7)";
+                        e.target.style.boxShadow =
+                          "0 1px 3px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(59, 130, 246, 0.1)";
+                      }
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = "var(--gray-6)";
+                      e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.1)";
+                    }}
+                  />
+                  <Button
+                    onClick={onSend}
+                    disabled={
+                      !isRTCConnected ||
+                      !currentMessage.trim() ||
+                      isSendingMessage
+                    }
+                    size="1"
+                    style={{
+                      position: "absolute",
+                      right: "6px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      borderRadius: "20px",
+                      background:
+                        isRTCConnected &&
+                        currentMessage.trim() &&
+                        !isSendingMessage
+                          ? "var(--blue-9)"
+                          : "var(--gray-6)",
+                      border: "none",
+                      width: "36px",
+                      height: "36px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor:
+                        isRTCConnected &&
+                        currentMessage.trim() &&
+                        !isSendingMessage
+                          ? "pointer"
+                          : "not-allowed",
+                    }}
+                  >
+                    <PaperPlaneIcon width="16" height="16" />
+                  </Button>
                 </Box>
               </Flex>
+
+              {(!isRTCConnected || !isAudioBridgeReady) && (
+                <Text size="2" style={{ color: "var(--amber-11)" }}>
+                  {!isRTCConnected
+                    ? "Click Connect to start"
+                    : "Connecting to audio stream..."}
+                </Text>
+              )}
             </Flex>
           </Box>
         </Box>
@@ -932,18 +645,6 @@ export default function ChatArea({
           </Card>
         </Box>
       )}
-
-      <style jsx>{`
-        @keyframes pulse {
-          0%,
-          100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.5;
-          }
-        }
-      `}</style>
     </Box>
   );
 }
