@@ -151,17 +151,33 @@ export default function ChatArea({
       if (newResponse !== lastAIResponse) {
         setLastAIResponse(newResponse);
         setHints("");
-
-        if (lastMessage.id && chat?.id) {
-          setIsLoadingHints(true);
-          emitGetHints({
-            chat_id: chat.id,
-            message_id: lastMessage.id,
-          });
-        }
       }
     }
-  }, [displayMessages, lastAIResponse, chat?.id, emitGetHints]);
+  }, [displayMessages, lastAIResponse]);
+
+  // Request hints when the assistant signals it's DONE
+  useEffect(() => {
+    const onComplete = (e: CustomEvent) => {
+      const { chatId, messageId, finalContent } = e.detail || {};
+      if (!chat?.id || chatId !== chat.id || !messageId) return;
+      // Update local state for UI and then ask server for hints
+      setLastAIResponse(finalContent || "");
+      setHints("");
+      setIsLoadingHints(true);
+      emitGetHints({ chat_id: chat.id, message_id: messageId });
+    };
+
+    window.addEventListener(
+      "trainingMessageComplete",
+      onComplete as EventListener
+    );
+    return () => {
+      window.removeEventListener(
+        "trainingMessageComplete",
+        onComplete as EventListener
+      );
+    };
+  }, [chat?.id, emitGetHints]);
 
   // Listen for hints generated events
   useEffect(() => {
