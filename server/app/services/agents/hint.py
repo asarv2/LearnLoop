@@ -3,7 +3,7 @@ import uuid
 from pathlib import Path
 from typing import Any, List, Optional
 
-from agents import Runner, trace
+from agents import Runner, TResponseInputItem, trace
 from app.db import get_session
 from app.models import Chats, Hints, Messages
 from app.services.agents.generic import GenericAgent
@@ -89,6 +89,13 @@ async def run_hint_agent(
     
     conversation_history = get_conversation_history(all_messages)
 
+    hint_extra: TResponseInputItem = {
+        "role": "user",
+        "content": "Look back at the previous conversation and provide a hint for the next message."
+    }
+
+    full_conversation_history = [*conversation_history, hint_extra]
+
     # Get the hint prompt from the markdown file
     system_prompt = await get_hint_prompt()
     
@@ -103,7 +110,7 @@ async def run_hint_agent(
         with trace("Hint"):
             result = await Runner.run(
                 hint_agent.agent(), 
-                input=conversation_history
+                input=full_conversation_history
             )
             hint_result = result.final_output_as(HintResponse)
 
