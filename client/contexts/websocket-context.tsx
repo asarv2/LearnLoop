@@ -38,7 +38,7 @@ interface WebSocketContextType {
   micOn: boolean; // local mic actively sending
 
   // UI helpers
-  connectRTC: () => Promise<void>;
+  connectRTC: (chatId: string) => Promise<void>;
   disconnectRTC: () => void;
   toggleMic: () => Promise<void>;
 
@@ -519,95 +519,98 @@ export function WebSocketProvider({
   // ────────────────────────────────────────────────────────────────────────────
   // Public API
   // ────────────────────────────────────────────────────────────────────────────
-  const connectRTC = useCallback(async () => {
-    if (isRTCConnected) return;
-    if (!socketRef.current) {
-      toast.error("Not connected to server");
-      return;
-    }
-
-    // 1) Boot (room + ICE)
-    let boot: RtcBoot;
-    try {
-      boot = await fetchRtcBoot(); // NOTE: no messages returned here
-      setRtcRoomId(boot.roomId);
-      logInfo("RTC boot", { roomId: boot.roomId });
-    } catch (e) {
-      logError("rtc boot failed", e);
-      toast.error("Failed to get RTC boot info");
-      return;
-    }
-
-    // 2) Create PC and handlers
-    const pc = new RTCPeerConnection({ iceServers: boot.iceServers });
-    pcRef.current = pc;
-
-    // Data channel for new text path (single, room-scoped)
-    const dc = pc.createDataChannel("text");
-    textChanRef.current = dc;
-    dc.onopen = () => {
-      logInfo("RTC text channel open");
-      // flush queued
-      while (pendingText.current.length && dc.readyState === "open") {
-        dc.send(pendingText.current.shift()!);
+  const connectRTC = useCallback(
+    async (chatId: string) => {
+      if (isRTCConnected) return;
+      if (!socketRef.current) {
+        toast.error("Not connected to server");
+        return;
       }
-    };
-    dc.onclose = () => logInfo("RTC text channel closed");
-    dc.onerror = (e) => logError("RTC text channel error", e);
 
-    // Ensure audio m-line exists
-    await ensureMicSender();
+      // 1) Get ICE servers only
+      let boot: RtcBoot;
+      try {
+        boot = await fetchRtcBoot();
+        setRtcRoomId(chatId);
+        logInfo("RTC boot", { roomId: chatId });
+      } catch (e) {
+        logError("rtc boot failed", e);
+        toast.error("Failed to get RTC boot info");
+        return;
+      }
 
-    pc.ontrack = (e) => {
-      const stream = e.streams[0];
-      if (stream) attachRemoteAudio(stream);
-    };
+      // 2) Create PC and handlers
+      const pc = new RTCPeerConnection({ iceServers: boot.iceServers });
+      pcRef.current = pc;
 
-    pc.onicecandidate = (e) => {
-      socketRef.current!.emit("ice_candidate", {
-        candidate: e.candidate
-          ? {
-              candidate: e.candidate.candidate,
-              sdpMid: e.candidate.sdpMid,
-              sdpMLineIndex: e.candidate.sdpMLineIndex,
-            }
-          : null,
-      });
-    };
-
-    // 3) Wire signaling: answer + send offer with room_id
-    const socket = socketRef.current;
-    const onAnswer = async (msg: { sdp: string }) => {
-      await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp });
-      setIsRTCConnected(true);
-      logInfo("RTC connected (answer set)");
-    };
-    socket.on("answer", onAnswer);
-
-    // if socket already connected, issue offer now; otherwise on connect
-    const issueOffer = async () => {
-      const offer = await pc.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: false,
-      });
-      await pc.setLocalDescription(offer);
-      socket.emit("offer", {
-        type: "offer",
-        sdp: offer.sdp,
-        room_id: boot.roomId,
-      });
-    };
-
-    if (socket.connected) {
-      await issueOffer();
-    } else {
-      const onceConnect = async () => {
-        socket.off("connect", onceConnect);
-        await issueOffer();
+      // Data channel for new text path (single, room-scoped)
+      const dc = pc.createDataChannel("text");
+      textChanRef.current = dc;
+      dc.onopen = () => {
+        logInfo("RTC text channel open");
+        // flush queued
+        while (pendingText.current.length && dc.readyState === "open") {
+          dc.send(pendingText.current.shift()!);
+        }
       };
-      socket.on("connect", onceConnect);
-    }
-  }, [isRTCConnected]);
+      dc.onclose = () => logInfo("RTC text channel closed");
+      dc.onerror = (e) => logError("RTC text channel error", e);
+
+      // Ensure audio m-line exists
+      await ensureMicSender();
+
+      pc.ontrack = (e) => {
+        const stream = e.streams[0];
+        if (stream) attachRemoteAudio(stream);
+      };
+
+      pc.onicecandidate = (e) => {
+        socketRef.current!.emit("ice_candidate", {
+          candidate: e.candidate
+            ? {
+                candidate: e.candidate.candidate,
+                sdpMid: e.candidate.sdpMid,
+                sdpMLineIndex: e.candidate.sdpMLineIndex,
+              }
+            : null,
+        });
+      };
+
+      // 3) Wire signaling: answer + send offer with room_id
+      const socket = socketRef.current;
+      const onAnswer = async (msg: { sdp: string }) => {
+        await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp });
+        setIsRTCConnected(true);
+        logInfo("RTC connected (answer set)");
+      };
+      socket.on("answer", onAnswer);
+
+      // if socket already connected, issue offer now; otherwise on connect
+      const issueOffer = async () => {
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: false,
+        });
+        await pc.setLocalDescription(offer);
+        socket.emit("offer", {
+          type: "offer",
+          sdp: offer.sdp,
+          room_id: chatId,
+        });
+      };
+
+      if (socket.connected) {
+        await issueOffer();
+      } else {
+        const onceConnect = async () => {
+          socket.off("connect", onceConnect);
+          await issueOffer();
+        };
+        socket.on("connect", onceConnect);
+      }
+    },
+    [isRTCConnected]
+  );
 
   const disconnectRTC = useCallback(() => {
     cleanupRTC();

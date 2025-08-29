@@ -5,18 +5,18 @@ import os
 from fractions import Fraction
 from typing import Any, Dict, Optional
 
-import av
+import av  # type: ignore
 import numpy as np
 import socketio  # type: ignore
-from aiortc import (MediaStreamTrack, RTCConfiguration, RTCDataChannel,
-                    RTCIceServer, RTCPeerConnection, RTCSessionDescription)
+from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
+                    RTCDataChannel, RTCIceServer, RTCPeerConnection,
+                    RTCSessionDescription)
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .bus import PCM_SR, SAMPLES_PER_CHUNK
-from .room import get_room
-from .store import list_messages
+from .room import get_room  
 from .utils.audio_convert import frame_to_i16_mono_safe
 
 load_dotenv()
@@ -46,28 +46,8 @@ def build_ice_servers():
                                     credential=credential))
     return servers
 
-# Boot endpoint (client calls before connect): returns ICE + room_id + initial messages
 fastapi_app = FastAPI(title="RTC")
 fastapi_app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-
-@fastapi_app.get("/rtc/boot")
-async def rtc_boot(room_id: Optional[str] = None):
-    room = get_room(room_id)           # creates if missing
-    msgs = list_messages(room.id)
-    return {
-        "roomId": room.id,
-        "messages": [
-            {
-                "id": m.id,
-                "source_id": m.source_id,
-                "role": m.role,
-                "created_ms": m.created_ms,
-                "chunks": [{"message_id": c.message_id, "chunk_idx": c.chunk_idx,
-                            "text": c.text, "is_final": c.is_final, "ts_ms": c.ts_ms}
-                           for c in m.chunks],
-            } for m in msgs
-        ],
-    }
 
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins=allowed_origins, transports=['websocket','polling'])
 app = socketio.ASGIApp(sio, fastapi_app, socketio_path="socket.io")
