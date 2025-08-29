@@ -202,6 +202,36 @@ class OpenAIAgent(Agent):
         
         return None
 
+    async def _get_user_persona_id(self) -> Optional[str]:
+        """Get the user persona ID from the room's user profile."""
+        # cached?
+        if getattr(self.room, "user_persona_id", None):
+            return self.room.user_persona_id
+
+        try:
+            from app.db import get_session
+            from app.models import Personas
+            from sqlmodel import select
+
+            profile_id = getattr(self.room, "user_profile_id", None)
+            if not profile_id:
+                return None
+
+            db_session = next(get_session())
+            try:
+                prof = db_session.exec(
+                    select(Personas).where(Personas.profile_id == profile_id)
+                ).one_or_none()
+                if prof:
+                    self.room.user_persona_id = str(prof.id)
+                    return self.room.user_persona_id
+            finally:
+                db_session.close()
+        except Exception as e:
+            logger.error(f"Error getting user persona ID: {e}")
+
+        return None
+
     async def _drain_tts(self):
         try:
             while self._running and not self._tts_blocked:
@@ -253,6 +283,10 @@ class OpenAIAgent(Agent):
             if use_anchor:
                 message_id = agent_self._user_anchor["msg_id"]
                 chunk_idx = agent_self._user_anchor["chunk_idx"]
+
+            # Get user persona_id if not provided for user messages
+            if role == "user" and not persona_id:
+                persona_id = await agent_self._get_user_persona_id()
 
             mid = await orig(
                 source_id=source_id,
@@ -733,6 +767,7 @@ class OpenAIAgent(Agent):
                                     message_id=None,
                                     chunk_idx=0,
                                     is_final=False,
+                                    persona_id=await self._get_user_persona_id(),
                                 )
                                 self._user_anchor.update({"msg_id": msg_id, "chunk_idx": 0, "had_text": False, "open": True})
                                 self._anchor_item_ids.clear()
@@ -745,6 +780,7 @@ class OpenAIAgent(Agent):
                                 message_id=self._user_anchor["msg_id"],
                                 chunk_idx=self._user_anchor["chunk_idx"],
                                 is_final=False,
+                                persona_id=await self._get_user_persona_id(),
                             )
                             self._user_anchor["chunk_idx"] += 1
                             self._user_anchor["had_text"] = True
@@ -765,6 +801,7 @@ class OpenAIAgent(Agent):
                                     message_id=self._user_anchor["msg_id"],
                                     chunk_idx=self._user_anchor["chunk_idx"],
                                     is_final=False,
+                                    persona_id=await self._get_user_persona_id(),
                                 )
                                 self._user_anchor["chunk_idx"] += 1
                                 self._user_anchor["had_text"] = True
@@ -779,6 +816,7 @@ class OpenAIAgent(Agent):
                                         message_id=self._user_anchor["msg_id"],
                                         chunk_idx=self._user_anchor["chunk_idx"],
                                         is_final=True,
+                                        persona_id=await self._get_user_persona_id(),
                                     )
                                 # Reset single-anchor state (whether we wrote text or not)
                                 self._user_anchor.update({"msg_id": None, "chunk_idx": 0, "had_text": False, "open": False})
@@ -802,6 +840,7 @@ class OpenAIAgent(Agent):
                                     message_id=None,
                                     chunk_idx=0,
                                     is_final=False,
+                                    persona_id=await self._get_user_persona_id(),
                                 )
                                 self._user_anchor.update({"msg_id": msg_id, "chunk_idx": 0, "had_text": False, "open": True})
                                 self._anchor_item_ids.clear()

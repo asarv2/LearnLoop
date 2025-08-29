@@ -124,6 +124,9 @@ async def offer(sid, data: Dict[str, Any]):
     await sio.enter_room(sid, room_id)
     room = get_room(room_id)
 
+    # remember who this socket/user is for this room
+    room.user_profile_id = get_profile_id_for_sid(sid)
+
     # hook up text broadcast once (idempotent)
     if room.on_text_chunk is None:
         async def _broadcast(payload):

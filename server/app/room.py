@@ -34,6 +34,10 @@ class Room:
     # keep a handle on agents so we can stop them on cleanup
     agents: List[StoppableAgent] = field(default_factory=list)
 
+    # NEW: User identification fields
+    user_profile_id: Optional[str] = None
+    user_persona_id: Optional[str] = None
+
     def register_agent(self, agent_id: str, description: str = ""):
         # just metadata; can expand later
         pass
@@ -59,6 +63,8 @@ class Room:
             # NEW: server-side clocks
             "created_ms": msg.created_ms,
             "chunk_ts_ms": last_chunk_ts,
+            # NEW: persona_id for UI rendering
+            "persona_id": persona_id,
         }
 
         if self.on_text_chunk:
