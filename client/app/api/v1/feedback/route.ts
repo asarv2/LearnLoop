@@ -1,38 +1,71 @@
-import { NextResponse } from 'next/server';
-import { feedbackRepo, FeedbackCreateSchema } from '@/lib/repos/feedbackRepo';
-import { logError, logWarn } from '@/utils/logger';
-import { handleHttpError } from '@/utils/HttpError';
+import {
+  UserFeedbackCreateSchema,
+  userFeedbackRepo,
+} from "@/lib/repos/userFeedbackRepo";
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 
-// POST /api/feedback  – create
-export async function POST(req: Request) {
-  const json = await req.json();
-  const parse = FeedbackCreateSchema.safeParse(json);
-  if (!parse.success) {
-    await logWarn('Invalid POST body for feedback', { body: json, errors: parse.error });
-    return NextResponse.json({ error: parse.error.flatten() }, { status: 400 });
-  }
-
+export async function POST(req: NextRequest) {
   try {
-    const created = await feedbackRepo.create(parse.data);
-    return NextResponse.json(created, {
-      status: 201,
-      headers: { Location: `/api/v1/feedback/${created.id}` }
-    });
-  } catch (err) {
-    const { statusCode, message } = handleHttpError(err);
-    await logError('Failed to create feedback', err, { data: parse.data });
-    return NextResponse.json({ error: message }, { status: statusCode });
+    const body = await req.json();
+
+    // Validate the request body
+    const validatedData = UserFeedbackCreateSchema.parse(body);
+
+    // Create the feedback entry
+    const feedback = await userFeedbackRepo.create(validatedData);
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: feedback,
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("Error creating user feedback:", error);
+
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Validation failed",
+          details: error.errors,
+        },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to submit feedback",
+      },
+      { status: 500 }
+    );
   }
 }
 
-// GET /api/feedback  – list
 export async function GET() {
   try {
-    const rows = await feedbackRepo.list();
-    return NextResponse.json(rows);
-  } catch (err) {
-    const { statusCode, message } = handleHttpError(err);
-    await logError('Failed to list feedback', err);
-    return NextResponse.json({ error: message }, { status: statusCode });
+    const feedbacks = await userFeedbackRepo.list();
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: feedbacks,
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("Error fetching user feedback:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to fetch feedback",
+      },
+      { status: 500 }
+    );
   }
-} 
+}

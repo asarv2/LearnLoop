@@ -303,15 +303,15 @@ export default function AssessmentWizard({
           {/* Progress */}
           <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              Question {currentStep + 1} of {totalQuestions}
+              Question {currentStep + 1} of 7
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              {Math.round(((currentStep + 1) / totalQuestions) * 100)}% Complete
+              {Math.round(((currentStep + 1) / 7) * 100)}% Complete
             </Typography>
           </Box>
           <LinearProgress
             variant="determinate"
-            value={((currentStep + 1) / totalQuestions) * 100}
+            value={((currentStep + 1) / 7) * 100}
             sx={{ height: 8, borderRadius: 4 }}
           />
         </Box>
@@ -323,11 +323,12 @@ export default function AssessmentWizard({
               {currentQuestion.stem}
             </Typography>
 
-            {currentQuestion.default_question && (
-              <Alert severity="info" sx={{ mb: 3 }}>
-                This is a standard assessment question.
-              </Alert>
-            )}
+            {currentQuestion.default_question &&
+              currentStep < totalQuestions - 2 && (
+                <Alert severity="info" sx={{ mb: 3 }}>
+                  This is a standard assessment question.
+                </Alert>
+              )}
 
             {renderQuestionInput()}
           </CardContent>

@@ -134,6 +134,9 @@ def get_parameter_history(
         document_params = []
         other_params = []
         
+        # Track AI trainer information for clear identification
+        ai_trainer_info: list[str] = []
+        
         for param in all_parameters:
             if not param.field_id or param.field_id not in field_map:
                 continue
@@ -145,6 +148,8 @@ def get_parameter_history(
                 if param.value and param.value in all_personas:
                     persona = all_personas[param.value]
                     value = persona.description if persona.description else "No description available"
+                    # Add AI trainer identification
+                    ai_trainer_info.append(f"AI TRAINER: {persona.name} - {value}")
                 else:
                     value = "Persona not found"
                 field_description = field.description if field.description else ""
@@ -166,8 +171,16 @@ def get_parameter_history(
                 formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
                 other_params.append(formatted_line)
         
-        # Return three separate messages
+        # Return messages with AI trainer clearly identified first
         messages = []
+        
+        # Add AI trainer identification at the beginning for clarity
+        if ai_trainer_info:
+            content = "IMPORTANT: " + "\n".join(ai_trainer_info) + "\n\nThis AI trainer will be speaking as the 'assistant' in the conversation history below."
+            messages.append({
+                "role": "user",
+                "content": content
+            })
         
         if persona_params:
             content = "\n".join(persona_params)
