@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import FeedbackModal from "@/components/feedback/FeedbackModal";
 import {
   BulbOutlined,
   DashboardOutlined,
@@ -9,6 +10,7 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  MessageOutlined,
   PlayCircleOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -83,6 +85,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const { user, signOut } = useAuth();
@@ -125,61 +128,118 @@ export default function DashboardLayout({
       >
         <div
           style={{
-            padding: "24px 16px",
-            marginBottom: "8px",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
           }}
         >
-          <Link href="/dashboard/trainings" style={{ textDecoration: "none" }}>
-            <Space align="center">
-              <div
-                style={{
-                  width: "40px",
-                  height: "40px",
-                  borderRadius: "8px",
-                  background:
-                    "linear-gradient(135deg, #1890ff 0%, #722ed1 100%)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "white",
-                  fontWeight: "bold",
-                  fontSize: "18px",
-                }}
-              >
-                L
-              </div>
-              {!collapsed && (
-                <Text
+          {/* Logo Section - Fixed at top */}
+          <div
+            style={{
+              padding: "24px 16px",
+              marginBottom: "8px",
+              flexShrink: 0,
+            }}
+          >
+            <Link
+              href="/dashboard/trainings"
+              style={{ textDecoration: "none" }}
+            >
+              <Space align="center">
+                <div
                   style={{
-                    color: "#262626",
-                    fontSize: "20px",
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "8px",
+                    background:
+                      "linear-gradient(135deg, #1890ff 0%, #722ed1 100%)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "white",
                     fontWeight: "bold",
-                    margin: 0,
+                    fontSize: "18px",
                   }}
                 >
-                  LearnLoop
-                </Text>
-              )}
-            </Space>
-          </Link>
-        </div>
+                  L
+                </div>
+                {!collapsed && (
+                  <Text
+                    style={{
+                      color: "#262626",
+                      fontSize: "20px",
+                      fontWeight: "bold",
+                      margin: 0,
+                    }}
+                  >
+                    LearnLoop
+                  </Text>
+                )}
+              </Space>
+            </Link>
+          </div>
 
-        <Menu
-          mode="inline"
-          selectedKeys={[
-            pathname.startsWith("/dashboard/trainings") ||
-            pathname.startsWith("/dashboard/s/") ||
-            pathname.startsWith("/dashboard/t/") ||
-            pathname.startsWith("/dashboard/a/")
-              ? "/dashboard/trainings"
-              : pathname,
-          ]}
-          items={menuItems}
-          style={{
-            border: "none",
-            background: "transparent",
-          }}
-        />
+          {/* Menu Section - Takes remaining space */}
+          <div style={{ flex: 1, overflow: "auto" }}>
+            <Menu
+              mode="inline"
+              selectedKeys={[
+                pathname.startsWith("/dashboard/trainings") ||
+                pathname.startsWith("/dashboard/s/") ||
+                pathname.startsWith("/dashboard/t/") ||
+                pathname.startsWith("/dashboard/a/")
+                  ? "/dashboard/trainings"
+                  : pathname,
+              ]}
+              items={menuItems}
+              style={{
+                border: "none",
+                background: "transparent",
+              }}
+            />
+          </div>
+
+          {/* Feedback Button - Fixed at bottom */}
+          <div
+            style={{
+              padding: "16px",
+              flexShrink: 0,
+            }}
+          >
+            <Button
+              type="primary"
+              icon={<MessageOutlined />}
+              onClick={() => setFeedbackModalOpen(true)}
+              style={{
+                width: "100%",
+                height: "48px",
+                background: "linear-gradient(135deg, #1890ff 0%, #0f6bb8 100%)",
+                borderColor: "transparent",
+                borderRadius: "8px",
+                fontWeight: "600",
+                fontSize: "15px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: collapsed ? "0" : "10px",
+                boxShadow: "0 4px 12px rgba(24, 144, 255, 0.3)",
+                transition: "all 0.3s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-1px)";
+                e.currentTarget.style.boxShadow =
+                  "0 6px 16px rgba(24, 144, 255, 0.4)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow =
+                  "0 4px 12px rgba(24, 144, 255, 0.3)";
+              }}
+            >
+              {!collapsed && "Feedback"}
+            </Button>
+          </div>
+        </div>
       </Sider>
 
       <Layout style={{ marginLeft: collapsed ? 80 : 280 }}>
@@ -229,6 +289,12 @@ export default function DashboardLayout({
           <div style={{ padding: "0px 24px" }}>{children}</div>
         </Content>
       </Layout>
+
+      {/* Feedback Modal */}
+      <FeedbackModal
+        open={feedbackModalOpen}
+        onClose={() => setFeedbackModalOpen(false)}
+      />
     </Layout>
   );
 }
