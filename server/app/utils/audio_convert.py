@@ -1,4 +1,4 @@
-import av
+import av  # type: ignore
 import numpy as np
 
 PCM_SR = 48_000  # your bus rate

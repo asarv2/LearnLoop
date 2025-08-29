@@ -131,6 +131,9 @@ class OpenAIAgent(Agent):
         # --- Pending user messages queue for barge-in ---
         self._pending_user_msgs: list[str] = []
 
+        # --- Persona ID for assistant messages ---
+        self._assistant_persona_id: Optional[str] = None
+
         async def _audio_gate(chunk):
             # If blocked, turn any frame we publish into silence instantly.
             if self._tts_blocked:
@@ -154,6 +157,45 @@ class OpenAIAgent(Agent):
             return
         if self._tts_drain_task is None or self._tts_drain_task.done():
             self._tts_drain_task = asyncio.create_task(self._drain_tts())
+
+    async def _get_assistant_persona_id(self) -> Optional[str]:
+        """Get the assistant persona ID from the chat parameters."""
+        if self._assistant_persona_id is not None:
+            return self._assistant_persona_id
+        
+        try:
+            from app.db import get_session
+            from app.models import Chats
+            from app.utils.chat import get_persona_id_from_chat
+            from sqlmodel import select
+            
+            db_session = next(get_session())
+            try:
+                # Get the chat
+                result = db_session.exec(
+                    select(Chats).where(Chats.id == self.room.id)
+                )
+                chat = result.one_or_none()
+                if not chat:
+                    return None
+                
+                # Get persona ID from chat parameters
+                persona_id = get_persona_id_from_chat(
+                    db_session, 
+                    str(chat.id), 
+                    [str(pid) for pid in (chat.parameter_ids or [])]
+                )
+                
+                if persona_id:
+                    self._assistant_persona_id = str(persona_id)
+                    return self._assistant_persona_id
+                    
+            finally:
+                db_session.close()
+        except Exception as e:
+            logger.error(f"Error getting assistant persona ID: {str(e)}")
+        
+        return None
 
     async def _drain_tts(self):
         try:
@@ -183,7 +225,7 @@ class OpenAIAgent(Agent):
         agent_self = self  # close over 'self'
 
         async def wrapped(*, source_id: str, role: str, text: str,
-                          message_id: str | None, chunk_idx: int, is_final: bool) -> str:
+                          message_id: str | None, chunk_idx: int, is_final: bool, persona_id: Optional[str] = None) -> str:
             # If a user anchor is open, route typed text into that message
             use_anchor = (
                 role == "user"
@@ -203,6 +245,7 @@ class OpenAIAgent(Agent):
                 message_id=message_id,
                 chunk_idx=chunk_idx,
                 is_final=is_final,
+                persona_id=persona_id,
             )
 
             # 1) Local barge-in for ANY typed user chunk (not transcript)
@@ -471,11 +514,13 @@ class OpenAIAgent(Agent):
                 # --- Agent end (close text message cleanly) ---
                 elif isinstance(ev, OAEventAgentEnd):
                     if active_msg_id is not None:
+                        persona_id = await self._get_assistant_persona_id()
                         await self.publish_text_chunk(
                             text="",
                             message_id=active_msg_id,
                             chunk_idx=next_chunk_idx,
                             is_final=True,
+                            persona_id=persona_id,
                         )
                         active_msg_id = None
                         next_chunk_idx = 0
@@ -546,8 +591,9 @@ class OpenAIAgent(Agent):
 
                             st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": []})
                             # Create the message lazily on first actual text
+                            persona_id = await self._get_assistant_persona_id()
                             if st["msg_id"] is None:
-                                st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False)
+                                st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
 
                             st["buffer"].append(delta)
                             await self.publish_text_chunk(
@@ -555,6 +601,7 @@ class OpenAIAgent(Agent):
                                 message_id=st["msg_id"],
                                 chunk_idx=st["chunk_idx"],
                                 is_final=False,
+                                persona_id=persona_id,
                             )
                             st["chunk_idx"] += 1
 
@@ -568,14 +615,16 @@ class OpenAIAgent(Agent):
                                 rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
                                 st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": []})
                                 # Create the message lazily on first actual text
+                                persona_id = await self._get_assistant_persona_id()
                                 if st["msg_id"] is None:
-                                    st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False)
+                                    st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
                                 st["buffer"].append(delta)
                                 await self.publish_text_chunk(
                                     text=delta,
                                     message_id=st["msg_id"],
                                     chunk_idx=st["chunk_idx"],
                                     is_final=False,
+                                    persona_id=persona_id,
                                 )
                                 st["chunk_idx"] += 1
 
@@ -607,11 +656,12 @@ class OpenAIAgent(Agent):
 
                             if final_text:
                                 # if we never created a message, do a one-shot create+finalize now
+                                persona_id = await self._get_assistant_persona_id()
                                 if not st or st["msg_id"] is None:
-                                    msg_id = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False)
-                                    await self.publish_text_chunk(text=final_text, message_id=msg_id, chunk_idx=0, is_final=True)
+                                    msg_id = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
+                                    await self.publish_text_chunk(text=final_text, message_id=msg_id, chunk_idx=0, is_final=True, persona_id=persona_id)
                                 else:
-                                    await self.publish_text_chunk(text="", message_id=st["msg_id"], chunk_idx=st["chunk_idx"], is_final=True)
+                                    await self.publish_text_chunk(text="", message_id=st["msg_id"], chunk_idx=st["chunk_idx"], is_final=True, persona_id=persona_id)
                             else:
                                 # no text at all → do nothing (no blank bubble)
                                 pass

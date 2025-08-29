@@ -122,15 +122,16 @@ class WebRTCSession:
                 if chat_id and text and is_final:
                     # lazy imports to avoid circulars
                     from app.main import get_profile_id_for_sid
-                    from app.web.training import \
-                        process_training_message_websocket
+                    from app.web.training import handle_send_training_message
 
                     profile_id = get_profile_id_for_sid(self.sid)
-                    # route to your existing training handler
-                    await process_training_message_websocket(
-                        chat_id=str(chat_id),
-                        message=text,
-                        profile_id=profile_id,
+                    # route to the new simplified training handler
+                    await handle_send_training_message(
+                        sid=self.sid,
+                        data={
+                            "chat_id": str(chat_id),
+                            "message": text,
+                        }
                     )
                     return
 
@@ -141,6 +142,7 @@ class WebRTCSession:
                     message_id=obj.get("message_id"),
                     chunk_idx=int(obj.get("chunk_idx", 0)),
                     is_final=is_final,
+                    persona_id=None,  # No persona for fallback cases
                 )
 
     async def handle_offer(self, offer: Dict[str, Any]):
@@ -158,7 +160,7 @@ class WebRTCSession:
 
     async def _add_ice_internal(self, cand: Optional[Dict[str, Any]]):
         if not cand: return
-        from aiortc.sdp import candidate_from_sdp
+        from aiortc.sdp import candidate_from_sdp  # type: ignore
         c = candidate_from_sdp(cand.get("candidate",""))
         if "sdpMid" in cand: c.sdpMid = str(cand["sdpMid"])
         if "sdpMLineIndex" in cand: c.sdpMLineIndex = int(cand["sdpMLineIndex"])

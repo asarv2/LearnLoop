@@ -67,8 +67,15 @@ def get_profile_id_for_sid(sid: str) -> Optional[str]:
 
 # ── Wire RTC emitter ──────────────────────────────────────────────────────────
 from app import rtc
+from app.store import set_emitter
+
+
+# Set up the emitter for both RTC and store
+async def emit_to_room(room_id: str, event: str, payload: dict) -> None:
+    await sio.emit(event, payload, room=room_id)
 
 rtc.set_emitter(lambda sid, event, payload: sio.emit(event, payload, room=sid))
+set_emitter(emit_to_room)
 
 # ── Socket lifecycle (very light) ─────────────────────────────────────────────
 @sio.event
