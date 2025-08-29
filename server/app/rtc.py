@@ -2,9 +2,12 @@
 # WebRTC primitives extracted from newmain.py for reuse
 import asyncio
 import json
+import logging
 import os
 from fractions import Fraction
 from typing import Any, Awaitable, Callable, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 import av  # type: ignore
 import numpy as np
@@ -78,7 +81,7 @@ class WebRTCSession:
 
         @self.pc.on("track")
         async def on_track(track: MediaStreamTrack):
-            print(f"[RTC] got track kind={track.kind}")
+            logger.debug(f"[RTC] got track kind={track.kind}")
             if track.kind != "audio": return
 
             # tell client "audio bridge ready" (your UI uses this)
@@ -95,7 +98,7 @@ class WebRTCSession:
                     frame = await track.recv()
                     frames += 1
                     if frames % 50 == 0:
-                        print(f"[RTC] inbound audio frame sr={frame.sample_rate} samples={frame.samples}")
+                        logger.debug(f"[RTC] inbound audio frame sr={frame.sample_rate} samples={frame.samples}")
                     pcm_i16 = frame_to_i16_mono_safe(frame)
                     buf = np.concatenate([buf, pcm_i16])
                     while len(buf) >= SAMPLES_PER_CHUNK:
@@ -105,7 +108,7 @@ class WebRTCSession:
 
         @self.pc.on("datachannel")
         def on_datachannel(ch: RTCDataChannel):
-            print(f"[RTC] datachannel label={ch.label}")
+            logger.debug(f"[RTC] datachannel label={ch.label}")
             if ch.label != "text": 
                 return
             self._text_channel = ch
@@ -128,14 +131,17 @@ class WebRTCSession:
                     from app.web.training import handle_send_training_message
 
                     profile_id = get_profile_id_for_sid(self.sid)
-                    # route to the new simplified training handler
-                    await handle_send_training_message(
-                        sid=self.sid,
-                        data={
-                            "chat_id": str(chat_id),
-                            "message": text,
-                        }
-                    )
+                    # Fire-and-forget the training handler
+                    async def _bg():
+                        try:
+                            await handle_send_training_message(
+                                sid=self.sid,
+                                data={"chat_id": str(chat_id), "message": text},
+                            )
+                        except Exception:
+                            import logging
+                            logging.getLogger(__name__).exception("training handler failed")
+                    asyncio.create_task(_bg())
                     return
 
                 # fallback: if no chat_id or not final, keep existing room append (optional)

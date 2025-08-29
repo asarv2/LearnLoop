@@ -58,8 +58,10 @@ async def run_hint_agent(
     """
 
     # Get a session if none is provided
+    created = False
     if session is None:
         session = next(get_session())
+        created = True
     
     # Type assertion to help linter understand session is not None
     assert session is not None
@@ -141,10 +143,15 @@ async def run_hint_agent(
 
     except Exception as e:
         logger.error(f"Error during hint generation: {str(e)}")
-        session.rollback()
+        try: session.rollback()
+        except Exception: pass
         return {
             "success": False,
             "message": f"Hint generation failed: {str(e)}",
             "hint_id": None,
             "message_id": str(message_id),
         }
+    finally:
+        if created:
+            try: session.close()
+            except Exception: pass

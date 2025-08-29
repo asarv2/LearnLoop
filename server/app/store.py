@@ -152,67 +152,68 @@ async def upsert_text_chunk(
         is_final=is_final, ts_ms=created_ms_now
     ))
 
-    # Persist (write-through)
-    db = next(get_session())
-    try:
-        # You may choose to hard-require that chat exists:
-        _ = _ensure_chat_exists(db, room_id)
-
-        db_msg, acc = _upsert_db_message(
-            db,
-            chat_id=room_id,
-            role=role,
-            msg_id=mid,  # mid is already a valid UUID string now
-            text=text,
-            is_final=is_final,
-            persona_id=persona_id
-        )
-
-        # Emit events your frontend already expects
-        if _emit:
-            if role == "user":
-                # only once per user message
-                if first_chunk:
-                    await _emit(room_id, "user_message_saved", {
-                        "chat_id": room_id,
-                        "message": {
-                            "id": str(db_msg.id),
-                            "chat_id": str(db_msg.chat_id),
-                            "role": db_msg.role,
-                            "content": db_msg.content or "",
-                            "completed": db_msg.completed,
-                            "created_at": db_msg.created_at.isoformat(),
-                            "completed_at": db_msg.completed_at.isoformat() if db_msg.completed_at else None,
-                            "persona_id": str(db_msg.persona_id) if db_msg.persona_id else None,
-                        }
-                    })
-            else:
-                # assistant stream
-                if first_chunk and not is_final:
-                    await _emit(room_id, "training_message_start", {
-                        "chat_id": room_id,
-                        "message_id": str(db_msg.id),
-                        "persona_id": str(db_msg.persona_id) if db_msg.persona_id else None,
-                    })
-
-                if not is_final:
-                    await _emit(room_id, "training_message_token", {
-                        "chat_id": room_id,
-                        "message_id": str(db_msg.id),
-                        "token": text or "",
-                        "accumulated_content": acc,
-                    })
-                else:
-                    await _emit(room_id, "training_message_complete", {
-                        "chat_id": room_id,
-                        "message_id": str(db_msg.id),
-                        "final_content": acc,
-                    })
-    finally:
+    # Persist (write-through) - push DB I/O to a thread
+    import asyncio
+    def _persist_once():
+        db = next(get_session())
         try:
-            db.close()
+            _ensure_chat_exists(db, room_id)
+            return _upsert_db_message(
+                db,
+                chat_id=room_id, role=role, msg_id=mid,
+                text=text, is_final=is_final, persona_id=persona_id
+            )
         except Exception:
-            pass
+            # Make sure the aborted txn is rolled back before returning the conn to the pool
+            try: db.rollback()
+            except Exception: pass
+            raise
+        finally:
+            try: db.close()
+            except Exception: pass
+
+    db_msg, acc = await asyncio.to_thread(_persist_once)
+
+    # Emit events your frontend already expects
+    if _emit:
+        if role == "user":
+            # only once per user message
+            if first_chunk:
+                await _emit(room_id, "user_message_saved", {
+                    "chat_id": room_id,
+                    "message": {
+                        "id": str(db_msg.id),
+                        "chat_id": str(db_msg.chat_id),
+                        "role": db_msg.role,
+                        "content": db_msg.content or "",
+                        "completed": db_msg.completed,
+                        "created_at": db_msg.created_at.isoformat(),
+                        "completed_at": db_msg.completed_at.isoformat() if db_msg.completed_at else None,
+                        "persona_id": str(db_msg.persona_id) if db_msg.persona_id else None,
+                    }
+                })
+        else:
+            # assistant stream
+            if first_chunk and not is_final:
+                await _emit(room_id, "training_message_start", {
+                    "chat_id": room_id,
+                    "message_id": str(db_msg.id),
+                    "persona_id": str(db_msg.persona_id) if db_msg.persona_id else None,
+                })
+
+            if not is_final:
+                await _emit(room_id, "training_message_token", {
+                    "chat_id": room_id,
+                    "message_id": str(db_msg.id),
+                    "token": text or "",
+                    "accumulated_content": acc,
+                })
+            else:
+                await _emit(room_id, "training_message_complete", {
+                    "chat_id": room_id,
+                    "message_id": str(db_msg.id),
+                    "final_content": acc,
+                })
 
     return msg
 

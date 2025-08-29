@@ -365,7 +365,7 @@ class OpenAIAgent(Agent):
         runner = RealtimeRunner(oa_agent, config=run_cfg)
         session: RealtimeSession = await runner.run()
         session = await session.enter()   # ✅ correct way to enter
-        print("[openai] realtime session started")
+        logger.debug("[openai] realtime session started")
         return session
 
     # ---- pumps --------------------------------------------------------------
@@ -473,7 +473,7 @@ class OpenAIAgent(Agent):
                     self._uplink_q.put_nowait(b)
 
                 if n % 50 == 0:
-                    print(f"[pump] recv={(t_a1-t_a0)*1000:.1f}ms proc={(t_b1-t_b0)*1000:.1f}ms send=queue")
+                    logger.debug(f"[pump] recv={(t_a1-t_a0)*1000:.1f}ms proc={(t_b1-t_b0)*1000:.1f}ms send=queue")
 
                 # Optional WAV dump of exactly what we sent
                 if wav is not None:
@@ -486,7 +486,7 @@ class OpenAIAgent(Agent):
                 if n % 100 == 0:
                     dt = time.time() - t0
                     if dt > 0:
-                        print(f"[openai] audio→model {n} frames (~{n*FRAME_SEC:.1f}s) in {dt:.1f}s")
+                        logger.debug(f"[openai] audio→model {n} frames (~{n*FRAME_SEC:.1f}s) in {dt:.1f}s")
 
                 # Maintain pacing if we're early
                 remaining = next_deadline - time.perf_counter()
@@ -500,7 +500,7 @@ class OpenAIAgent(Agent):
             if wav is not None:
                 try:
                     wav.close()
-                    print(f"[openai][mic-dump] saved to {wav_path}")
+                    logger.debug(f"[openai][mic-dump] saved to {wav_path}")
                 except Exception:
                     pass
 
@@ -568,7 +568,7 @@ class OpenAIAgent(Agent):
 
                     # Optional: log once so you can see what the model really sends
                     if not self._logged_audio_format:
-                        print(f"[openai] model audio: sr={self.output_sr}Hz, bytes={len(audio_bytes)}")
+                        logger.debug(f"[openai] model audio: sr={self.output_sr}Hz, bytes={len(audio_bytes)}")
                         self._logged_audio_format = True
 
                     # Resample to the bus rate (48k) if needed
