@@ -1,4 +1,5 @@
-# Suppress warnings before any imports
+# server/app/rtc.py
+# WebRTC primitives extracted from newmain.py for reuse
 import asyncio
 import json
 import os
@@ -7,26 +8,14 @@ from typing import Any, Dict, Optional
 
 import av  # type: ignore
 import numpy as np
-import socketio  # type: ignore
 from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
                     RTCDataChannel, RTCIceServer, RTCPeerConnection,
                     RTCSessionDescription)
-from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from .bus import PCM_SR, SAMPLES_PER_CHUNK
-from .room import get_room  
+from .room import get_room
 from .utils.audio_convert import frame_to_i16_mono_safe
 
-load_dotenv()
-
-origin = os.getenv("ORIGIN", "http://localhost:3000")
-allowed_origins = [origin]
-
-# --- Config ---
-AUDIO_SR = 48000  # Opus default
-AUDIO_CH = 1
 
 def build_ice_servers():
     def parse_csv(env):
@@ -45,12 +34,6 @@ def build_ice_servers():
                                     username=username,
                                     credential=credential))
     return servers
-
-fastapi_app = FastAPI(title="RTC")
-fastapi_app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-
-sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins=allowed_origins, transports=['websocket','polling'])
-app = socketio.ASGIApp(sio, fastapi_app, socketio_path="socket.io")
 
 class OutboundTrack(MediaStreamTrack):
     kind = "audio"
@@ -156,53 +139,5 @@ class WebRTCSession:
         finally:
             self.room.bus.unsubscribe(self.sid)
 
+# Global session storage
 sessions: Dict[str, WebRTCSession] = {}
-
-@sio.event
-async def connect(sid, environ, auth):
-    return True
-
-@sio.event
-async def disconnect(sid):
-    s = sessions.pop(sid, None)
-    if s:
-        # optional but tidy: remove from the Socket.IO room
-        await sio.leave_room(sid, s.room.id)
-        await s.close()
-
-@sio.event
-async def offer(sid, data):
-    print(f"[SOCK] offer from {sid} room={data.get('room_id')}")
-    room_id = data.get("room_id") or get_room().id
-
-    await sio.enter_room(sid, room_id)
-    room = get_room(room_id)
-
-    # 👇 set this once per room (idempotent)
-    if room.on_text_chunk is None:
-        async def _broadcast(payload):
-            await sio.emit("text_chunk", payload, room=room.id)
-        room.on_text_chunk = _broadcast
-
-    if sid not in sessions:
-        sessions[sid] = WebRTCSession(sid, room_id)
-
-    ans = await sessions[sid].handle_offer(data)
-    await sio.emit("answer", ans, room=sid)
-
-@sio.event
-async def ice_candidate(sid, data):
-    if sid in sessions:
-        await sessions[sid].add_ice(data.get("candidate"))
-
-# Add health check endpoint
-@fastapi_app.get("/health")
-async def health():
-    return {"status": "ok"}
-
-if __name__ == "__main__":
-    import uvicorn  # type: ignore
-
-    uvicorn.run(
-        "app.main:app", host="0.0.0.0", port=8000, reload=True, log_level="info"
-    )
