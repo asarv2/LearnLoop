@@ -167,26 +167,43 @@ export function WebSocketProvider({
     });
 
     // Training / grading / hints events remain unchanged
-    socket.on(
-      "training_started",
-      (data: {
-        success: boolean;
-        message: string;
-        attempt_id: string;
-        chat_id: string;
-        training_id: string;
-      }) => {
-        logInfo("Training started", data);
-        if (data.success) {
-          toast.success(data.message);
-          router.push(
-            `/dashboard/trainings/t/${data.training_id}/a/${data.attempt_id}`
-          );
-        } else {
-          toast.error(data.message);
+    // Set up training event handlers
+      socket.on(
+        "training_started",
+        (data: {
+          success: boolean;
+          message: string;
+          attempt_id: string;
+          chat_id: string;
+          training_id: string;
+        }) => {
+          logInfo("Training started", data);
+          if (data.success) {
+            toast.success(data.message);
+
+            // Complete the "Creating scenario" step in the progress bar
+            // Dispatch event to notify NewScenario component to complete progress
+            window.dispatchEvent(
+              new CustomEvent("trainingStarted", {
+                detail: {
+                  success: data.success,
+                  attemptId: data.attempt_id,
+                  trainingId: data.training_id,
+                },
+              })
+            );
+
+            // Add a delay before navigation to allow progress bar to complete
+            setTimeout(() => {
+              router.push(
+                `/dashboard/trainings/t/${data.training_id}/a/${data.attempt_id}`
+              );
+            }, 750); // 0.75 second delay
+          } else {
+            toast.error(data.message);
+          }
         }
-      }
-    );
+      );
 
     socket.on(
       "training_joined",
