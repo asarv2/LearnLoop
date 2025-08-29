@@ -5,7 +5,12 @@ import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Awaitable, Callable, Dict, List, Optional, Tuple
+
+from app.db import get_session
+from app.models import Chats
+from app.models import Messages as DBMessage
+from sqlmodel import select
 
 
 def gen_id(prefix: str) -> str:
@@ -45,22 +50,162 @@ def create_room(room_id: Optional[str] = None) -> RoomRecord:
 def get_room(room_id: str) -> RoomRecord:
     return ROOMS.setdefault(room_id, create_room(room_id))
 
-def upsert_text_chunk(room_id: str, *, message_id: Optional[str], source_id: str, role: str,
-                      text: str, chunk_idx: int, is_final: bool) -> Message:
-    room = get_room(room_id)
-    mid = message_id or gen_id("msg")
-    msg = room.messages.get(mid)
-    if msg is None:
-        msg = Message(id=mid, source_id=source_id, role=role, created_ms=int(time.time()*1000))
-        room.messages[mid] = msg
-    msg.chunks.append(TextChunk(message_id=mid, chunk_idx=chunk_idx, text=text,
-                                is_final=is_final, ts_ms=int(time.time()*1000)))
-    if not message_id:
-        print("genereated new message:", text)
-    return msg
-
 def list_messages(room_id: str) -> List[Message]:
     room = get_room(room_id)
     return list(room.messages.values())
+
+# ---- event emitter plumbing (set by main) ------------------------------------
+_emit: Optional[Callable[[str, str, dict], Awaitable[None]]] = None
+def set_emitter(emitter):
+    """
+    emitter: async def (room_or_sid: str, event: str, payload: dict) -> None
+    For our use we call with room_id (Socket.IO room).
+    """
+    global _emit
+    _emit = emitter
+
+# ---- persistence helpers -----------------------------------------------------
+
+def _ensure_chat_exists(db, chat_id: str) -> Optional[Chats]:
+    # Optional safety; if your chat rows always exist, you can skip this lookup
+    try:
+        return db.exec(select(Chats).where(Chats.id == chat_id)).one_or_none()
+    except Exception:
+        return None
+
+def _upsert_db_message(
+    db, *, chat_id: str, role: str, msg_id: str, text: str,
+    is_final: bool, persona_id: Optional[str] = None
+) -> Tuple[DBMessage, str]:
+    """
+    Create/update a DB message row. We store the concatenated content so fetches are simple.
+    Returns (db_message, accumulated_text).
+    """
+    m: Optional[DBMessage] = db.exec(select(DBMessage).where(DBMessage.id == msg_id)).one_or_none()
+    now = time.time()
+
+    if m is None:
+        # Create new DB message row
+        m = DBMessage(
+            id=uuid.UUID(msg_id) if len(msg_id) == 36 else uuid.uuid4(),  # tolerate non-uuid ids → use fresh
+            chat_id=chat_id,
+            role="assistant" if role == "agent" else "user",
+            content=text or "",
+            completed=is_final,
+            persona_id=uuid.UUID(persona_id) if persona_id else None,
+        )
+        db.add(m)
+        db.commit()
+        db.refresh(m)
+        acc = m.content or ""
+    else:
+        # Append chunk text
+        acc = (m.content or "") + (text or "")
+        m.content = acc
+        if is_final:
+            m.completed = True
+        db.add(m)
+        db.commit()
+        db.refresh(m)
+
+    return m, acc
+
+# ---- main function used by Room.append_text_chunk ----------------------------
+
+async def upsert_text_chunk(
+    room_id: str, *,
+    message_id: Optional[str],
+    source_id: str,
+    role: str,
+    text: str,
+    chunk_idx: int,
+    is_final: bool,
+    persona_id: Optional[str] = None,   # optional: allow caller to tag persona
+) -> Message:
+    """
+    1) Update in-memory store (for streaming UX)
+    2) Persist to DB Messages table (accumulated text, completed flag)
+    3) Emit training DOM-friendly events via Socket.IO
+    """
+    room = get_room(room_id)
+    mid = message_id or gen_id("msg")
+    msg = room.messages.get(mid)
+    created_ms_now = int(time.time()*1000)
+
+    first_chunk = False
+    if msg is None:
+        msg = Message(id=mid, source_id=source_id, role=role, created_ms=created_ms_now)
+        room.messages[mid] = msg
+        first_chunk = True
+
+    # append in-memory chunk
+    msg.chunks.append(TextChunk(
+        message_id=mid, chunk_idx=chunk_idx, text=text,
+        is_final=is_final, ts_ms=created_ms_now
+    ))
+
+    # Persist (write-through)
+    db = next(get_session())
+    try:
+        # You may choose to hard-require that chat exists:
+        _ = _ensure_chat_exists(db, room_id)
+
+        db_msg, acc = _upsert_db_message(
+            db,
+            chat_id=room_id,
+            role=role,
+            msg_id=mid if len(mid) == 36 else str(uuid.uuid4()),
+            text=text,
+            is_final=is_final,
+            persona_id=persona_id
+        )
+
+        # Emit events your frontend already expects
+        if _emit:
+            if role == "user":
+                # only once per user message
+                if first_chunk:
+                    await _emit(room_id, "user_message_saved", {
+                        "chat_id": room_id,
+                        "message": {
+                            "id": str(db_msg.id),
+                            "chat_id": str(db_msg.chat_id),
+                            "role": db_msg.role,
+                            "content": db_msg.content or "",
+                            "completed": db_msg.completed,
+                            "created_at": db_msg.created_at.isoformat(),
+                            "completed_at": db_msg.completed_at.isoformat() if db_msg.completed_at else None,
+                            "persona_id": str(db_msg.persona_id) if db_msg.persona_id else None,
+                        }
+                    })
+            else:
+                # assistant stream
+                if first_chunk and not is_final:
+                    await _emit(room_id, "training_message_start", {
+                        "chat_id": room_id,
+                        "message_id": str(db_msg.id),
+                        "persona_id": str(db_msg.persona_id) if db_msg.persona_id else None,
+                    })
+
+                if not is_final:
+                    await _emit(room_id, "training_message_token", {
+                        "chat_id": room_id,
+                        "message_id": str(db_msg.id),
+                        "token": text or "",
+                        "accumulated_content": acc,
+                    })
+                else:
+                    await _emit(room_id, "training_message_complete", {
+                        "chat_id": room_id,
+                        "message_id": str(db_msg.id),
+                        "final_content": acc,
+                    })
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+    return msg
 
 

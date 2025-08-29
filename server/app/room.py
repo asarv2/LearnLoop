@@ -40,9 +40,9 @@ class Room:
 
     async def append_text_chunk(self, *, source_id: str, role: str,
                                 text: str, message_id: Optional[str],
-                                chunk_idx: int, is_final: bool) -> str:
-        msg = upsert_text_chunk(self.id, message_id=message_id, source_id=source_id,
-                                role=role, text=text, chunk_idx=chunk_idx, is_final=is_final)
+                                chunk_idx: int, is_final: bool, persona_id: Optional[str] = None) -> str:
+        msg = await upsert_text_chunk(self.id, message_id=message_id, source_id=source_id,
+                                role=role, text=text, chunk_idx=chunk_idx, is_final=is_final, persona_id=persona_id)
 
         # The chunk we just appended is the last one; expose its ts_ms.
         last_chunk_ts = msg.chunks[-1].ts_ms if msg.chunks else int(time.time() * 1000)

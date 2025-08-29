@@ -19,7 +19,6 @@ from app.services.agents.assesment import (
     create_initial_assessment_with_training_questions, run_assessment_agent,
     run_training_specific_assessment)
 from app.services.agents.feedback import run_feedback_agent
-from app.services.agents.generic import run_generic_agent
 from app.services.agents.grade import run_grading_agent
 from app.services.agents.hint import run_hint_agent
 from app.services.agents.scenario import run_scenario_agent
@@ -480,218 +479,56 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
         await emit_error(sid, f"Failed to end training: {str(e)}")
 
 
-async def process_training_message_websocket(
-    chat_id: str,
-    message: str = "",
-    session: Optional[Any] = None,
-    profile_id: Optional[str] = None,
-) -> None:
-    """
-    Process a training message and stream the response via WebSocket
-    Uses the generic agent with the persona linked to the chat
-    """
-    
-    # Use provided session or create new one
-    if session is None:
-        from app.db import get_session
-        db_session = next(get_session())
-        should_close_session = True
-    else:
-        db_session = session
-        should_close_session = False
-
-    try:
-        # Get the chat
-        result = db_session.exec(
-            select(Chats).where(Chats.id == chat_id)
-        )
-        chat = result.one_or_none()
-        if not chat:
-            raise ValueError(f"Chat {chat_id} not found")
-
-        if not message.strip():
-            logger.warning(f"Empty message received for chat {chat_id}")
-            return
-
-        # ✨ 1. Find the user's persona ID from their profile ID
-        user_persona_id = None
-        if profile_id:
-            user_persona_result = db_session.exec(
-                select(Personas).where(Personas.profile_id == profile_id)
-            ).one_or_none()
-            if user_persona_result:
-                user_persona_id = user_persona_result.id
-            else:
-                logger.error(f"Could not find a persona for profile_id {profile_id}")
-                # Fallback or error handling
-                raise ValueError(f"User persona not found for profile {profile_id}")
-
-        # Create user message (in-memory, not saved with new field)
-        user_message = Messages(
-            chat_id=chat_id,
-            content=message,
-            role="user",
-            training_id=chat.training_id,
-            completed=True,
-            persona_id=user_persona_id  # ✨ Associate with user's persona
-        )
-        db_session.add(user_message)
-        db_session.commit()
-        db_session.refresh(user_message)
-
-        logger.info(f"Created user message {user_message.id} for chat {chat_id}")
-
-        # Immediately confirm to the client that the user message was saved
-        sio = get_sio_instance()
-        await sio.emit("user_message_saved", {
-            "chat_id": chat_id,
-            # ✨ 2. Enrich the message payload with the persona_id
-            "message": {
-                "id": str(user_message.id),
-                "chat_id": str(user_message.chat_id),
-                "content": user_message.content,
-                "role": user_message.role,
-                "persona_id": str(user_persona_id) if user_persona_id else None,  # Add persona_id
-                "completed": user_message.completed,
-                "created_at": user_message.created_at.isoformat(),
-                "completed_at": user_message.completed_at.isoformat() if user_message.completed_at else None,
-            }
-        }, room=chat_id)
-
-        # ✨ 3. Get assistant's persona_id from chat parameters
-        try:
-            # Create a separate session for persona extraction to avoid transaction conflicts
-            persona_session = next(get_session())
-            try:
-                assistant_persona_id = get_persona_id_from_chat(
-                    persona_session, 
-                    str(chat.id), 
-                    [str(pid) for pid in (chat.parameter_ids or [])]
-                )
-                if not assistant_persona_id:
-                    logger.error(f"No persona found for chat {chat_id}")
-                    # Handle error...
-                    return
-            finally:
-                persona_session.close()
-        except Exception as e:
-            logger.error(f"Error getting assistant persona ID for chat {chat_id}: {str(e)}")
-            return
-
-        # Create assistant message placeholder
-        assistant_message = Messages(
-            chat_id=chat_id,
-            content="",
-            role="assistant", 
-            training_id=chat.training_id,
-            completed=False,
-            persona_id=assistant_persona_id  # ✨ Associate with assistant's persona
-        )
-        db_session.add(assistant_message)
-        db_session.commit()
-        db_session.refresh(assistant_message)
-
-        # ✨ 4. Emit message start event with the assistant's persona_id
-        await sio.emit("training_message_start", {
-            "chat_id": chat_id,
-            "message_id": str(assistant_message.id),
-            "persona_id": str(assistant_persona_id)  # Add persona_id
-        }, room=chat_id)
-
-        # Get conversation history
-        messages = db_session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
-        preamble = get_preamble(chat)
-        parameter_history = get_parameter_history(chat, db_session)
-        conversation_history = get_conversation_history(messages)
-
-        instructions = [preamble] + parameter_history + conversation_history
-
-        # Stream response using generic agent
-        accumulated_content = ""
-        try:
-            # The agent run uses the persona_id already, which is great
-            async for chunk in run_generic_agent(assistant_persona_id, instructions, db_session):
-                accumulated_content += chunk
-                
-                # Emit token update
-                await sio.emit("training_message_token", {
-                    "chat_id": chat_id,
-                    "message_id": str(assistant_message.id),
-                    "token": chunk,
-                    "accumulated_content": accumulated_content
-                }, room=chat_id)
-
-            # Update message with final content
-            assistant_message.content = accumulated_content
-            assistant_message.completed = True
-            db_session.add(assistant_message)
-            db_session.commit()
-
-            # Emit completion
-            await sio.emit("training_message_complete", {
-                "chat_id": chat_id,
-                "message_id": str(assistant_message.id),
-                "final_content": accumulated_content
-            }, room=chat_id)
-
-            logger.info(f"Completed training message {assistant_message.id} for chat {chat_id}")
-
-        except Exception as e:
-            logger.error(f"Error generating training response: {str(e)}")
-            
-            # Mark message as error and emit error event
-            assistant_message.error = str(e)
-            assistant_message.completed = True
-            db_session.add(assistant_message)
-            db_session.commit()
-
-            await sio.emit("training_message_error", {
-                "chat_id": chat_id,
-                "message_id": str(assistant_message.id),
-                "error": str(e)
-            }, room=chat_id)
-
-    except Exception as e:
-        logger.error(f"Error processing training message: {str(e)}")
-        # Try to rollback if we have a session
-        if db_session and should_close_session:
-            try:
-                db_session.rollback()
-            except Exception as rollback_error:
-                logger.error(f"Error rolling back transaction: {str(rollback_error)}")
-        raise
-    finally:
-        if should_close_session:
-            try:
-                db_session.close()
-            except Exception as close_error:
-                logger.error(f"Error closing database session: {str(close_error)}")
-
 
 # Simplified training message handler 
 async def handle_send_training_message(sid: str, data: Dict[str, Any]) -> None:
-    """Handle training message sending via WebSocket"""
+    """
+    New path: NO run_generic_agent.
+    - We just append a *final* user text message into the room.
+    - OpenAIAgent (wired to the room) forwards it to the model.
+    - The store persists to DB and emits user_message_saved.
+    - Assistant chunks from OpenAIAgent call append_text_chunk(role="agent", ...)
+      → store emits training_message_* as they stream in.
+    """
     try:
         chat_id = data.get("chat_id")
-        message = data.get("message", "")
-        
-        if not chat_id:
-            await emit_error(sid, "Missing chat_id")
+        message = (data.get("message") or "").strip()
+        if not chat_id or not message:
+            await emit_error(sid, "Missing chat_id or message")
             return
-            
-        logger.info(f"Processing training message for chat {chat_id}")
-        
-        # Get profile_id from sid
+
+        from app.room import get_room
+        room = get_room(chat_id)
+
+        # Get profile_id from sid for persona mapping
         from app.main import get_profile_id_for_sid
         profile_id = get_profile_id_for_sid(sid)
         
-        # Process the message
-        await process_training_message_websocket(
-            chat_id=chat_id,
-            message=message,
-            profile_id=profile_id
+        # Get user persona_id if available
+        persona_id = None
+        if profile_id:
+            db_session = next(get_session())
+            try:
+                from app.models import Personas
+                user_persona_result = db_session.exec(
+                    select(Personas).where(Personas.profile_id == profile_id)
+                ).one_or_none()
+                if user_persona_result:
+                    persona_id = str(user_persona_result.id)
+            finally:
+                db_session.close()
+
+        # Persona mapping is optional. You can derive persona_id from chat parameters
+        # if you want it on user rows too; or omit.
+        await room.append_text_chunk(
+            source_id=sid,     # or profile id
+            role="user",
+            text=message,
+            message_id=None,
+            chunk_idx=0,
+            is_final=True,
+            persona_id=persona_id,
         )
-        
     except Exception as e:
         logger.error(f"Error handling training message: {str(e)}")
         await emit_error(sid, f"Failed to process message: {str(e)}")
