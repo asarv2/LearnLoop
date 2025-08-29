@@ -530,10 +530,25 @@ export function WebSocketProvider({
           setIsStartingTraining(false);
           if (data.success) {
             toast.success(data.message);
-            // Navigate to the training page
-            router.push(
-              `/dashboard/trainings/t/${data.training_id}/a/${data.attempt_id}`
+
+            // Complete the "Creating scenario" step in the progress bar
+            // Dispatch event to notify NewScenario component to complete progress
+            window.dispatchEvent(
+              new CustomEvent("trainingStarted", {
+                detail: {
+                  success: data.success,
+                  attemptId: data.attempt_id,
+                  trainingId: data.training_id,
+                },
+              })
             );
+
+            // Add a delay before navigation to allow progress bar to complete
+            setTimeout(() => {
+              router.push(
+                `/dashboard/trainings/t/${data.training_id}/a/${data.attempt_id}`
+              );
+            }, 750); // 0.75 second delay
           } else {
             toast.error(data.message);
           }

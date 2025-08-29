@@ -260,7 +260,7 @@ export default function FeedbackModal({
       ),
     },
     {
-      title: "Missteps",
+      title: "Improvements",
       icon: "⚡",
       color: "amber",
       content: (
