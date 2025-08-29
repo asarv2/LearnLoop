@@ -9,6 +9,7 @@ import os
 import re
 import time
 import wave
+from asyncio import QueueEmpty
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -107,7 +108,7 @@ class OpenAIAgent(Agent):
         }
 
         # Audio formats the model expects/emits (pcm16 everywhere)
-        self.input_sr = 24000
+        self.input_sr = int(os.getenv("OPENAI_INPUT_SR", "24000"))  # set to 48000 to skip resample
         self.output_sr = 24000  # ← back to 24k (fixes chipmunk/high pitch)
         self._logged_audio_format = False  # optional: one-time debug print
 
@@ -133,6 +134,10 @@ class OpenAIAgent(Agent):
 
         # --- Persona ID for assistant messages ---
         self._assistant_persona_id: Optional[str] = None
+
+        # --- Uplink queue for decoupling audio capture from network I/O ---
+        self._uplink_q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=256)
+        self._uplink_task: Optional[asyncio.Task] = None
 
         async def _audio_gate(chunk):
             # If blocked, turn any frame we publish into silence instantly.
@@ -208,6 +213,17 @@ class OpenAIAgent(Agent):
                 # publish_audio passes through our audio_hook, so mute is instant if flipped
                 await self.publish_audio((frame * 0.8).astype(np.float32))
                 await asyncio.sleep(SAMPLES_PER_CHUNK / PCM_SR)  # 20ms pacing
+        except asyncio.CancelledError:
+            pass
+
+    async def _uplink_writer(self, session: RealtimeSession):
+        try:
+            while self._running:
+                b = await self._uplink_q.get()
+                try:
+                    await session.send_audio(b, commit=False)
+                finally:
+                    self._uplink_q.task_done()
         except asyncio.CancelledError:
             pass
 
@@ -328,17 +344,18 @@ class OpenAIAgent(Agent):
         # --- Minimal capture: write exactly what we send (s16le) into a WAV ---
         wav = None
         wav_path = None
-        try:
-            ts = int(time.time() * 1000)
-            wav_path = (AUDIO_DIR / f"{ts}.wav")
-            wav = wave.open(str(wav_path), "wb")
-            # mono, 16-bit (2 bytes), self.input_sr
-            wav.setnchannels(1)
-            wav.setsampwidth(2)
-            wav.setframerate(self.input_sr)
-            print(f"[openai][mic-dump] capturing WAV to {wav_path} (sr={self.input_sr}, mono, s16le)")
-        except Exception as e:
-            print(f"[openai][mic-dump] failed to open file: {e}")
+        if os.getenv("OPENAI_MIC_DUMP", "0") == "1":
+            try:
+                ts = int(time.time() * 1000)
+                wav_path = (AUDIO_DIR / f"{ts}.wav")
+                wav = wave.open(str(wav_path), "wb")
+                # mono, 16-bit (2 bytes), self.input_sr
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(self.input_sr)
+                print(f"[openai][mic-dump] capturing WAV to {wav_path} (sr={self.input_sr}, mono, s16le)")
+            except Exception as e:
+                print(f"[openai][mic-dump] failed to open file: {e}")
 
         # Keep the model from hearing the beep agent only (do NOT ignore ourselves here).
         try:
@@ -363,19 +380,28 @@ class OpenAIAgent(Agent):
 
                 # Try to get one bus chunk in time; otherwise send silence
                 b = None
+                remaining = next_deadline - time.perf_counter()
+                timeout = 0.010 if remaining > 0 else 0.0
                 try:
-                    # Allow a tiny slack to absorb bus jitter
-                    timeout = max(0.0, next_deadline - time.perf_counter() + 0.005)
+                    # A) wait for bus
+                    t_a0 = time.perf_counter()
                     chunk = await asyncio.wait_for(self.sub.recv(), timeout=timeout)
+                    t_a1 = time.perf_counter()
+                    
                     x = chunk.data  # float32 mono @ PCM_SR (48k)
 
                     if x is None or x.size == 0:
                         # nothing from bus → silence frame
                         b = SILENCE_BYTES
                     else:
+                        # B) process (resample, preamp, pack)
+                        t_b0 = time.perf_counter()
+                        
                         # resample 48k → self.input_sr (24k) if needed
-                        if self.input_sr != PCM_SR:
-                            x = _resample_linear(x, PCM_SR, self.input_sr)
+                        if self.input_sr != PCM_SR:             # 24000 vs 48000
+                            # average pairs: (x[0:len-1:2] + x[1:len:2]) * 0.5
+                            L2 = (x.size // 2) * 2
+                            x = 0.5 * (x[:L2:2] + x[1:L2:2])
 
                         # optional: small preamp so VAD/ASR have healthy levels
                         pre_db = float(os.getenv("OPENAI_INPUT_PREAMP_DB", "18"))
@@ -389,20 +415,31 @@ class OpenAIAgent(Agent):
                             x = x[:OUT_SAMPLES_PER_FRAME]
 
                         b = _f32_to_s16le_bytes(x)
+                        t_b1 = time.perf_counter()
 
-                        if n % 50 == 0:
+                        if os.getenv("OPENAI_DEBUG", "0") == "1" and n % 100 == 0:
                             rms = float(np.sqrt(np.mean(x * x)) + 1e-12)
                             print(f"[openai][mic-dump] len_f32={x.size} len_bytes={len(b)} rms_post={rms:.6f} preamp_db={pre_db}")
 
                 except asyncio.TimeoutError:
                     # No bus chunk before the deadline → send silence
                     b = SILENCE_BYTES
+                    t_a0 = t_a1 = t_b0 = t_b1 = time.perf_counter()
 
-                # Send upstream (NO commit)
+                # Send upstream via queue (NO commit)
                 try:
-                    await session.send_audio(b, commit=False)
-                except Exception as ex:
-                    print(f"[openai] send_audio error: {ex}")
+                    self._uplink_q.put_nowait(b)
+                except asyncio.QueueFull:
+                    # drop oldest to keep latency tight
+                    try:
+                        _ = self._uplink_q.get_nowait()
+                        self._uplink_q.task_done()
+                    except asyncio.QueueEmpty:
+                        pass
+                    self._uplink_q.put_nowait(b)
+
+                if n % 50 == 0:
+                    print(f"[pump] recv={(t_a1-t_a0)*1000:.1f}ms proc={(t_b1-t_b0)*1000:.1f}ms send=queue")
 
                 # Optional WAV dump of exactly what we sent
                 if wav is not None:
@@ -419,9 +456,11 @@ class OpenAIAgent(Agent):
 
                 # Maintain pacing if we're early
                 remaining = next_deadline - time.perf_counter()
-                if remaining > 0:
+                if remaining < -0.02:
+                    # we fell behind by >1 frame → reset schedule
+                    next_deadline = time.perf_counter()
+                elif remaining > 0:
                     await asyncio.sleep(remaining)
-                # if late, loop immediately to catch up
 
         finally:
             if wav is not None:
@@ -806,6 +845,10 @@ class OpenAIAgent(Agent):
             asyncio.create_task(self._pump_audio_in(self._session)),
             asyncio.create_task(self._pump_model_events_out(self._session)),
         ]
+        
+        # Start uplink writer task
+        self._uplink_task = asyncio.create_task(self._uplink_writer(self._session))
+        self._tasks.append(self._uplink_task)
 
         # Wait until any task ends (or stop() cancels them)
         try:
