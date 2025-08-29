@@ -14,6 +14,14 @@ from app.models import Chats
 from app.models import Messages as DBMessage
 from sqlmodel import select
 
+
+def _uuid_or_none(x):
+    """Safely convert string to UUID, return None if invalid."""
+    try: 
+        return UUID(x) if x else None
+    except Exception: 
+        return None
+
 logger = logging.getLogger(__name__)
 
 
@@ -97,7 +105,7 @@ def _upsert_db_message(
             role="assistant" if role == "agent" else "user",
             content=text or "",
             completed=is_final,
-            persona_id=UUID(persona_id) if persona_id else None,
+            persona_id=_uuid_or_none(persona_id),
         )
         db.add(m)
         db.commit()

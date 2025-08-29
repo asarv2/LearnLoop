@@ -279,10 +279,17 @@ async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
             logger.info(f"User {sid} successfully joined training room {chat_id}")
 
         finally:
-            db_session.close()
+            try:
+                db_session.close()
+            except Exception:
+                pass
 
     except Exception as e:
         logger.error(f"Error joining training for {sid}: {str(e)}")
+        try:
+            db_session.rollback()
+        except Exception:
+            pass
         await emit_error(sid, f"Failed to join training: {str(e)}")
 
 
@@ -338,10 +345,17 @@ async def handle_stop_training(sid: str, data: Dict[str, Any]) -> None:
             )
 
         finally:
-            db_session.close()
+            try:
+                db_session.close()
+            except Exception:
+                pass
 
     except Exception as e:
         logger.error(f"Error stopping training for {sid}: {str(e)}")
+        try:
+            db_session.rollback()
+        except Exception:
+            pass
         await emit_error(sid, f"Failed to stop training: {str(e)}")
 
 
@@ -466,10 +480,17 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
                 )
 
         finally:
-            db_session.close()
+            try:
+                db_session.close()
+            except Exception:
+                pass
 
     except Exception as e:
         logger.error(f"Error ending training for {sid}: {str(e)}")
+        try:
+            db_session.rollback()
+        except Exception:
+            pass
         await emit_error(sid, f"Failed to end training: {str(e)}")
 
 
@@ -509,8 +530,17 @@ async def handle_send_training_message(sid: str, data: Dict[str, Any]) -> None:
                 ).one_or_none()
                 if user_persona_result:
                     persona_id = str(user_persona_result.id)
+            except Exception as e:
+                logger.error(f"Error getting persona ID: {str(e)}")
+                try:
+                    db_session.rollback()
+                except Exception:
+                    pass
             finally:
-                db_session.close()
+                try:
+                    db_session.close()
+                except Exception:
+                    pass
 
         # Persona mapping is optional. You can derive persona_id from chat parameters
         # if you want it on user rows too; or omit.

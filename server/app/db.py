@@ -1,12 +1,14 @@
+# app/db.py
 import logging
 import os
-from typing import Generator
+from contextlib import contextmanager
+from typing import Generator, Iterator
 
 from dotenv import load_dotenv
+from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel, create_engine
 
 load_dotenv()
-
 logger = logging.getLogger(__name__)
 
 db_user = os.getenv("DB_USER")
@@ -15,68 +17,110 @@ db_name = os.getenv("DB_NAME")
 db_port = os.getenv("DB_PORT")
 db_host = os.getenv("DB_HOST")
 
-# Construct the database URL
 db_url = f"postgresql+psycopg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
-
 if not db_url:
     raise ValueError("Database url is not set")
 
-# Create engine with standard configuration
 engine = create_engine(
     db_url,
-    # Use standard connection pooling
     pool_size=5,
     max_overflow=10,
-    pool_pre_ping=True,
+    pool_pre_ping=True,     # ping before checkout to kill dead conns
     pool_recycle=3600,
+    echo=False,             # flip to True if you want SQL debug
 )
 
-# Test the connection
+# IMPORTANT: use a factory that creates a NEW Session every time
+SessionLocal = sessionmaker(
+    bind=engine,
+    class_=Session,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,
+)
+
+# Smoke test
 try:
     with engine.connect() as connection:
         print("Connection successful!")
 except Exception as e:
     print(f"Failed to connect: {e}")
 
-
 def init_db() -> None:
-    # Skip schema creation if running in Docker environment
-    # Docker initialization already creates the schema from SQL files
     if os.getenv("DOCKER_ENV"):
         print("🐳 Running in Docker - skipping SQLModel schema creation (using SQL files instead)")
         return
-    
     print("🔧 Creating database schema via SQLModel...")
     SQLModel.metadata.create_all(engine)
 
-
 def get_session() -> Generator[Session, None, None]:
-    """Get a database session with error handling."""
-    session = None
+    """
+    Yield a fresh SQLAlchemy session.
+    Always do a best-effort rollback on acquire to clear any aborted txn
+    that might linger on a pooled connection.
+    """
+    db = SessionLocal()
     try:
-        session = Session(engine)
-        yield session
+        try:
+            db.rollback()  # no-op if clean, clears "aborted transaction" state if any
+        except Exception:
+            pass
+        yield db
     except Exception as e:
         logger.error(f"Database session error: {e}")
-        if session:
-            session.rollback()
+        try:
+            db.rollback()
+        except Exception:
+            pass
         raise
     finally:
-        if session:
-            session.close()
-
+        try:
+            db.close()
+        except Exception:
+            pass
 
 def get_session_safe() -> Session:
-    """Get a database session for use in async contexts where generator pattern doesn't work."""
+    """Return a fresh session (remember to rollback/close on exceptions!)."""
+    db = SessionLocal()
     try:
-        return Session(engine)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return db
     except Exception as e:
         logger.error(f"Failed to create database session: {e}")
         raise
 
+@contextmanager
+def session_scope() -> Iterator[Session]:
+    """
+    Preferred context manager for sync code:
+        with session_scope() as db:
+            ... db.add(...); db.commit()
+    Automatically rolls back on exception and always closes.
+    """
+    db = SessionLocal()
+    try:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        yield db
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 def reset_connection_pool() -> None:
-    """Reset the database connection pool to clear any stale connections."""
     try:
         logger.info("Resetting database connection pool...")
         engine.dispose()
