@@ -121,8 +121,10 @@ async def run_training_specific_assessment(
     These questions are about the training scenario and can be generated early.
     """
     # Get a session if none is provided
+    created = False
     if session is None:
         session = next(get_session())
+        created = True
     
     # Type assertion to help linter understand session is not None
     assert session is not None
@@ -130,6 +132,11 @@ async def run_training_specific_assessment(
     # Get the chat object
     chat = session.exec(select(Chats).where(Chats.id == chat_id)).first()
     if not chat:
+        if created:
+            try:
+                session.close()
+            except Exception:
+                pass
         return {
             "success": False,
             "message": f"Chat not found with ID {chat_id}",
@@ -191,6 +198,12 @@ async def run_training_specific_assessment(
             "questions_count": 0,
             "questions": [],
         }
+    finally:
+        if created:
+            try:
+                session.close()
+            except Exception:
+                pass
 
 
 async def run_conversation_specific_assessment(
