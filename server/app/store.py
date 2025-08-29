@@ -1,20 +1,25 @@
 # store.py
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Dict, List, Optional, Tuple
+from uuid import UUID
 
 from app.db import get_session
 from app.models import Chats
 from app.models import Messages as DBMessage
 from sqlmodel import select
 
+logger = logging.getLogger(__name__)
 
-def gen_id(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+def gen_id(prefix: str | None = None) -> str:
+    # Always return a hyphenated UUID string so DB can accept it.
+    return str(uuid.uuid4())
 
 @dataclass
 class TextChunk:
@@ -87,12 +92,12 @@ def _upsert_db_message(
     if m is None:
         # Create new DB message row
         m = DBMessage(
-            id=uuid.UUID(msg_id) if len(msg_id) == 36 else uuid.uuid4(),  # tolerate non-uuid ids → use fresh
+            id=UUID(msg_id),   # msg_id is already a valid UUID string now
             chat_id=chat_id,
             role="assistant" if role == "agent" else "user",
             content=text or "",
             completed=is_final,
-            persona_id=uuid.UUID(persona_id) if persona_id else None,
+            persona_id=UUID(persona_id) if persona_id else None,
         )
         db.add(m)
         db.commit()
@@ -128,7 +133,7 @@ async def upsert_text_chunk(
     3) Emit training DOM-friendly events via Socket.IO
     """
     room = get_room(room_id)
-    mid = message_id or gen_id("msg")
+    mid = message_id or gen_id(None)  # first chunk gets a UUID, later chunks reuse the same message_id
     msg = room.messages.get(mid)
     created_ms_now = int(time.time()*1000)
 
@@ -137,6 +142,9 @@ async def upsert_text_chunk(
         msg = Message(id=mid, source_id=source_id, role=role, created_ms=created_ms_now)
         room.messages[mid] = msg
         first_chunk = True
+        logger.debug(f"Created new message: mid={mid}, role={role}, chunk_idx={chunk_idx}")
+    else:
+        logger.debug(f"Reusing message: mid={mid}, role={role}, chunk_idx={chunk_idx}, is_final={is_final}")
 
     # append in-memory chunk
     msg.chunks.append(TextChunk(
@@ -154,7 +162,7 @@ async def upsert_text_chunk(
             db,
             chat_id=room_id,
             role=role,
-            msg_id=mid if len(mid) == 36 else str(uuid.uuid4()),
+            msg_id=mid,  # mid is already a valid UUID string now
             text=text,
             is_final=is_final,
             persona_id=persona_id
