@@ -44,6 +44,8 @@ export type StandardGrade = Tables<'standard_grades'>;
 export type Standard = Tables<'standards'>;
 // --- TRAININGS ---
 export type Training = Tables<'trainings'>;
+// --- USER_FEEDBACK ---
+export type UserFeedback = Tables<'user_feedback'>;
 
 // =============================================
 // ================ ENUM TYPES ================
@@ -61,7 +63,7 @@ export type TrainingType = "interview" | "offboarding";
 // =============================================
 
 // Union type of all table names
-export type TableName = 'assessments' | 'attempts' | 'chats' | 'documents' | 'feedback' | 'fields' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'profiles' | 'questions' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings';
+export type TableName = 'assessments' | 'attempts' | 'chats' | 'documents' | 'feedback' | 'fields' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'profiles' | 'questions' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings' | 'user_feedback';
 
 // Union type of all entity types
-export type Entity = Assessment | Attempt | Chat | Document | Feedback | Field | Hint | Log | Message | Parameter | Persona | Profile | Question | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training;
+export type Entity = Assessment | Attempt | Chat | Document | Feedback | Field | Hint | Log | Message | Parameter | Persona | Profile | Question | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training | UserFeedback;

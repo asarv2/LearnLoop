@@ -184,10 +184,20 @@ CREATE TABLE IF NOT EXISTS questions (
 CREATE TABLE IF NOT EXISTS feedback (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMPTZ DEFAULT NOW(),
+    chat_id UUID REFERENCES chats(id) ON DELETE CASCADE NOT NULL,
+    training_id UUID REFERENCES trainings(id) ON DELETE SET NULL,
+    strengths TEXT[] DEFAULT '{}',
+    errors TEXT[] DEFAULT '{}',
+    green_flags TEXT[] DEFAULT '{}',
+    red_flags TEXT[] DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS user_feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    strengths TEXT[],
-    weaknesses TEXT[],
-    chat_id UUID REFERENCES chats(id) ON DELETE CASCADE
+    user_id UUID NOT NULL, -- references auth.users.id
+    feedback_text TEXT NOT NULL
 );
 
 
