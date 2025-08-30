@@ -421,12 +421,17 @@ export function WebSocketProvider({
         message: string;
         chat_id: string;
         hints: string[];
+        message_id: string; // ★ expect message_id
       }) => {
         logInfo("Hints generated", data);
         if (data.success) {
           window.dispatchEvent(
             new CustomEvent("hintsGenerated", {
-              detail: { chatId: data.chat_id, hints: data.hints },
+              detail: {
+                chatId: data.chat_id,
+                messageId: data.message_id, // ★ forward messageId
+                hints: data.hints,
+              },
             })
           );
         } else {

@@ -22,7 +22,6 @@ import { useWebSocket } from "@/contexts/websocket-context";
 import { useField } from "@/lib/api/hooks/useFields";
 import { useParameter } from "@/lib/api/hooks/useParameters";
 import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
-import { logError } from "@/utils/logger";
 
 interface ChatAreaProps {
   displayMessages: Message[];
@@ -54,7 +53,6 @@ export default function ChatArea({
     toggleMic,
     sendWebRTCMessage,
     emitSendTrainingMessage,
-    emitGetHints,
   } = useWebSocket();
 
   // Hints-related state
@@ -62,6 +60,7 @@ export default function ChatArea({
   const [hints, setHints] = useState<string>("");
   const [isLoadingHints, setIsLoadingHints] = useState(false);
   const [lastAIResponse, setLastAIResponse] = useState<string>("");
+  const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
 
   // Get the current user and their associated persona
   const { user } = useAuth();
@@ -109,35 +108,10 @@ export default function ChatArea({
     return new Map(allPersonas.map((p) => [p.id, p.name]));
   }, [allPersonas]);
 
-  // Generate hints function using WebSocket
-  const generateHints = useCallback(async () => {
-    if (!lastAIResponse || !displayMessages.length) return;
-
-    const lastAssistantMessage = displayMessages
-      .filter((msg) => msg.role === "assistant")
-      .pop();
-
-    if (!lastAssistantMessage?.id) {
-      logError("No assistant message found for hints generation");
-      return;
-    }
-
-    if (chat?.id) {
-      emitGetHints({
-        chat_id: chat.id,
-        message_id: lastAssistantMessage.id,
-      });
-    }
-  }, [lastAIResponse, displayMessages, chat?.id, emitGetHints]);
-
   // Handle hints button click
-  const handleHintsClick = useCallback(async () => {
-    if (!showHints && !hints && !isLoadingHints && lastAIResponse) {
-      setIsLoadingHints(true);
-      await generateHints();
-    }
-    setShowHints(!showHints);
-  }, [showHints, hints, isLoadingHints, lastAIResponse, generateHints]);
+  const handleHintsClick = useCallback(() => {
+    setShowHints((s) => !s);
+  }, []);
 
   // Track AI responses for hints generation
   useEffect(() => {
@@ -152,6 +126,8 @@ export default function ChatArea({
       if (newResponse !== lastAIResponse) {
         setLastAIResponse(newResponse);
         setHints("");
+        setLastAssistantId(lastMessage.id || null);
+        setIsLoadingHints(true); // backend will now auto-generate
       }
     }
   }, [displayMessages, lastAIResponse]);
@@ -164,8 +140,8 @@ export default function ChatArea({
       // Update local state for UI and then ask server for hints
       setLastAIResponse(finalContent || "");
       setHints("");
-      setIsLoadingHints(true);
-      emitGetHints({ chat_id: chat.id, message_id: messageId });
+      setIsLoadingHints(true); // backend will emit "hints_generated" automatically
+      setLastAssistantId(messageId);
     };
 
     window.addEventListener(
@@ -178,12 +154,13 @@ export default function ChatArea({
         onComplete as EventListener
       );
     };
-  }, [chat?.id, emitGetHints]);
+  }, [chat?.id]);
 
   // Listen for hints generated events
   useEffect(() => {
     const handleHintsGenerated = (event: CustomEvent) => {
-      const { hints } = event.detail;
+      const { hints, messageId } = event.detail || {};
+      if (!messageId || messageId !== lastAssistantId) return; // only accept newest
       if (hints && Array.isArray(hints)) {
         setHints(hints.join("\n\n"));
         setIsLoadingHints(false);
@@ -201,7 +178,7 @@ export default function ChatArea({
         handleHintsGenerated as EventListener
       );
     };
-  }, []);
+  }, [lastAssistantId]);
 
   // Voice Mode toggle handler
   const onToggleVoiceMode = useCallback(() => {

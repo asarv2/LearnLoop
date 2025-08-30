@@ -12,6 +12,7 @@ from uuid import UUID
 from app.db import get_session
 from app.models import Chats
 from app.models import Messages as DBMessage
+from app.services.agents.hint import run_hint_agent
 from sqlmodel import select
 
 
@@ -222,6 +223,25 @@ async def upsert_text_chunk(
                     "message_id": str(db_msg.id),
                     "final_content": acc,
                 })
+
+                # Schedule hint generation for this message
+                import asyncio
+                async def _schedule_hints():
+                    try:
+                        def _sync(msg_uuid: uuid.UUID):
+                            import asyncio as _asyncio
+                            return _asyncio.run(run_hint_agent(msg_uuid))
+                        result = await asyncio.to_thread(_sync, uuid.UUID(str(db_msg.id)))
+                        await _emit(room_id, "hints_generated", {
+                            "chat_id": room_id,
+                            "message_id": str(db_msg.id),
+                            "success": result.get("success", False),
+                            "hints": result.get("hints", []),
+                            "message": result.get("message", ""),
+                        })
+                    except Exception as e:
+                        logger.error(f"Failed to generate hints: {e}")
+                asyncio.create_task(_schedule_hints())
 
     return msg
 
