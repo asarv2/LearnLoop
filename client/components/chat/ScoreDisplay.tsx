@@ -1,9 +1,10 @@
-import { Chat } from "@/types";
+import { Chat, Rubric } from "@/types";
 import { Box, Text } from "@radix-ui/themes";
 
 interface ScoreDisplayProps {
   score: number | null | undefined;
   chat?: Chat;
+  rubric: Rubric | null | undefined;
 }
 
 // Category names are now driven by data outside this component.
@@ -14,7 +15,7 @@ const SUBTLE_TEXT = "#64748b"; // Subtle gray for secondary text
 
 const getScoreColor = () => PRIMARY_COLOR;
 
-export default function ScoreDisplay({ score }: ScoreDisplayProps) {
+export default function ScoreDisplay({ score, rubric }: ScoreDisplayProps) {
   if (!score) {
     return (
       <Box style={{ padding: "2rem", textAlign: "center" }}>
@@ -44,7 +45,7 @@ export default function ScoreDisplay({ score }: ScoreDisplayProps) {
           {score}
         </Box>
         <Text size="2" style={{ color: SUBTLE_TEXT }}>
-          out of 100
+          out of {rubric?.total_points}
         </Text>
       </Box>
 
