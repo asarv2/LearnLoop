@@ -138,7 +138,10 @@ export default function ChatArea({
   // Request hints when the assistant signals it's DONE
   useEffect(() => {
     const onComplete = (e: CustomEvent) => {
-      const { chatId, messageId, finalContent } = e.detail || {};
+      const d = e.detail || {};
+      const chatId = d.chatId ?? d.chat_id;
+      const messageId = d.messageId ?? d.message_id;
+      const finalContent = d.finalContent ?? d.final_content;
       if (!chat?.id || chatId !== chat.id || !messageId) return;
       // Update local state for UI - hints will be fetched automatically by the hook
       setLastAIResponse(finalContent || "");
