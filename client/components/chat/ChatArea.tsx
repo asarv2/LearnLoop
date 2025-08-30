@@ -49,9 +49,11 @@ export default function ChatArea({
   const {
     isRTCConnected,
     micOn,
-    connectRTC,
+    voiceMode,
+    enableVoiceMode,
     toggleMic,
     sendWebRTCMessage,
+    emitSendTrainingMessage,
     emitGetHints,
   } = useWebSocket();
 
@@ -201,11 +203,17 @@ export default function ChatArea({
     };
   }, []);
 
-  // Connect handler
-  const onConnect = useCallback(() => {
+  // Voice Mode toggle handler
+  const onToggleVoiceMode = useCallback(() => {
     if (!chat?.id) return;
-    connectRTC(chat.id);
-  }, [chat?.id, connectRTC]);
+    if (!voiceMode) {
+      // turning ON: establish RTC once and leave it until refresh
+      enableVoiceMode(chat.id);
+    } else {
+      // turning OFF: do NOT disconnect; just stop using RTC for text
+      // (Audio/mic stays as last set)
+    }
+  }, [chat?.id, voiceMode, enableVoiceMode]);
 
   // Toggle mic handler
   const onToggleMic = useCallback(() => {
@@ -216,16 +224,22 @@ export default function ChatArea({
   // Send message handler
   const onSend = useCallback(() => {
     const message = currentMessage.trim();
-    if (!message || !chat?.id || !isRTCConnected) return;
+    if (!message || !chat?.id) return;
 
-    // No optimistic message
-    sendWebRTCMessage(chat.id, message);
+    if (voiceMode) {
+      // realtime path (DC preferred, websocket fallback inside)
+      sendWebRTCMessage(chat.id, message);
+    } else {
+      // classic websocket text-only path
+      emitSendTrainingMessage({ chat_id: chat.id, message });
+    }
     setCurrentMessage("");
   }, [
     chat?.id,
     currentMessage,
-    isRTCConnected,
+    voiceMode,
     sendWebRTCMessage,
+    emitSendTrainingMessage,
     setCurrentMessage,
   ]);
 
@@ -395,11 +409,10 @@ export default function ChatArea({
             }}
           >
             <Flex direction="column" gap="3">
-              {/* Connect and Mic Controls */}
+              {/* Voice Mode Toggle and Mic Controls */}
               <Flex gap="3" align="center">
                 <Button
-                  onClick={onConnect}
-                  disabled={isRTCConnected}
+                  onClick={onToggleVoiceMode}
                   size="2"
                   style={{
                     display: "flex",
@@ -407,48 +420,50 @@ export default function ChatArea({
                     padding: "12px 16px",
                     borderRadius: "12px",
                     fontSize: "14px",
-                    fontWeight: "500",
-                    background: isRTCConnected ? "var(--green-3)" : "white",
-                    color: isRTCConnected
-                      ? "var(--green-11)"
-                      : "var(--gray-12)",
+                    fontWeight: "600",
+                    background: voiceMode ? "var(--green-3)" : "white",
+                    color: voiceMode ? "var(--green-11)" : "var(--gray-12)",
                     border: "1px solid var(--gray-6)",
-                    cursor: isRTCConnected ? "default" : "pointer",
+                    cursor: "pointer",
                     outline: "none",
                     boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
                     transition: "all 0.2s ease",
                     height: "48px",
                     flexShrink: 0,
                   }}
+                  title={voiceMode ? "Voice mode is ON" : "Enable voice mode"}
                 >
-                  {isRTCConnected ? "Connected" : "Connect"}
+                  {voiceMode ? "Voice Mode: On" : "Voice Mode: Off"}
                 </Button>
 
-                <Button
-                  onClick={onToggleMic}
-                  disabled={!isRTCConnected}
-                  size="2"
-                  title={micOn ? "Mute mic" : "Unmute mic"}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "12px 16px",
-                    borderRadius: "12px",
-                    fontSize: "14px",
-                    fontWeight: "500",
-                    background: micOn ? "#ef4444" : "white",
-                    color: micOn ? "white" : "var(--gray-12)",
-                    border: "1px solid var(--gray-6)",
-                    cursor: !isRTCConnected ? "not-allowed" : "pointer",
-                    outline: "none",
-                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                    transition: "all 0.2s ease",
-                    height: "48px",
-                    flexShrink: 0,
-                  }}
-                >
-                  {micOn ? "🎙️ Mute" : "🔇 Unmute"}
-                </Button>
+                {/* Only show mic controls when voice mode is enabled */}
+                {voiceMode && (
+                  <Button
+                    onClick={onToggleMic}
+                    disabled={!isRTCConnected}
+                    size="2"
+                    title={micOn ? "Mute mic" : "Unmute mic"}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "12px 16px",
+                      borderRadius: "12px",
+                      fontSize: "14px",
+                      fontWeight: "500",
+                      background: micOn ? "#ef4444" : "white",
+                      color: micOn ? "white" : "var(--gray-12)",
+                      border: "1px solid var(--gray-6)",
+                      cursor: !isRTCConnected ? "not-allowed" : "pointer",
+                      outline: "none",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                      transition: "all 0.2s ease",
+                      height: "48px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {micOn ? "🎙️ Mute" : "🔇 Unmute"}
+                  </Button>
+                )}
 
                 {/* Hints Button */}
                 {lastAIResponse && (
@@ -494,7 +509,7 @@ export default function ChatArea({
                         onSend();
                       }
                     }}
-                    disabled={!isRTCConnected || isSendingMessage}
+                    disabled={isSendingMessage}
                     style={{
                       width: "100%",
                       padding: "12px 50px 12px 16px",
@@ -506,14 +521,11 @@ export default function ChatArea({
                       boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
                       transition:
                         "border-color 0.2s ease, box-shadow 0.2s ease",
-                      opacity: !isRTCConnected ? 0.6 : 1,
                     }}
                     onFocus={(e) => {
-                      if (isRTCConnected) {
-                        e.target.style.borderColor = "var(--blue-7)";
-                        e.target.style.boxShadow =
-                          "0 1px 3px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(59, 130, 246, 0.1)";
-                      }
+                      e.target.style.borderColor = "var(--blue-7)";
+                      e.target.style.boxShadow =
+                        "0 1px 3px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(59, 130, 246, 0.1)";
                     }}
                     onBlur={(e) => {
                       e.target.style.borderColor = "var(--gray-6)";
@@ -522,11 +534,7 @@ export default function ChatArea({
                   />
                   <Button
                     onClick={onSend}
-                    disabled={
-                      !isRTCConnected ||
-                      !currentMessage.trim() ||
-                      isSendingMessage
-                    }
+                    disabled={!currentMessage.trim() || isSendingMessage}
                     size="1"
                     style={{
                       position: "absolute",
@@ -535,9 +543,7 @@ export default function ChatArea({
                       transform: "translateY(-50%)",
                       borderRadius: "20px",
                       background:
-                        isRTCConnected &&
-                        currentMessage.trim() &&
-                        !isSendingMessage
+                        currentMessage.trim() && !isSendingMessage
                           ? "var(--blue-9)"
                           : "var(--gray-6)",
                       border: "none",
@@ -547,9 +553,7 @@ export default function ChatArea({
                       alignItems: "center",
                       justifyContent: "center",
                       cursor:
-                        isRTCConnected &&
-                        currentMessage.trim() &&
-                        !isSendingMessage
+                        currentMessage.trim() && !isSendingMessage
                           ? "pointer"
                           : "not-allowed",
                     }}
@@ -558,12 +562,6 @@ export default function ChatArea({
                   </Button>
                 </Box>
               </Flex>
-
-              {!isRTCConnected && (
-                <Text size="2" style={{ color: "var(--amber-11)" }}>
-                  Click Connect to start
-                </Text>
-              )}
             </Flex>
           </Box>
         </Box>
