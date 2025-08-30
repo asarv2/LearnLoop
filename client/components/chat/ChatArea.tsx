@@ -281,7 +281,8 @@ export default function ChatArea({
       >
         <Flex direction="column" gap="4">
           {displayMessages.map((message) => {
-            const isUserMessage = message.persona_id === userPersona?.id;
+            const isUserMessage =
+              message.role === "user" || message.persona_id === userPersona?.id;
             const isAssistantMessage = message.role === "assistant";
 
             return (

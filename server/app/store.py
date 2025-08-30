@@ -228,7 +228,7 @@ async def upsert_text_chunk(
     # Emit events your frontend already expects
     if _emit:
         if role == "user":
-            # only once per user message - persist immediately for user messages
+            # First chunk -> create DB row quickly for UX
             if chunk_idx == 0:
                 import asyncio
                 def _persist_user():
@@ -249,7 +249,13 @@ async def upsert_text_chunk(
                         except Exception: pass
 
                 db_msg, acc = await asyncio.to_thread(_persist_user)
-                
+                # We already persisted the first chunk; drop it from the pending buffer
+                if PENDING_WRITES.get(mid):
+                    try:
+                        PENDING_WRITES[mid].pop(0)
+                    except Exception:
+                        PENDING_WRITES[mid].clear()
+
                 await _emit(room_id, "user_message_saved", {
                     "chat_id": room_id,
                     "message": {
@@ -263,6 +269,46 @@ async def upsert_text_chunk(
                         "persona_id": str(db_msg.persona_id) if db_msg.persona_id else None,
                     }
                 })
+
+            # Stream per-chunk tokens for transcript (including chunk 0 if non-empty)
+            if not is_final:
+                acc = "".join(chunk.text for chunk in msg.chunks)
+                await _emit(room_id, "user_message_token", {
+                    "chat_id": room_id,
+                    "message_id": mid,
+                    "token": text or "",
+                    "accumulated_content": acc,
+                })
+            else:
+                # Finalize: flush any remaining text and mark complete
+                res = await _flush_pending_writes(mid, force=True)
+                if not res:
+                    # Nothing pending; still need to mark DB row completed
+                    import asyncio
+                    def _mark_complete():
+                        db = next(get_session())
+                        try:
+                            m = db.exec(select(DBMessage).where(DBMessage.id == mid)).one_or_none()
+                            if m and not m.completed:
+                                m.completed = True
+                                db.add(m); db.commit(); db.refresh(m)
+                            return m, (m.content or "") if m else ("", "")
+                        except Exception:
+                            try: db.rollback()
+                            except Exception: pass
+                            raise
+                        finally:
+                            try: db.close()
+                            except Exception: pass
+                    db_msg, acc = await asyncio.to_thread(_mark_complete)
+                else:
+                    db_msg, acc = res
+                if db_msg:
+                    await _emit(room_id, "user_message_complete", {
+                        "chat_id": room_id,
+                        "message_id": str(db_msg.id),
+                        "final_content": acc or "",
+                    })
         else:
             # assistant stream
             # Fix: Use chunk_idx == 0 instead of first_chunk for idempotency
