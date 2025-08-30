@@ -1,7 +1,13 @@
 "use client";
 
 import type { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
-import type { Chat, Feedback, RubricGrade, StandardGrade } from "@/types";
+import type {
+  Chat,
+  Feedback,
+  Rubric,
+  RubricGrade,
+  StandardGrade,
+} from "@/types";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   ChevronLeftIcon,
@@ -12,6 +18,13 @@ import {
 import { Badge, Box, Button, Flex, Heading, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import ScoreDisplay from "./ScoreDisplay";
+import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
+import { useRubrics } from "@/lib/api/hooks/useRubrics";
+import * as HoverCard from "@radix-ui/react-hover-card";
+import { InfoCircleOutlined } from "@ant-design/icons";
+
+const SUBTLE_TEXT = "#64748b"; // Subtle gray for secondary text
+const TEXT_COLOR = "#1e293b"; // Dark blue-gray for text
 
 interface FeedbackModalProps {
   isOpen: boolean;
@@ -29,6 +42,9 @@ export default function FeedbackModal({
   chat,
 }: FeedbackModalProps) {
   const [currentPage, setCurrentPage] = useState(0);
+
+  const { data: scenarios } = useScenariosByTrainingId(chat?.training_id || "");
+  const { data: rubrics } = useRubrics();
 
   const cleanText = (text: string) => {
     // Remove markdown bold formatting (**text**)
@@ -110,6 +126,8 @@ export default function FeedbackModal({
 
   // Extract rubric and standard grades if present on chat include
   const chatWithIncludes = chat as unknown as ChatWithAllIncludes | undefined;
+  const rubric_id = scenarios?.[0]?.rubric_id;
+  const rubric = rubrics?.find((r) => r.id === rubric_id);
   const rubricGrades: RubricGrade[] =
     (chatWithIncludes?.rubric_grades as unknown as RubricGrade[]) || [];
   const firstRubricGrade = rubricGrades[0];
@@ -129,32 +147,83 @@ export default function FeedbackModal({
           <ScoreDisplay
             score={score ?? firstRubricGrade?.score ?? null}
             chat={chat || undefined}
+            rubric={rubric as Rubric | null | undefined}
           />
           {standardGrades && standardGrades.length > 0 && (
-            <Box style={{ marginTop: "16px" }}>
-              <Heading size="3" style={{ marginBottom: "8px" }}>
-                Standards
-              </Heading>
-              <Flex direction="column" gap="2">
-                {standardGrades.map((sg) => (
-                  <Flex
-                    key={sg.id}
-                    align="center"
-                    justify="between"
-                    style={{
-                      border: "1px solid var(--gray-6)",
-                      borderRadius: 8,
-                      padding: "8px 12px",
-                    }}
-                  >
-                    <Text size="2">{sg.name}</Text>
-                    <Badge variant="soft" color="blue">
-                      {sg.score}/5
-                    </Badge>
-                  </Flex>
-                ))}
-              </Flex>
-            </Box>
+            <>
+              <Box style={{ marginTop: "16px" }}>
+                <Heading size="3" style={{ marginBottom: "8px" }}>
+                  Standards
+                </Heading>
+                <Flex direction="column" gap="2">
+                  {standardGrades.map((sg) => (
+                    <Flex
+                      key={sg.id}
+                      align="center"
+                      justify="between"
+                      style={{
+                        border: "1px solid var(--gray-6)",
+                        borderRadius: 8,
+                        padding: "8px 12px",
+                      }}
+                    >
+                      <Flex align="center" gap="2">
+                      <Text size="2">{sg.name}</Text>
+                      <HoverCard.Root>
+                        <HoverCard.Trigger asChild>
+                          <Box
+                            style={{
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              color: SUBTLE_TEXT,
+                            }}
+                          >
+                            <InfoCircleOutlined style={{ fontSize: "1rem", paddingLeft: "4px" }} />
+                          </Box>
+                        </HoverCard.Trigger>
+                        <HoverCard.Portal>
+                          <HoverCard.Content
+                            style={{
+                              backgroundColor: "white",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: "8px",
+                              padding: "12px",
+                              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                              maxWidth: "300px",
+                              zIndex: 9999,
+                            }}
+                            sideOffset={5}
+                          >
+                            <Text
+                              size="2"
+                              style={{ color: TEXT_COLOR, lineHeight: "1.4" }}
+                            >
+                              {sg.description ||
+                                "No feedback available for this standard."}
+                            </Text>
+                            <HoverCard.Arrow style={{ fill: "white" }} />
+                          </HoverCard.Content>
+                        </HoverCard.Portal>
+                      </HoverCard.Root>
+                      </Flex>
+                      <Badge variant="soft" color="blue">
+                        {sg.score}/5
+                      </Badge>
+                    </Flex>
+                  ))}
+                </Flex>
+              </Box>
+              <Box style={{ marginTop: "16px" }}>
+                <Heading size="3" style={{ marginBottom: "8px" }}>
+                  Summary
+                </Heading>
+                <Text size="2">
+                  {firstRubricGrade?.description ||
+                    "No feedback available for this standard."}
+                </Text>
+              </Box>
+            </>
           )}
         </Box>
       ),
