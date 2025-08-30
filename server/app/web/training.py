@@ -34,6 +34,29 @@ logger = logging.getLogger(__name__)
 active_training_runs: Dict[str, Any] = {}
 
 
+async def _schedule_hints_for_message(chat_id: str, message_id: str) -> None:
+    """Background hint generation keyed to a specific assistant message."""
+    try:
+        def _sync(msg_uuid: uuid.UUID):
+            import asyncio as _asyncio
+            return _asyncio.run(run_hint_agent(msg_uuid))
+        result = await asyncio.to_thread(_sync, uuid.UUID(message_id))
+        sio = get_sio_instance()
+        await sio.emit(
+            "hints_generated",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,              # ★ add message_id
+                "success": result.get("success", False),
+                "hints": result.get("hints", []),
+                "message": result.get("message", ""),
+            },
+            room=chat_id,
+        )
+    except Exception as e:
+        await emit_error(chat_id, f"Failed to generate hints: {e}")
+
+
 def get_sio_instance() -> socketio.AsyncServer:
     """Get the Socket.IO server instance from main.py"""
     from app.main import get_socketio_instance
@@ -632,6 +655,7 @@ async def handle_get_hints(sid: str, data: Dict[str, Any]) -> None:
             sio = get_sio_instance()
             await sio.emit("hints_generated", {
                 "chat_id": chat_id,
+                "message_id": message_id,   # ★ include
                 "success": result.get("success", False),
                 "hints": result.get("hints", []),
                 "message": result.get("message", "")
@@ -798,6 +822,9 @@ async def process_training_message_websocket(
             }, room=chat_id)
 
             logger.info(f"Completed training message {assistant_message.id} for chat {chat_id}")
+
+            # Schedule hint generation for this message
+            asyncio.create_task(_schedule_hints_for_message(chat_id, str(assistant_message.id)))
 
         except Exception as e:
             logger.error(f"Error generating training response: {str(e)}")
