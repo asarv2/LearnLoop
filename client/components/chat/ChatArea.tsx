@@ -20,9 +20,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { useField } from "@/lib/api/hooks/useFields";
+import { useLatestMessageHints } from "@/lib/api/hooks/useHints";
 import { useParameter } from "@/lib/api/hooks/useParameters";
 import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
-
 interface ChatAreaProps {
   displayMessages: Message[];
   isSendingMessage: boolean;
@@ -57,10 +57,16 @@ export default function ChatArea({
 
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
-  const [hints, setHints] = useState<string>("");
-  const [isLoadingHints, setIsLoadingHints] = useState(false);
   const [lastAIResponse, setLastAIResponse] = useState<string>("");
+  const [realtimeHints, setRealtimeHints] = useState<string[] | null>(null);
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
+
+  // Use the composite hook to get hints for the latest assistant message
+  const { hints, isLoading: isLoadingHints } = useLatestMessageHints(
+    chat?.id,
+    displayMessages, // seed from props for instant pick
+    true // enabled
+  );
 
   // Get the current user and their associated persona
   const { user } = useAuth();
@@ -125,9 +131,6 @@ export default function ChatArea({
       const newResponse = lastMessage.content;
       if (newResponse !== lastAIResponse) {
         setLastAIResponse(newResponse);
-        setHints("");
-        setLastAssistantId(lastMessage.id || null);
-        setIsLoadingHints(true); // backend will now auto-generate
       }
     }
   }, [displayMessages, lastAIResponse]);
@@ -137,11 +140,10 @@ export default function ChatArea({
     const onComplete = (e: CustomEvent) => {
       const { chatId, messageId, finalContent } = e.detail || {};
       if (!chat?.id || chatId !== chat.id || !messageId) return;
-      // Update local state for UI and then ask server for hints
+      // Update local state for UI - hints will be fetched automatically by the hook
       setLastAIResponse(finalContent || "");
-      setHints("");
-      setIsLoadingHints(true); // backend will emit "hints_generated" automatically
       setLastAssistantId(messageId);
+      setRealtimeHints(null); // Clear any previous real-time hints
     };
 
     window.addEventListener(
@@ -156,14 +158,13 @@ export default function ChatArea({
     };
   }, [chat?.id]);
 
-  // Listen for hints generated events
+  // Listen for hints generated events to show them immediately
   useEffect(() => {
     const handleHintsGenerated = (event: CustomEvent) => {
       const { hints, messageId } = event.detail || {};
       if (!messageId || messageId !== lastAssistantId) return; // only accept newest
       if (hints && Array.isArray(hints)) {
-        setHints(hints.join("\n\n"));
-        setIsLoadingHints(false);
+        setRealtimeHints(hints);
       }
     };
 
@@ -586,13 +587,26 @@ export default function ChatArea({
                 </Button>
               </Flex>
 
-              {hints ? (
+              {realtimeHints && realtimeHints.length > 0 ? (
                 <Box>
                   <Text
                     size="2"
                     style={{ lineHeight: "1.5", color: "var(--gray-12)" }}
                   >
-                    <Markdown>{hints}</Markdown>
+                    <Markdown>{realtimeHints.join("\n\n")}</Markdown>
+                  </Text>
+                </Box>
+              ) : hints && hints.length > 0 ? (
+                <Box>
+                  <Text
+                    size="2"
+                    style={{ lineHeight: "1.5", color: "var(--gray-12)" }}
+                  >
+                    <Markdown>
+                      {hints
+                        .map((h) => h.contents?.join("\n\n") || "")
+                        .join("\n\n")}
+                    </Markdown>
                   </Text>
                 </Box>
               ) : (
