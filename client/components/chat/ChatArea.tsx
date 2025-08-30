@@ -409,35 +409,10 @@ export default function ChatArea({
             }}
           >
             <Flex direction="column" gap="3">
-              {/* Voice Mode Toggle and Mic Controls */}
-              <Flex gap="3" align="center">
-                <Button
-                  onClick={onToggleVoiceMode}
-                  size="2"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "12px 16px",
-                    borderRadius: "12px",
-                    fontSize: "14px",
-                    fontWeight: "600",
-                    background: voiceMode ? "var(--green-3)" : "white",
-                    color: voiceMode ? "var(--green-11)" : "var(--gray-12)",
-                    border: "1px solid var(--gray-6)",
-                    cursor: "pointer",
-                    outline: "none",
-                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                    transition: "all 0.2s ease",
-                    height: "48px",
-                    flexShrink: 0,
-                  }}
-                  title={voiceMode ? "Voice mode is ON" : "Enable voice mode"}
-                >
-                  {voiceMode ? "Voice Mode: On" : "Voice Mode: Off"}
-                </Button>
-
-                {/* Only show mic controls when voice mode is enabled */}
-                {voiceMode && (
+              {/* Text Input with Voice Mode/Mic Controls and Hints */}
+              <Flex align="center" gap="3">
+                {/* Voice Mode Button or Mic Controls - Left */}
+                {voiceMode ? (
                   <Button
                     onClick={onToggleMic}
                     disabled={!isRTCConnected}
@@ -463,40 +438,34 @@ export default function ChatArea({
                   >
                     {micOn ? "🎙️ Mute" : "🔇 Unmute"}
                   </Button>
-                )}
-
-                {/* Hints Button */}
-                {lastAIResponse && (
+                ) : (
                   <Button
-                    onClick={handleHintsClick}
-                    variant="outline"
+                    onClick={onToggleVoiceMode}
                     size="2"
-                    disabled={isLoadingHints}
                     style={{
                       display: "flex",
                       alignItems: "center",
                       padding: "12px 16px",
                       borderRadius: "12px",
-                      border: "1px solid var(--gray-6)",
                       fontSize: "14px",
-                      fontWeight: "500",
+                      fontWeight: "600",
                       background: "white",
                       color: "var(--gray-12)",
-                      cursor: isLoadingHints ? "not-allowed" : "pointer",
+                      border: "1px solid var(--gray-6)",
+                      cursor: "pointer",
                       outline: "none",
                       boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
                       transition: "all 0.2s ease",
                       height: "48px",
                       flexShrink: 0,
                     }}
+                    title="Enable voice mode"
                   >
-                    Hints
+                    Voice Mode
                   </Button>
                 )}
-              </Flex>
 
-              {/* Text Input */}
-              <Flex align="center" gap="3" style={{ marginTop: 12 }}>
+                {/* Text Input - Center */}
                 <Box style={{ position: "relative", flex: 1 }}>
                   <input
                     type="text"
@@ -561,6 +530,35 @@ export default function ChatArea({
                     <PaperPlaneIcon width="16" height="16" />
                   </Button>
                 </Box>
+
+                {/* Hints Button - Right */}
+                {lastAIResponse && (
+                  <Button
+                    onClick={handleHintsClick}
+                    variant="outline"
+                    size="2"
+                    disabled={isLoadingHints}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "12px 16px",
+                      borderRadius: "12px",
+                      border: "1px solid var(--gray-6)",
+                      fontSize: "14px",
+                      fontWeight: "500",
+                      background: "white",
+                      color: "var(--gray-12)",
+                      cursor: isLoadingHints ? "not-allowed" : "pointer",
+                      outline: "none",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                      transition: "all 0.2s ease",
+                      height: "48px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    Hints
+                  </Button>
+                )}
               </Flex>
             </Flex>
           </Box>
