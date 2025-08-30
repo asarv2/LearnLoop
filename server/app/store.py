@@ -334,9 +334,10 @@ async def upsert_text_chunk(
                 })
             else:
                 # Final chunk - flush all pending writes and emit complete
-                db_msg, acc = await _flush_pending_writes(mid, force=True)
+                result = await _flush_pending_writes(mid, force=True)
                 
-                if db_msg:
+                if result:
+                    db_msg, acc = result
                     await _emit(room_id, "training_message_complete", {
                         "chat_id": room_id,
                         "message_id": str(db_msg.id),

@@ -258,7 +258,13 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         handleAssessmentSubmitted as EventListener
       );
     };
-  }, [chatId, chat?.attempt_id, queryClient, isWaitingForAssessment, isWaitingForFeedback]);
+  }, [
+    chatId,
+    chat?.attempt_id,
+    queryClient,
+    isWaitingForAssessment,
+    isWaitingForFeedback,
+  ]);
 
   // ✅ NEW: Fallback mechanism to check for assessment/feedback when chat data changes
   useEffect(() => {
@@ -268,22 +274,8 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     const hasAssessment = chat.assessments && chat.assessments.length > 0;
     const hasFeedback = chat.feedback && chat.feedback.length > 0;
 
-    // Only show assessment if training is completed, assessment exists, and we haven't handled it yet
+    // Prioritize feedback over assessment - only show assessment if no feedback exists
     if (
-      isTrainingCompleted &&
-      hasAssessment &&
-      !lastProcessedAssessmentRef.current &&
-      !showAssessment &&
-      !showFeedback
-    ) {
-      logInfo("Training completed with assessment, showing assessment modal");
-      setShowAssessment(true);
-      lastProcessedAssessmentRef.current = "assessment";
-      // ✅ NEW: Clear loading state for assessment
-      setIsWaitingForAssessment(false);
-    }
-    // Only show feedback if it exists, we haven't handled it yet, and no modals are shown
-    else if (
       hasFeedback &&
       !lastProcessedFeedbackRef.current &&
       !showAssessment &&
@@ -294,6 +286,23 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
       lastProcessedFeedbackRef.current = "feedback";
       // ✅ NEW: Clear loading state for feedback
       setIsWaitingForFeedback(false);
+    }
+    // Only show assessment if training is completed, assessment exists, no feedback exists, and we haven't handled it yet
+    else if (
+      isTrainingCompleted &&
+      hasAssessment &&
+      !hasFeedback &&
+      !lastProcessedAssessmentRef.current &&
+      !showAssessment &&
+      !showFeedback
+    ) {
+      logInfo(
+        "Training completed with assessment (no feedback), showing assessment modal"
+      );
+      setShowAssessment(true);
+      lastProcessedAssessmentRef.current = "assessment";
+      // ✅ NEW: Clear loading state for assessment
+      setIsWaitingForAssessment(false);
     }
   }, [chat, isTrainingCompleted, showAssessment, showFeedback]);
 
