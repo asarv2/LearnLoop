@@ -34,9 +34,14 @@ from agents.realtime.events import RealtimeRawModelEvent as OAEventRaw
 from agents.realtime.model_events import \
     RealtimeModelRawServerEvent as OAEventRawServer
 from app.bus import PCM_SR, SAMPLES_PER_CHUNK
+from app.db import get_session
 from app.extensions import AUDIO_DIR
+from app.models import Chats, Messages, Personas
 from app.services.agents.voice.base import Agent
 from app.store import list_messages
+from app.utils.chat import (get_conversation_history, get_parameter_history,
+                            get_preamble, get_text_formatted_instructions)
+from sqlmodel import select
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +96,7 @@ class OpenAIAgent(Agent):
       OPENAI_OUTPUT_SR        (default: 24000)   # expected model TTS SR if event lacks it
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
         self.model_name = "gpt-4o-mini-realtime-preview"
@@ -120,7 +125,7 @@ class OpenAIAgent(Agent):
         # For streaming assistant deltas from OAEventRaw
         self._resp_streams: dict[str, dict[str, Any]] = {}  # response_id -> {msg_id, chunk_idx, buffer}
         # Single active user anchor (one bubble max)
-        self._user_anchor = {"msg_id": None, "chunk_idx": 0, "had_text": False, "open": False}
+        self._user_anchor: dict[str, Any] = {"msg_id": None, "chunk_idx": 0, "had_text": False, "open": False}
         self._anchor_item_ids: set[str] = set()          # all item_ids contributing to this anchor
         self._latest_item_id: Optional[str] = None        # last speech_started item_id
 
@@ -281,8 +286,8 @@ class OpenAIAgent(Agent):
             )
 
             if use_anchor:
-                message_id = agent_self._user_anchor["msg_id"]
-                chunk_idx = agent_self._user_anchor["chunk_idx"]
+                message_id = str(agent_self._user_anchor["msg_id"]) if agent_self._user_anchor["msg_id"] is not None else None
+                chunk_idx = int(agent_self._user_anchor["chunk_idx"]) if agent_self._user_anchor["chunk_idx"] is not None else 0
 
             # Get user persona_id if not provided for user messages
             if role == "user" and not persona_id:
@@ -325,7 +330,7 @@ class OpenAIAgent(Agent):
             if use_anchor:
                 if text:
                     agent_self._user_anchor["had_text"] = True
-                agent_self._user_anchor["chunk_idx"] += 1
+                agent_self._user_anchor["chunk_idx"] = (agent_self._user_anchor["chunk_idx"] or 0) + 1
 
             return mid
 
@@ -335,15 +340,57 @@ class OpenAIAgent(Agent):
 
     # ---- session wiring -----------------------------------------------------
 
+    async def instructions_fn(
+        self,
+        ctx,
+        agent,
+    ) -> str:
+        chat_id = self.room.id
+        persona_id = await self._get_assistant_persona_id()
+
+        db_session = next(get_session())
+
+        chat: Optional[Chats] = db_session.exec(
+            select(Chats).where(Chats.id == chat_id)
+        ).one_or_none()
+
+        if not chat:
+            logger.error(f"Chat lookup failed for ID: {chat_id}")
+            raise ValueError(f"Chat with ID {chat_id} not found")
+
+        persona: Optional[Personas] = db_session.exec(
+            select(Personas).where(Personas.id == persona_id)
+        ).one_or_none()
+
+        if not persona:
+            logger.error(f"Persona lookup failed for ID: {persona_id}")
+            raise ValueError(f"Persona with ID {persona_id} not found")
+
+        logger.info(f"Found persona: Name='{persona.name}', Voice='{persona.voice}'")
+
+        if not persona.system_prompt:
+            logger.error(f"Persona '{persona.name}' has no system prompt.")
+            raise ValueError(f"Persona with ID {persona_id} has no system prompt")
+
+        # get all messages for the chat
+        messages = db_session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
+        preamble = get_preamble(chat)
+        parameter_history = get_parameter_history(chat, db_session)
+        conversation_history = get_conversation_history(messages)
+
+        instructions = [preamble] + parameter_history + conversation_history
+
+        realtime_instructions = get_text_formatted_instructions(instructions)
+        return realtime_instructions
+
     async def _start_session(self) -> RealtimeSession:
         oa_agent = OARealtimeAgent(
             name="OpenAI Realtime",
-            instructions="Have a natural, helpful conversation with the user.",
+            instructions=self.instructions_fn,
         )
 
         model_settings: RealtimeSessionModelSettings = {
             "model_name": os.getenv("OPENAI_REALTIME_MODEL", "gpt-4o-mini-realtime-preview"),
-            "instructions": "Have a natural, helpful conversation with the user.",
             "modalities": ["text", "audio"],
             # ✅ Force 48k both directions
             "input_audio_format": "pcm16",
@@ -777,12 +824,12 @@ class OpenAIAgent(Agent):
                                 source_id="openai:user-transcript",
                                 role="user",
                                 text=delta,
-                                message_id=self._user_anchor["msg_id"],
-                                chunk_idx=self._user_anchor["chunk_idx"],
+                                message_id=str(self._user_anchor["msg_id"]) if self._user_anchor["msg_id"] is not None else None,
+                                chunk_idx=int(self._user_anchor["chunk_idx"]) if self._user_anchor["chunk_idx"] is not None else 0,
                                 is_final=False,
                                 persona_id=await self._get_user_persona_id(),
                             )
-                            self._user_anchor["chunk_idx"] += 1
+                            self._user_anchor["chunk_idx"] = (self._user_anchor["chunk_idx"] or 0) + 1
                             self._user_anchor["had_text"] = True
 
                         elif evt_type == "conversation.item.input_audio_transcription.completed":
@@ -798,12 +845,12 @@ class OpenAIAgent(Agent):
                                     source_id="openai:user-transcript",
                                     role="user",
                                     text=transcript,
-                                    message_id=self._user_anchor["msg_id"],
-                                    chunk_idx=self._user_anchor["chunk_idx"],
+                                    message_id=str(self._user_anchor["msg_id"]) if self._user_anchor["msg_id"] is not None else None,
+                                    chunk_idx=int(self._user_anchor["chunk_idx"]) if self._user_anchor["chunk_idx"] is not None else 0,
                                     is_final=False,
                                     persona_id=await self._get_user_persona_id(),
                                 )
-                                self._user_anchor["chunk_idx"] += 1
+                                self._user_anchor["chunk_idx"] = (self._user_anchor["chunk_idx"] or 0) + 1
                                 self._user_anchor["had_text"] = True
 
                             # Only close the bubble when the *latest* item completes
@@ -813,8 +860,8 @@ class OpenAIAgent(Agent):
                                         source_id="openai:user-transcript",
                                         role="user",
                                         text="",
-                                        message_id=self._user_anchor["msg_id"],
-                                        chunk_idx=self._user_anchor["chunk_idx"],
+                                        message_id=str(self._user_anchor["msg_id"]) if self._user_anchor["msg_id"] is not None else None,
+                                        chunk_idx=int(self._user_anchor["chunk_idx"]) if self._user_anchor["chunk_idx"] is not None else 0,
                                         is_final=True,
                                         persona_id=await self._get_user_persona_id(),
                                     )
@@ -871,13 +918,6 @@ class OpenAIAgent(Agent):
 
         # NEW: wire text stream (no polling)
         self._wire_user_text_stream(self._session)
-
-        # 🔊 Prove end-to-end once on boot
-        try:
-            await self._session.send_message("Hello! I'm online and listening.")
-            print("[openai] sent hello probe")
-        except Exception as ex:
-            print(f"[openai] failed to send hello: {ex}")
 
         # Pumps (audio in + model events out). No _pump_user_text_in.
         self._tasks = [
