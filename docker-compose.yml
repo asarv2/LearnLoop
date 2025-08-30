@@ -17,6 +17,10 @@ services:
       - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       - NEXT_PUBLIC_SUPABASE_SCHEMA=${NEXT_PUBLIC_SUPABASE_SCHEMA}
+      - STUN_URI=${STUN_URI}
+      - TURN_URI=${TURN_URI}
+      - TURN_USERNAME=${TURN_USERNAME}
+      - TURN_PASSWORD=${TURN_PASSWORD}
       - INTERNAL_API_BASE=http://learnloop-server:8000
       - HOSTNAME=0.0.0.0
       - PORT=3000
@@ -53,11 +57,8 @@ services:
       - REDIS_URL=redis://learnloop-redis:6379
 
       # webrtc
-      - STUN_URI_INTERNAL=stun:learnloop-webrtc:3479
-      - TURN_URI_INTERNAL=turn:learnloop-webrtc:3479?transport=udp
-      - STUN_URI_PUBLIC=${STUN_URI_PUBLIC}
-      - TURN_URI_PUBLIC=${TURN_URI_PUBLIC}
-      
+      - STUN_URI=stun:learnloop-webrtc:3479
+      - TURN_URI=turn:learnloop-webrtc:3479?transport=udp
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
     depends_on:
