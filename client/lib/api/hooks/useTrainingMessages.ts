@@ -3,7 +3,7 @@ import { useWebSocket } from "@/contexts/websocket-context";
 import { Message } from "@/types";
 import { logError, logInfo } from "@/utils/logger";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { api } from "../fetcher";
 
 export const trainingMessageKeys = {
@@ -15,12 +15,140 @@ export function useTrainingMessages(chatId: string, enabled = true) {
   const { isConnected, joinRoom, leaveRoom } = useWebSocket();
   const joinedRef = useRef(false);
 
+  // Deduplication guards
+  const startedIdsRef = useRef(new Set<string>());
+
+  // Throttling for token updates
+  const bufferRef = useRef<Record<string, string>>({});
+  const rafRef = useRef<number | null>(null);
+
   const query = useQuery({
     queryKey: trainingMessageKeys.list(chatId),
     queryFn: () => api<Message[]>(`/api/v1/messages?chat_id=${chatId}`),
     enabled: enabled && !!chatId,
     staleTime: 30_000,
   });
+
+  // Throttled flush function for token updates
+  const flush = useCallback(() => {
+    rafRef.current = null;
+    const buffer = bufferRef.current;
+    bufferRef.current = {};
+
+    const qk = trainingMessageKeys.list(chatId);
+    queryClient.setQueryData<Message[]>(qk, (old = []) =>
+      old.map((m) =>
+        buffer[m.id] !== undefined ? { ...m, content: buffer[m.id]! } : m
+      )
+    );
+  }, [chatId, queryClient]);
+
+  const scheduleFlush = useCallback(() => {
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(flush);
+  }, [flush]);
+
+  // Stable callback references
+  const onUserSaved = useCallback(
+    (e: CustomEvent) => {
+      if (e.detail.chatId !== chatId) return;
+      const real: Message = e.detail.message;
+
+      const qk = trainingMessageKeys.list(chatId);
+      queryClient.setQueryData<Message[]>(qk, (old = []) => {
+        // append if not present
+        if (old.some((m) => m.id === real.id)) return old;
+        return [...old, real];
+      });
+    },
+    [chatId, queryClient]
+  );
+
+  const onStart = useCallback(
+    (e: CustomEvent) => {
+      if (e.detail.chatId !== chatId) return;
+
+      // Deduplication guard
+      if (startedIdsRef.current.has(e.detail.messageId)) return;
+      startedIdsRef.current.add(e.detail.messageId);
+
+      logInfo("AI message started", e.detail);
+
+      const qk = trainingMessageKeys.list(chatId);
+      queryClient.setQueryData<Message[]>(qk, (old = []) => {
+        // prevent duplicates
+        if (old.some((m) => m.id === e.detail.messageId)) return old;
+        const newAssistant: Message = {
+          id: e.detail.messageId,
+          persona_id: e.detail.personaId ?? null,
+          role: "assistant",
+          content: "",
+          completed: false,
+          created_at: new Date().toISOString(),
+          chat_id: chatId,
+          completed_at: "",
+          error: null,
+          training_id: null,
+        };
+        return [...old, newAssistant];
+      });
+    },
+    [chatId, queryClient]
+  );
+
+  const onToken = useCallback(
+    (e: CustomEvent) => {
+      if (e.detail.chatId !== chatId) return;
+
+      // Buffer token updates and schedule flush
+      bufferRef.current[e.detail.messageId] = e.detail.accumulatedContent;
+      scheduleFlush();
+    },
+    [chatId, scheduleFlush]
+  );
+
+  const onComplete = useCallback(
+    (e: CustomEvent) => {
+      if (e.detail.chatId !== chatId) return;
+
+      // Clear from buffer and update immediately
+      delete bufferRef.current[e.detail.messageId];
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+
+      const qk = trainingMessageKeys.list(chatId);
+      queryClient.setQueryData<Message[]>(qk, (old = []) =>
+        old.map((m) =>
+          m.id === e.detail.messageId
+            ? { ...m, content: e.detail.finalContent, completed: true }
+            : m
+        )
+      );
+    },
+    [chatId, queryClient]
+  );
+
+  const onError = useCallback(
+    (e: CustomEvent) => {
+      if (e.detail.chatId !== chatId) return;
+      logError("Streaming error", e.detail.error);
+
+      // Clear from buffer and remove the incomplete assistant placeholder
+      delete bufferRef.current[e.detail.messageId];
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+
+      const qk = trainingMessageKeys.list(chatId);
+      queryClient.setQueryData<Message[]>(qk, (old = []) =>
+        old.filter((m) => m.id !== e.detail.messageId)
+      );
+    },
+    [chatId, queryClient]
+  );
 
   useEffect(() => {
     if (!chatId || !isConnected) return;
@@ -39,73 +167,6 @@ export function useTrainingMessages(chatId: string, enabled = true) {
   }, [chatId, isConnected, joinRoom, leaveRoom]);
 
   useEffect(() => {
-    const qk = trainingMessageKeys.list(chatId);
-
-    const onUserSaved = (e: CustomEvent) => {
-      if (e.detail.chatId !== chatId) return;
-      const real: Message = e.detail.message;
-
-      queryClient.setQueryData<Message[]>(qk, (old = []) => {
-        // append if not present
-        if (old.some((m) => m.id === real.id)) return old;
-        return [...old, real];
-      });
-    };
-
-    const onStart = (e: CustomEvent) => {
-      if (e.detail.chatId !== chatId) return;
-      logInfo("AI message started", e.detail);
-
-      queryClient.setQueryData<Message[]>(qk, (old = []) => {
-        // prevent duplicates
-        if (old.some((m) => m.id === e.detail.messageId)) return old;
-        const newAssistant: Message = {
-          id: e.detail.messageId,
-          persona_id: e.detail.personaId ?? null,
-          role: "assistant",
-          content: "",
-          completed: false,
-          created_at: new Date().toISOString(),
-          chat_id: chatId,
-          completed_at: "",
-          error: null,
-          training_id: null,
-        };
-        return [...old, newAssistant];
-      });
-    };
-
-    const onToken = (e: CustomEvent) => {
-      if (e.detail.chatId !== chatId) return;
-      queryClient.setQueryData<Message[]>(qk, (old = []) =>
-        old.map((m) =>
-          m.id === e.detail.messageId
-            ? { ...m, content: e.detail.accumulatedContent }
-            : m
-        )
-      );
-    };
-
-    const onComplete = (e: CustomEvent) => {
-      if (e.detail.chatId !== chatId) return;
-      queryClient.setQueryData<Message[]>(qk, (old = []) =>
-        old.map((m) =>
-          m.id === e.detail.messageId
-            ? { ...m, content: e.detail.finalContent, completed: true }
-            : m
-        )
-      );
-    };
-
-    const onError = (e: CustomEvent) => {
-      if (e.detail.chatId !== chatId) return;
-      logError("Streaming error", e.detail.error);
-      // remove the incomplete assistant placeholder (if it exists)
-      queryClient.setQueryData<Message[]>(qk, (old = []) =>
-        old.filter((m) => m.id !== e.detail.messageId)
-      );
-    };
-
     // Register DOM CustomEvent listeners that your websocket context dispatches
     window.addEventListener("userMessageSaved", onUserSaved as EventListener);
     window.addEventListener("trainingMessageStart", onStart as EventListener);
@@ -117,6 +178,12 @@ export function useTrainingMessages(chatId: string, enabled = true) {
     window.addEventListener("trainingMessageError", onError as EventListener);
 
     return () => {
+      // Clean up RAF if component unmounts
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+
       window.removeEventListener(
         "userMessageSaved",
         onUserSaved as EventListener
@@ -138,7 +205,7 @@ export function useTrainingMessages(chatId: string, enabled = true) {
         onError as EventListener
       );
     };
-  }, [chatId, queryClient]);
+  }, [onUserSaved, onStart, onToken, onComplete, onError]); // Stable dependencies
 
   return { ...query, isConnected };
 }

@@ -4,6 +4,7 @@ import type {
   TrainingUpdate,
   TrainingWithAllIncludes,
 } from "@/lib/repos/trainingRepo";
+import { logInfo } from "@/utils/logger";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../fetcher";
 import { trainingKeys } from "../keys";
@@ -12,7 +13,10 @@ import { trainingKeys } from "../keys";
 export function useTrainings() {
   return useQuery({
     queryKey: trainingKeys.list(),
-    queryFn: () => api<TrainingCreate[]>("/api/v1/trainings"),
+    queryFn: () => {
+      logInfo("Fetching trainings list");
+      return api<TrainingCreate[]>("/api/v1/trainings");
+    },
     staleTime: 5 * 60_000, // 5 minutes
   });
 }
@@ -20,7 +24,10 @@ export function useTrainings() {
 export function useTrainingsPractice() {
   return useQuery({
     queryKey: [...trainingKeys.list(), "practice"],
-    queryFn: () => api<TrainingCreate[]>("/api/v1/trainings?practice=true"),
+    queryFn: () => {
+      logInfo("Fetching practice trainings list");
+      return api<TrainingCreate[]>("/api/v1/trainings?practice=true");
+    },
     staleTime: 5 * 60_000, // 5 minutes
   });
 }
@@ -28,7 +35,10 @@ export function useTrainingsPractice() {
 export function useTraining(id: string, enabled = true) {
   return useQuery({
     queryKey: trainingKeys.detail(id),
-    queryFn: () => api<TrainingWithAllIncludes>(`/api/v1/trainings/${id}`),
+    queryFn: () => {
+      logInfo(`Fetching training detail: ${id}`);
+      return api<TrainingWithAllIncludes>(`/api/v1/trainings/${id}`);
+    },
     enabled,
   });
 }
@@ -37,12 +47,15 @@ export function useTraining(id: string, enabled = true) {
 export function useCreateTraining() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: TrainingCreate) =>
-      api<TrainingCreate>("/api/v1/trainings", {
+    mutationFn: (payload: TrainingCreate) => {
+      logInfo("Creating new training", payload);
+      return api<TrainingCreate>("/api/v1/trainings", {
         method: "POST",
         body: JSON.stringify(payload),
-      }),
+      });
+    },
     onSuccess() {
+      logInfo("Training created successfully, invalidating queries");
       qc.invalidateQueries({ queryKey: trainingKeys.all });
     },
   });
@@ -51,12 +64,15 @@ export function useCreateTraining() {
 export function useUpdateTraining(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: TrainingUpdate) =>
-      api<TrainingCreate>(`/api/v1/trainings/${id}`, {
+    mutationFn: (patch: TrainingUpdate) => {
+      logInfo(`Updating training: ${id}`, patch);
+      return api<TrainingCreate>(`/api/v1/trainings/${id}`, {
         method: "PATCH",
         body: JSON.stringify(patch),
-      }),
+      });
+    },
     onSuccess() {
+      logInfo(`Training ${id} updated successfully, invalidating queries`);
       qc.invalidateQueries({ queryKey: trainingKeys.detail(id) });
     },
   });
@@ -65,9 +81,12 @@ export function useUpdateTraining(id: string) {
 export function useDeleteTraining(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () =>
-      api<void>(`/api/v1/trainings/${id}`, { method: "DELETE" }),
+    mutationFn: () => {
+      logInfo(`Deleting training: ${id}`);
+      return api<void>(`/api/v1/trainings/${id}`, { method: "DELETE" });
+    },
     onSuccess() {
+      logInfo(`Training ${id} deleted successfully, invalidating queries`);
       // remove both list & detail caches
       qc.invalidateQueries({ queryKey: trainingKeys.all });
     },
