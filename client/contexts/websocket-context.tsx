@@ -441,6 +441,46 @@ export function WebSocketProvider({
     );
 
     socket.on(
+      "user_message_token",
+      (data: {
+        chat_id: string;
+        message_id: string;
+        token?: string;
+        accumulated_content?: string;
+      }) => {
+        window.dispatchEvent(
+          new CustomEvent("userMessageToken", {
+            detail: {
+              chatId: data.chat_id,
+              messageId: data.message_id,
+              token: data.token ?? "",
+              accumulatedContent: data.accumulated_content ?? "",
+            },
+          })
+        );
+      }
+    );
+
+    socket.on(
+      "user_message_complete",
+      (data: {
+        chat_id: string;
+        message_id: string;
+        final_content: string;
+      }) => {
+        window.dispatchEvent(
+          new CustomEvent("userMessageComplete", {
+            detail: {
+              chatId: data.chat_id,
+              messageId: data.message_id,
+              finalContent: data.final_content,
+            },
+          })
+        );
+      }
+    );
+
+    socket.on(
       "conversation.item.input_audio_transcription.delta",
       (data: { chat_id: string; delta: string; itemId: string }) => {
         window.dispatchEvent(

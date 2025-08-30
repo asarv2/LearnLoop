@@ -93,9 +93,18 @@ export function useTrainingMessages(chatId: string, enabled = true) {
 
       const qk = trainingMessageKeys.list(chatId);
       queryClient.setQueryData<Message[]>(qk, (old = []) => {
-        // append if not present
-        if (old.some((m) => m.id === real.id)) return old;
-        return [...old, real];
+        const i = old.findIndex((m) => m.id === real.id);
+        if (i === -1) return [...old, real]; // not present → append
+        // present → merge newest server fields (esp. content/completed)
+        const next = old.slice();
+        next[i] = {
+          ...old[i],
+          ...real,
+          content: real.content ?? old[i].content ?? "",
+          completed: real.completed ?? old[i].completed ?? false,
+          persona_id: real.persona_id ?? old[i].persona_id ?? null,
+        };
+        return next;
       });
     },
     [chatId, queryClient]
@@ -162,6 +171,48 @@ export function useTrainingMessages(chatId: string, enabled = true) {
     [chatId, scheduleFlush]
   );
 
+  const onUserToken = useCallback(
+    (e: CustomEvent) => {
+      const d = (e.detail || {}) as EventDetail;
+      const cid = d.chatId ?? d.chat_id;
+      if (cid !== chatId) return;
+      const mid = d.messageId ?? d.message_id;
+      if (!mid) return;
+
+      // ensure the message exists in cache (rare race)
+      const qk = trainingMessageKeys.list(chatId);
+      queryClient.setQueryData<Message[]>(qk, (old = []) => {
+        if (old.some((m) => m.id === mid)) return old;
+        return [
+          ...old,
+          {
+            id: mid,
+            chat_id: chatId,
+            role: "user",
+            content: "",
+            completed: false,
+            created_at: new Date().toISOString(),
+            completed_at: "",
+            error: null,
+            persona_id: null,
+            training_id: null,
+          },
+        ];
+      });
+
+      const delta = d.token ?? d.delta ?? "";
+      if (delta) {
+        bufferRef.current[mid] = (bufferRef.current[mid] ?? "") + String(delta);
+      } else {
+        const acc = d.accumulatedContent ?? d.accumulated_content;
+        if (!acc) return;
+        bufferRef.current[mid] = acc;
+      }
+      scheduleFlush();
+    },
+    [chatId, scheduleFlush, queryClient]
+  );
+
   const onComplete = useCallback(
     (e: CustomEvent) => {
       const d = (e.detail || {}) as EventDetail;
@@ -184,6 +235,34 @@ export function useTrainingMessages(chatId: string, enabled = true) {
             ? {
                 ...m,
                 // ✅ snap to final authoritative text on completion
+                content: (d.finalContent ?? d.final_content) || m.content || "",
+                completed: true,
+              }
+            : m
+        )
+      );
+    },
+    [chatId, queryClient]
+  );
+
+  const onUserComplete = useCallback(
+    (e: CustomEvent) => {
+      const d = (e.detail || {}) as EventDetail;
+      const cid = d.chatId ?? d.chat_id;
+      if (cid !== chatId) return;
+      const mid = d.messageId ?? d.message_id;
+      if (!mid) return;
+      delete bufferRef.current[mid];
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      const qk = trainingMessageKeys.list(chatId);
+      queryClient.setQueryData<Message[]>(qk, (old = []) =>
+        old.map((m) =>
+          m.id === mid
+            ? {
+                ...m,
                 content: (d.finalContent ?? d.final_content) || m.content || "",
                 completed: true,
               }
@@ -239,9 +318,14 @@ export function useTrainingMessages(chatId: string, enabled = true) {
     window.addEventListener("userMessageSaved", onUserSaved as EventListener);
     window.addEventListener("trainingMessageStart", onStart as EventListener);
     window.addEventListener("trainingMessageToken", onToken as EventListener);
+    window.addEventListener("userMessageToken", onUserToken as EventListener);
     window.addEventListener(
       "trainingMessageComplete",
       onComplete as EventListener
+    );
+    window.addEventListener(
+      "userMessageComplete",
+      onUserComplete as EventListener
     );
     window.addEventListener("trainingMessageError", onError as EventListener);
 
@@ -265,15 +349,31 @@ export function useTrainingMessages(chatId: string, enabled = true) {
         onToken as EventListener
       );
       window.removeEventListener(
+        "userMessageToken",
+        onUserToken as EventListener
+      );
+      window.removeEventListener(
         "trainingMessageComplete",
         onComplete as EventListener
+      );
+      window.removeEventListener(
+        "userMessageComplete",
+        onUserComplete as EventListener
       );
       window.removeEventListener(
         "trainingMessageError",
         onError as EventListener
       );
     };
-  }, [onUserSaved, onStart, onToken, onComplete, onError]); // Stable dependencies
+  }, [
+    onUserSaved,
+    onStart,
+    onToken,
+    onUserToken,
+    onComplete,
+    onUserComplete,
+    onError,
+  ]); // Stable dependencies
 
   return { ...query, isConnected };
 }
