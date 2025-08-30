@@ -422,6 +422,15 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
             ).first()
 
             logger.info(f"🔍 DEBUG: Looking for existing assessment for chat {chat_id}")
+
+            # IMPORTANT:
+            # We cannot use `db_session` inside the background task (it will be closed
+            # in the finally block below). Resolve the primitive we need *now*.
+            scenario_result = db_session.exec(
+                select(Scenarios).where(Scenarios.training_id == chat.training_id)
+            ).first()
+            rubric_id = scenario_result.rubric_id if scenario_result else None
+            logger.info(f"🔧 DEBUG: Resolved rubric_id={rubric_id} for training_id={chat.training_id}")
             
             if existing_assessment:
                 # Count existing questions
@@ -449,44 +458,47 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
                 )
                 
                 # Move heavy operations to background to avoid blocking the event loop
-                async def _bg_assessment_and_grading():
+                async def _bg_assessment_and_grading(rubric_id):
+                    logger.info(f"⚙️ grading background job started (chat_id={chat_id}, rubric_id={rubric_id})")
                     try:
                         def _run_assessment_sync(cid: uuid.UUID):
                             import asyncio as _asyncio
 
-                            # ❌ don't pass db_session across threads
                             return _asyncio.run(run_assessment_agent(cid))
                         await asyncio.to_thread(_run_assessment_sync, uuid.UUID(chat_id))
                     except Exception:
                         logger.exception("Assessment background job failed")
                     try:
                         # Fresh session inside background task
-                        def _run_grading_sync(cid: uuid.UUID, rubric_id):
+                        def _run_grading_sync(cid: uuid.UUID, rid):
                             import asyncio as _asyncio
 
                             from app.db import get_session as _gs
                             sess = next(_gs())
                             try:
-                                return _asyncio.run(run_grading_agent(cid, rubric_id, sess))
+                                return _asyncio.run(run_grading_agent(cid, rid, sess))
                             finally:
                                 sess.close()
                         
-                        # Get the scenario to find the rubric_id
-                        scenario_result = db_session.exec(
-                            select(Scenarios).where(Scenarios.training_id == chat.training_id)
-                        ).first()
-                        
-                        if scenario_result and scenario_result.rubric_id:
-                            rubric_grade_id = await asyncio.to_thread(_run_grading_sync, uuid.UUID(chat_id), scenario_result.rubric_id)
+                        if rubric_id:
+                            rubric_grade_id = await asyncio.to_thread(_run_grading_sync, uuid.UUID(chat_id), rubric_id)
                             sio = get_sio_instance()
                             await sio.emit("grading_completed", {
                                 "chat_id": chat_id,
                                 "rubric_grade_id": rubric_grade_id,
                                 "message": "Grading completed successfully"
                             }, room=chat_id)
+                        else:
+                            logger.warning(f"⏭️ Skipping grading for chat {chat_id}: no rubric_id")
+                            sio = get_sio_instance()
+                            await sio.emit("grading_completed", {
+                                "chat_id": chat_id,
+                                "rubric_grade_id": None,
+                                "message": "Skipped grading: no rubric_id"
+                            }, room=chat_id)
                     except Exception:
                         logger.exception("Grading background job failed")
-                asyncio.create_task(_bg_assessment_and_grading())
+                asyncio.create_task(_bg_assessment_and_grading(rubric_id))
                     
             else:
                 logger.warning(f"No existing assessment found for chat {chat_id}")

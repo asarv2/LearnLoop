@@ -1,7 +1,8 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { Button, Form, Input, message, Modal, Space } from "antd";
+import { toast } from "@/lib/toast";
+import { Button, Form, Input, Modal, Space } from "antd";
 import { useState } from "react";
 
 interface FeedbackModalProps {
@@ -18,7 +19,7 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
 
   const handleSubmit = async (values: { feedback: string }) => {
     if (!user?.id) {
-      message.error("You must be logged in to submit feedback");
+      toast.error("You must be logged in to submit feedback");
       return;
     }
 
@@ -39,12 +40,14 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
         throw new Error("Failed to submit feedback");
       }
 
-      message.success("Thank you for your feedback!");
+      toast.success(
+        "Thank you for your feedback! We appreciate you taking the time to help us improve LearnLoop."
+      );
       form.resetFields();
       onClose();
     } catch (error) {
       console.error("Error submitting feedback:", error);
-      message.error("Failed to submit feedback. Please try again.");
+      toast.error("Failed to submit feedback. Please try again.");
     } finally {
       setLoading(false);
     }
