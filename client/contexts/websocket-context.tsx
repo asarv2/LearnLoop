@@ -37,6 +37,10 @@ interface WebSocketContextType {
   isAudioBridgeReady: boolean; // server ready to mix
   micOn: boolean; // local mic actively sending
 
+  // Voice mode
+  voiceMode: boolean; // NEW: single source of truth for voice mode
+  enableVoiceMode: (chatId: string) => Promise<void>; // NEW: one-time RTC boot
+
   // UI helpers
   connectRTC: (chatId: string) => Promise<void>;
   disconnectRTC: () => void;
@@ -120,6 +124,9 @@ export function WebSocketProvider({
   const [isAudioBridgeReady, setIsAudioBridgeReady] = useState(false);
   const [micOn, setMicOn] = useState(false);
 
+  // Voice mode
+  const [voiceMode, setVoiceMode] = useState(false);
+
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const textChanRef = useRef<RTCDataChannel | null>(null);
   const audioSenderRef = useRef<RTCRtpSender | null>(null);
@@ -168,42 +175,42 @@ export function WebSocketProvider({
 
     // Training / grading / hints events remain unchanged
     // Set up training event handlers
-      socket.on(
-        "training_started",
-        (data: {
-          success: boolean;
-          message: string;
-          attempt_id: string;
-          chat_id: string;
-          training_id: string;
-        }) => {
-          logInfo("Training started", data);
-          if (data.success) {
-            toast.success(data.message);
+    socket.on(
+      "training_started",
+      (data: {
+        success: boolean;
+        message: string;
+        attempt_id: string;
+        chat_id: string;
+        training_id: string;
+      }) => {
+        logInfo("Training started", data);
+        if (data.success) {
+          toast.success(data.message);
 
-            // Complete the "Creating scenario" step in the progress bar
-            // Dispatch event to notify NewScenario component to complete progress
-            window.dispatchEvent(
-              new CustomEvent("trainingStarted", {
-                detail: {
-                  success: data.success,
-                  attemptId: data.attempt_id,
-                  trainingId: data.training_id,
-                },
-              })
+          // Complete the "Creating scenario" step in the progress bar
+          // Dispatch event to notify NewScenario component to complete progress
+          window.dispatchEvent(
+            new CustomEvent("trainingStarted", {
+              detail: {
+                success: data.success,
+                attemptId: data.attempt_id,
+                trainingId: data.training_id,
+              },
+            })
+          );
+
+          // Add a delay before navigation to allow progress bar to complete
+          setTimeout(() => {
+            router.push(
+              `/dashboard/trainings/t/${data.training_id}/a/${data.attempt_id}`
             );
-
-            // Add a delay before navigation to allow progress bar to complete
-            setTimeout(() => {
-              router.push(
-                `/dashboard/trainings/t/${data.training_id}/a/${data.attempt_id}`
-              );
-            }, 750); // 0.75 second delay
-          } else {
-            toast.error(data.message);
-          }
+          }, 750); // 0.75 second delay
+        } else {
+          toast.error(data.message);
         }
-      );
+      }
+    );
 
     socket.on(
       "training_joined",
@@ -663,6 +670,18 @@ export function WebSocketProvider({
     }
   }, [micOn, getMic]);
 
+  // Enable voice mode - establishes RTC once and leaves it for page lifetime
+  const enableVoiceMode = useCallback(
+    async (chatId: string) => {
+      if (!voiceMode) setVoiceMode(true);
+      // Establish RTC only once; leave PC alive for page lifetime
+      if (!isRTCConnected) {
+        await connectRTC(chatId);
+      }
+    },
+    [voiceMode, isRTCConnected, connectRTC]
+  );
+
   // Prefer new single text channel; fallback to legacy per-chat channel or websocket emitter
   const sendWebRTCMessage = useCallback((chatId: string, message: string) => {
     try {
@@ -838,6 +857,8 @@ export function WebSocketProvider({
     isRTCConnected,
     isAudioBridgeReady,
     micOn,
+    voiceMode,
+    enableVoiceMode,
     connectRTC,
     disconnectRTC,
     toggleMic,

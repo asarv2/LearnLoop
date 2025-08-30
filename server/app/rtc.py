@@ -136,7 +136,7 @@ class WebRTCSession:
                         try:
                             await handle_send_training_message(
                                 sid=self.sid,
-                                data={"chat_id": str(chat_id), "message": text},
+                                data={"chat_id": str(chat_id), "message": text, "source": "rtc"},
                             )
                         except Exception:
                             import logging
