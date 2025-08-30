@@ -2,7 +2,6 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button, Form, Input, message, Modal, Space } from "antd";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 interface FeedbackModalProps {
@@ -16,7 +15,6 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
-  const router = useRouter();
 
   const handleSubmit = async (values: { feedback: string }) => {
     if (!user?.id) {
