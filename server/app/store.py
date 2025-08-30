@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Dict, List, Optional, Tuple
 from uuid import UUID
@@ -54,6 +54,14 @@ class RoomRecord:
 
 # --- global in-memory store ---
 ROOMS: Dict[str, RoomRecord] = {}
+
+# --- idempotency guards for multi-worker safety ---
+STARTED: set[str] = set()  # tracks which messages have emitted "start"
+
+# --- batched DB writes ---
+PENDING_WRITES: Dict[str, List[str]] = defaultdict(list)  # message_id -> list of text chunks
+LAST_FLUSH: Dict[str, float] = {}  # message_id -> last flush timestamp
+FLUSH_INTERVAL = 0.2  # 200ms between flushes
 
 def create_room(room_id: Optional[str] = None) -> RoomRecord:
     rid = room_id or gen_id("room")
@@ -124,6 +132,61 @@ def _upsert_db_message(
 
     return m, acc
 
+# ---- batched DB write helpers ----
+
+async def _flush_pending_writes(message_id: str, force: bool = False) -> Optional[Tuple[DBMessage, str]]:
+    """
+    Flush pending writes for a message_id. Returns (db_message, accumulated_text) if flushed.
+    """
+    if message_id not in PENDING_WRITES or not PENDING_WRITES[message_id]:
+        return None
+    
+    now = time.time()
+    last_flush = LAST_FLUSH.get(message_id, 0)
+    
+    # Only flush if forced (final chunk) or enough time has passed
+    if not force and (now - last_flush) < FLUSH_INTERVAL:
+        return None
+    
+    # Get the message details from in-memory store
+    msg = None
+    room_id = None
+    for rid, room in ROOMS.items():
+        if message_id in room.messages:
+            msg = room.messages[message_id]
+            room_id = rid
+            break
+    
+    if not msg or not room_id:
+        return None
+    
+    # Concatenate all pending chunks
+    pending_text = "".join(PENDING_WRITES[message_id])
+    PENDING_WRITES[message_id].clear()
+    LAST_FLUSH[message_id] = now
+    
+    # Persist to DB
+    import asyncio
+    def _persist_once():
+        db = next(get_session())
+        try:
+            _ensure_chat_exists(db, room_id)
+            return _upsert_db_message(
+                db,
+                chat_id=room_id, role=msg.role, msg_id=message_id,
+                text=pending_text, is_final=force, persona_id=None  # persona_id handled separately
+            )
+        except Exception:
+            # Make sure the aborted txn is rolled back before returning the conn to the pool
+            try: db.rollback()
+            except Exception: pass
+            raise
+        finally:
+            try: db.close()
+            except Exception: pass
+
+    return await asyncio.to_thread(_persist_once)
+
 # ---- main function used by Room.append_text_chunk ----------------------------
 
 async def upsert_text_chunk(
@@ -138,7 +201,7 @@ async def upsert_text_chunk(
 ) -> Message:
     """
     1) Update in-memory store (for streaming UX)
-    2) Persist to DB Messages table (accumulated text, completed flag)
+    2) Persist to DB Messages table (accumulated text, completed flag) - batched
     3) Emit training DOM-friendly events via Socket.IO
     """
     room = get_room(room_id)
@@ -146,11 +209,9 @@ async def upsert_text_chunk(
     msg = room.messages.get(mid)
     created_ms_now = int(time.time()*1000)
 
-    first_chunk = False
     if msg is None:
         msg = Message(id=mid, source_id=source_id, role=role, created_ms=created_ms_now)
         room.messages[mid] = msg
-        first_chunk = True
         logger.debug(f"Created new message: mid={mid}, role={role}, chunk_idx={chunk_idx}")
     else:
         logger.debug(f"Reusing message: mid={mid}, role={role}, chunk_idx={chunk_idx}, is_final={is_final}")
@@ -161,33 +222,34 @@ async def upsert_text_chunk(
         is_final=is_final, ts_ms=created_ms_now
     ))
 
-    # Persist (write-through) - push DB I/O to a thread
-    import asyncio
-    def _persist_once():
-        db = next(get_session())
-        try:
-            _ensure_chat_exists(db, room_id)
-            return _upsert_db_message(
-                db,
-                chat_id=room_id, role=role, msg_id=mid,
-                text=text, is_final=is_final, persona_id=persona_id
-            )
-        except Exception:
-            # Make sure the aborted txn is rolled back before returning the conn to the pool
-            try: db.rollback()
-            except Exception: pass
-            raise
-        finally:
-            try: db.close()
-            except Exception: pass
-
-    db_msg, acc = await asyncio.to_thread(_persist_once)
+    # Add to pending writes for batched DB persistence
+    PENDING_WRITES[mid].append(text or "")
 
     # Emit events your frontend already expects
     if _emit:
         if role == "user":
-            # only once per user message
-            if first_chunk:
+            # only once per user message - persist immediately for user messages
+            if chunk_idx == 0:
+                import asyncio
+                def _persist_user():
+                    db = next(get_session())
+                    try:
+                        _ensure_chat_exists(db, room_id)
+                        return _upsert_db_message(
+                            db,
+                            chat_id=room_id, role=role, msg_id=mid,
+                            text=text, is_final=is_final, persona_id=persona_id
+                        )
+                    except Exception:
+                        try: db.rollback()
+                        except Exception: pass
+                        raise
+                    finally:
+                        try: db.close()
+                        except Exception: pass
+
+                db_msg, acc = await asyncio.to_thread(_persist_user)
+                
                 await _emit(room_id, "user_message_saved", {
                     "chat_id": room_id,
                     "message": {
@@ -203,45 +265,56 @@ async def upsert_text_chunk(
                 })
         else:
             # assistant stream
-            if first_chunk and not is_final:
-                await _emit(room_id, "training_message_start", {
-                    "chat_id": room_id,
-                    "message_id": str(db_msg.id),
-                    "persona_id": str(db_msg.persona_id) if db_msg.persona_id else None,
-                })
+            # Fix: Use chunk_idx == 0 instead of first_chunk for idempotency
+            if chunk_idx == 0 and not is_final:
+                # Add idempotency guard for multi-worker safety
+                key = f"{room_id}:{mid}"
+                if key not in STARTED:
+                    STARTED.add(key)
+                    await _emit(room_id, "training_message_start", {
+                        "chat_id": room_id,
+                        "message_id": mid,
+                        "persona_id": persona_id,
+                    })
 
             if not is_final:
+                # Get accumulated content from in-memory chunks for streaming
+                acc = "".join(chunk.text for chunk in msg.chunks)
                 await _emit(room_id, "training_message_token", {
                     "chat_id": room_id,
-                    "message_id": str(db_msg.id),
+                    "message_id": mid,
                     "token": text or "",
                     "accumulated_content": acc,
                 })
             else:
-                await _emit(room_id, "training_message_complete", {
-                    "chat_id": room_id,
-                    "message_id": str(db_msg.id),
-                    "final_content": acc,
-                })
+                # Final chunk - flush all pending writes and emit complete
+                db_msg, acc = await _flush_pending_writes(mid, force=True)
+                
+                if db_msg:
+                    await _emit(room_id, "training_message_complete", {
+                        "chat_id": room_id,
+                        "message_id": str(db_msg.id),
+                        "final_content": acc,
+                    })
 
-                # Schedule hint generation for this message
-                import asyncio
-                async def _schedule_hints():
-                    try:
-                        def _sync(msg_uuid: uuid.UUID):
-                            import asyncio as _asyncio
-                            return _asyncio.run(run_hint_agent(msg_uuid))
-                        result = await asyncio.to_thread(_sync, uuid.UUID(str(db_msg.id)))
-                        await _emit(room_id, "hints_generated", {
-                            "chat_id": room_id,
-                            "message_id": str(db_msg.id),
-                            "success": result.get("success", False),
-                            "hints": result.get("hints", []),
-                            "message": result.get("message", ""),
-                        })
-                    except Exception as e:
-                        logger.error(f"Failed to generate hints: {e}")
-                asyncio.create_task(_schedule_hints())
+                    # Schedule hint generation for this message
+                    import asyncio
+                    async def _schedule_hints():
+                        try:
+                            def _sync(msg_uuid: uuid.UUID):
+                                import asyncio as _asyncio
+                                return _asyncio.run(run_hint_agent(msg_uuid))
+                            result = await asyncio.to_thread(_sync, uuid.UUID(str(db_msg.id)))
+                            await _emit(room_id, "hints_generated", {
+                                "chat_id": room_id,
+                                "message_id": str(db_msg.id),
+                                "success": result.get("success", False),
+                                "hints": result.get("hints", []),
+                                "message": result.get("message", ""),
+                            })
+                        except Exception as e:
+                            logger.error(f"Failed to generate hints: {e}")
+                    asyncio.create_task(_schedule_hints())
 
     return msg
 
