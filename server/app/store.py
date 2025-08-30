@@ -14,7 +14,7 @@ from app.models import Chats
 from app.models import Messages as DBMessage
 from app.services.agents.hint import run_hint_agent
 from sqlmodel import select
-
+# test comment
 
 def _uuid_or_none(x):
     """Safely convert string to UUID, return None if invalid."""
