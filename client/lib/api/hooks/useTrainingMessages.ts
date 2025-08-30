@@ -10,6 +10,24 @@ export const trainingMessageKeys = {
   list: (chatId: string) => ["training-messages", chatId] as const,
 };
 
+// Event detail types that handle both camelCase and snake_case
+type EventDetail = {
+  chatId?: string;
+  chat_id?: string;
+  messageId?: string;
+  message_id?: string;
+  personaId?: string;
+  persona_id?: string;
+  accumulatedContent?: string;
+  accumulated_content?: string;
+  finalContent?: string;
+  final_content?: string;
+  delta?: string;
+  token?: string;
+  error?: string;
+  message?: Message;
+};
+
 export function useTrainingMessages(chatId: string, enabled = true) {
   const queryClient = useQueryClient();
   const { isConnected, joinRoom, leaveRoom } = useWebSocket();
@@ -37,22 +55,41 @@ export function useTrainingMessages(chatId: string, enabled = true) {
 
     const qk = trainingMessageKeys.list(chatId);
     queryClient.setQueryData<Message[]>(qk, (old = []) =>
-      old.map((m) =>
-        buffer[m.id] !== undefined ? { ...m, content: buffer[m.id]! } : m
-      )
+      old.map((m) => {
+        const pending = buffer[m.id];
+        if (pending === undefined) return m;
+        // ✅ append streamed piece(s) to what's already rendered
+        return { ...m, content: (m.content ?? "") + pending };
+      })
     );
   }, [chatId, queryClient]);
 
   const scheduleFlush = useCallback(() => {
     if (rafRef.current !== null) return;
-    rafRef.current = requestAnimationFrame(flush);
+    // requestAnimationFrame is throttled when tab is hidden; fall back to setTimeout
+    const visible =
+      typeof document !== "undefined"
+        ? document.visibilityState === "visible"
+        : true;
+    if (visible) {
+      rafRef.current = requestAnimationFrame(flush);
+    } else {
+      // use -1 as a sentinel "scheduled" value
+      rafRef.current = -1 as unknown as number;
+      setTimeout(() => {
+        flush();
+        rafRef.current = null;
+      }, 50);
+    }
   }, [flush]);
 
   // Stable callback references
   const onUserSaved = useCallback(
     (e: CustomEvent) => {
-      if (e.detail.chatId !== chatId) return;
-      const real: Message = e.detail.message;
+      const d = (e.detail || {}) as EventDetail;
+      const cid = d.chatId ?? d.chat_id;
+      if (cid !== chatId) return;
+      const real: Message = d.message!;
 
       const qk = trainingMessageKeys.list(chatId);
       queryClient.setQueryData<Message[]>(qk, (old = []) => {
@@ -66,21 +103,24 @@ export function useTrainingMessages(chatId: string, enabled = true) {
 
   const onStart = useCallback(
     (e: CustomEvent) => {
-      if (e.detail.chatId !== chatId) return;
+      const d = (e.detail || {}) as EventDetail;
+      const cid = d.chatId ?? d.chat_id;
+      if (cid !== chatId) return;
 
       // Deduplication guard
-      if (startedIdsRef.current.has(e.detail.messageId)) return;
-      startedIdsRef.current.add(e.detail.messageId);
+      const mid = d.messageId ?? d.message_id;
+      if (!mid || startedIdsRef.current.has(mid)) return;
+      startedIdsRef.current.add(mid);
 
-      logInfo("AI message started", e.detail);
+      logInfo("AI message started", d);
 
       const qk = trainingMessageKeys.list(chatId);
       queryClient.setQueryData<Message[]>(qk, (old = []) => {
         // prevent duplicates
-        if (old.some((m) => m.id === e.detail.messageId)) return old;
+        if (old.some((m) => m.id === mid)) return old;
         const newAssistant: Message = {
-          id: e.detail.messageId,
-          persona_id: e.detail.personaId ?? null,
+          id: mid,
+          persona_id: d.personaId ?? d.persona_id ?? null,
           role: "assistant",
           content: "",
           completed: false,
@@ -98,10 +138,25 @@ export function useTrainingMessages(chatId: string, enabled = true) {
 
   const onToken = useCallback(
     (e: CustomEvent) => {
-      if (e.detail.chatId !== chatId) return;
+      const d = (e.detail || {}) as EventDetail;
+      const cid = d.chatId ?? d.chat_id;
+      if (cid !== chatId) return;
+      const mid = d.messageId ?? d.message_id;
+      if (!mid) return;
 
-      // Buffer token updates and schedule flush
-      bufferRef.current[e.detail.messageId] = e.detail.accumulatedContent;
+      // ✅ Stream by token: append the new token to this frame's buffer
+      const delta = d.token ?? d.delta ?? "";
+      if (delta) {
+        bufferRef.current[mid] = (bufferRef.current[mid] ?? "") + String(delta);
+      } else {
+        // (optional) fallback if your server sometimes sends accumulated_content
+        const acc = d.accumulatedContent ?? d.accumulated_content;
+        if (!acc) return;
+        // If you do receive accumulated_content, you can either:
+        //  A) replace buffer with acc, AND in flush still append to m.content (works fine)
+        //  B) ignore it (prefer token streaming)
+        bufferRef.current[mid] = acc;
+      }
       scheduleFlush();
     },
     [chatId, scheduleFlush]
@@ -109,10 +164,14 @@ export function useTrainingMessages(chatId: string, enabled = true) {
 
   const onComplete = useCallback(
     (e: CustomEvent) => {
-      if (e.detail.chatId !== chatId) return;
+      const d = (e.detail || {}) as EventDetail;
+      const cid = d.chatId ?? d.chat_id;
+      if (cid !== chatId) return;
 
       // Clear from buffer and update immediately
-      delete bufferRef.current[e.detail.messageId];
+      const mid = d.messageId ?? d.message_id;
+      if (!mid) return;
+      delete bufferRef.current[mid];
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -121,8 +180,13 @@ export function useTrainingMessages(chatId: string, enabled = true) {
       const qk = trainingMessageKeys.list(chatId);
       queryClient.setQueryData<Message[]>(qk, (old = []) =>
         old.map((m) =>
-          m.id === e.detail.messageId
-            ? { ...m, content: e.detail.finalContent, completed: true }
+          m.id === mid
+            ? {
+                ...m,
+                // ✅ snap to final authoritative text on completion
+                content: (d.finalContent ?? d.final_content) || m.content || "",
+                completed: true,
+              }
             : m
         )
       );
@@ -132,11 +196,15 @@ export function useTrainingMessages(chatId: string, enabled = true) {
 
   const onError = useCallback(
     (e: CustomEvent) => {
-      if (e.detail.chatId !== chatId) return;
-      logError("Streaming error", e.detail.error);
+      const d = (e.detail || {}) as EventDetail;
+      const cid = d.chatId ?? d.chat_id;
+      if (cid !== chatId) return;
+      logError("Streaming error", d.error);
 
       // Clear from buffer and remove the incomplete assistant placeholder
-      delete bufferRef.current[e.detail.messageId];
+      const mid = d.messageId ?? d.message_id;
+      if (!mid) return;
+      delete bufferRef.current[mid];
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -144,7 +212,7 @@ export function useTrainingMessages(chatId: string, enabled = true) {
 
       const qk = trainingMessageKeys.list(chatId);
       queryClient.setQueryData<Message[]>(qk, (old = []) =>
-        old.filter((m) => m.id !== e.detail.messageId)
+        old.filter((m) => m.id !== mid)
       );
     },
     [chatId, queryClient]
