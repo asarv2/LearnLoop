@@ -1,12 +1,24 @@
 "use client";
 
-import { useAuth } from "@/components/auth/AuthProvider";
 import LandingPage from "@/components/LandingPage";
+import useSupabaseBrowser from "@/utils/supabase/supabase-browser";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 export default function Home() {
-  const { user, loading } = useAuth();
+  const supabase = useSupabaseBrowser();
+
+  const { data: session, isLoading: loading } = useQuery({
+    queryKey: ["session"],
+    queryFn: async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      return session;
+    },
+  });
+  const user = session?.user;
   const router = useRouter();
 
   useEffect(() => {

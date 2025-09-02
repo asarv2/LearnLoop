@@ -50,8 +50,10 @@ export default function ChatArea({
     enableVoiceMode,
     toggleMic,
     sendWebRTCMessage,
-    emitSendTrainingMessage,
   } = useWebSocket();
+
+  // Auto-enable voice mode once per chat
+  const autoEnableVoiceModeRef = React.useRef<string | null>(null);
 
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
@@ -159,6 +161,14 @@ export default function ChatArea({
     }
   }, [chat?.id, voiceMode, enableVoiceMode]);
 
+  // Automatically enable voice mode when chat becomes available (id changes)
+  useEffect(() => {
+    if (!chat?.id) return;
+    if (autoEnableVoiceModeRef.current === chat.id) return;
+    autoEnableVoiceModeRef.current = chat.id;
+    if (!voiceMode) enableVoiceMode(chat.id);
+  }, [chat?.id, voiceMode, enableVoiceMode]);
+
   // Toggle mic handler
   const onToggleMic = useCallback(() => {
     if (!isRTCConnected) return;
@@ -170,20 +180,15 @@ export default function ChatArea({
     const message = currentMessage.trim();
     if (!message || !chat?.id) return;
 
-    if (voiceMode) {
-      // realtime path (DC preferred, websocket fallback inside)
-      sendWebRTCMessage(chat.id, message);
-    } else {
-      // classic websocket text-only path
-      emitSendTrainingMessage({ chat_id: chat.id, message });
-    }
+    if (!voiceMode) return; // prevent sending when voice mode is OFF
+    // realtime path (DC preferred, websocket fallback inside)
+    sendWebRTCMessage(chat.id, message);
     setCurrentMessage("");
   }, [
     chat?.id,
     currentMessage,
     voiceMode,
     sendWebRTCMessage,
-    emitSendTrainingMessage,
     setCurrentMessage,
   ]);
 
@@ -286,7 +291,8 @@ export default function ChatArea({
                         >
                           {isUserMessage
                             ? "You"
-                            : personaMap.get(message.persona_id || "" ) || "Assistant"}
+                            : personaMap.get(message.persona_id || "") ||
+                              "Assistant"}
                         </Text>
                         <Text
                           size="2"
@@ -297,7 +303,8 @@ export default function ChatArea({
                             !message.content &&
                             isAssistantMessage
                               ? `${
-                                  personaMap.get(message.persona_id || "" ) || "Assistant"
+                                  personaMap.get(message.persona_id || "") ||
+                                  "Assistant"
                                 } is thinking...`
                               : message.content || ""}
                           </Markdown>
@@ -430,7 +437,9 @@ export default function ChatArea({
                   />
                   <Button
                     onClick={onSend}
-                    disabled={!currentMessage.trim() || isSendingMessage}
+                    disabled={
+                      !voiceMode || !currentMessage.trim() || isSendingMessage
+                    }
                     size="1"
                     style={{
                       position: "absolute",
@@ -439,7 +448,7 @@ export default function ChatArea({
                       transform: "translateY(-50%)",
                       borderRadius: "20px",
                       background:
-                        currentMessage.trim() && !isSendingMessage
+                        currentMessage.trim() && !isSendingMessage && voiceMode
                           ? "var(--blue-9)"
                           : "var(--gray-6)",
                       border: "none",
@@ -449,7 +458,7 @@ export default function ChatArea({
                       alignItems: "center",
                       justifyContent: "center",
                       cursor:
-                        currentMessage.trim() && !isSendingMessage
+                        currentMessage.trim() && !isSendingMessage && voiceMode
                           ? "pointer"
                           : "not-allowed",
                     }}
