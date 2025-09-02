@@ -144,15 +144,26 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         chatId: eventChatId,
         assessmentReady = false,
         assessmentId,
+        questionCount,
+        requiredCount,
       } = event.detail;
       if (eventChatId === chatId) {
         logInfo("Training ended for current chat, invalidating queries", {
           assessmentReady,
           assessmentId,
+          questionCount,
+          requiredCount,
         });
 
         // Invalidate all relevant queries
         invalidateChatQueries();
+
+        // If we already have some questions, ensure the assessment question list is refreshed
+        if (assessmentId) {
+          queryClient.invalidateQueries({
+            queryKey: ["questions", "assessment", assessmentId],
+          });
+        }
 
         // Only show assessment if it's ready (has all 7 questions)
         if (assessmentReady) {
@@ -195,6 +206,13 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
 
         // Invalidate all relevant queries
         invalidateChatQueries();
+
+        // Precisely refetch the questions for this assessment to reveal newly added ones
+        if (assessmentId) {
+          queryClient.invalidateQueries({
+            queryKey: ["questions", "assessment", assessmentId],
+          });
+        }
 
         // Show assessment modal immediately
         setShowAssessment(true);
