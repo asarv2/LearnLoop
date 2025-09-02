@@ -184,7 +184,7 @@ function CategoricalField({
 
   return (
     <Flex direction="column" gap="3">
-      {parameters?.map((parameter, index) => {
+      {parameters?.sort((a, b) => a.updated_at?.localeCompare(b.updated_at || "") || 0).map((parameter, index) => {
         // Check if selected by parameter ID (preferred) or by parameter name/value (fallback)
         const isSelected =
           selectedParameterId === parameter.id ||
@@ -435,9 +435,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       // Filter out document fields for Employee Offboarding Training
       const filteredFieldIds = scenario.field_ids.filter((fieldId) => {
         const field = fields?.find((f) => f.id === fieldId);
-        // If this is Employee Offboarding Training, exclude document fields
+        // If this is Employee Offboarding Training, exclude document fields and employee name
         if (scenario.title?.toLowerCase().includes("employee offboarding")) {
-          return field?.field_type !== "document";
+          return field?.field_type !== "document" && field?.name !== "Employee Name";
         }
         return true; // Keep all fields for other trainings
       });
@@ -507,10 +507,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         fieldName: "Offboarding Scenario",
         value: "Involuntary Termination",
         parameterId: "bb58fdaf-0846-4951-8d16-4e17ec029ed3",
-      },
-      {
-        fieldName: "Employee Name",
-        value: "John Doe",
       },
       {
         fieldName: "Employee Role",

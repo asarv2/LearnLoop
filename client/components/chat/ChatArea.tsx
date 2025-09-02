@@ -19,9 +19,7 @@ import React, { useCallback, useEffect, useState } from "react";
 // Import necessary hooks
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
-import { useField } from "@/lib/api/hooks/useFields";
 import { useLatestMessageHints } from "@/lib/api/hooks/useHints";
-import { useParameter } from "@/lib/api/hooks/useParameters";
 import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
 interface ChatAreaProps {
   displayMessages: Message[];
@@ -72,41 +70,6 @@ export default function ChatArea({
   const { user } = useAuth();
   const { data: userPersona } = useUserPersona(user?.id);
   const { data: allPersonas } = usePersonas();
-
-  // Get Employee Name from chat parameters
-  const firstParamId = chat?.parameter_ids?.[0];
-  const { data: firstParam } = useParameter(firstParamId || "", !!firstParamId);
-  const { data: firstField } = useField(
-    firstParam?.field_id || "",
-    !!firstParam?.field_id
-  );
-
-  const secondParamId = chat?.parameter_ids?.[1];
-  const { data: secondParam } = useParameter(
-    secondParamId || "",
-    !!secondParamId
-  );
-  const { data: secondField } = useField(
-    secondParam?.field_id || "",
-    !!secondParam?.field_id
-  );
-
-  const thirdParamId = chat?.parameter_ids?.[2];
-  const { data: thirdParam } = useParameter(thirdParamId || "", !!thirdParamId);
-  const { data: thirdField } = useField(
-    thirdParam?.field_id || "",
-    !!thirdParam?.field_id
-  );
-
-  // Find which parameter has the "Employee Name" field
-  const employeeName =
-    firstField?.name === "Employee Name"
-      ? firstParam?.value
-      : secondField?.name === "Employee Name"
-      ? secondParam?.value
-      : thirdField?.name === "Employee Name"
-      ? thirdParam?.value
-      : null;
 
   // Create a memoized map for efficient persona lookup
   const personaMap = React.useMemo(() => {
@@ -224,18 +187,6 @@ export default function ChatArea({
     setCurrentMessage,
   ]);
 
-  // Persona name lookup
-  const getPersonaName = useCallback(
-    (personaId: string | null, isAssistantMessage: boolean = false) => {
-      if (isAssistantMessage && employeeName) {
-        return employeeName;
-      }
-      if (!personaId) return null;
-      return personaMap.get(personaId) || null;
-    },
-    [personaMap, employeeName]
-  );
-
   // Early return if chat is not available
   if (!chat) {
     return (
@@ -335,10 +286,7 @@ export default function ChatArea({
                         >
                           {isUserMessage
                             ? "You"
-                            : getPersonaName(
-                                message.persona_id,
-                                isAssistantMessage
-                              ) || "Assistant"}
+                            : personaMap.get(message.persona_id || "" ) || "Assistant"}
                         </Text>
                         <Text
                           size="2"
@@ -349,10 +297,7 @@ export default function ChatArea({
                             !message.content &&
                             isAssistantMessage
                               ? `${
-                                  getPersonaName(
-                                    message.persona_id,
-                                    isAssistantMessage
-                                  ) || "Assistant"
+                                  personaMap.get(message.persona_id || "" ) || "Assistant"
                                 } is thinking...`
                               : message.content || ""}
                           </Markdown>

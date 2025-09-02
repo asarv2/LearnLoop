@@ -270,6 +270,7 @@ class Personas(_Base, table=True):
     temperature: Optional[float] = Field(default=None, sa_column=Column('temperature', Double(53), default=0.0))
     voice: Optional[str] = Field(default=None, sa_column=Column('voice', Text))
     profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
+    realtime_prompt: Optional[str] = Field(default=None, sa_column=Column('realtime_prompt', Text))
 
     profile: Optional['Profiles'] = Relationship(back_populates='personas')
     messages: List['Messages'] = Relationship(back_populates='persona')
