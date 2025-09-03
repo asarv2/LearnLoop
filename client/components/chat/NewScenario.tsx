@@ -35,9 +35,11 @@ import {
 import { useField, useFields } from "@/lib/api/hooks/useFields";
 import {
   useCreateParameter,
+  useParameters,
   useParametersByField,
 } from "@/lib/api/hooks/useParameters";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
+import { useTraining } from "@/lib/api/hooks/useTrainings";
 
 // Types
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -672,23 +674,25 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   // Fetch scenario data
   const { data: scenario, isLoading: scenarioLoading } =
     useScenario(scenarioId);
+  const { data: allParameters } = useParameters();
+  const { data: training } = useTraining(
+    scenario?.training_id || "",
+    Boolean(scenario?.training_id)
+  );
 
   // Hooks for mutations
   const { emitStartTraining } = useWebSocket();
 
-  // Initialize field values when scenario loads
+  // Initialize field values when scenario and training load
   useEffect(() => {
-    if (scenario?.field_ids) {
-      // Filter out document fields for Employee Offboarding Training
+    if (scenario?.field_ids && fields) {
       const filteredFieldIds = scenario.field_ids.filter((fieldId) => {
-        const field = fields?.find((f) => f.id === fieldId);
-        // If this is Employee Offboarding Training, exclude document fields and employee name
-        if (scenario.title?.toLowerCase().includes("employee offboarding")) {
-          return (
-            field?.field_type !== "document" && field?.name !== "Employee Name"
-          );
+        const field = fields.find((f) => f.id === fieldId);
+        if (!field) return false;
+        if (field.field_type === "document") {
+          return training?.show_documents === true;
         }
-        return true; // Keep all fields for other trainings
+        return true;
       });
 
       setFieldValues(
@@ -699,7 +703,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         }))
       );
     }
-  }, [scenario, fields]);
+  }, [scenario, fields, training]);
 
   // Cleanup timers on component unmount
   useEffect(() => {
@@ -750,44 +754,69 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   };
 
   const handleAutoFill = () => {
-    // Auto-fill mapping based on field names and database values
-    const autoFillMappings = [
-      {
-        fieldName: "Offboarding Scenario",
-        value: "Involuntary Termination",
-        parameterId: "bb58fdaf-0846-4951-8d16-4e17ec029ed3",
-      },
-      {
-        fieldName: "Employee Role",
-        value: "Software Engineer",
-      },
-      {
-        fieldName: "Employee Level",
-        value: "Junior",
-        parameterId: "c4edcb88-2197-4d41-9e15-00c25713e034",
-      },
-      {
-        fieldName: "Employee Persona",
-        value: "Defensive Employee",
-        parameterId: "fbc90488-613e-4692-934d-9d791558d226",
-      },
-    ];
+    const pickRandom = <T,>(arr: T[]): T | undefined =>
+      arr[Math.floor(Math.random() * arr.length)];
 
-    // Apply auto-fill values to matching fields
     setFieldValues((prev) =>
       prev.map((fv) => {
         const field = fields?.find((f) => f.id === fv.fieldId);
-        const autoFill = autoFillMappings.find(
-          (mapping) => mapping.fieldName === field?.name
+        if (!field) return fv;
+
+        const paramsForField = (allParameters || []).filter(
+          (p) => p.field_id === field.id
         );
 
-        if (autoFill) {
-          return {
-            ...fv,
-            value: autoFill.value,
-            parameterId: autoFill.parameterId,
-          };
+        if (field.field_type === "text") {
+          const candidates = paramsForField.filter(
+            (p) => (p.value || "").trim() !== ""
+          );
+          if (candidates.length > 0) {
+            const choice = pickRandom(candidates)!;
+            return { ...fv, value: choice.value || "", parameterId: choice.id };
+          }
+          return fv;
         }
+
+        if (field.field_type === "categorical") {
+          const customCandidates = paramsForField.filter(
+            (p) => (p.description || "").toLowerCase() === "custom scenario"
+          );
+          if (customCandidates.length > 0) {
+            const choice = pickRandom(customCandidates)!;
+            // Select as Custom with the chosen name; keep parameterId undefined to show Custom input
+            return { ...fv, value: choice.name || "", parameterId: undefined };
+          }
+          const normalCandidates = paramsForField.filter(
+            (p) => (p.description || "").toLowerCase() !== "custom scenario"
+          );
+          if (normalCandidates.length > 0) {
+            const choice = pickRandom(normalCandidates)!;
+            return { ...fv, value: choice.name || "", parameterId: choice.id };
+          }
+          return fv;
+        }
+
+        if (field.field_type === "persona") {
+          const candidates = paramsForField;
+          if (candidates.length > 0) {
+            const choice = pickRandom(candidates)!;
+            return { ...fv, value: choice.name || "", parameterId: choice.id };
+          }
+          return fv;
+        }
+
+        // Skip document and numerical by default
+        if (field.field_type === "numerical") {
+          const candidates = paramsForField.filter(
+            (p) => (p.value || "").trim() !== ""
+          );
+          if (candidates.length > 0) {
+            const choice = pickRandom(candidates)!;
+            return { ...fv, value: choice.value || "" };
+          }
+          return fv;
+        }
+
         return fv;
       })
     );
@@ -864,7 +893,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
     try {
       // Process field values and handle document uploads
-      const processedFieldValues = await Promise.all(
+      const processedFieldValuesUpload = await Promise.all(
         fieldValues.map(async (fieldValue) => {
           // If this is a document field with a file, upload it first
           if (fieldValue.file) {
@@ -898,6 +927,35 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           return fieldValue;
         })
       );
+
+      // Map text/custom values to existing parameter IDs to avoid duplicates
+      const processedFieldValues = processedFieldValuesUpload.map((fv) => {
+        const field = fields?.find((f) => f.id === fv.fieldId);
+        if (!field) return fv;
+
+        if (field.field_type === "text" && fv.value) {
+          const existing = (allParameters || []).find(
+            (p) => p.field_id === field.id && (p.value || "") === fv.value
+          );
+          if (existing) {
+            return { ...fv, parameterId: existing.id };
+          }
+        }
+
+        if (field.field_type === "categorical" && !fv.parameterId && fv.value) {
+          const existingCustom = (allParameters || []).find(
+            (p) =>
+              p.field_id === field.id &&
+              (p.description || "").toLowerCase() === "custom scenario" &&
+              (p.name || "") === fv.value
+          );
+          if (existingCustom) {
+            return { ...fv, parameterId: existingCustom.id };
+          }
+        }
+
+        return fv;
+      });
 
       // (preparing model will complete via timer above)
 
@@ -1013,7 +1071,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         </Box>
 
         {/* Dynamic Field Cards */}
-        <Box maxWidth="800px" mx="auto">
+        <Box maxWidth="800px" mx="auto" mt="4">
           {fieldValues.map((fieldValue, index) => (
             <FieldCard
               key={fieldValue.fieldId}

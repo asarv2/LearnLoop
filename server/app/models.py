@@ -112,6 +112,7 @@ class Trainings(_Base, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     practice: bool = Field(sa_column=Column('practice', Boolean, default=False))
+    show_documents: bool = Field(sa_column=Column('show_documents', Boolean, default=False))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
     active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
     what_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_to_do', ARRAY(Text())))
