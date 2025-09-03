@@ -759,6 +759,7 @@ export type Database = {
           description: string | null
           id: string
           practice: boolean
+          show_documents: boolean
           title: string
           updated_at: string
           what_not_to_do: string[] | null
@@ -770,6 +771,7 @@ export type Database = {
           description?: string | null
           id?: string
           practice?: boolean
+          show_documents?: boolean
           title: string
           updated_at?: string
           what_not_to_do?: string[] | null
@@ -781,6 +783,7 @@ export type Database = {
           description?: string | null
           id?: string
           practice?: boolean
+          show_documents?: boolean
           title?: string
           updated_at?: string
           what_not_to_do?: string[] | null
