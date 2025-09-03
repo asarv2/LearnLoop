@@ -217,7 +217,7 @@ export default function Trainings() {
       </Row>
 
       {/* Footer Information */}
-      <Card
+      {/* <Card
         title="Advanced AI-Powered Learning"
         style={{ marginTop: "32px" }}
         type="inner"
@@ -242,7 +242,7 @@ export default function Trainings() {
             </Paragraph>
           </Col>
         </Row>
-      </Card>
+      </Card> */}
     </div>
   );
 }
