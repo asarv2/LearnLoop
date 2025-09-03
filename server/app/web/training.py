@@ -185,45 +185,12 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                 logger.error(f"Error running scenario agent: {str(e)}")
                 # Continue with training even if scenario agent fails
 
-            # Generate training-specific assessment questions early (3 questions)
-            # This allows them to be ready instantly when training ends
-            try:
-                logger.info(f"🔍 DEBUG: Starting training-specific assessment generation for chat {chat.id}")
-                training_questions_result = await run_training_specific_assessment(chat.id, db_session)
-                
-                logger.info(f"🔍 DEBUG: Training questions result: {training_questions_result}")
-                
-                if training_questions_result.get("success"):
-                    # Create assessment with training-specific questions only (3 questions)
-                    # The remaining questions will be added when training ends
-                    training_questions = training_questions_result.get("questions", [])
-                    logger.info(f"🔍 DEBUG: Got {len(training_questions)} training questions: {[q.get('question', 'No question text') for q in training_questions]}")
-                    
-                    assessment_result = await create_initial_assessment_with_training_questions(
-                        chat.id, 
-                        training_questions,
-                        db_session
-                    )
-                    
-                    logger.info(f"🔍 DEBUG: Assessment creation result: {assessment_result}")
-                    
-                    if assessment_result.get("success"):
-                        logger.info(f"✅ Successfully created assessment {assessment_result.get('assessment_id')} with {len(training_questions)} training-specific questions")
-                    else:
-                        logger.error(f"❌ Failed to create assessment: {assessment_result.get('message')}")
-                else:
-                    logger.error(f"❌ Training-specific assessment generation failed: {training_questions_result.get('message')}")
-            except Exception as e:
-                logger.error(f"❌ Error generating training-specific assessment questions: {str(e)}")
-                import traceback
-                logger.error(f"❌ Traceback: {traceback.format_exc()}")
-                # Continue with training even if assessment generation fails
-
+            # Emit started immediately after scenario generation completes
             logger.info(f"Successfully created training session: attempt_id={attempt.id}, chat_id={chat.id}")
 
-            # Send success response
             sio = get_sio_instance()
-            sio.start_background_task(sio.emit,
+            sio.start_background_task(
+                sio.emit,
                 "training_started",
                 {
                     "success": True,
@@ -234,6 +201,37 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                 },
                 room=sid,
             )
+
+            # Schedule training-specific assessment generation in the background
+            async def _bg_training_questions(cid: uuid.UUID) -> None:
+                try:
+                    logger.info(f"🔍 DEBUG: (bg) Starting training-specific assessment generation for chat {cid}")
+                    sess = next(get_session())
+                    try:
+                        training_questions_result = await run_training_specific_assessment(cid, sess)
+                        logger.info(f"🔍 DEBUG: (bg) Training questions result: {training_questions_result}")
+                        if training_questions_result.get("success"):
+                            training_questions = training_questions_result.get("questions", [])
+                            if training_questions:
+                                assessment_result = await create_initial_assessment_with_training_questions(
+                                    cid,
+                                    training_questions,
+                                    sess,
+                                )
+                                logger.info(f"🔍 DEBUG: (bg) Assessment creation result: {assessment_result}")
+                            else:
+                                logger.warning(f"(bg) No training questions generated for chat {cid}")
+                        else:
+                            logger.error(f"❌ (bg) Training-specific assessment generation failed: {training_questions_result.get('message')}")
+                    finally:
+                        try:
+                            sess.close()
+                        except Exception:
+                            pass
+                except Exception:
+                    logger.exception("❌ (bg) Error generating training-specific assessment questions")
+
+            asyncio.create_task(_bg_training_questions(chat.id))
 
         finally:
             try:

@@ -259,11 +259,10 @@ function CategoricalField({
 }) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
   const [customValue, setCustomValue] = useState("");
-  const createParameter = useCreateParameter();
   const [isCustomFocused, setIsCustomFocused] = useState(false);
   const [customHighlightIndex, setCustomHighlightIndex] = useState<number>(-1);
-
-  if (isLoading) return <Spinner size="2" />;
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
 
   const colors = [
     "var(--green-2)",
@@ -295,7 +294,7 @@ function CategoricalField({
   const handleParameterSelect = (parameterId: string) => {
     const p = parameters?.find((pp) => pp.id === parameterId);
     if (p && p.value === null) {
-      // Enter custom flow: show custom input sentinel
+      // Select sentinel "Custom" and focus the custom input
       setCustomValue("");
       onChange("Custom", undefined);
     } else {
@@ -304,16 +303,7 @@ function CategoricalField({
     }
   };
 
-  // Handle custom input change
-  const handleCustomInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-    setCustomValue(newValue);
-    // Pass the custom value without a parameter ID to indicate it's custom
-    // If there's actual content, use it; otherwise keep "Custom" to show it's selected
-    onChange(newValue.trim() !== "" ? newValue : "Custom", undefined);
-  };
-
-  // Hide custom-created parameters from the options list (only show in custom suggestions)
+  // Hide custom-created parameters from the main options list
   const displayedParameters = parameters?.filter(
     (p) => (p.description || "").toLowerCase() !== "custom scenario"
   );
@@ -344,41 +334,33 @@ function CategoricalField({
 
   const showCustomSuggestions = isCustomFocused && customSuggestions.length > 0;
 
-  const toSnakeCase = (s: string) =>
-    s
-      .normalize("NFKD")
-      .replace(/[^\p{L}\p{N}]+/gu, " ")
-      .trim()
-      .replace(/\s+/g, "_")
-      .toLowerCase();
-
-  const commitCustomIfNew = async (nameText: string) => {
-    const trimmed = nameText.trim();
-    if (!trimmed) return;
-    const exists = (parameters || []).find(
-      (p) =>
-        (p.description || "").toLowerCase() === "custom scenario" &&
-        (p.name || "") === trimmed
-    );
-    if (exists) {
-      onChange(trimmed, exists.id);
-      return;
-    }
-    try {
-      const created = await createParameter.mutateAsync({
-        field_id: field.id,
-        name: trimmed,
-        description: "Custom Scenario",
-        value: toSnakeCase(trimmed),
-      });
-      if (created?.id) {
-        onChange(trimmed, created.id);
-        setCustomValue(trimmed);
-      }
-    } catch (err) {
-      console.error("Failed to create custom parameter", err);
-    }
+  // Handle custom input change
+  const handleCustomInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    setCustomValue(newValue);
+    // Pass the custom value without a parameter ID to indicate it's custom
+    onChange(newValue.trim() !== "" ? newValue : "Custom", undefined);
   };
+
+  // Track anchor rect while suggestions are open to position portal correctly
+  useEffect(() => {
+    if (showCustomSuggestions && anchorRef.current) {
+      const updateRect = () => {
+        if (!anchorRef.current) return;
+        setAnchorRect(anchorRef.current.getBoundingClientRect());
+      };
+      updateRect();
+      window.addEventListener("scroll", updateRect, true);
+      window.addEventListener("resize", updateRect);
+      return () => {
+        window.removeEventListener("scroll", updateRect, true);
+        window.removeEventListener("resize", updateRect);
+      };
+    }
+    return;
+  }, [showCustomSuggestions]);
+
+  if (isLoading) return <Spinner size="2" />;
 
   return (
     <Flex direction="column" gap="3">
@@ -446,10 +428,13 @@ function CategoricalField({
 
                   {/* Custom Input Field - shows inline when Custom is selected */}
                   {isCustom && isSelected && (
-                    <Box style={{ marginLeft: "44px", position: "relative" }}>
+                    <Box
+                      style={{ marginLeft: "44px", position: "relative" }}
+                      ref={anchorRef}
+                    >
                       <input
                         type="text"
-                        placeholder="Enter your own custom offboarding scenario to practice..."
+                        placeholder="Enter your own custom scenario to practice..."
                         value={value === "Custom" ? customValue : value}
                         onChange={handleCustomInputChange}
                         onFocus={() => setIsCustomFocused(true)}
@@ -460,7 +445,10 @@ function CategoricalField({
                           if (e.key === "Enter") {
                             const text =
                               value === "Custom" ? customValue : value;
-                            await commitCustomIfNew(text);
+                            const trimmed = text.trim();
+                            if (trimmed) {
+                              onChange(trimmed, undefined);
+                            }
                             setIsCustomFocused(false);
                           } else if (e.key === "Escape") {
                             setIsCustomFocused(false);
@@ -506,46 +494,52 @@ function CategoricalField({
                         }}
                       />
 
-                      {showCustomSuggestions && (
-                        <Box
-                          style={{
-                            position: "absolute",
-                            top: "calc(100% + 6px)",
-                            left: 0,
-                            right: 0,
-                            background: "white",
-                            border: "1px solid var(--gray-6)",
-                            borderRadius: "8px",
-                            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-                            zIndex: 1000,
-                            maxHeight: "220px",
-                            overflowY: "auto",
-                          }}
-                        >
-                          {customSuggestions.map((item, idx) => (
-                            <Box
-                              key={`${item.label}-${idx}`}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                setCustomValue(item.label);
-                                onChange(item.label, item.id);
-                                setIsCustomFocused(false);
-                              }}
-                              onMouseEnter={() => setCustomHighlightIndex(idx)}
-                              style={{
-                                padding: "10px 12px",
-                                cursor: "pointer",
-                                background:
-                                  customHighlightIndex === idx
-                                    ? "var(--blue-2)"
-                                    : "transparent",
-                              }}
-                            >
-                              <Text size="2">{item.label}</Text>
-                            </Box>
-                          ))}
-                        </Box>
-                      )}
+                      {showCustomSuggestions &&
+                        anchorRect &&
+                        createPortal(
+                          <div
+                            style={{
+                              position: "fixed",
+                              top: anchorRect.bottom + 6,
+                              left: anchorRect.left,
+                              width: anchorRect.width,
+                              background: "white",
+                              border: "1px solid var(--gray-6)",
+                              borderRadius: "8px",
+                              boxShadow: "0 6px 18px rgba(0,0,0,0.16)",
+                              zIndex: 10000,
+                              maxHeight: "260px",
+                              overflowY: "auto",
+                            }}
+                          >
+                            {customSuggestions.map((item, idx) => (
+                              <div
+                                key={`${item.label}-${idx}`}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  setCustomValue(item.label);
+                                  // Selecting a saved custom should select the Custom option and add description
+                                  onChange(item.label, undefined);
+                                  setIsCustomFocused(false);
+                                }}
+                                onMouseEnter={() =>
+                                  setCustomHighlightIndex(idx)
+                                }
+                                style={{
+                                  padding: "10px 12px",
+                                  cursor: "pointer",
+                                  background:
+                                    customHighlightIndex === idx
+                                      ? "var(--blue-2)"
+                                      : "transparent",
+                                }}
+                              >
+                                <Text size="2">{item.label}</Text>
+                              </div>
+                            ))}
+                          </div>,
+                          document.body
+                        )}
                     </Box>
                   )}
                 </Flex>
@@ -804,20 +798,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         }
 
         if (field.field_type === "categorical") {
-          // Prefer valid, existing custom parameters; otherwise pick normal ones
+          // If saved custom descriptions exist, select Custom sentinel with description (no parameterId)
           const customCandidates = paramsForField.filter(
-            (p) =>
-              (p.description || "").toLowerCase() === "custom scenario" && p.id
+            (p) => (p.description || "").toLowerCase() === "custom scenario"
           );
           if (customCandidates.length > 0) {
             const choice = pickRandom(customCandidates)!;
-            // Use existing custom parameter id to mark complete
-            return { ...fv, value: choice.name || "", parameterId: choice.id };
+            return { ...fv, value: choice.name || "", parameterId: undefined };
           }
+          // Otherwise pick a normal parameter (non-sentinel)
           const normalCandidates = paramsForField.filter(
             (p) =>
-              (p.description || "").toLowerCase() !== "custom scenario" &&
-              p.value !== null
+              p.value !== null &&
+              (p.description || "").toLowerCase() !== "custom scenario"
           );
           if (normalCandidates.length > 0) {
             const choice = pickRandom(normalCandidates)!;
