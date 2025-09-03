@@ -5,6 +5,7 @@
  * 08-02-2025
  */
 
+import WorkInProgressModal from "@/components/common/WorkInProgressModal";
 import Evaluation from "@/components/dashboard/rubric/Evaluation";
 
 import { Metadata } from "next";
@@ -15,5 +16,13 @@ export const metadata: Metadata = {
 };
 
 export default function RubricPage() {
-  return <Evaluation />;
+  return (
+    <>
+      <Evaluation />
+      <WorkInProgressModal
+        title="Evaluation"
+        description="The evaluation feature is currently being developed. This will provide comprehensive assessment tools, detailed scoring rubrics, and performance analytics to help you understand your strengths and areas for improvement in your training sessions."
+      />
+    </>
+  );
 }
