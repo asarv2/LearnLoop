@@ -24,7 +24,8 @@ import {
   Text,
 } from "@radix-ui/themes";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 // Hooks
 import { useWebSocket } from "@/contexts/websocket-context";
@@ -77,6 +78,8 @@ function TextField({
   const { data: parameters, isLoading } = useParametersByField(field.id);
   const [isFocused, setIsFocused] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState<number>(-1);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
 
   const suggestionItems = (() => {
     const itemsMap = new Map<string, string>();
@@ -129,8 +132,26 @@ function TextField({
     }
   };
 
+  // Track anchor rect while open
+  useEffect(() => {
+    if (showSuggestions && anchorRef.current) {
+      const updateRect = () => {
+        if (!anchorRef.current) return;
+        setAnchorRect(anchorRef.current.getBoundingClientRect());
+      };
+      updateRect();
+      window.addEventListener("scroll", updateRect, true);
+      window.addEventListener("resize", updateRect);
+      return () => {
+        window.removeEventListener("scroll", updateRect, true);
+        window.removeEventListener("resize", updateRect);
+      };
+    }
+    return;
+  }, [showSuggestions]);
+
   return (
-    <div style={{ position: "relative" }}>
+    <div ref={anchorRef} style={{ position: "relative" }}>
       <input
         type="text"
         placeholder={field.description || `Enter ${field.name.toLowerCase()}`}
@@ -153,43 +174,46 @@ function TextField({
         }}
       />
 
-      {showSuggestions && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 6px)",
-            left: 0,
-            right: 0,
-            background: "white",
-            border: "1px solid var(--gray-6)",
-            borderRadius: "8px",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-            zIndex: 10,
-            maxHeight: "220px",
-            overflowY: "auto",
-          }}
-        >
-          {suggestionItems.map((item, idx) => (
-            <div
-              key={`${item.label}-${idx}`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onChange(item.label);
-                setIsFocused(false);
-              }}
-              onMouseEnter={() => setHighlightIndex(idx)}
-              style={{
-                padding: "10px 12px",
-                cursor: "pointer",
-                background:
-                  highlightIndex === idx ? "var(--blue-2)" : "transparent",
-              }}
-            >
-              <Text size="2">{item.label}</Text>
-            </div>
-          ))}
-        </div>
-      )}
+      {showSuggestions &&
+        anchorRect &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              top: anchorRect.bottom + 6,
+              left: anchorRect.left,
+              width: anchorRect.width,
+              background: "white",
+              border: "1px solid var(--gray-6)",
+              borderRadius: "8px",
+              boxShadow: "0 6px 18px rgba(0,0,0,0.16)",
+              zIndex: 10000,
+              maxHeight: "260px",
+              overflowY: "auto",
+            }}
+          >
+            {suggestionItems.map((item, idx) => (
+              <div
+                key={`${item.label}-${idx}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onChange(item.label);
+                  setIsFocused(false);
+                }}
+                onMouseEnter={() => setHighlightIndex(idx)}
+                style={{
+                  padding: "10px 12px",
+                  cursor: "pointer",
+                  background:
+                    highlightIndex === idx ? "var(--blue-2)" : "transparent",
+                }}
+              >
+                <Text size="2">{item.label}</Text>
+              </div>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -420,7 +444,13 @@ function CategoricalField({
 
                   {/* Custom Input Field - shows inline when Custom is selected */}
                   {isCustom && isSelected && (
-                    <Box style={{ marginLeft: "44px", position: "relative" }}>
+                    <Box
+                      style={{
+                        marginLeft: "44px",
+                        position: "relative",
+                        zIndex: showCustomSuggestions ? 1000 : "auto",
+                      }}
+                    >
                       <input
                         type="text"
                         placeholder="Enter your own custom offboarding scenario to practice..."
@@ -491,7 +521,7 @@ function CategoricalField({
                             border: "1px solid var(--gray-6)",
                             borderRadius: "8px",
                             boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-                            zIndex: 10,
+                            zIndex: 1000,
                             maxHeight: "220px",
                             overflowY: "auto",
                           }}
@@ -778,14 +808,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         }
 
         if (field.field_type === "categorical") {
-          const customCandidates = paramsForField.filter(
-            (p) => (p.description || "").toLowerCase() === "custom scenario"
-          );
-          if (customCandidates.length > 0) {
-            const choice = pickRandom(customCandidates)!;
-            // Select as Custom with the chosen name; keep parameterId undefined to show Custom input
-            return { ...fv, value: choice.name || "", parameterId: undefined };
-          }
+          // Only pick normal options by default. Pick custom only if a valid existing custom is selected explicitly elsewhere.
           const normalCandidates = paramsForField.filter(
             (p) => (p.description || "").toLowerCase() !== "custom scenario"
           );
@@ -1371,6 +1394,8 @@ function FieldCard({
             borderRadius: "12px",
             boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
             transition: "all 0.2s ease",
+            position: "relative",
+            overflow: "visible",
           }}
         >
           <Box p="6">
