@@ -242,3 +242,4 @@ server/
 The virtual environment is located at `.venv/` in the server directory.
 
 To activate manually: `source .venv/bin/activate` 
+
