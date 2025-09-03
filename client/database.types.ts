@@ -439,6 +439,7 @@ export type Database = {
           id: string
           name: string
           profile_id: string | null
+          realtime_prompt: string | null
           system_prompt: string | null
           temperature: number | null
           updated_at: string | null
@@ -450,6 +451,7 @@ export type Database = {
           id?: string
           name: string
           profile_id?: string | null
+          realtime_prompt?: string | null
           system_prompt?: string | null
           temperature?: number | null
           updated_at?: string | null
@@ -461,6 +463,7 @@ export type Database = {
           id?: string
           name?: string
           profile_id?: string | null
+          realtime_prompt?: string | null
           system_prompt?: string | null
           temperature?: number | null
           updated_at?: string | null
