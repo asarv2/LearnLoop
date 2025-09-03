@@ -3,8 +3,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-import redis.asyncio as redis
-from agents.extensions.models.litellm_model import LitellmModel
+import redis.asyncio as redis 
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -113,8 +112,3 @@ async def cleanup_redis_client() -> None:
     if redis_client:
         await redis_client.close()
         logger.info("Redis client closed")
-
-gemini_model = LitellmModel(
-    model="gemini/gemini-2.5-flash",
-    api_key=os.getenv("GOOGLE_GENERATIVE_AI_API_KEY"),
-)
