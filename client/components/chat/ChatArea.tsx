@@ -13,7 +13,9 @@ import {
   PaperPlaneIcon,
   PersonIcon,
 } from "@radix-ui/react-icons";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
+import { Mic, MicOff } from "lucide-react";
 import React, { useCallback, useEffect, useState } from "react";
 
 // Import necessary hooks
@@ -233,8 +235,8 @@ export default function ChatArea({
     audioContextRef.current = audioCtx;
 
     const analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.8;
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.7;
     analyserRef.current = analyser;
 
     const source = audioCtx.createMediaStreamSource(stream);
@@ -245,7 +247,7 @@ export default function ChatArea({
     const canvasCtx = canvas?.getContext("2d");
     if (!canvas || !canvasCtx) return;
 
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    const freqArray = new Uint8Array(analyser.frequencyBinCount);
 
     const draw = () => {
       if (!canvas || !canvasCtx || !analyserRef.current) return;
@@ -263,29 +265,26 @@ export default function ChatArea({
       }
 
       canvasCtx.clearRect(0, 0, cssWidth, cssHeight);
-      canvasCtx.fillStyle = "white";
-      canvasCtx.fillRect(0, 0, cssWidth, cssHeight);
 
-      analyserRef.current.getByteTimeDomainData(dataArray);
+      // Block-style frequency bars
+      analyserRef.current.getByteFrequencyData(freqArray);
+      const numBars = 48;
+      const barGap = 2;
+      const barWidth = cssWidth / numBars - barGap;
 
-      canvasCtx.lineWidth = 2;
-      canvasCtx.strokeStyle = "var(--blue-9)";
-      canvasCtx.beginPath();
+      for (let i = 0; i < numBars; i++) {
+        const start = Math.floor((i / numBars) * freqArray.length);
+        const end = Math.floor(((i + 1) / numBars) * freqArray.length);
+        let sum = 0;
+        for (let j = start; j < end; j++) sum += freqArray[j];
+        const avg = sum / Math.max(1, end - start);
 
-      const sliceWidth = cssWidth / dataArray.length;
-      let x = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        const v = dataArray[i] / 128.0; // 0..2
-        const y = (v * cssHeight) / 2;
-        if (i === 0) {
-          canvasCtx.moveTo(x, y);
-        } else {
-          canvasCtx.lineTo(x, y);
-        }
-        x += sliceWidth;
+        const magnitude = (avg / 255) * cssHeight;
+        const x = i * (barWidth + barGap);
+        const y = cssHeight - magnitude;
+        canvasCtx.fillStyle = "var(--blue-9)";
+        canvasCtx.fillRect(x, y, Math.max(1, barWidth), magnitude);
       }
-      canvasCtx.lineTo(cssWidth, cssHeight / 2);
-      canvasCtx.stroke();
 
       rafRef.current = requestAnimationFrame(draw);
     };
@@ -469,100 +468,156 @@ export default function ChatArea({
               <Flex align="center" gap="3">
                 {/* Voice Mode Button or Mic Controls - Left */}
                 {voiceMode ? (
-                  <Button
-                    onClick={onToggleMic}
-                    disabled={!isRTCConnected}
-                    size="2"
-                    title={micOn ? "Mute mic" : "Unmute mic"}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      padding: "12px 16px",
-                      borderRadius: "12px",
-                      fontSize: "14px",
-                      fontWeight: "500",
-                      background: micOn ? "#ef4444" : "white",
-                      color: micOn ? "white" : "var(--gray-12)",
-                      border: "1px solid var(--gray-6)",
-                      cursor: !isRTCConnected ? "not-allowed" : "pointer",
-                      outline: "none",
-                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                      transition: "all 0.2s ease",
-                      height: "48px",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {micOn ? "🎙️ Mute" : "🔇 Unmute"}
-                  </Button>
+                  <Tooltip.Provider>
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <Button
+                          onClick={onToggleMic}
+                          disabled={!isRTCConnected}
+                          size="2"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: 0,
+                            borderRadius: "12px",
+                            width: "48px",
+                            height: "48px",
+                            background: micOn ? "#ef4444" : "white",
+                            color: micOn ? "white" : "var(--gray-12)",
+                            border: "1px solid var(--gray-6)",
+                            cursor: !isRTCConnected ? "not-allowed" : "pointer",
+                            outline: "none",
+                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                            transition: "all 0.2s ease",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {micOn ? <MicOff size={16} /> : <Mic size={16} />}
+                        </Button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Portal>
+                        <Tooltip.Content
+                          className="TooltipContent"
+                          sideOffset={5}
+                          style={{
+                            backgroundColor: "var(--gray-12)",
+                            color: "white",
+                            borderRadius: "6px",
+                            padding: "8px 12px",
+                            fontSize: "14px",
+                            lineHeight: "1.4",
+                            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                            zIndex: 1000,
+                          }}
+                        >
+                          {micOn ? "Stop Recording" : "Start Recording"}
+                          <Tooltip.Arrow style={{ fill: "var(--gray-12)" }} />
+                        </Tooltip.Content>
+                      </Tooltip.Portal>
+                    </Tooltip.Root>
+                  </Tooltip.Provider>
                 ) : (
-                  <Button
-                    onClick={onToggleVoiceMode}
-                    size="2"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      padding: "12px 16px",
-                      borderRadius: "12px",
-                      fontSize: "14px",
-                      fontWeight: "600",
-                      background: "white",
-                      color: "var(--gray-12)",
-                      border: "1px solid var(--gray-6)",
-                      cursor: "pointer",
-                      outline: "none",
-                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                      transition: "all 0.2s ease",
-                      height: "48px",
-                      flexShrink: 0,
-                    }}
-                    title="Enable voice mode"
-                  >
-                    Voice Mode
-                  </Button>
+                  <Tooltip.Provider>
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <Button
+                          onClick={onToggleVoiceMode}
+                          size="2"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            padding: "12px 16px",
+                            borderRadius: "12px",
+                            fontSize: "14px",
+                            fontWeight: "600",
+                            background: "white",
+                            color: "var(--gray-12)",
+                            border: "1px solid var(--gray-6)",
+                            cursor: "pointer",
+                            outline: "none",
+                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                            transition: "all 0.2s ease",
+                            height: "48px",
+                            flexShrink: 0,
+                          }}
+                        >
+                          Voice Mode
+                        </Button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Portal>
+                        <Tooltip.Content
+                          className="TooltipContent"
+                          sideOffset={5}
+                          style={{
+                            backgroundColor: "var(--gray-12)",
+                            color: "white",
+                            borderRadius: "6px",
+                            padding: "8px 12px",
+                            fontSize: "14px",
+                            lineHeight: "1.4",
+                            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                            zIndex: 1000,
+                          }}
+                        >
+                          Click to enable voice mode and microphone access
+                          <Tooltip.Arrow style={{ fill: "var(--gray-12)" }} />
+                        </Tooltip.Content>
+                      </Tooltip.Portal>
+                    </Tooltip.Root>
+                  </Tooltip.Provider>
                 )}
 
                 {/* Text Input - Center */}
                 <Box style={{ position: "relative", flex: 1 }}>
                   {micOn ? (
-                    <div
-                      style={{
-                        width: "100%",
-                        height: "48px",
-                        borderRadius: "24px",
-                        border: "1px solid var(--blue-7)",
-                        background: "white",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                        position: "relative",
-                        overflow: "hidden",
-                        display: "flex",
-                        alignItems: "center",
-                      }}
-                      title="Listening via mic"
-                    >
-                      <canvas
-                        ref={waveformCanvasRef}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          display: "block",
-                        }}
-                      />
-                      <span
-                        style={{
-                          position: "absolute",
-                          left: "16px",
-                          top: "50%",
-                          transform: "translateY(-50%)",
-                          color: "var(--gray-11)",
-                          fontSize: "14px",
-                          fontWeight: 500,
-                          pointerEvents: "none",
-                          background: "transparent",
-                        }}
-                      >
-                        Listening… (text disabled)
-                      </span>
-                    </div>
+                    <Tooltip.Provider>
+                      <Tooltip.Root>
+                        <Tooltip.Trigger asChild>
+                          <div
+                            style={{
+                              width: "100%",
+                              height: "48px",
+                              borderRadius: "12px",
+                              background: "transparent",
+                              position: "relative",
+                              overflow: "hidden",
+                              display: "flex",
+                              alignItems: "center",
+                            }}
+                          >
+                            <canvas
+                              ref={waveformCanvasRef}
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                display: "block",
+                              }}
+                            />
+                          </div>
+                        </Tooltip.Trigger>
+                        <Tooltip.Portal>
+                          <Tooltip.Content
+                            className="TooltipContent"
+                            sideOffset={5}
+                            style={{
+                              backgroundColor: "var(--gray-12)",
+                              color: "white",
+                              borderRadius: "6px",
+                              padding: "8px 12px",
+                              fontSize: "14px",
+                              lineHeight: "1.4",
+                              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                              zIndex: 1000,
+                            }}
+                          >
+                            Microphone is active - speaking will be transcribed
+                            automatically
+                            <Tooltip.Arrow style={{ fill: "var(--gray-12)" }} />
+                          </Tooltip.Content>
+                        </Tooltip.Portal>
+                      </Tooltip.Root>
+                    </Tooltip.Provider>
                   ) : (
                     <>
                       <input
