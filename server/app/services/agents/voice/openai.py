@@ -340,11 +340,7 @@ class OpenAIAgent(Agent):
 
     # ---- session wiring -----------------------------------------------------
 
-    async def instructions_fn(
-        self,
-        ctx,
-        agent,
-    ) -> str:
+    async def _start_session(self) -> RealtimeSession:
         chat_id = self.room.id
         persona_id = await self._get_assistant_persona_id()
 
@@ -368,9 +364,9 @@ class OpenAIAgent(Agent):
 
         logger.info(f"Found persona: Name='{persona.name}', Voice='{persona.voice}'")
 
-        if not persona.system_prompt:
-            logger.error(f"Persona '{persona.name}' has no system prompt.")
-            raise ValueError(f"Persona with ID {persona_id} has no system prompt")
+        if not persona.realtime_prompt:
+            logger.error(f"Persona '{persona.name}' has no realtime prompt.")
+            raise ValueError(f"Persona with ID {persona_id} has no realtime prompt")
 
         # get all messages for the chat
         messages = db_session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
@@ -380,28 +376,31 @@ class OpenAIAgent(Agent):
 
         instructions = [preamble] + parameter_history + conversation_history
 
-        realtime_instructions = get_text_formatted_instructions(instructions)
-        return realtime_instructions
+        realtime_instructions = persona.realtime_prompt + "\n" + get_text_formatted_instructions(instructions)
 
-    async def _start_session(self) -> RealtimeSession:
+        realtime_voice = persona.voice
+        valid_voices = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"]
+        if realtime_voice not in valid_voices:
+            realtime_voice = "alloy"
+
         oa_agent = OARealtimeAgent(
             name="OpenAI Realtime",
-            instructions=self.instructions_fn,
+            instructions=realtime_instructions,
         )
 
         model_settings: RealtimeSessionModelSettings = {
-            "model_name": os.getenv("OPENAI_REALTIME_MODEL", "gpt-4o-mini-realtime-preview"),
+            "model_name": "gpt-4o-mini-realtime-preview",
             "modalities": ["text", "audio"],
             # ✅ Force 48k both directions
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
             "turn_detection": {
-                "type": "semantic_vad" if os.getenv("OPENAI_TURN_DETECTION", "semantic_vad") == "semantic_vad" else "server_vad",
+                "type": "semantic_vad",
                 "create_response": True,
                 "interrupt_response": True,
                 "eagerness": "auto",
             },
-            "voice": os.getenv("OPENAI_REALTIME_VOICE", "alloy"),
+            "voice": realtime_voice,
             "input_audio_transcription": {
                 "model": "whisper-1"
             }

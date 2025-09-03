@@ -85,11 +85,15 @@ export default function AssessmentWizard({
     isLoading: isLoadingQuestions,
     error: questionsError,
   } = useQuestionsByAssessment(assessmentId, isOpen);
+  const expectedTotal = 7;
 
   const isLoading = isLoadingAssessment || isLoadingQuestions;
   const currentQuestion = questions[currentStep];
   const totalQuestions = questions.length;
-  const isLastQuestion = currentStep === totalQuestions - 1;
+  const hasAllQuestions = totalQuestions >= expectedTotal;
+  const atEndOfLoaded = currentStep === totalQuestions - 1;
+  const canFinish = hasAllQuestions && atEndOfLoaded;
+  const isAwaitingNext = currentStep >= totalQuestions && !hasAllQuestions;
   const canProceed =
     currentQuestion &&
     currentQuestion.id &&
@@ -138,11 +142,12 @@ export default function AssessmentWizard({
   const handleNext = async () => {
     // Persist the answer for the current question before navigating
     await persistCurrentAnswer();
-    if (isLastQuestion) {
+    if (canFinish) {
       // Convert responses to the expected map shape: { [question_id]: response }
       const assessmentResponses: Record<string, unknown> = { ...responses };
       onComplete(assessmentResponses);
     } else {
+      // Advance step optimistically; UI will show a loader while next question arrives
       setCurrentStep((prev) => prev + 1);
     }
   };
@@ -199,7 +204,7 @@ export default function AssessmentWizard({
     }
   };
 
-  // Loading state
+  // Initial loading state
   if (isLoading) {
     return (
       <StyledDialog open={isOpen} onClose={onClose} maxWidth="sm" fullWidth>
@@ -241,6 +246,36 @@ export default function AssessmentWizard({
             <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
               <StyledButton onClick={onClose}>Close</StyledButton>
             </Box>
+          </Box>
+        </DialogContent>
+      </StyledDialog>
+    );
+  }
+
+  // Awaiting background generation of the next question
+  if (isAwaitingNext) {
+    return (
+      <StyledDialog open={isOpen} onClose={onClose} maxWidth="sm" fullWidth>
+        <DialogContent>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              py: 4,
+            }}
+          >
+            <CircularProgress size={48} sx={{ mb: 3 }} />
+            <Typography variant="h6" gutterBottom>
+              Loading next question
+            </Typography>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              textAlign="center"
+            >
+              Generating additional assessment questions...
+            </Typography>
           </Box>
         </DialogContent>
       </StyledDialog>
@@ -354,15 +389,15 @@ export default function AssessmentWizard({
           <StyledButton
             variant="contained"
             onClick={handleNext}
-            disabled={!canProceed || (isSubmitting && isLastQuestion)}
-            endIcon={isLastQuestion ? undefined : <ArrowForward />}
+            disabled={!canProceed || (isSubmitting && canFinish)}
+            endIcon={canFinish ? undefined : <ArrowForward />}
           >
-            {isSubmitting && isLastQuestion ? (
+            {isSubmitting && canFinish ? (
               <>
                 <CircularProgress size={20} color="inherit" sx={{ mr: 1 }} />
                 Submitting assessment...
               </>
-            ) : isLastQuestion ? (
+            ) : canFinish ? (
               "Complete Assessment"
             ) : (
               "Next Question"
