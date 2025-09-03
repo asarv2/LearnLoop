@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 class ScenarioResponse(BaseModel):
     title: str
     scenario: str
-    message: str
 
 
 async def get_scenario_prompt() -> str:
@@ -99,15 +98,24 @@ async def run_scenario_agent(
         # Consolidate feedback into strengths and weaknesses
         title = scenario_result.title
         scenario = scenario_result.scenario
-        message = scenario_result.message
         # update scenario for chat
         chat.title = title
         chat.description = scenario
 
-        # create a new chat message
+        # Pick 1 dynamic intro message that is a general greeting
+        import random
+
+        intro_messages = [
+            "Hello! How can I assist you today?",
+            "Hi there! What would you like to talk about?",
+            "Greetings! How are you doing?",
+            "Hey! How can I help you?",
+            "Good day! What brings you here today?",
+        ]
+        msg = random.choice(intro_messages)
         message_object = Messages(
             chat_id=chat.id,
-            content=message,
+            content=msg,
             role="assistant",
             persona_id=persona_id,
         )

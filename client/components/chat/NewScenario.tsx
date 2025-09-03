@@ -798,20 +798,36 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         }
 
         if (field.field_type === "categorical") {
-          // If saved custom descriptions exist, select Custom sentinel with description (no parameterId)
           const customCandidates = paramsForField.filter(
             (p) => (p.description || "").toLowerCase() === "custom scenario"
           );
-          if (customCandidates.length > 0) {
-            const choice = pickRandom(customCandidates)!;
-            return { ...fv, value: choice.name || "", parameterId: undefined };
-          }
-          // Otherwise pick a normal parameter (non-sentinel)
           const normalCandidates = paramsForField.filter(
             (p) =>
               p.value !== null &&
               (p.description || "").toLowerCase() !== "custom scenario"
           );
+          // If both custom and normal candidates exist, randomly pick from all
+          if (customCandidates.length > 0 && normalCandidates.length > 0) {
+            // Combine both, but for custom, parameterId is undefined
+            const allCandidates = [
+              ...normalCandidates.map((p) => ({
+                value: p.name || "",
+                parameterId: p.id,
+              })),
+              ...customCandidates.map((p) => ({
+                value: p.name || "",
+                parameterId: undefined,
+              })),
+            ];
+            const choice = pickRandom(allCandidates)!;
+            return { ...fv, value: choice.value, parameterId: choice.parameterId };
+          }
+          // If only custom candidates exist
+          if (customCandidates.length > 0) {
+            const choice = pickRandom(customCandidates)!;
+            return { ...fv, value: choice.name || "", parameterId: undefined };
+          }
+          // If only normal candidates exist
           if (normalCandidates.length > 0) {
             const choice = pickRandom(normalCandidates)!;
             return { ...fv, value: choice.name || "", parameterId: choice.id };
