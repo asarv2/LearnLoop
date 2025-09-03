@@ -46,8 +46,6 @@ const MiniScenarioPreview = ({
     "Angry Employee",
   ];
 
-  const isComplete = previewScenario && previewPosition && previewPersonality;
-
   return (
     <div
       className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col"
