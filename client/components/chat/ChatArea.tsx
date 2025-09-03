@@ -187,6 +187,11 @@ export default function ChatArea({
   const sourceRef = React.useRef<MediaStreamAudioSourceNode | null>(null);
   const rafRef = React.useRef<number | null>(null);
 
+  // Time-based audio buffer for 60-second visualization
+  const audioBufferRef = React.useRef<number[]>([]);
+  const bufferSize = 60; // 60 seconds of audio data
+  const updateInterval = 100; // Update every 100ms for smooth animation
+
   const cleanupWaveform = useCallback(async () => {
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
@@ -211,11 +216,16 @@ export default function ChatArea({
   useEffect(() => {
     if (!micOn) {
       cleanupWaveform();
+      // Clear the audio buffer when mic is turned off
+      audioBufferRef.current = [];
       return;
     }
 
     const stream = getLocalMicStream();
     if (!stream) return;
+
+    // Initialize audio buffer with blank frames when mic is turned on
+    audioBufferRef.current = new Array(bufferSize).fill(0);
 
     let AudioCtx: typeof AudioContext;
     if (typeof window !== "undefined" && "AudioContext" in window) {
@@ -266,27 +276,63 @@ export default function ChatArea({
 
       canvasCtx.clearRect(0, 0, cssWidth, cssHeight);
 
-      // Block-style frequency bars
+      // Get current audio data and add to buffer
       analyserRef.current.getByteFrequencyData(freqArray);
-      const numBars = 48;
-      const barGap = 2;
-      const barWidth = cssWidth / numBars - barGap;
+      const currentAvg =
+        freqArray.reduce((sum, val) => sum + val, 0) / freqArray.length;
 
-      for (let i = 0; i < numBars; i++) {
-        const start = Math.floor((i / numBars) * freqArray.length);
-        const end = Math.floor(((i + 1) / numBars) * freqArray.length);
-        let sum = 0;
-        for (let j = start; j < end; j++) sum += freqArray[j];
-        const avg = sum / Math.max(1, end - start);
+      // Add new audio data to the right side of buffer
+      audioBufferRef.current.push(currentAvg);
 
-        const magnitude = (avg / 255) * cssHeight;
-        const x = i * (barWidth + barGap);
-        const y = cssHeight - magnitude;
-        canvasCtx.fillStyle = "var(--blue-9)";
-        canvasCtx.fillRect(x, y, Math.max(1, barWidth), magnitude);
+      // Keep only the last 60 seconds worth of data
+      if (audioBufferRef.current.length > bufferSize) {
+        audioBufferRef.current.shift(); // Remove oldest data from left
       }
 
-      rafRef.current = requestAnimationFrame(draw);
+      // Draw the time-based waveform
+      const numSegments = Math.min(audioBufferRef.current.length, bufferSize);
+      const segmentGap = 3;
+      const segmentWidth = cssWidth / numSegments - segmentGap;
+      const centerY = cssHeight / 2;
+
+      for (let i = 0; i < numSegments; i++) {
+        const audioValue = audioBufferRef.current[i];
+        const amplitude = (audioValue / 255) * (cssHeight * 0.4);
+
+        // Position segments from right (newest) to left (oldest)
+        const x = cssWidth - (numSegments - i) * (segmentWidth + segmentGap);
+
+        // Draw top segment (above center)
+        if (amplitude > 0) {
+          const topY = centerY - amplitude;
+          canvasCtx.fillStyle = "var(--blue-9)";
+          canvasCtx.fillRect(
+            x,
+            topY,
+            Math.max(1, segmentWidth),
+            Math.max(1, amplitude)
+          );
+        }
+
+        // Draw bottom segment (below center) - creates the wave effect
+        if (amplitude > 0) {
+          const bottomY = centerY;
+          canvasCtx.fillStyle = "var(--blue-9)";
+          canvasCtx.fillRect(
+            x,
+            bottomY,
+            Math.max(1, segmentWidth),
+            Math.max(1, amplitude)
+          );
+        }
+      }
+
+      // Schedule next update based on time interval instead of animation frame
+      setTimeout(() => {
+        if (micOn) {
+          rafRef.current = requestAnimationFrame(draw);
+        }
+      }, updateInterval);
     };
 
     draw();
