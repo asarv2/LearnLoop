@@ -50,6 +50,7 @@ export default function ChatArea({
     enableVoiceMode,
     toggleMic,
     sendWebRTCMessage,
+    getLocalMicStream,
   } = useWebSocket();
 
   // Auto-enable voice mode once per chat
@@ -174,6 +175,127 @@ export default function ChatArea({
     if (!isRTCConnected) return;
     toggleMic();
   }, [isRTCConnected, toggleMic]);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Waveform visualization (when mic is ON)
+  // ────────────────────────────────────────────────────────────────────────────
+  const waveformCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const audioContextRef = React.useRef<AudioContext | null>(null);
+  const analyserRef = React.useRef<AnalyserNode | null>(null);
+  const sourceRef = React.useRef<MediaStreamAudioSourceNode | null>(null);
+  const rafRef = React.useRef<number | null>(null);
+
+  const cleanupWaveform = useCallback(async () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    try {
+      sourceRef.current?.disconnect();
+    } catch {}
+    sourceRef.current = null;
+    try {
+      analyserRef.current?.disconnect();
+    } catch {}
+    analyserRef.current = null;
+    try {
+      if (audioContextRef.current) {
+        await audioContextRef.current.close();
+      }
+    } catch {}
+    audioContextRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!micOn) {
+      cleanupWaveform();
+      return;
+    }
+
+    const stream = getLocalMicStream();
+    if (!stream) return;
+
+    let AudioCtx: typeof AudioContext;
+    if (typeof window !== "undefined" && "AudioContext" in window) {
+      AudioCtx = (
+        window as unknown as {
+          AudioContext: typeof AudioContext;
+        }
+      ).AudioContext;
+    } else {
+      AudioCtx = (
+        window as unknown as {
+          webkitAudioContext: typeof AudioContext;
+        }
+      ).webkitAudioContext;
+    }
+    const audioCtx = new AudioCtx();
+    audioContextRef.current = audioCtx;
+
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.8;
+    analyserRef.current = analyser;
+
+    const source = audioCtx.createMediaStreamSource(stream);
+    sourceRef.current = source;
+    source.connect(analyser);
+
+    const canvas = waveformCanvasRef.current;
+    const canvasCtx = canvas?.getContext("2d");
+    if (!canvas || !canvasCtx) return;
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    const draw = () => {
+      if (!canvas || !canvasCtx || !analyserRef.current) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const cssWidth = canvas.clientWidth || 1;
+      const cssHeight = canvas.clientHeight || 1;
+      if (
+        canvas.width !== Math.floor(cssWidth * dpr) ||
+        canvas.height !== Math.floor(cssHeight * dpr)
+      ) {
+        canvas.width = Math.floor(cssWidth * dpr);
+        canvas.height = Math.floor(cssHeight * dpr);
+        canvasCtx.scale(dpr, dpr);
+      }
+
+      canvasCtx.clearRect(0, 0, cssWidth, cssHeight);
+      canvasCtx.fillStyle = "white";
+      canvasCtx.fillRect(0, 0, cssWidth, cssHeight);
+
+      analyserRef.current.getByteTimeDomainData(dataArray);
+
+      canvasCtx.lineWidth = 2;
+      canvasCtx.strokeStyle = "var(--blue-9)";
+      canvasCtx.beginPath();
+
+      const sliceWidth = cssWidth / dataArray.length;
+      let x = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i] / 128.0; // 0..2
+        const y = (v * cssHeight) / 2;
+        if (i === 0) {
+          canvasCtx.moveTo(x, y);
+        } else {
+          canvasCtx.lineTo(x, y);
+        }
+        x += sliceWidth;
+      }
+      canvasCtx.lineTo(cssWidth, cssHeight / 2);
+      canvasCtx.stroke();
+
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    draw();
+
+    return () => {
+      cleanupWaveform();
+    };
+  }, [micOn, getLocalMicStream, cleanupWaveform]);
 
   // Send message handler
   const onSend = useCallback(() => {
@@ -401,70 +523,121 @@ export default function ChatArea({
 
                 {/* Text Input - Center */}
                 <Box style={{ position: "relative", flex: 1 }}>
-                  <input
-                    type="text"
-                    placeholder="Type your message..."
-                    value={currentMessage}
-                    onChange={(e) => setCurrentMessage(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        onSend();
-                      }
-                    }}
-                    disabled={isSendingMessage}
-                    style={{
-                      width: "100%",
-                      padding: "12px 50px 12px 16px",
-                      borderRadius: "24px",
-                      border: "1px solid var(--gray-6)",
-                      fontSize: "16px",
-                      outline: "none",
-                      background: "white",
-                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                      transition:
-                        "border-color 0.2s ease, box-shadow 0.2s ease",
-                    }}
-                    onFocus={(e) => {
-                      e.target.style.borderColor = "var(--blue-7)";
-                      e.target.style.boxShadow =
-                        "0 1px 3px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(59, 130, 246, 0.1)";
-                    }}
-                    onBlur={(e) => {
-                      e.target.style.borderColor = "var(--gray-6)";
-                      e.target.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.1)";
-                    }}
-                  />
-                  <Button
-                    onClick={onSend}
-                    disabled={
-                      !voiceMode || !currentMessage.trim() || isSendingMessage
-                    }
-                    size="1"
-                    style={{
-                      position: "absolute",
-                      right: "6px",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      borderRadius: "20px",
-                      background:
-                        currentMessage.trim() && !isSendingMessage && voiceMode
-                          ? "var(--blue-9)"
-                          : "var(--gray-6)",
-                      border: "none",
-                      width: "36px",
-                      height: "36px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor:
-                        currentMessage.trim() && !isSendingMessage && voiceMode
-                          ? "pointer"
-                          : "not-allowed",
-                    }}
-                  >
-                    <PaperPlaneIcon width="16" height="16" />
-                  </Button>
+                  {micOn ? (
+                    <div
+                      style={{
+                        width: "100%",
+                        height: "48px",
+                        borderRadius: "24px",
+                        border: "1px solid var(--blue-7)",
+                        background: "white",
+                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                        position: "relative",
+                        overflow: "hidden",
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                      title="Listening via mic"
+                    >
+                      <canvas
+                        ref={waveformCanvasRef}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          display: "block",
+                        }}
+                      />
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: "16px",
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          color: "var(--gray-11)",
+                          fontSize: "14px",
+                          fontWeight: 500,
+                          pointerEvents: "none",
+                          background: "transparent",
+                        }}
+                      >
+                        Listening… (text disabled)
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        placeholder="Type your message..."
+                        value={currentMessage}
+                        onChange={(e) => setCurrentMessage(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            onSend();
+                          }
+                        }}
+                        disabled={isSendingMessage}
+                        style={{
+                          width: "100%",
+                          padding: "12px 50px 12px 16px",
+                          borderRadius: "24px",
+                          border: "1px solid var(--gray-6)",
+                          fontSize: "16px",
+                          outline: "none",
+                          background: "white",
+                          boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                          transition:
+                            "border-color 0.2s ease, box-shadow 0.2s ease",
+                        }}
+                        onFocus={(e) => {
+                          e.target.style.borderColor = "var(--blue-7)";
+                          e.target.style.boxShadow =
+                            "0 1px 3px rgba(0, 0, 0, 0.1), 0 0 0 3px rgba(59, 130, 246, 0.1)";
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = "var(--gray-6)";
+                          e.target.style.boxShadow =
+                            "0 1px 3px rgba(0, 0, 0, 0.1)";
+                        }}
+                      />
+                      <Button
+                        onClick={onSend}
+                        disabled={
+                          !voiceMode ||
+                          !currentMessage.trim() ||
+                          isSendingMessage
+                        }
+                        size="1"
+                        style={{
+                          position: "absolute",
+                          right: "6px",
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          borderRadius: "20px",
+                          background:
+                            currentMessage.trim() &&
+                            !isSendingMessage &&
+                            voiceMode
+                              ? "var(--blue-9)"
+                              : "var(--gray-6)",
+                          border: "none",
+                          width: "36px",
+                          height: "36px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor:
+                            currentMessage.trim() &&
+                            !isSendingMessage &&
+                            voiceMode
+                              ? "pointer"
+                              : "not-allowed",
+                        }}
+                      >
+                        <PaperPlaneIcon width="16" height="16" />
+                      </Button>
+                    </>
+                  )}
                 </Box>
 
                 {/* Hints Button - Right */}
