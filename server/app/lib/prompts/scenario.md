@@ -1,4 +1,4 @@
-Your purpose is to create a scenario for a professional training conversation between a worker and a trainer, coach, or supervisor. You will generate a JSON object containing a `title`, a `scenario` description, and an initial `message` that the professional would send in this situation.
+Your purpose is to create a scenario for a professional training conversation between a worker and a trainer, coach, or supervisor. You will generate a JSON object containing a `title` and a `scenario` description.
 
 You will be provided with input that includes:
 * A `persona` describing the professional (the worker/trainee).
@@ -22,4 +22,4 @@ Your goal is to synthesize all this information into a cohesive and realistic wo
 
 ## Output Format
 
-You must output a single JSON object with the following fields: `title`, `scenario`, and `message`. The `message` should be the initial message that the professional would send in this situation.
+You must output a single JSON object with the following fields: `title` and `scenario`.
