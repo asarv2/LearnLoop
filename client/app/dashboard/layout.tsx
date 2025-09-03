@@ -14,6 +14,7 @@ import {
   PlayCircleOutlined,
   UserOutlined,
 } from "@ant-design/icons";
+import { useQueryClient } from "@tanstack/react-query";
 import type { MenuProps } from "antd";
 import {
   Avatar,
@@ -88,6 +89,7 @@ export default function DashboardLayout({
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, signOut } = useAuth();
   const {
     token: { colorBgContainer, borderRadiusLG },
@@ -96,6 +98,7 @@ export default function DashboardLayout({
   const handleLogout = async () => {
     try {
       await signOut();
+      queryClient.invalidateQueries({ queryKey: ["session"] });
       router.push("/");
     } catch (error) {
       console.error("Error signing out:", error);
