@@ -1,5 +1,6 @@
 import logging
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -118,6 +119,8 @@ async def run_scenario_agent(
             content=msg,
             role="assistant",
             persona_id=persona_id,
+            completed=True,
+            completed_at=datetime.now(timezone.utc),
         )
         session.add(message_object)
         session.add(chat)
