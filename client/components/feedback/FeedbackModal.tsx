@@ -65,7 +65,7 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
       onCancel={handleCancel}
       footer={null}
       width={500}
-      destroyOnClose
+      destroyOnHidden
       styles={{
         header: {
           borderBottom: "1px solid #f0f0f0",
