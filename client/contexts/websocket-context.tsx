@@ -90,6 +90,9 @@ interface WebSocketContextType {
     responses: Record<string, unknown>;
   }) => void;
   emitGetHints: (data: { chat_id: string; message_id: string }) => void;
+
+  // Local mic stream access for UI visualizations (read-only)
+  getLocalMicStream: () => MediaStream | null;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -715,6 +718,11 @@ export function WebSocketProvider({
     }
   }, [micOn, getMic]);
 
+  // Expose current local mic stream without creating a new one
+  const getLocalMicStream = useCallback((): MediaStream | null => {
+    return localStreamRef.current;
+  }, []);
+
   // Enable voice mode - establishes RTC once and leaves it for page lifetime
   const enableVoiceMode = useCallback(
     async (chatId: string) => {
@@ -919,6 +927,7 @@ export function WebSocketProvider({
     emitEndTraining,
     emitSubmitAssessment,
     emitGetHints,
+    getLocalMicStream,
   };
 
   return (
