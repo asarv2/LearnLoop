@@ -33,7 +33,10 @@ import {
   useCreateDocument,
 } from "@/lib/api/hooks/useDocuments";
 import { useField, useFields } from "@/lib/api/hooks/useFields";
-import { useParametersByField } from "@/lib/api/hooks/useParameters";
+import {
+  useCreateParameter,
+  useParametersByField,
+} from "@/lib/api/hooks/useParameters";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
 
 // Types
@@ -69,22 +72,123 @@ function TextField({
   value: string;
   onChange: (value: string, parameterId?: string) => void;
 }) {
+  const { data: parameters, isLoading } = useParametersByField(field.id);
+  const [isFocused, setIsFocused] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState<number>(-1);
+
+  const suggestionItems = (() => {
+    const itemsMap = new Map<string, string>();
+    (parameters || []).forEach((p) => {
+      const val = (p.value || "").trim();
+      if (!val) return;
+      const prevUpdatedAt = itemsMap.get(val) || "";
+      const updatedAt = p.updated_at || "";
+      if (!prevUpdatedAt || updatedAt.localeCompare(prevUpdatedAt) > 0) {
+        itemsMap.set(val, updatedAt);
+      }
+    });
+    let items = Array.from(itemsMap.entries()).map(([label, updatedAt]) => ({
+      label,
+      updatedAt,
+    }));
+    const q = (value || "").toLowerCase().trim();
+    if (q) {
+      items = items.filter((i) => i.label.toLowerCase().includes(q));
+    }
+    items.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+    return items.slice(0, 8);
+  })();
+
+  const showSuggestions = isFocused && !isLoading && suggestionItems.length > 0;
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showSuggestions) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightIndex((prev) => {
+        const next = prev + 1;
+        return next >= suggestionItems.length ? 0 : next;
+      });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIndex((prev) => {
+        const next = prev - 1;
+        return next < 0 ? suggestionItems.length - 1 : next;
+      });
+    } else if (e.key === "Enter") {
+      if (highlightIndex >= 0 && highlightIndex < suggestionItems.length) {
+        e.preventDefault();
+        const choice = suggestionItems[highlightIndex];
+        onChange(choice.label);
+        setIsFocused(false);
+      }
+    } else if (e.key === "Escape") {
+      setIsFocused(false);
+    }
+  };
+
   return (
-    <input
-      type="text"
-      placeholder={field.description || `Enter ${field.name.toLowerCase()}`}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      style={{
-        width: "100%",
-        padding: "12px 16px",
-        borderRadius: "8px",
-        border: `1px solid ${value ? "var(--green-7)" : "var(--gray-6)"}`,
-        fontSize: "16px",
-        outline: "none",
-        background: "white",
-      }}
-    />
+    <div style={{ position: "relative" }}>
+      <input
+        type="text"
+        placeholder={field.description || `Enter ${field.name.toLowerCase()}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => {
+          // Delay to allow click on suggestion
+          setTimeout(() => setIsFocused(false), 120);
+        }}
+        onKeyDown={handleKeyDown}
+        style={{
+          width: "100%",
+          padding: "12px 16px",
+          borderRadius: "8px",
+          border: `1px solid ${value ? "var(--green-7)" : "var(--gray-6)"}`,
+          fontSize: "16px",
+          outline: "none",
+          background: "white",
+        }}
+      />
+
+      {showSuggestions && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            right: 0,
+            background: "white",
+            border: "1px solid var(--gray-6)",
+            borderRadius: "8px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+            zIndex: 10,
+            maxHeight: "220px",
+            overflowY: "auto",
+          }}
+        >
+          {suggestionItems.map((item, idx) => (
+            <div
+              key={`${item.label}-${idx}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(item.label);
+                setIsFocused(false);
+              }}
+              onMouseEnter={() => setHighlightIndex(idx)}
+              style={{
+                padding: "10px 12px",
+                cursor: "pointer",
+                background:
+                  highlightIndex === idx ? "var(--blue-2)" : "transparent",
+              }}
+            >
+              <Text size="2">{item.label}</Text>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -129,6 +233,9 @@ function CategoricalField({
 }) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
   const [customValue, setCustomValue] = useState("");
+  const createParameter = useCreateParameter();
+  const [isCustomFocused, setIsCustomFocused] = useState(false);
+  const [customHighlightIndex, setCustomHighlightIndex] = useState<number>(-1);
 
   if (isLoading) return <Spinner size="2" />;
 
@@ -182,102 +289,242 @@ function CategoricalField({
     onChange(newValue.trim() !== "" ? newValue : "Custom", undefined);
   };
 
+  // Hide custom-created parameters from the options list (only show in custom suggestions)
+  const displayedParameters = parameters?.filter(
+    (p) => (p.description || "").toLowerCase() !== "custom scenario"
+  );
+
+  // Suggestions for custom entries (only parameters with description "Custom Scenario")
+  const customSuggestions = (() => {
+    const itemsMap = new Map<string, string>();
+    (parameters || [])
+      .filter((p) => (p.description || "").toLowerCase() === "custom scenario")
+      .forEach((p) => {
+        const label = (p.name || "").trim();
+        if (!label) return;
+        const prev = itemsMap.get(label) || "";
+        const ts = p.updated_at || "";
+        if (!prev || ts.localeCompare(prev) > 0) itemsMap.set(label, ts);
+      });
+    let items = Array.from(itemsMap.entries()).map(([label, updatedAt]) => ({
+      label,
+      updatedAt,
+    }));
+    const q = (value === "Custom" ? customValue : value).toLowerCase().trim();
+    if (q) items = items.filter((i) => i.label.toLowerCase().includes(q));
+    items.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+    return items.slice(0, 8);
+  })();
+
+  const showCustomSuggestions = isCustomFocused && customSuggestions.length > 0;
+
+  const toSnakeCase = (s: string) =>
+    s
+      .normalize("NFKD")
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim()
+      .replace(/\s+/g, "_")
+      .toLowerCase();
+
+  const commitCustomIfNew = async (nameText: string) => {
+    const trimmed = nameText.trim();
+    if (!trimmed) return;
+    const exists = (parameters || []).some(
+      (p) =>
+        (p.description || "").toLowerCase() === "custom scenario" &&
+        (p.name || "") === trimmed
+    );
+    if (exists) return;
+    try {
+      await createParameter.mutateAsync({
+        field_id: field.id,
+        name: trimmed,
+        description: "Custom Scenario",
+        value: toSnakeCase(trimmed),
+      });
+    } catch (err) {
+      console.error("Failed to create custom parameter", err);
+    }
+  };
+
   return (
     <Flex direction="column" gap="3">
-      {parameters?.sort((a, b) => a.updated_at?.localeCompare(b.updated_at || "") || 0).map((parameter, index) => {
-        // Check if selected by parameter ID (preferred) or by parameter name/value (fallback)
-        const isSelected =
-          selectedParameterId === parameter.id ||
-          value === parameter.id ||
-          value === parameter.name ||
-          (parameter.name?.toLowerCase() === "custom" &&
-            (value === "Custom" ||
-              (value && value.trim() !== "" && !selectedParameterId)));
-        const colorIndex = index % colors.length;
-        const isCustom = parameter.name?.toLowerCase() === "custom";
+      {displayedParameters
+        ?.sort((a, b) => a.updated_at?.localeCompare(b.updated_at || "") || 0)
+        .map((parameter, index) => {
+          // Check if selected by parameter ID (preferred) or by parameter name/value (fallback)
+          const isSelected =
+            selectedParameterId === parameter.id ||
+            value === parameter.id ||
+            value === parameter.name ||
+            ((parameter.name?.toLowerCase() === "custom" ||
+              parameter.value == null) &&
+              (value === "Custom" ||
+                (value && value.trim() !== "" && !selectedParameterId)));
+          const colorIndex = index % colors.length;
+          const isCustom =
+            parameter.name?.toLowerCase() === "custom" ||
+            parameter.value == null;
 
-        return (
-          <Card
-            key={parameter.id!}
-            style={{
-              background: isSelected ? colors[colorIndex] : "var(--gray-1)",
-              border: `2px solid ${
-                isSelected ? borderColors[colorIndex] : "var(--gray-6)"
-              }`,
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-            }}
-            onClick={() =>
-              handleParameterSelect(parameter.id!, parameter.name!)
-            }
-          >
-            <Box p="4">
-              <Flex direction="column" gap="3">
-                <Flex align="center" gap="3">
-                  <Box
-                    style={{
-                      width: "20px",
-                      height: "20px",
-                      borderRadius: "50%",
-                      border: `2px solid ${
-                        isSelected ? dotColors[colorIndex] : "var(--gray-6)"
-                      }`,
-                      background: isSelected
-                        ? dotColors[colorIndex]
-                        : "transparent",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    {isSelected && (
-                      <CheckIcon width="12" height="12" color="white" />
-                    )}
-                  </Box>
-                  <Box>
-                    <Text size="3" weight="bold">
-                      {parameter.name}:
-                    </Text>
-                    {parameter.description && (
-                      <Text size="2" color="gray">
-                        {` ${parameter.description}`}
-                      </Text>
-                    )}
-                  </Box>
-                </Flex>
-
-                {/* Custom Input Field - shows inline when Custom is selected */}
-                {isCustom && isSelected && (
-                  <Box style={{ marginLeft: "44px" }}>
-                    <input
-                      type="text"
-                      placeholder="Enter your own custom offboarding scenario to practice..."
-                      value={value === "Custom" ? customValue : value}
-                      onChange={handleCustomInputChange}
-                      onClick={(e) => e.stopPropagation()} // Prevent card click when clicking input
+          return (
+            <Card
+              key={parameter.id!}
+              style={{
+                background: isSelected ? colors[colorIndex] : "var(--gray-1)",
+                border: `2px solid ${
+                  isSelected ? borderColors[colorIndex] : "var(--gray-6)"
+                }`,
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+              onClick={() =>
+                handleParameterSelect(parameter.id!, parameter.name!)
+              }
+            >
+              <Box p="4">
+                <Flex direction="column" gap="3">
+                  <Flex align="center" gap="3">
+                    <Box
                       style={{
-                        width: "100%",
-                        padding: "12px 16px",
-                        borderRadius: "8px",
-                        border: `1px solid ${
-                          (value === "Custom" ? customValue : value)
-                            ? "var(--blue-7)"
-                            : "var(--gray-6)"
+                        width: "20px",
+                        height: "20px",
+                        borderRadius: "50%",
+                        border: `2px solid ${
+                          isSelected ? dotColors[colorIndex] : "var(--gray-6)"
                         }`,
-                        fontSize: "16px",
-                        outline: "none",
-                        background: "white",
-                        transition: "all 0.2s ease",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                        background: isSelected
+                          ? dotColors[colorIndex]
+                          : "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                       }}
-                    />
-                  </Box>
-                )}
-              </Flex>
-            </Box>
-          </Card>
-        );
-      })}
+                    >
+                      {isSelected && (
+                        <CheckIcon width="12" height="12" color="white" />
+                      )}
+                    </Box>
+                    <Box>
+                      <Text size="3" weight="bold">
+                        {parameter.name}:
+                      </Text>
+                      {parameter.description && (
+                        <Text size="2" color="gray">
+                          {` ${parameter.description}`}
+                        </Text>
+                      )}
+                    </Box>
+                  </Flex>
+
+                  {/* Custom Input Field - shows inline when Custom is selected */}
+                  {isCustom && isSelected && (
+                    <Box style={{ marginLeft: "44px", position: "relative" }}>
+                      <input
+                        type="text"
+                        placeholder="Enter your own custom offboarding scenario to practice..."
+                        value={value === "Custom" ? customValue : value}
+                        onChange={handleCustomInputChange}
+                        onFocus={() => setIsCustomFocused(true)}
+                        onBlur={() =>
+                          setTimeout(() => setIsCustomFocused(false), 120)
+                        }
+                        onKeyDown={async (e) => {
+                          if (e.key === "Enter") {
+                            const text =
+                              value === "Custom" ? customValue : value;
+                            await commitCustomIfNew(text);
+                            setIsCustomFocused(false);
+                          } else if (e.key === "Escape") {
+                            setIsCustomFocused(false);
+                          } else if (
+                            e.key === "ArrowDown" &&
+                            showCustomSuggestions
+                          ) {
+                            e.preventDefault();
+                            setCustomHighlightIndex((prev) => {
+                              const next = prev + 1;
+                              return next >= customSuggestions.length
+                                ? 0
+                                : next;
+                            });
+                          } else if (
+                            e.key === "ArrowUp" &&
+                            showCustomSuggestions
+                          ) {
+                            e.preventDefault();
+                            setCustomHighlightIndex((prev) => {
+                              const next = prev - 1;
+                              return next < 0
+                                ? customSuggestions.length - 1
+                                : next;
+                            });
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          width: "100%",
+                          padding: "12px 16px",
+                          borderRadius: "8px",
+                          border: `1px solid ${
+                            (value === "Custom" ? customValue : value)
+                              ? "var(--blue-7)"
+                              : "var(--gray-6)"
+                          }`,
+                          fontSize: "16px",
+                          outline: "none",
+                          background: "white",
+                          transition: "all 0.2s ease",
+                          boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                        }}
+                      />
+
+                      {showCustomSuggestions && (
+                        <Box
+                          style={{
+                            position: "absolute",
+                            top: "calc(100% + 6px)",
+                            left: 0,
+                            right: 0,
+                            background: "white",
+                            border: "1px solid var(--gray-6)",
+                            borderRadius: "8px",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                            zIndex: 10,
+                            maxHeight: "220px",
+                            overflowY: "auto",
+                          }}
+                        >
+                          {customSuggestions.map((item, idx) => (
+                            <Box
+                              key={`${item.label}-${idx}`}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setCustomValue(item.label);
+                                onChange(item.label, undefined);
+                                setIsCustomFocused(false);
+                              }}
+                              onMouseEnter={() => setCustomHighlightIndex(idx)}
+                              style={{
+                                padding: "10px 12px",
+                                cursor: "pointer",
+                                background:
+                                  customHighlightIndex === idx
+                                    ? "var(--blue-2)"
+                                    : "transparent",
+                              }}
+                            >
+                              <Text size="2">{item.label}</Text>
+                            </Box>
+                          ))}
+                        </Box>
+                      )}
+                    </Box>
+                  )}
+                </Flex>
+              </Box>
+            </Card>
+          );
+        })}
     </Flex>
   );
 }
@@ -437,7 +684,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         const field = fields?.find((f) => f.id === fieldId);
         // If this is Employee Offboarding Training, exclude document fields and employee name
         if (scenario.title?.toLowerCase().includes("employee offboarding")) {
-          return field?.field_type !== "document" && field?.name !== "Employee Name";
+          return (
+            field?.field_type !== "document" && field?.name !== "Employee Name"
+          );
         }
         return true; // Keep all fields for other trainings
       });

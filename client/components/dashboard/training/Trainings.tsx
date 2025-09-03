@@ -73,27 +73,22 @@ function TrainingCard({
   const color = trainingColors[index % trainingColors.length];
   const icon = trainingIcons[index % trainingIcons.length];
 
-  // Check if this is Offboarding Practice
-  const isOffboardingPractice = training.title
-    .toLowerCase()
-    .includes("offboarding practice");
-
   // Get the first scenario if available
   const firstScenario = scenarios?.[0];
   const href =
-    isOffboardingPractice && firstScenario && firstScenario.id
+    firstScenario && firstScenario.id
       ? `/dashboard/trainings/s/${firstScenario.id}`
       : "#";
 
   return (
     <Col xs={24} sm={12} lg={8} key={training.id}>
       <Card
-        hoverable={isOffboardingPractice}
+        hoverable={training.active || false}
         style={{
           height: "100%",
-          cursor: isOffboardingPractice ? "pointer" : "default",
+          cursor: training.active ? "pointer" : "default",
           transition: "all 0.3s ease",
-          opacity: isOffboardingPractice ? 1 : 0.8,
+          opacity: training.active ? 1 : 0.8,
         }}
       >
         <div style={{ textAlign: "center", marginBottom: "16px" }}>
@@ -108,7 +103,7 @@ function TrainingCard({
           </div>
           <Title level={4} style={{ margin: 0 }}>
             {training.title}
-            {!isOffboardingPractice && (
+            {!training.active && (
               <div style={{ marginTop: "8px" }}>
                 <Badge count="Soon" style={{ backgroundColor: "#fa8c16" }} />
               </div>
@@ -133,7 +128,7 @@ function TrainingCard({
         </div>
 
         <div style={{ textAlign: "center" }}>
-          {isOffboardingPractice ? (
+          {training.active ? (
             <Link href={href}>
               <Button
                 type="primary"
@@ -203,15 +198,22 @@ export default function Trainings() {
         {trainings
           ?.sort((a, b) => {
             // Sort "Offboarding Practice" first, then other trainings
-            if (a.title.toLowerCase().includes("offboarding practice"))
+            if (a.title.toLowerCase().includes("difficult conversations"))
               return -1;
-            if (b.title.toLowerCase().includes("offboarding practice"))
+            if (b.title.toLowerCase().includes("difficult conversations"))
               return 1;
             return 0;
           })
-          .map((training, index) => (
-            <TrainingCard key={training.id} training={training} index={index} />
-          ))}
+          .map(
+            (training, index) =>
+              training.active !== null && (
+                <TrainingCard
+                  key={training.id}
+                  training={training}
+                  index={index}
+                />
+              )
+          )}
       </Row>
 
       {/* Footer Information */}
