@@ -292,17 +292,15 @@ function CategoricalField({
     "var(--gold-9)",
   ];
 
-  const handleParameterSelect = (
-    parameterId: string,
-    parameterName: string
-  ) => {
-    if (parameterName.toLowerCase() === "custom") {
-      // For custom, set the value to indicate it's selected, but no parameter ID
+  const handleParameterSelect = (parameterId: string) => {
+    const p = parameters?.find((pp) => pp.id === parameterId);
+    if (p && p.value === null) {
+      // Enter custom flow: show custom input sentinel
       setCustomValue("");
       onChange("Custom", undefined);
     } else {
       setCustomValue("");
-      onChange(parameterName, parameterId);
+      onChange(p?.name || "", parameterId);
     }
   };
 
@@ -322,19 +320,21 @@ function CategoricalField({
 
   // Suggestions for custom entries (only parameters with description "Custom Scenario")
   const customSuggestions = (() => {
-    const itemsMap = new Map<string, string>();
+    const itemsMap = new Map<string, { id: string; updatedAt: string }>();
     (parameters || [])
       .filter((p) => (p.description || "").toLowerCase() === "custom scenario")
       .forEach((p) => {
         const label = (p.name || "").trim();
-        if (!label) return;
-        const prev = itemsMap.get(label) || "";
+        if (!label || !p.id) return;
+        const prev = itemsMap.get(label)?.updatedAt || "";
         const ts = p.updated_at || "";
-        if (!prev || ts.localeCompare(prev) > 0) itemsMap.set(label, ts);
+        if (!prev || ts.localeCompare(prev) > 0)
+          itemsMap.set(label, { id: p.id, updatedAt: ts });
       });
-    let items = Array.from(itemsMap.entries()).map(([label, updatedAt]) => ({
+    let items = Array.from(itemsMap.entries()).map(([label, meta]) => ({
       label,
-      updatedAt,
+      id: meta.id,
+      updatedAt: meta.updatedAt,
     }));
     const q = (value === "Custom" ? customValue : value).toLowerCase().trim();
     if (q) items = items.filter((i) => i.label.toLowerCase().includes(q));
@@ -355,19 +355,26 @@ function CategoricalField({
   const commitCustomIfNew = async (nameText: string) => {
     const trimmed = nameText.trim();
     if (!trimmed) return;
-    const exists = (parameters || []).some(
+    const exists = (parameters || []).find(
       (p) =>
         (p.description || "").toLowerCase() === "custom scenario" &&
         (p.name || "") === trimmed
     );
-    if (exists) return;
+    if (exists) {
+      onChange(trimmed, exists.id);
+      return;
+    }
     try {
-      await createParameter.mutateAsync({
+      const created = await createParameter.mutateAsync({
         field_id: field.id,
         name: trimmed,
         description: "Custom Scenario",
         value: toSnakeCase(trimmed),
       });
+      if (created?.id) {
+        onChange(trimmed, created.id);
+        setCustomValue(trimmed);
+      }
     } catch (err) {
       console.error("Failed to create custom parameter", err);
     }
@@ -378,19 +385,16 @@ function CategoricalField({
       {displayedParameters
         ?.sort((a, b) => a.updated_at?.localeCompare(b.updated_at || "") || 0)
         .map((parameter, index) => {
-          // Check if selected by parameter ID (preferred) or by parameter name/value (fallback)
+          // Custom sentinel is determined by value === null
+          const isCustom = parameter.value === null;
           const isSelected =
             selectedParameterId === parameter.id ||
             value === parameter.id ||
             value === parameter.name ||
-            ((parameter.name?.toLowerCase() === "custom" ||
-              parameter.value == null) &&
+            (isCustom &&
               (value === "Custom" ||
                 (value && value.trim() !== "" && !selectedParameterId)));
           const colorIndex = index % colors.length;
-          const isCustom =
-            parameter.name?.toLowerCase() === "custom" ||
-            parameter.value == null;
 
           return (
             <Card
@@ -403,9 +407,7 @@ function CategoricalField({
                 cursor: "pointer",
                 transition: "all 0.2s ease",
               }}
-              onClick={() =>
-                handleParameterSelect(parameter.id!, parameter.name!)
-              }
+              onClick={() => handleParameterSelect(parameter.id!)}
             >
               <Box p="4">
                 <Flex direction="column" gap="3">
@@ -444,13 +446,7 @@ function CategoricalField({
 
                   {/* Custom Input Field - shows inline when Custom is selected */}
                   {isCustom && isSelected && (
-                    <Box
-                      style={{
-                        marginLeft: "44px",
-                        position: "relative",
-                        zIndex: showCustomSuggestions ? 1000 : "auto",
-                      }}
-                    >
+                    <Box style={{ marginLeft: "44px", position: "relative" }}>
                       <input
                         type="text"
                         placeholder="Enter your own custom offboarding scenario to practice..."
@@ -532,7 +528,7 @@ function CategoricalField({
                               onMouseDown={(e) => {
                                 e.preventDefault();
                                 setCustomValue(item.label);
-                                onChange(item.label, undefined);
+                                onChange(item.label, item.id);
                                 setIsCustomFocused(false);
                               }}
                               onMouseEnter={() => setCustomHighlightIndex(idx)}
@@ -808,9 +804,20 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         }
 
         if (field.field_type === "categorical") {
-          // Only pick normal options by default. Pick custom only if a valid existing custom is selected explicitly elsewhere.
+          // Prefer valid, existing custom parameters; otherwise pick normal ones
+          const customCandidates = paramsForField.filter(
+            (p) =>
+              (p.description || "").toLowerCase() === "custom scenario" && p.id
+          );
+          if (customCandidates.length > 0) {
+            const choice = pickRandom(customCandidates)!;
+            // Use existing custom parameter id to mark complete
+            return { ...fv, value: choice.name || "", parameterId: choice.id };
+          }
           const normalCandidates = paramsForField.filter(
-            (p) => (p.description || "").toLowerCase() !== "custom scenario"
+            (p) =>
+              (p.description || "").toLowerCase() !== "custom scenario" &&
+              p.value !== null
           );
           if (normalCandidates.length > 0) {
             const choice = pickRandom(normalCandidates)!;
@@ -849,44 +856,46 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     const fieldValue = fieldValues.find((fv) => fv.fieldId === fieldId);
     if (!fieldValue) return false;
 
-    // For persona fields, check if there's a valid selection
-    if (fieldValue.parameterId) {
-      return fieldValue.parameterId.trim() !== "";
+    const field = fields?.find((f) => f.id === fieldId);
+    if (!field) return false;
+
+    if (field.field_type === "persona") {
+      return Boolean(
+        fieldValue.parameterId && fieldValue.parameterId.trim() !== ""
+      );
     }
 
-    // For custom fields, check if the value is not just "Custom" but has actual content
+    if (field.field_type === "categorical") {
+      // Complete if a parameter is chosen OR user typed a non-empty custom value
+      if (fieldValue.parameterId && fieldValue.parameterId.trim() !== "")
+        return true;
+      const hasTypedCustom =
+        fieldValue.value.trim() !== "" && fieldValue.value !== "Custom";
+      return hasTypedCustom;
+    }
+
     if (fieldValue.value === "Custom") {
-      return false; // Custom is selected but no actual custom text entered
+      return false;
     }
 
-    // For other fields, check if value is not empty
-    return fieldValue.value !== "";
+    if (field.field_type === "document") {
+      return true;
+    }
+
+    return fieldValue.value.trim() !== "";
   };
 
   const allStepsComplete =
     fieldValues.length > 0 &&
     fieldValues.every((fv) => {
-      // Get the field to check its type
       const field = fields?.find((f) => f.id === fv.fieldId);
-
-      // Document fields are always optional
-      if (field?.field_type === "document") {
-        return true;
-      }
-
-      if (fv.parameterId) {
-        return fv.parameterId.trim() !== "";
-      }
-
-      // For custom fields, check if the value is not just "Custom" but has actual content
-      if (fv.value === "Custom") {
-        return false; // Custom is selected but no actual custom text entered
-      }
-
-      return fv.value !== "";
+      if (!field) return false;
+      if (field.field_type === "document") return true;
+      return isStepComplete(fv.fieldId);
     });
 
   const createDocument = useCreateDocument();
+  const createParameterGlobal = useCreateParameter();
 
   const startScenario = async () => {
     if (!allStepsComplete || !scenario) {
@@ -952,33 +961,61 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       );
 
       // Map text/custom values to existing parameter IDs to avoid duplicates
-      const processedFieldValues = processedFieldValuesUpload.map((fv) => {
-        const field = fields?.find((f) => f.id === fv.fieldId);
-        if (!field) return fv;
+      const processedFieldValues = await Promise.all(
+        processedFieldValuesUpload.map(async (fv) => {
+          const field = fields?.find((f) => f.id === fv.fieldId);
+          if (!field) return fv;
 
-        if (field.field_type === "text" && fv.value) {
-          const existing = (allParameters || []).find(
-            (p) => p.field_id === field.id && (p.value || "") === fv.value
-          );
-          if (existing) {
-            return { ...fv, parameterId: existing.id };
+          if (field.field_type === "text" && fv.value) {
+            const existing = (allParameters || []).find(
+              (p) => p.field_id === field.id && (p.value || "") === fv.value
+            );
+            if (existing) {
+              return { ...fv, parameterId: existing.id };
+            }
           }
-        }
 
-        if (field.field_type === "categorical" && !fv.parameterId && fv.value) {
-          const existingCustom = (allParameters || []).find(
-            (p) =>
-              p.field_id === field.id &&
-              (p.description || "").toLowerCase() === "custom scenario" &&
-              (p.name || "") === fv.value
-          );
-          if (existingCustom) {
-            return { ...fv, parameterId: existingCustom.id };
+          if (
+            field.field_type === "categorical" &&
+            !fv.parameterId &&
+            fv.value
+          ) {
+            const existingCustom = (allParameters || []).find(
+              (p) =>
+                p.field_id === field.id &&
+                (p.description || "").toLowerCase() === "custom scenario" &&
+                (p.name || "") === fv.value
+            );
+            if (existingCustom) {
+              return { ...fv, parameterId: existingCustom.id };
+            }
+            // Create custom parameter on start if it doesn't exist yet
+            try {
+              const created = await createParameterGlobal.mutateAsync({
+                field_id: field.id,
+                name: fv.value,
+                description: "Custom Scenario",
+                value: fv.value
+                  .normalize("NFKD")
+                  .replace(/[^\p{L}\p{N}]+/gu, " ")
+                  .trim()
+                  .replace(/\s+/g, "_")
+                  .toLowerCase(),
+              });
+              if (created?.id) {
+                return { ...fv, parameterId: created.id };
+              }
+            } catch (e) {
+              console.error(
+                "Failed to create custom parameter during start",
+                e
+              );
+            }
           }
-        }
 
-        return fv;
-      });
+          return fv;
+        })
+      );
 
       // (preparing model will complete via timer above)
 

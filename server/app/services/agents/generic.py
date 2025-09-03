@@ -1,15 +1,19 @@
+import os
 import uuid
 from typing import AsyncGenerator
 
 from agents import Agent, ModelSettings, Runner, trace
+from agents.extensions.models.litellm_model import LitellmModel
 from agents.items import TResponseInputItem
 from app.db import get_session
-from app.extensions import gemini_model
 from app.models import Personas
+from dotenv import load_dotenv
 from fastapi import Depends
 from openai.types.responses import ResponseTextDeltaEvent
 from pydantic import BaseModel
 from sqlmodel import Session, select
+
+load_dotenv()
 
 
 # this becomes main. Put those other in the files
@@ -56,18 +60,23 @@ class GenericAgent:
         agent_name: str,
         system_prompt: str,
         temperature: float,
+        model: str = "gemini/gemini-2.5-flash",
         output_type: type[BaseModel] | None = None
     ):
         self.agent_name = agent_name
         self.system_prompt = system_prompt
         self.temperature = temperature
         self.output_type = output_type
+        self.model = model
 
     def agent(self) -> Agent:
         return Agent(
             name=f"{self.agent_name} Agent",
             instructions=self.system_prompt,
-            model=gemini_model,
+            model=LitellmModel(
+                model=self.model,
+                api_key=os.getenv("GOOGLE_GENERATIVE_AI_API_KEY"),
+            ),
             model_settings=ModelSettings(
                 temperature=self.temperature,
                 include_usage=True,
