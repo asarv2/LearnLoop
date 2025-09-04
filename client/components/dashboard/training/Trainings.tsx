@@ -14,6 +14,7 @@ import {
   ExclamationCircleOutlined,
   HeartOutlined,
   PlayCircleOutlined,
+  PlusOutlined,
   RocketOutlined,
   SafetyOutlined,
   TeamOutlined,
@@ -214,6 +215,57 @@ export default function Trainings() {
                 />
               )
           )}
+        {/* Static card: Create your own trainings */}
+        <Col xs={24} sm={12} lg={8}>
+          <Badge.Ribbon text="Coming Soon" color="orange">
+            <Card
+              hoverable={false}
+              style={{
+                height: "100%",
+                cursor: "default",
+                transition: "all 0.3s ease",
+                opacity: 1,
+              }}
+            >
+              <div style={{ textAlign: "center", marginBottom: "16px" }}>
+                <div
+                  style={{
+                    fontSize: "48px",
+                    color: trainingColors[0],
+                    marginBottom: "12px",
+                  }}
+                >
+                  <PlusOutlined />
+                </div>
+                <Title level={4} style={{ margin: 0 }}>
+                  Create your own trainings
+                </Title>
+              </div>
+
+              <div style={{ textAlign: "center", marginBottom: "24px" }}>
+                <Paragraph
+                  type="secondary"
+                  style={{
+                    margin: 0,
+                    lineHeight: 1.5,
+                    minHeight: "60px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  Build custom scenarios tailored to your team&apos;s workflows
+                  and standards.
+                </Paragraph>
+              </div>
+
+              {/* Invisible spacer to match button height on other cards */}
+              <div style={{ textAlign: "center" }}>
+                <Button style={{ visibility: "hidden" }}>Start Training</Button>
+              </div>
+            </Card>
+          </Badge.Ribbon>
+        </Col>
       </Row>
 
       {/* Footer Information */}

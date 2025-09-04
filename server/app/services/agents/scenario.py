@@ -107,11 +107,11 @@ async def run_scenario_agent(
         import random
 
         intro_messages = [
-            "Hello! How can I assist you today?",
-            "Hi there! What would you like to talk about?",
-            "Greetings! How are you doing?",
-            "Hey! How can I help you?",
-            "Good day! What brings you here today?",
+            "Hey, how's your day been going?",
+            "Hey, what would you like to talk about?",
+            "Hi! How are you doing?",
+            "Hey, how's everything going?",
+            "Hey, how's your week been so far?",
         ]
         msg = random.choice(intro_messages)
         message_object = Messages(
