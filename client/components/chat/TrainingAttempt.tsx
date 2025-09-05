@@ -127,7 +127,9 @@ function TrainingAttemptContent() {
       };
     }
     const parameterSet = new Set(chat.parameter_ids);
-    const paramsForChat = allParameters.filter((p) => parameterSet.has(p.id));
+    const paramsForChat = allParameters.filter(
+      (p) => p.id && parameterSet.has(p.id)
+    );
     for (const p of paramsForChat) {
       const field = fields.find((f) => f.id === p.field_id);
       if (field && field.field_type === "document" && p.value) {
