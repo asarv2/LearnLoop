@@ -103,26 +103,26 @@ async def run_scenario_agent(
         chat.title = title
         chat.description = scenario
 
-        # # Pick 1 dynamic intro message that is a general greeting
-        # import random
+        # Pick 1 dynamic intro message that is a general greeting
+        import random
 
-        # intro_messages = [
-        #     "Hey, how's your day been going?",
-        #     "Hey, what would you like to talk about?",
-        #     "Hi! How are you doing?",
-        #     "Hey, how's everything going?",
-        #     "Hey, how's your week been so far?",
-        # ]
-        # msg = random.choice(intro_messages)
-        # message_object = Messages(
-        #     chat_id=chat.id,
-        #     content=msg,
-        #     role="assistant",
-        #     persona_id=persona_id,
-        #     completed=True,
-        #     completed_at=datetime.now(timezone.utc),
-        # )
-        # session.add(message_object)
+        intro_messages = [
+            "Hey, how's your day been going?",
+            "Hey, what would you like to talk about?",
+            "Hi! How are you doing?",
+            "Hey, how's everything going?",
+            "Hey, how's your week been so far?",
+        ]
+        msg = random.choice(intro_messages)
+        message_object = Messages(
+            chat_id=chat.id,
+            content=msg,
+            role="assistant",
+            persona_id=persona_id,
+            completed=True,
+            completed_at=datetime.now(timezone.utc),
+        )
+        session.add(message_object)
         session.add(chat)
         session.commit()
 
