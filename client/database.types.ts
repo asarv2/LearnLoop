@@ -244,6 +244,7 @@ export type Database = {
           created_at: string | null
           description: string | null
           field_type: Database["public"]["Enums"]["field_type"]
+          hidden: boolean
           id: string
           name: string
           updated_at: string | null
@@ -252,6 +253,7 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           field_type: Database["public"]["Enums"]["field_type"]
+          hidden?: boolean
           id?: string
           name: string
           updated_at?: string | null
@@ -260,6 +262,7 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           field_type?: Database["public"]["Enums"]["field_type"]
+          hidden?: boolean
           id?: string
           name?: string
           updated_at?: string | null

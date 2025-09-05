@@ -23,11 +23,21 @@ if not db_url:
 
 engine = create_engine(
     db_url,
-    pool_size=5,
-    max_overflow=10,
+    pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
     pool_pre_ping=True,     # ping before checkout to kill dead conns
-    pool_recycle=3600,
+    pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
+    pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
+    pool_use_lifo=True,     # reduce thundering herd on hot services
     echo=False,             # flip to True if you want SQL debug
+    connect_args={
+        # TCP keepalives so idle connections get probed and revived/closed by kernel
+        "keepalives": 1,
+        "keepalives_idle": int(os.getenv("PG_KEEPALIVES_IDLE", "30")),
+        "keepalives_interval": int(os.getenv("PG_KEEPALIVES_INTERVAL", "10")),
+        "keepalives_count": int(os.getenv("PG_KEEPALIVES_COUNT", "5")),
+        # NOTE: sslmode is provided via the URL. Add more libpq args here if needed.
+    },
 )
 
 # IMPORTANT: use a factory that creates a NEW Session every time

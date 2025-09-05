@@ -2,6 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowLeftIcon, Cross2Icon, FileTextIcon } from "@radix-ui/react-icons";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { Box, Button, Flex, Heading, Separator, Text } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
 
@@ -20,6 +21,8 @@ interface InterviewHeaderProps {
   chatDescription: string;
   hasAssessment?: boolean;
   hasFeedback?: boolean;
+  documentId?: string;
+  documentFieldName?: string;
 }
 
 export default function ChatHeader({
@@ -37,8 +40,11 @@ export default function ChatHeader({
   chatDescription,
   hasAssessment = false,
   hasFeedback = false,
+  documentId,
+  documentFieldName,
 }: InterviewHeaderProps) {
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
+  const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
 
   // Memoize Date objects for timer
@@ -150,7 +156,7 @@ export default function ChatHeader({
           </Flex>
 
           {/* Right side - Controls */}
-          <Flex align="center" gap="3">
+          <Flex align="center" gap="3" pr="3">
             {isInterviewActive ? (
               <Text size="2" weight="medium" color="gray">
                 {formatTime(elapsedTime)}
@@ -242,6 +248,145 @@ export default function ChatHeader({
                 </svg>
                 {isAudioMode ? "Audio" : "Audio"}
               </Button>
+            )}
+
+            {/* Document Viewer Button - only show if document present */}
+            {isInterviewActive && documentId && (
+              <>
+                <Tooltip.Provider>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <Button
+                        variant="soft"
+                        size="2"
+                        radius="full"
+                        onClick={() => setIsDocumentModalOpen(true)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          borderRadius: "12px",
+                          flexShrink: 0,
+                        }}
+                        aria-label={
+                          documentFieldName
+                            ? `Show ${documentFieldName}`
+                            : "Show document"
+                        }
+                      >
+                        <FileTextIcon width="18" height="18" />
+                      </Button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Portal>
+                      <Tooltip.Content
+                        className="TooltipContent"
+                        sideOffset={5}
+                        style={{
+                          backgroundColor: "var(--gray-12)",
+                          color: "white",
+                          borderRadius: "6px",
+                          padding: "8px 12px",
+                          fontSize: "14px",
+                          lineHeight: "1.4",
+                          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                          zIndex: 1000,
+                        }}
+                      >
+                        {documentFieldName
+                          ? `Show ${documentFieldName}`
+                          : "Show document"}
+                        <Tooltip.Arrow style={{ fill: "var(--gray-12)" }} />
+                      </Tooltip.Content>
+                    </Tooltip.Portal>
+                  </Tooltip.Root>
+                </Tooltip.Provider>
+
+                <Dialog.Root
+                  open={isDocumentModalOpen}
+                  onOpenChange={setIsDocumentModalOpen}
+                >
+                  <Dialog.Portal>
+                    <Dialog.Overlay
+                      style={{
+                        position: "fixed",
+                        inset: 0,
+                        backgroundColor: "rgba(0, 0, 0, 0.5)",
+                        animation: "fadeIn 0.2s ease-out",
+                      }}
+                    />
+                    <Dialog.Content
+                      style={{
+                        position: "fixed",
+                        top: "50%",
+                        left: "50%",
+                        transform: "translate(-50%, -50%)",
+                        backgroundColor: "white",
+                        borderRadius: "8px",
+                        padding: "24px",
+                        width: "90vw",
+                        maxWidth: "1000px",
+                        height: "85vh",
+                        overflow: "hidden",
+                        boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
+                        border: "1px solid var(--gray-6)",
+                      }}
+                    >
+                      <Flex
+                        direction="column"
+                        gap="4"
+                        style={{ height: "100%" }}
+                      >
+                        <Flex align="center" justify="between">
+                          <Dialog.Title asChild>
+                            <Heading
+                              size="5"
+                              weight="bold"
+                              style={{ color: "var(--gray-12)" }}
+                            >
+                              {documentFieldName || "Document"} - {chatTitle}
+                            </Heading>
+                          </Dialog.Title>
+                          <Dialog.Close asChild>
+                            <Button
+                              variant="ghost"
+                              size="2"
+                              style={{
+                                backgroundColor: "rgba(239, 68, 68, 0.1)",
+                                color: "#ef4444",
+                                border: "1px solid rgba(239, 68, 68, 0.2)",
+                                borderRadius: "6px",
+                              }}
+                            >
+                              <Cross2Icon width="16" height="16" />
+                            </Button>
+                          </Dialog.Close>
+                        </Flex>
+                        <Separator size="4" />
+                        <Box
+                          style={{
+                            flex: 1,
+                            border: "1px solid var(--gray-7)",
+                            borderRadius: "6px",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <iframe
+                            src={`/api/v1/documents/${documentId}/file`}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              border: "none",
+                            }}
+                            title={`${
+                              documentFieldName || "Document"
+                            } - ${chatTitle}`}
+                          />
+                        </Box>
+                      </Flex>
+                    </Dialog.Content>
+                  </Dialog.Portal>
+                </Dialog.Root>
+              </>
             )}
 
             {/* Resume Button - only for interview training and if resumeId exists */}

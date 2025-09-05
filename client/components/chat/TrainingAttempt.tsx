@@ -8,11 +8,13 @@
 
 import { TrainingProvider, useTraining } from "@/contexts/training-context";
 import { useChatForAttempt } from "@/lib/api/hooks/useChats";
+import { useFields } from "@/lib/api/hooks/useFields";
+import { useParameters } from "@/lib/api/hooks/useParameters";
 import { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import { logError } from "@/utils/logger";
 import { Box, Text } from "@radix-ui/themes";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import AssessmentWizard from "./AssessmentWizard";
 import ChatArea from "./ChatArea";
 import ChatHeader from "./ChatHeader";
@@ -112,6 +114,33 @@ function TrainingAttemptContent() {
   // The `messages` array from the context is always the single source of truth.
   const displayMessages = messages;
 
+  // Compute document field info (document id and field name) from parameters
+  const { data: fields } = useFields();
+  const { data: allParameters } = useParameters();
+  const { documentId, documentFieldName } = useMemo(() => {
+    if (!chat || !chat.parameter_ids || !fields || !allParameters) {
+      return {
+        documentId: undefined as string | undefined,
+        documentFieldName: undefined as string | undefined,
+      };
+    }
+    const parameterSet = new Set(chat.parameter_ids);
+    const paramsForChat = allParameters.filter((p) => parameterSet.has(p.id));
+    for (const p of paramsForChat) {
+      const field = fields.find((f) => f.id === p.field_id);
+      if (field && field.field_type === "document" && p.value) {
+        return {
+          documentId: p.value as string,
+          documentFieldName: field.name as string,
+        };
+      }
+    }
+    return {
+      documentId: undefined as string | undefined,
+      documentFieldName: undefined as string | undefined,
+    };
+  }, [chat, fields, allParameters]);
+
   return (
     <Box
       style={{
@@ -147,6 +176,8 @@ function TrainingAttemptContent() {
             chatDescription={chat?.description || ""}
             hasAssessment={hasAssessment()}
             hasFeedback={hasFeedback()}
+            documentId={documentId}
+            documentFieldName={documentFieldName}
           />
 
           <ChatArea

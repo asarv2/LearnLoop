@@ -611,6 +611,7 @@ function DocumentField({
       <input
         id={`file-upload-${field.id}`}
         type="file"
+        accept=".pdf"
         onChange={handleFileChange}
         style={{ display: "none" }}
       />
@@ -820,7 +821,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               })),
             ];
             const choice = pickRandom(allCandidates)!;
-            return { ...fv, value: choice.value, parameterId: choice.parameterId };
+            return {
+              ...fv,
+              value: choice.value,
+              parameterId: choice.parameterId,
+            };
           }
           // If only custom candidates exist
           if (customCandidates.length > 0) {
@@ -899,6 +904,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     fieldValues.every((fv) => {
       const field = fields?.find((f) => f.id === fv.fieldId);
       if (!field) return false;
+      if (field.hidden) return true; // hidden fields do not gate UI completion
       if (field.field_type === "document") return true;
       return isStepComplete(fv.fieldId);
     });
@@ -1028,10 +1034,100 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
       // (preparing model will complete via timer above)
 
+      // Ensure hidden fields have a randomized value if not already set
+      const finalFieldValues = processedFieldValues.map((fv) => {
+        const field = fields?.find((f) => f.id === fv.fieldId);
+        if (!field || !field.hidden) return fv;
+
+        const paramsForField = (allParameters || []).filter(
+          (p) => p.field_id === field.id
+        );
+
+        const pickRandom = <T,>(arr: T[]): T | undefined =>
+          arr[Math.floor(Math.random() * arr.length)];
+
+        // If already provided, keep existing
+        if (
+          (fv.parameterId && fv.parameterId.trim() !== "") ||
+          (fv.value && fv.value.trim() !== "" && fv.value !== "Custom")
+        ) {
+          return fv;
+        }
+
+        switch (field.field_type) {
+          case "text": {
+            const candidates = paramsForField.filter(
+              (p) => (p.value || "").trim() !== ""
+            );
+            const choice = pickRandom(candidates);
+            if (choice) {
+              return {
+                ...fv,
+                value: choice.value || "",
+                parameterId: choice.id,
+              };
+            }
+            return fv;
+          }
+          case "numerical": {
+            const candidates = paramsForField.filter(
+              (p) => (p.value || "").trim() !== ""
+            );
+            const choice = pickRandom(candidates);
+            if (choice) {
+              return { ...fv, value: choice.value || "" };
+            }
+            return fv;
+          }
+          case "categorical": {
+            const customCandidates = paramsForField.filter(
+              (p) => (p.description || "").toLowerCase() === "custom scenario"
+            );
+            const normalCandidates = paramsForField.filter(
+              (p) =>
+                p.value !== null &&
+                (p.description || "").toLowerCase() !== "custom scenario"
+            );
+            const allChoices = [
+              ...normalCandidates.map((p) => ({
+                value: p.name || "",
+                parameterId: p.id,
+              })),
+              ...customCandidates.map((p) => ({
+                value: p.name || "",
+                parameterId: undefined as string | undefined,
+              })),
+            ];
+            const choice = pickRandom(allChoices);
+            if (choice) {
+              return {
+                ...fv,
+                value: choice.value,
+                parameterId: choice.parameterId,
+              };
+            }
+            return fv;
+          }
+          case "persona": {
+            const choice = pickRandom(paramsForField);
+            if (choice) {
+              return {
+                ...fv,
+                value: choice.name || "",
+                parameterId: choice.id,
+              };
+            }
+            return fv;
+          }
+          default:
+            return fv;
+        }
+      });
+
       // Emit start training event via WebSocket with processed field values
       emitStartTraining({
         scenario_id: scenarioId,
-        field_values: processedFieldValues,
+        field_values: finalFieldValues,
         profile_id: user?.id || undefined,
       });
 
@@ -1141,20 +1237,26 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
         {/* Dynamic Field Cards */}
         <Box maxWidth="800px" mx="auto" mt="4">
-          {fieldValues.map((fieldValue, index) => (
-            <FieldCard
-              key={fieldValue.fieldId}
-              fieldId={fieldValue.fieldId}
-              index={index}
-              isComplete={isStepComplete(fieldValue.fieldId)}
-              value={fieldValue.value}
-              onChange={(value, parameterId, file) =>
-                updateFieldValue(fieldValue.fieldId, value, parameterId, file)
-              }
-              isLast={index === fieldValues.length - 1}
-              selectedParameterId={fieldValue.parameterId}
-            />
-          ))}
+          {fieldValues
+            .filter((fv) => {
+              const field = fields?.find((f) => f.id === fv.fieldId);
+              // Do not render hidden fields in the UI
+              return field ? !field.hidden : true;
+            })
+            .map((fieldValue, index, visibleArray) => (
+              <FieldCard
+                key={fieldValue.fieldId}
+                fieldId={fieldValue.fieldId}
+                index={index}
+                isComplete={isStepComplete(fieldValue.fieldId)}
+                value={fieldValue.value}
+                onChange={(value, parameterId, file) =>
+                  updateFieldValue(fieldValue.fieldId, value, parameterId, file)
+                }
+                isLast={index === visibleArray.length - 1}
+                selectedParameterId={fieldValue.parameterId}
+              />
+            ))}
 
           {/* Progress Bar between last field and Start Scenario */}
           {fieldValues.length > 0 && (
