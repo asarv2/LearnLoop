@@ -13,6 +13,7 @@ import { useParameters } from "@/lib/api/hooks/useParameters";
 import { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import { logError } from "@/utils/logger";
 import { Box, Text } from "@radix-ui/themes";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
 import AssessmentWizard from "./AssessmentWizard";
@@ -117,6 +118,7 @@ function TrainingAttemptContent() {
   // Compute document field info (document id and field name) from parameters
   const { data: fields } = useFields();
   const { data: allParameters } = useParameters();
+  const queryClient = useQueryClient();
   const { documentId, documentFieldName } = useMemo(() => {
     if (!chat || !chat.parameter_ids || !fields || !allParameters) {
       return {
@@ -140,6 +142,17 @@ function TrainingAttemptContent() {
       documentFieldName: undefined as string | undefined,
     };
   }, [chat, fields, allParameters]);
+
+  // If the document isn't immediately available, re-fetch chat/parameters shortly after mount
+  useEffect(() => {
+    if (!chat?.id || documentId) return;
+    const t = setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ["chat", chat.id] });
+      queryClient.invalidateQueries({ queryKey: ["parameters"] });
+      queryClient.invalidateQueries({ queryKey: ["fields"] });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [chat?.id, documentId, queryClient]);
 
   return (
     <Box

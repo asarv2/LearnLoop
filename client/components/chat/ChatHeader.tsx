@@ -166,7 +166,7 @@ export default function ChatHeader({
                 <Text size="2" weight="medium" color="gray">
                   Duration: {formatTime(elapsedTime)}
                 </Text>
-                {hasAssessment && onShowAssessment && (
+                {hasAssessment && !hasFeedback && onShowAssessment && (
                   <Button
                     onClick={onShowAssessment}
                     variant="outline"
@@ -250,8 +250,8 @@ export default function ChatHeader({
               </Button>
             )}
 
-            {/* Document Viewer Button - only show if document present */}
-            {isInterviewActive && documentId && (
+            {/* Document Viewer Button - show whenever a document is present */}
+            {documentId && (
               <>
                 <Tooltip.Provider>
                   <Tooltip.Root>
