@@ -650,21 +650,27 @@ async def run_assessment_agent(
                 f"Successfully added {len(created_questions)} questions to existing assessment {existing_assessment.id}"
             )
 
-            # Emit assessment completed event via WebSocket
+            # Emit assessment completed event via WebSocket (loop-safe)
             try:
                 from app.web.training import get_sio_instance
                 sio = get_sio_instance()
                 logger.info(f"🔍 DEBUG: About to emit assessment_completed event for chat {chat_id} with {len(all_questions)} total questions")
-                await sio.emit("assessment_completed", {
-                    "success": True,
-                    "message": f"Assessment completed with {len(all_questions)} questions",
-                    "chat_id": str(chat_id),
-                    "assessment_id": str(existing_assessment.id)
-                }, room=str(chat_id))
-                logger.info(f"✅ Emitted assessment_completed event for chat {chat_id}")
+                # Use Socket.IO background task so the emit runs on the server's loop
+                sio.start_background_task(
+                    sio.emit,
+                    "assessment_completed",
+                    {
+                        "success": True,
+                        "message": f"Assessment completed with {len(all_questions)} questions",
+                        "chat_id": str(chat_id),
+                        "assessment_id": str(existing_assessment.id),
+                    },
+                    room=str(chat_id),
+                )
+                logger.info(f"✅ Scheduled assessment_completed emit for chat {chat_id}")
             except Exception as e:
-                logger.error(f"❌ Error emitting assessment_completed event: {str(e)}")
-                # Continue even if event emission fails
+                logger.error(f"❌ Error scheduling assessment_completed event: {str(e)}")
+                # Continue even if event scheduling fails
 
             return {
                 "success": True,
