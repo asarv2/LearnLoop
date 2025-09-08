@@ -146,10 +146,13 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                     # Duplicate minimal scenario row
                     new_scenario = Scenarios(
                         title=scenario_draft.get("title") or scenario.title,
-                        description=scenario_draft.get("problem_statement") or "",
+                        # Keep description same as parent
+                        description=getattr(scenario, "description", None),
                         training_id=scenario.training_id,
                         rubric_id=scenario.rubric_id,
                         field_ids=scenario.field_ids,
+                        problem_statement=scenario_draft.get("problem_statement") or "",
+                        objectives=scenario_draft.get("objectives") or [],
                     )
                     db_session.add(new_scenario)
                     db_session.commit()

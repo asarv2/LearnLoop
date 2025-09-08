@@ -75,11 +75,15 @@ function TrainingCard({
   const color = trainingColors[index % trainingColors.length];
   const icon = trainingIcons[index % trainingIcons.length];
 
-  // Get the first scenario if available
-  const firstScenario = scenarios?.[0];
+  // Get the root scenario (parent_id = null) if available, otherwise fallback to first scenario
+  const rootScenario = scenarios?.find(
+    (scenario) => scenario.parent_id === null
+  );
+  const fallbackScenario = scenarios?.[0];
+  const targetScenario = rootScenario || fallbackScenario;
   const href =
-    firstScenario && firstScenario.id
-      ? `/dashboard/trainings/s/${firstScenario.id}`
+    targetScenario && targetScenario.id
+      ? `/dashboard/trainings/s/${targetScenario.id}`
       : "#";
 
   return (

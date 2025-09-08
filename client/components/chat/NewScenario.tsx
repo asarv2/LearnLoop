@@ -682,6 +682,7 @@ function PersonaField({
 export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [fieldValues, setFieldValues] = useState<FieldValue[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState({
     visible: false,
     steps: [
@@ -715,7 +716,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   // Initialize field values when scenario and training load
   useEffect(() => {
     if (scenario?.field_ids && fields) {
-      const filteredFieldIds = scenario.field_ids.filter((fieldId) => {
+      const filteredFieldIds = scenario.field_ids.filter((fieldId: string) => {
         const field = fields.find((f) => f.id === fieldId);
         if (!field) return false;
         if (field.field_type === "document") {
@@ -725,7 +726,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       });
 
       setFieldValues(
-        filteredFieldIds.map((fieldId) => ({
+        filteredFieldIds.map((fieldId: string) => ({
           fieldId,
           value: "",
           parameterId: undefined,
@@ -779,6 +780,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       setDraftProblem(d.problem_statement || "");
       setDraftObjectives(Array.isArray(d.objectives) ? d.objectives : []);
       setShowGenerateModal(false);
+      setIsGenerating(false);
     };
     window.addEventListener(
       "scenarioGenerated",
@@ -1308,6 +1310,142 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               />
             ))}
 
+          {/* Progress Bar between last field and Generate Scenario */}
+          {fieldValues.length > 0 && (
+            <Flex justify="center" mb="4">
+              <Box
+                style={{
+                  width: "2px",
+                  height: "24px",
+                  background: "var(--gray-6)",
+                  borderRadius: "2px",
+                }}
+              />
+            </Flex>
+          )}
+
+          {/* Scenario Content */}
+          {((draftProblem && draftProblem.trim().length > 0) ||
+            Boolean((scenario?.problem_statement || "").trim())) && (
+            <Box>
+              <Card
+                style={{
+                  background: "white",
+                  border: "1px solid var(--gray-6)",
+                  borderRadius: "12px",
+                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                }}
+              >
+                <Box p="6">
+                  <Flex direction="column" gap="3">
+                    <Flex align="center" justify="between">
+                      <Text size="2" weight="bold">
+                        Problem statement
+                      </Text>
+                      <Button
+                        size="1"
+                        variant="soft"
+                        onClick={() => setShowGenerateModal(true)}
+                        style={{
+                          background: "var(--violet-2)",
+                          color: "var(--violet-11)",
+                        }}
+                      >
+                        Regenerate
+                      </Button>
+                    </Flex>
+                    <textarea
+                      value={draftProblem}
+                      onChange={(e) => setDraftProblem(e.target.value)}
+                      rows={3}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid var(--gray-6)",
+                        outline: "none",
+                        resize: "vertical",
+                      }}
+                    />
+                    <Box>
+                      <Flex align="center" justify="between" mb="2">
+                        <Text size="2" weight="bold">
+                          Objectives
+                        </Text>
+                        <Button
+                          size="1"
+                          variant="soft"
+                          onClick={() =>
+                            setDraftObjectives([...(draftObjectives || []), ""])
+                          }
+                        >
+                          Add Objective
+                        </Button>
+                      </Flex>
+                      <Flex direction="column" gap="2">
+                        {(draftObjectives || []).map((obj, idx) => (
+                          <Flex key={idx} align="center" gap="2">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(obj && obj.trim())}
+                              onChange={() => {
+                                /* cosmetic */
+                              }}
+                            />
+                            <input
+                              type="text"
+                              value={obj}
+                              onChange={(e) => {
+                                const next = [...(draftObjectives || [])];
+                                next[idx] = e.target.value;
+                                setDraftObjectives(next);
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: "8px 10px",
+                                borderRadius: "8px",
+                                border: "1px solid var(--gray-6)",
+                                outline: "none",
+                              }}
+                            />
+                            <Button
+                              size="1"
+                              variant="ghost"
+                              onClick={() => {
+                                const next = [...(draftObjectives || [])];
+                                next.splice(idx, 1);
+                                setDraftObjectives(next);
+                              }}
+                            >
+                              ✕
+                            </Button>
+                          </Flex>
+                        ))}
+                      </Flex>
+                    </Box>
+                    <Flex gap="3" justify="end">
+                      <Button
+                        onClick={async () => {
+                          try {
+                            await updateScenario({
+                              title: draftTitle || scenario?.title || "",
+                              problem_statement: draftProblem,
+                              objectives: draftObjectives,
+                            });
+                          } catch (e) {
+                            console.error("Failed to save scenario", e);
+                          }
+                        }}
+                      >
+                        Save
+                      </Button>
+                    </Flex>
+                  </Flex>
+                </Box>
+              </Card>
+            </Box>
+          )}
+
           {/* Generate Scenario Card */}
           <Box>
             <Card
@@ -1315,16 +1453,41 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 background: "white",
                 border: "1px solid var(--violet-7)",
                 borderRadius: "12px",
-                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+                boxShadow: "0 4px 12px rgba(139, 69, 19, 0.15)",
+                transition: "all 0.2s ease",
               }}
             >
               <Box p="6">
-                <Flex direction="column" gap="4">
-                  <Flex align="center" justify="between">
-                    <Heading size="5">Generate Scenario</Heading>
+                <Flex align="center" gap="4">
+                  <Box
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "50%",
+                      background: "var(--violet-9)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <FileTextIcon color="white" width="16" height="16" />
+                  </Box>
+                  <Box style={{ flex: 1 }}>
+                    <Flex align="center" gap="2" mb="3">
+                      <Text size="4" weight="bold">
+                        Generate Scenario
+                      </Text>
+                      {allStepsComplete && (
+                        <Badge size="1" variant="soft" color="violet">
+                          Ready to generate
+                        </Badge>
+                      )}
+                    </Flex>
+
                     <Button
-                      size="2"
-                      disabled={!allStepsComplete}
+                      size="3"
+                      disabled={!allStepsComplete || isGenerating}
                       onClick={() => {
                         const hasGenerated =
                           (draftProblem && draftProblem.trim().length > 0) ||
@@ -1332,6 +1495,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                         if (!allStepsComplete) return;
                         if (!hasGenerated) {
                           // First-time generate: no prompt
+                          setIsGenerating(true);
                           const payloadFieldValues = fieldValues.map((fv) => ({
                             fieldId: fv.fieldId,
                             value: fv.value,
@@ -1346,140 +1510,51 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                           setShowGenerateModal(true);
                         }
                       }}
-                      style={{ background: "var(--violet-9)", color: "white" }}
+                      style={{
+                        width: "100%",
+                        background: !allStepsComplete
+                          ? "var(--gray-7)"
+                          : "var(--violet-9)",
+                        color: !allStepsComplete ? "var(--gray-11)" : "white",
+                      }}
                     >
-                      {(draftProblem && draftProblem.trim().length > 0) ||
-                      Boolean((scenario?.problem_statement || "").trim())
-                        ? "Regenerate"
-                        : "Generate"}
-                    </Button>
-                  </Flex>
-
-                  {((draftProblem && draftProblem.trim().length > 0) ||
-                    Boolean((scenario?.problem_statement || "").trim())) && (
-                    <Box>
-                      <Flex direction="column" gap="3">
-                        <Box>
-                          <Text size="2" weight="bold">
-                            Problem statement
-                          </Text>
-                          <textarea
-                            value={draftProblem}
-                            onChange={(e) => setDraftProblem(e.target.value)}
-                            rows={3}
-                            style={{
-                              width: "100%",
-                              padding: "10px 12px",
-                              borderRadius: "8px",
-                              border: "1px solid var(--gray-6)",
-                              outline: "none",
-                              resize: "vertical",
-                            }}
-                          />
-                        </Box>
-                        <Box>
-                          <Flex align="center" justify="between" mb="2">
-                            <Text size="2" weight="bold">
-                              Objectives
-                            </Text>
-                            <Button
-                              size="1"
-                              variant="soft"
-                              onClick={() =>
-                                setDraftObjectives([
-                                  ...(draftObjectives || []),
-                                  "",
-                                ])
-                              }
-                            >
-                              Add Objective
-                            </Button>
-                          </Flex>
-                          <Flex direction="column" gap="2">
-                            {(draftObjectives || []).map((obj, idx) => (
-                              <Flex key={idx} align="center" gap="2">
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(obj && obj.trim())}
-                                  onChange={() => {
-                                    /* cosmetic */
-                                  }}
-                                />
-                                <input
-                                  type="text"
-                                  value={obj}
-                                  onChange={(e) => {
-                                    const next = [...(draftObjectives || [])];
-                                    next[idx] = e.target.value;
-                                    setDraftObjectives(next);
-                                  }}
-                                  style={{
-                                    flex: 1,
-                                    padding: "8px 10px",
-                                    borderRadius: "8px",
-                                    border: "1px solid var(--gray-6)",
-                                    outline: "none",
-                                  }}
-                                />
-                                <Button
-                                  size="1"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    const next = [...(draftObjectives || [])];
-                                    next.splice(idx, 1);
-                                    setDraftObjectives(next);
-                                  }}
-                                >
-                                  ✕
-                                </Button>
-                              </Flex>
-                            ))}
-                          </Flex>
-                        </Box>
-                        <Flex gap="3" justify="end">
-                          <Button
-                            variant="soft"
-                            onClick={() => setShowGenerateModal(true)}
-                          >
-                            Regenerate
-                          </Button>
-                          <Button
-                            onClick={async () => {
-                              try {
-                                await updateScenario({
-                                  title: draftTitle || scenario?.title || "",
-                                  problem_statement: draftProblem,
-                                  objectives: draftObjectives,
-                                });
-                              } catch (e) {
-                                console.error("Failed to save scenario", e);
-                              }
-                            }}
-                          >
-                            Save
-                          </Button>
+                      {isGenerating ? (
+                        <Flex align="center" gap="2">
+                          <Spinner size="2" />
+                          <Text>Generating...</Text>
                         </Flex>
-                      </Flex>
-                    </Box>
-                  )}
+                      ) : (
+                        <Flex align="center" gap="2">
+                          <FileTextIcon />
+                          <Text>
+                            {(draftProblem && draftProblem.trim().length > 0) ||
+                            Boolean((scenario?.problem_statement || "").trim())
+                              ? "Regenerate"
+                              : "Generate Scenario"}
+                          </Text>
+                        </Flex>
+                      )}
+                    </Button>
+                  </Box>
                 </Flex>
               </Box>
             </Card>
           </Box>
 
-          {/* Progress Bar between last field and Start Scenario */}
-          {fieldValues.length > 0 && (
-            <Flex justify="center" mb="4">
-              <Box
-                style={{
-                  width: "2px",
-                  height: "24px",
-                  background: "var(--gray-6)",
-                  borderRadius: "2px",
-                }}
-              />
-            </Flex>
-          )}
+          {/* Progress Bar between Generate Scenario and Start Scenario */}
+          {allStepsComplete &&
+            ((draftProblem && draftObjectives.length > 0) || scenarioReady) && (
+              <Flex justify="center" mb="4">
+                <Box
+                  style={{
+                    width: "2px",
+                    height: "24px",
+                    background: "var(--gray-6)",
+                    borderRadius: "2px",
+                  }}
+                />
+              </Flex>
+            )}
 
           {/* Start Button: show only when generation present and inputs complete */}
           {allStepsComplete &&
@@ -1695,6 +1770,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   Cancel
                 </Button>
                 <Button
+                  disabled={isGenerating}
                   onClick={() => {
                     if (!allStepsComplete || !scenario) {
                       alert(
@@ -1702,6 +1778,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                       );
                       return;
                     }
+                    setIsGenerating(true);
                     const payloadFieldValues = fieldValues.map((fv) => ({
                       fieldId: fv.fieldId,
                       value: fv.value,
@@ -1715,7 +1792,14 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   }}
                   style={{ background: "var(--violet-9)", color: "white" }}
                 >
-                  Generate
+                  {isGenerating ? (
+                    <Flex align="center" gap="2">
+                      <Spinner size="2" />
+                      <Text>Generating...</Text>
+                    </Flex>
+                  ) : (
+                    "Generate"
+                  )}
                 </Button>
               </Flex>
             </div>

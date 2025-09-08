@@ -71,36 +71,36 @@ services:
       retries: 5
       start_period: 30s
 
-  model:
-    image: ${LEARNLOOP_MODEL_IMAGE:-ghcr.io/ashokhomepc/learnloop-model:latest}
-    pull_policy: always
-    container_name: learnloop-model
-    restart: unless-stopped
-    networks:
-      - web
-    environment:
-      - PORT=8000
-      - HOST=0.0.0.0
-      - WHISPER_DEVICE=cuda
-    volumes:
-      - model_cache:/app/model_cache
-      - model_audio:/app/audio
-    deploy:
-      resources:
-        limits:
-          memory: 24GB
-        reservations:
-          memory: 16GB
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
-              device_ids: ["1"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+  # model:
+  #   image: ${LEARNLOOP_MODEL_IMAGE:-ghcr.io/ashokhomepc/learnloop-model:latest}
+  #   pull_policy: always
+  #   container_name: learnloop-model
+  #   restart: unless-stopped
+  #   networks:
+  #     - web
+  #   environment:
+  #     - PORT=8000
+  #     - HOST=0.0.0.0
+  #     - WHISPER_DEVICE=cuda
+  #   volumes:
+  #     - model_cache:/app/model_cache
+  #     - model_audio:/app/audio
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 24GB
+  #       reservations:
+  #         memory: 16GB
+  #         devices:
+  #           - driver: nvidia
+  #             capabilities: [gpu]
+  #             device_ids: ["1"]
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
 
   redis:
     image: redis:7-alpine
@@ -181,8 +181,8 @@ services:
       /etc/nginx/conf.d/generated/api_socketio.upstream.conf
     networks: [web]
 
-volumes:
-  model_cache:
-    driver: local
-  model_audio:
-    driver: local
+# volumes:
+#   model_cache:
+#     driver: local
+#   model_audio:
+#     driver: local
