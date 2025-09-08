@@ -983,8 +983,8 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                         "success": True,
                         "scenario_id": str(parent.id),
                         "title": sr.title,
-                        "problem_statement": sr.scenario,
-                        "objectives": [],
+                        "problem_statement": sr.problem_statement,
+                        "objectives": sr.objectives or [],
                     },
                     room=sid,
                 )

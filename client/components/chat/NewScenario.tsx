@@ -1308,163 +1308,164 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               />
             ))}
 
-          {/* Generate Scenario Card (precursor) */}
-          {allStepsComplete && !scenarioReady && (
-            <Box>
-              <Card
-                style={{
-                  background: "white",
-                  border: "1px solid var(--violet-7)",
-                  borderRadius: "12px",
-                  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
-                }}
-              >
-                <Box p="6">
-                  <Flex direction="column" gap="4">
-                    <Flex align="center" justify="between">
-                      <Heading size="5">Generate Scenario</Heading>
-                      <Button
-                        size="2"
-                        onClick={() => setShowGenerateModal(true)}
-                        style={{
-                          background: "var(--violet-9)",
-                          color: "white",
-                        }}
-                      >
-                        Generate
-                      </Button>
-                    </Flex>
-                    {(draftTitle ||
-                      draftProblem ||
-                      (draftObjectives || []).length > 0) && (
-                      <Box>
-                        <Flex direction="column" gap="3">
-                          <Box>
-                            <Text size="2" weight="bold">
-                              Title
-                            </Text>
-                            <input
-                              type="text"
-                              value={draftTitle}
-                              onChange={(e) => setDraftTitle(e.target.value)}
-                              style={{
-                                width: "100%",
-                                padding: "10px 12px",
-                                borderRadius: "8px",
-                                border: "1px solid var(--gray-6)",
-                                outline: "none",
-                              }}
-                            />
-                          </Box>
-                          <Box>
-                            <Text size="2" weight="bold">
-                              Problem statement
-                            </Text>
-                            <textarea
-                              value={draftProblem}
-                              onChange={(e) => setDraftProblem(e.target.value)}
-                              rows={3}
-                              style={{
-                                width: "100%",
-                                padding: "10px 12px",
-                                borderRadius: "8px",
-                                border: "1px solid var(--gray-6)",
-                                outline: "none",
-                                resize: "vertical",
-                              }}
-                            />
-                          </Box>
-                          <Box>
-                            <Flex align="center" justify="between" mb="2">
-                              <Text size="2" weight="bold">
-                                Objectives
-                              </Text>
-                              <Button
-                                size="1"
-                                variant="soft"
-                                onClick={() =>
-                                  setDraftObjectives([
-                                    ...(draftObjectives || []),
-                                    "",
-                                  ])
-                                }
-                              >
-                                Add Objective
-                              </Button>
-                            </Flex>
-                            <Flex direction="column" gap="2">
-                              {(draftObjectives || []).map((obj, idx) => (
-                                <Flex key={idx} align="center" gap="2">
-                                  <input
-                                    type="checkbox"
-                                    checked={Boolean(obj && obj.trim())}
-                                    onChange={() => {
-                                      /* purely cosmetic */
-                                    }}
-                                  />
-                                  <input
-                                    type="text"
-                                    value={obj}
-                                    onChange={(e) => {
-                                      const next = [...(draftObjectives || [])];
-                                      next[idx] = e.target.value;
-                                      setDraftObjectives(next);
-                                    }}
-                                    style={{
-                                      flex: 1,
-                                      padding: "8px 10px",
-                                      borderRadius: "8px",
-                                      border: "1px solid var(--gray-6)",
-                                      outline: "none",
-                                    }}
-                                  />
-                                  <Button
-                                    size="1"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      const next = [...(draftObjectives || [])];
-                                      next.splice(idx, 1);
-                                      setDraftObjectives(next);
-                                    }}
-                                  >
-                                    ✕
-                                  </Button>
-                                </Flex>
-                              ))}
-                            </Flex>
-                          </Box>
+          {/* Generate Scenario Card */}
+          <Box>
+            <Card
+              style={{
+                background: "white",
+                border: "1px solid var(--violet-7)",
+                borderRadius: "12px",
+                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+              }}
+            >
+              <Box p="6">
+                <Flex direction="column" gap="4">
+                  <Flex align="center" justify="between">
+                    <Heading size="5">Generate Scenario</Heading>
+                    <Button
+                      size="2"
+                      disabled={!allStepsComplete}
+                      onClick={() => {
+                        const hasGenerated =
+                          (draftProblem && draftProblem.trim().length > 0) ||
+                          Boolean((scenario?.problem_statement || "").trim());
+                        if (!allStepsComplete) return;
+                        if (!hasGenerated) {
+                          // First-time generate: no prompt
+                          const payloadFieldValues = fieldValues.map((fv) => ({
+                            fieldId: fv.fieldId,
+                            value: fv.value,
+                            parameterId: fv.parameterId,
+                          }));
+                          emitGenerateScenario({
+                            scenario_id: scenarioId,
+                            field_values: payloadFieldValues,
+                          });
+                        } else {
+                          // Regenerate uses modal for extra prompt
+                          setShowGenerateModal(true);
+                        }
+                      }}
+                      style={{ background: "var(--violet-9)", color: "white" }}
+                    >
+                      {(draftProblem && draftProblem.trim().length > 0) ||
+                      Boolean((scenario?.problem_statement || "").trim())
+                        ? "Regenerate"
+                        : "Generate"}
+                    </Button>
+                  </Flex>
 
-                          <Flex gap="3" justify="end">
+                  {((draftProblem && draftProblem.trim().length > 0) ||
+                    Boolean((scenario?.problem_statement || "").trim())) && (
+                    <Box>
+                      <Flex direction="column" gap="3">
+                        <Box>
+                          <Text size="2" weight="bold">
+                            Problem statement
+                          </Text>
+                          <textarea
+                            value={draftProblem}
+                            onChange={(e) => setDraftProblem(e.target.value)}
+                            rows={3}
+                            style={{
+                              width: "100%",
+                              padding: "10px 12px",
+                              borderRadius: "8px",
+                              border: "1px solid var(--gray-6)",
+                              outline: "none",
+                              resize: "vertical",
+                            }}
+                          />
+                        </Box>
+                        <Box>
+                          <Flex align="center" justify="between" mb="2">
+                            <Text size="2" weight="bold">
+                              Objectives
+                            </Text>
                             <Button
+                              size="1"
                               variant="soft"
-                              onClick={() => setShowGenerateModal(true)}
+                              onClick={() =>
+                                setDraftObjectives([
+                                  ...(draftObjectives || []),
+                                  "",
+                                ])
+                              }
                             >
-                              Regenerate
-                            </Button>
-                            <Button
-                              onClick={async () => {
-                                try {
-                                  await updateScenario({
-                                    title: draftTitle || scenario?.title || "",
-                                    problem_statement: draftProblem,
-                                    objectives: draftObjectives,
-                                  });
-                                } catch (e) {
-                                  console.error("Failed to save scenario", e);
-                                }
-                              }}
-                            >
-                              Save
+                              Add Objective
                             </Button>
                           </Flex>
+                          <Flex direction="column" gap="2">
+                            {(draftObjectives || []).map((obj, idx) => (
+                              <Flex key={idx} align="center" gap="2">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(obj && obj.trim())}
+                                  onChange={() => {
+                                    /* cosmetic */
+                                  }}
+                                />
+                                <input
+                                  type="text"
+                                  value={obj}
+                                  onChange={(e) => {
+                                    const next = [...(draftObjectives || [])];
+                                    next[idx] = e.target.value;
+                                    setDraftObjectives(next);
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    padding: "8px 10px",
+                                    borderRadius: "8px",
+                                    border: "1px solid var(--gray-6)",
+                                    outline: "none",
+                                  }}
+                                />
+                                <Button
+                                  size="1"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    const next = [...(draftObjectives || [])];
+                                    next.splice(idx, 1);
+                                    setDraftObjectives(next);
+                                  }}
+                                >
+                                  ✕
+                                </Button>
+                              </Flex>
+                            ))}
+                          </Flex>
+                        </Box>
+                        <Flex gap="3" justify="end">
+                          <Button
+                            variant="soft"
+                            onClick={() => setShowGenerateModal(true)}
+                          >
+                            Regenerate
+                          </Button>
+                          <Button
+                            onClick={async () => {
+                              try {
+                                await updateScenario({
+                                  title: draftTitle || scenario?.title || "",
+                                  problem_statement: draftProblem,
+                                  objectives: draftObjectives,
+                                });
+                              } catch (e) {
+                                console.error("Failed to save scenario", e);
+                              }
+                            }}
+                          >
+                            Save
+                          </Button>
                         </Flex>
-                      </Box>
-                    )}
-                  </Flex>
-                </Box>
-              </Card>
-            </Box>
-          )}
+                      </Flex>
+                    </Box>
+                  )}
+                </Flex>
+              </Box>
+            </Card>
+          </Box>
 
           {/* Progress Bar between last field and Start Scenario */}
           {fieldValues.length > 0 && (
@@ -1480,168 +1481,163 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             </Flex>
           )}
 
-          {/* Start Button */}
-          <Box>
-            <Card
-              style={{
-                background:
-                  allStepsComplete && scenarioReady ? "white" : "var(--gray-2)",
-                border: `1px solid ${
-                  allStepsComplete && scenarioReady
-                    ? "var(--blue-7)"
-                    : "var(--gray-6)"
-                }`,
-                borderRadius: "12px",
-                boxShadow:
-                  allStepsComplete && scenarioReady
-                    ? "0 4px 12px rgba(0, 100, 200, 0.15)"
-                    : "0 1px 3px rgba(0, 0, 0, 0.1)",
-                transition: "all 0.2s ease",
-              }}
-            >
-              <Box p="6">
-                <Flex align="center" gap="4">
-                  <Box
-                    style={{
-                      width: "32px",
-                      height: "32px",
-                      borderRadius: "50%",
-                      background: allStepsComplete
-                        ? "var(--blue-9)"
-                        : "var(--gray-7)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <PlayIcon color="white" width="16" height="16" />
-                  </Box>
-                  <Box style={{ flex: 1 }}>
-                    <Flex align="center" gap="2" mb="3">
-                      <Text size="4" weight="bold">
-                        Start Scenario
-                      </Text>
-                      {allStepsComplete && (
-                        <Badge size="1" variant="soft" color="blue">
-                          Ready to start
-                        </Badge>
-                      )}
-                    </Flex>
-
-                    <Button
-                      size="3"
-                      onClick={startScenario}
-                      disabled={
-                        !allStepsComplete || !scenarioReady || isLoading
-                      }
-                      style={{
-                        width: "100%",
-                        background:
-                          allStepsComplete && scenarioReady
+          {/* Start Button: show only when generation present and inputs complete */}
+          {allStepsComplete &&
+            ((draftProblem && draftObjectives.length > 0) || scenarioReady) && (
+              <Box>
+                <Card
+                  style={{
+                    background:
+                      allStepsComplete && scenarioReady
+                        ? "white"
+                        : "var(--gray-2)",
+                    border: `1px solid ${
+                      allStepsComplete && scenarioReady
+                        ? "var(--blue-7)"
+                        : "var(--gray-6)"
+                    }`,
+                    borderRadius: "12px",
+                    boxShadow:
+                      allStepsComplete && scenarioReady
+                        ? "0 4px 12px rgba(0, 100, 200, 0.15)"
+                        : "0 1px 3px rgba(0, 0, 0, 0.1)",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  <Box p="6">
+                    <Flex align="center" gap="4">
+                      <Box
+                        style={{
+                          width: "32px",
+                          height: "32px",
+                          borderRadius: "50%",
+                          background: allStepsComplete
                             ? "var(--blue-9)"
-                            : "var(--gray-6)",
-                        opacity: allStepsComplete && scenarioReady ? 1 : 0.6,
-                        cursor:
-                          allStepsComplete && scenarioReady
-                            ? "pointer"
-                            : "not-allowed",
-                      }}
-                    >
-                      {isLoading ? (
-                        <Flex align="center" gap="2">
-                          <Spinner size="2" />
-                          <Text>Starting Scenario...</Text>
+                            : "var(--gray-7)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <PlayIcon color="white" width="16" height="16" />
+                      </Box>
+                      <Box style={{ flex: 1 }}>
+                        <Flex align="center" gap="2" mb="3">
+                          <Text size="4" weight="bold">
+                            Start Scenario
+                          </Text>
+                          {allStepsComplete && (
+                            <Badge size="1" variant="soft" color="blue">
+                              Ready to start
+                            </Badge>
+                          )}
                         </Flex>
-                      ) : (
-                        <Flex align="center" gap="2">
-                          <PlayIcon />
-                          <Text>Start Scenario</Text>
-                        </Flex>
-                      )}
-                    </Button>
 
-                    {isLoading && progress.visible && (
-                      <Box mt="4">
-                        {/* Progress bar */}
-                        <Box
+                        <Button
+                          size="3"
+                          onClick={startScenario}
+                          disabled={isLoading}
                           style={{
                             width: "100%",
-                            height: "8px",
-                            background: "var(--gray-4)",
-                            borderRadius: "999px",
-                            overflow: "hidden",
-                            marginBottom: "8px",
+                            background: "var(--blue-9)",
                           }}
                         >
-                          {(() => {
-                            const completed = progress.steps.filter(
-                              (s) => s.complete
-                            ).length;
-                            const percent = Math.round(
-                              (completed / progress.steps.length) * 100
-                            );
-                            return (
-                              <Box
-                                style={{
-                                  width: `${percent}%`,
-                                  height: "100%",
-                                  background: "var(--blue-9)",
-                                  transition: "width 300ms ease",
-                                }}
-                              />
-                            );
-                          })()}
-                        </Box>
-                        {/* Checklist */}
-                        <Flex direction="column" gap="2">
-                          {progress.steps.map((step, idx) => (
-                            <Flex key={idx} align="center" gap="3">
-                              <Box
-                                style={{
-                                  width: "18px",
-                                  height: "18px",
-                                  borderRadius: "50%",
-                                  border: `2px solid ${
-                                    step.complete
-                                      ? "var(--green-9)"
-                                      : "var(--gray-7)"
-                                  }`,
-                                  background: step.complete
-                                    ? "var(--green-9)"
-                                    : "transparent",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {step.complete ? (
-                                  <CheckIcon
-                                    width="10"
-                                    height="10"
-                                    color="white"
-                                  />
-                                ) : (
-                                  <Spinner size="1" />
-                                )}
-                              </Box>
-                              <Text
-                                size="3"
-                                style={{ opacity: step.complete ? 0.8 : 1 }}
-                              >
-                                {step.label}
-                              </Text>
+                          {isLoading ? (
+                            <Flex align="center" gap="2">
+                              <Spinner size="2" />
+                              <Text>Starting Scenario...</Text>
                             </Flex>
-                          ))}
-                        </Flex>
+                          ) : (
+                            <Flex align="center" gap="2">
+                              <PlayIcon />
+                              <Text>Start Scenario</Text>
+                            </Flex>
+                          )}
+                        </Button>
+
+                        {isLoading && progress.visible && (
+                          <Box mt="4">
+                            {/* Progress bar */}
+                            <Box
+                              style={{
+                                width: "100%",
+                                height: "8px",
+                                background: "var(--gray-4)",
+                                borderRadius: "999px",
+                                overflow: "hidden",
+                                marginBottom: "8px",
+                              }}
+                            >
+                              {(() => {
+                                const completed = progress.steps.filter(
+                                  (s) => s.complete
+                                ).length;
+                                const percent = Math.round(
+                                  (completed / progress.steps.length) * 100
+                                );
+                                return (
+                                  <Box
+                                    style={{
+                                      width: `${percent}%`,
+                                      height: "100%",
+                                      background: "var(--blue-9)",
+                                      transition: "width 300ms ease",
+                                    }}
+                                  />
+                                );
+                              })()}
+                            </Box>
+                            {/* Checklist */}
+                            <Flex direction="column" gap="2">
+                              {progress.steps.map((step, idx) => (
+                                <Flex key={idx} align="center" gap="3">
+                                  <Box
+                                    style={{
+                                      width: "18px",
+                                      height: "18px",
+                                      borderRadius: "50%",
+                                      border: `2px solid ${
+                                        step.complete
+                                          ? "var(--green-9)"
+                                          : "var(--gray-7)"
+                                      }`,
+                                      background: step.complete
+                                        ? "var(--green-9)"
+                                        : "transparent",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {step.complete ? (
+                                      <CheckIcon
+                                        width="10"
+                                        height="10"
+                                        color="white"
+                                      />
+                                    ) : (
+                                      <Spinner size="1" />
+                                    )}
+                                  </Box>
+                                  <Text
+                                    size="3"
+                                    style={{ opacity: step.complete ? 0.8 : 1 }}
+                                  >
+                                    {step.label}
+                                  </Text>
+                                </Flex>
+                              ))}
+                            </Flex>
+                          </Box>
+                        )}
                       </Box>
-                    )}
+                    </Flex>
                   </Box>
-                </Flex>
+                </Card>
               </Box>
-            </Card>
-          </Box>
+            )}
         </Box>
       </Container>
 

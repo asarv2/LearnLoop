@@ -96,12 +96,12 @@ function TrainingCard({
       >
         {/* Scenarios Icon with Tooltip */}
         {training.active && training.id && (
-          <Tooltip
-            title="View all scenarios"
-            placement="top"
-            overlayStyle={{ zIndex: 1000 }}
-          >
-            <Link href={`/dashboard/trainings/t/${training.id}/scenarios`}>
+          <Link href={`/dashboard/trainings/t/${training.id}/scenarios`}>
+            <Tooltip
+              title="View all scenarios"
+              placement="top"
+              overlayStyle={{ zIndex: 1000 }}
+            >
               <div
                 style={{
                   position: "absolute",
@@ -133,8 +133,8 @@ function TrainingCard({
                   }}
                 />
               </div>
-            </Link>
-          </Tooltip>
+            </Tooltip>
+          </Link>
         )}
         <div style={{ textAlign: "center", marginBottom: "16px" }}>
           <div

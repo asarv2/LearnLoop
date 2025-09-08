@@ -2,7 +2,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Optional
 
 from agents import Runner, trace
 from app.db import get_session
@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 class ScenarioResponse(BaseModel):
     title: str
-    scenario: str
+    problem_statement: str
+    objectives: Optional[List[str]] = None
 
 
 async def get_scenario_prompt() -> str:
@@ -92,16 +93,13 @@ async def run_scenario_agent(
             )
             scenario_result = result.final_output_as(ScenarioResponse)
 
-        logger.info(
-            f"Successfully generated title for chat {chat_id}"
-        )
+        logger.info(f"Successfully generated scenario for chat {chat_id}")
 
-        # Consolidate feedback into strengths and weaknesses
+        # Map new fields to chat
         title = scenario_result.title
-        scenario = scenario_result.scenario
-        # update scenario for chat
+        problem_statement = scenario_result.problem_statement
         chat.title = title
-        chat.description = scenario
+        chat.description = problem_statement
 
         # Pick 1 dynamic intro message that is a general greeting
         import random
@@ -136,7 +134,7 @@ async def run_scenario_agent(
             "scenario_id": str(chat.id),
             "chat_id": str(chat_id),
             "chat_title": chat.title,
-            "scenario": scenario,
+            "problem_statement": problem_statement,
         }
 
     except Exception as e:
