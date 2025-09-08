@@ -325,6 +325,181 @@ def get_dynamic_rubric(
 
 
 
+def get_parameter_history_from_field_values(
+    field_values: List[dict],
+    session: Session,
+) -> list[TResponseInputItem]:
+    """
+    Get parameter history directly from field_values (like in generate_scenario).
+    This is a simpler approach that builds parameter lines directly from the field values
+    rather than going through the complex parameter/field lookup process.
+    
+    Args:
+        field_values: List of field value dictionaries with fieldId, value, parameterId
+        session: Database session for lookups
+        
+    Returns:
+        List of parameter messages formatted for agent consumption
+    """
+    if not field_values:
+        return []
+    
+    # Use a fresh session for this operation to avoid prepared statement conflicts
+    fresh_session = next(get_session())
+    try:
+        param_lines: list[str] = []
+        
+        for fv in field_values:
+            field_id = fv.get("fieldId")
+            value = fv.get("value", "").strip()
+            parameter_id = fv.get("parameterId")
+            
+            if not field_id:
+                continue
+                
+            # Get the field to understand its type and name
+            field = fresh_session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
+            if not field:
+                continue
+                
+            field_name = field.name or "parameter"
+            field_description = field.description or ""
+            
+            # Handle different field types
+            if field.field_type == 'persona' and parameter_id:
+                # For persona fields, get the persona description
+                from app.models import Personas
+                persona = fresh_session.exec(select(Personas).where(Personas.id == parameter_id)).one_or_none()
+                if persona:
+                    persona_desc = persona.description if persona.description else "No description available"
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {persona.name}: {persona_desc}")
+                else:
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
+                    
+            elif field.field_type == 'document' and value:
+                # For document fields, get the document content
+                document = fresh_session.exec(select(Documents).where(Documents.id == value)).one_or_none()
+                if document:
+                    doc_content = document.content if document.content else "No content available"
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is document {str(value)[:8]}: {doc_content}")
+                else:
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
+                    
+            elif field.field_type == 'categorical' and parameter_id:
+                # For categorical fields, use the parameter name
+                param = fresh_session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
+                if param:
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {param.name}")
+                else:
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
+                    
+            else:
+                # For text, numerical, or other fields, use the value directly
+                if value:
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
+        
+        # Return as a single user message with all parameters
+        if param_lines:
+            content = "\n".join(param_lines)
+            return [{
+                "role": "user",
+                "content": f"The following are the parameters for this training session:\n{content}"
+            }]
+        
+        return []
+        
+    except Exception as e:
+        logger.error(f"Error building parameter history from field values: {e}")
+        return []
+    finally:
+        fresh_session.close()
+
+
+def get_parameter_history_simple(
+    chat: Chats,
+    session: Session,
+) -> list[TResponseInputItem]:
+    """
+    Get parameter history using a simpler approach similar to generate_scenario.
+    This reconstructs the parameter information from the chat's parameter_ids
+    but uses the simpler parameter line building logic.
+    
+    Args:
+        chat: Chat object with parameter_ids
+        session: Database session for lookups
+        
+    Returns:
+        List of parameter messages formatted for agent consumption
+    """
+    if not chat.parameter_ids:
+        return []
+    
+    # Use a fresh session for this operation to avoid prepared statement conflicts
+    fresh_session = next(get_session())
+    try:
+        param_lines: list[str] = []
+        
+        # Fetch all Parameters individually
+        for param_id in chat.parameter_ids:
+            param = fresh_session.exec(select(Parameters).where(Parameters.id == param_id)).one_or_none()
+            if not param or not param.field_id:
+                continue
+                
+            # Get the field to understand its type and name
+            field = fresh_session.exec(select(Fields).where(Fields.id == param.field_id)).one_or_none()
+            if not field:
+                continue
+                
+            field_name = field.name or "parameter"
+            field_description = field.description or ""
+            
+            # Handle different field types using simpler logic
+            if field.field_type == 'persona' and param.value:
+                # For persona fields, get the persona description
+                from app.models import Personas
+                persona = fresh_session.exec(select(Personas).where(Personas.id == param.value)).one_or_none()
+                if persona:
+                    persona_desc = persona.description if persona.description else "No description available"
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {persona.name}: {persona_desc}")
+                else:
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {param.name}")
+                    
+            elif field.field_type == 'document' and param.value:
+                # For document fields, get the document content
+                document = fresh_session.exec(select(Documents).where(Documents.id == param.value)).one_or_none()
+                if document:
+                    doc_content = document.content if document.content else "No content available"
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is document {str(param.value)[:8]}: {doc_content}")
+                else:
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {param.name}")
+                    
+            elif field.field_type == 'categorical':
+                # For categorical fields, use the parameter name
+                param_lines.append(f"The {field_name} ({field_description}) for this chat is {param.name}")
+                    
+            else:
+                # For text, numerical, or other fields, use the parameter value
+                value = param.value if param.value else param.name
+                if value:
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
+        
+        # Return as a single user message with all parameters
+        if param_lines:
+            content = "\n".join(param_lines)
+            return [{
+                "role": "user",
+                "content": f"The following are the parameters for this training session:\n{content}"
+            }]
+        
+        return []
+        
+    except Exception as e:
+        logger.error(f"Error building simple parameter history for chat {chat.id}: {e}")
+        return []
+    finally:
+        fresh_session.close()
+
+
 def get_persona_id_from_chat(db_session, chat_id: str, parameter_ids: list[str]) -> Optional[uuid.UUID]:
     """
     Extract persona_id from chat's parameter_ids by finding the parameter with field_type 'persona'

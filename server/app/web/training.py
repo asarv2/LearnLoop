@@ -25,6 +25,8 @@ from app.services.agents.grade import run_grading_agent
 from app.services.agents.hint import run_hint_agent
 from app.services.agents.scenario import ScenarioResponse, get_scenario_prompt
 from app.utils.chat import (get_conversation_history, get_parameter_history,
+                            get_parameter_history_from_field_values,
+                            get_parameter_history_simple,
                             get_persona_id_from_chat, get_preamble)
 from sqlalchemy import Column
 from sqlmodel import select
@@ -882,7 +884,7 @@ async def process_training_message_websocket(
             raise ValueError(f"Scenario {chat.scenario_id} not found for chat {chat_id}")
         
         preamble = get_preamble(scenario)
-        parameter_history = get_parameter_history(chat, db_session)
+        parameter_history = get_parameter_history_simple(chat, db_session)
         conversation_history = get_conversation_history(messages)
 
         instructions = [preamble] + parameter_history + conversation_history
@@ -1013,14 +1015,9 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     await emit_error(sid, "Scenario not found")
                     return
 
-                # Build parameter history string similar to get_parameter_history
-                param_lines: list[str] = []
-                for fv in field_values:
-                    name = (fv.get("fieldId") or "parameter").strip()
-                    value = (fv.get("value") or "").strip()
-                    if value:
-                        param_lines.append(f"{name}: {value}")
-
+                # Build parameter history using the new function
+                parameter_history = get_parameter_history_from_field_values(field_values, db_session)
+                
                 preamble = [
                     f"TRAINING: {parent.title}",
                     f"Parent Problem Statement: {(parent.description or '').strip()}",
@@ -1035,9 +1032,13 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 )
 
                 # Use a single string input to satisfy strict typing
+                param_content = ""
+                if parameter_history:
+                    param_content = str(parameter_history[0].get("content", ""))
+                
                 combined = "\n".join([
                     "\n".join(preamble),
-                    ("Parameters:\n" + "\n".join(param_lines)) if param_lines else "",
+                    param_content,
                     additional_prompt or "",
                 ]).strip()
 
