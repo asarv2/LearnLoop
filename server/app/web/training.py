@@ -153,6 +153,7 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                         field_ids=scenario.field_ids,
                         problem_statement=scenario_draft.get("problem_statement") or "",
                         objectives=scenario_draft.get("objectives") or [],
+                        parent_id=scenario.id,
                     )
                     db_session.add(new_scenario)
                     db_session.commit()

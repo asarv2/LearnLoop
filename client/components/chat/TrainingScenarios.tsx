@@ -7,8 +7,12 @@
 
 "use client";
 
+import { useAuth } from "@/components/auth/AuthProvider";
+import { useWebSocket } from "@/contexts/websocket-context";
 import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
+import { useTraining } from "@/lib/api/hooks/useTrainings";
 import {
+  ArrowLeftOutlined,
   BulbOutlined,
   CommentOutlined,
   ExclamationCircleOutlined,
@@ -21,7 +25,8 @@ import {
   UserDeleteOutlined,
 } from "@ant-design/icons";
 import { Button, Card, Col, Row, Spin, Typography } from "antd";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 const { Title, Paragraph } = Typography;
 
@@ -29,7 +34,7 @@ interface TrainingScenariosProps {
   trainingId: string;
 }
 
-// Array of colors and icons for scenario cards
+// Simple color and icon sets for scenarios
 const scenarioColors = [
   "#1890ff",
   "#fa8c16",
@@ -60,19 +65,26 @@ const scenarioIcons = [
 function ScenarioCard({
   scenario,
   index,
+  onStart,
+  loading,
 }: {
   scenario: {
     id?: string;
     title: string;
     description?: string | null;
     problem_statement?: string | null;
+    objectives?: string[] | null;
   };
   index: number;
+  onStart: () => void;
+  loading: boolean;
 }) {
+  const problemText =
+    scenario.problem_statement ||
+    scenario.description ||
+    "No problem statement provided";
   const color = scenarioColors[index % scenarioColors.length];
   const icon = scenarioIcons[index % scenarioIcons.length];
-
-  const href = scenario.id ? `/dashboard/trainings/s/${scenario.id}` : "#";
 
   return (
     <Col xs={24} sm={12} lg={8} key={scenario.id}>
@@ -84,14 +96,8 @@ function ScenarioCard({
           transition: "all 0.3s ease",
         }}
       >
-        <div style={{ textAlign: "center", marginBottom: "16px" }}>
-          <div
-            style={{
-              fontSize: "48px",
-              color: color,
-              marginBottom: "12px",
-            }}
-          >
+        <div style={{ textAlign: "center", marginBottom: "12px" }}>
+          <div style={{ fontSize: "40px", color, marginBottom: "8px" }}>
             {icon}
           </div>
           <Title level={4} style={{ margin: 0 }}>
@@ -99,36 +105,33 @@ function ScenarioCard({
           </Title>
         </div>
 
-        <div style={{ textAlign: "center", marginBottom: "24px" }}>
+        <div
+          style={{
+            textAlign: "center",
+            minHeight: "120px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: "16px",
+          }}
+        >
           <Paragraph
             type="secondary"
-            style={{
-              margin: 0,
-              lineHeight: 1.5,
-              minHeight: "60px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
+            style={{ margin: 0, textAlign: "center" }}
           >
-            {scenario.description ||
-              scenario.problem_statement ||
-              "No description available"}
+            {problemText}
           </Paragraph>
         </div>
 
         <div style={{ textAlign: "center" }}>
-          <Link href={href}>
-            <Button
-              type="primary"
-              style={{
-                backgroundColor: color,
-                borderColor: color,
-              }}
-            >
-              Start Scenario
-            </Button>
-          </Link>
+          <Button
+            type="primary"
+            onClick={onStart}
+            loading={loading}
+            style={{ backgroundColor: color, borderColor: color }}
+          >
+            Start Scenario
+          </Button>
         </div>
       </Card>
     </Col>
@@ -138,6 +141,11 @@ function ScenarioCard({
 export default function TrainingScenarios({
   trainingId,
 }: TrainingScenariosProps) {
+  const { user } = useAuth();
+  const { emitStartTraining } = useWebSocket();
+  const router = useRouter();
+  const [startingId, setStartingId] = useState<string | null>(null);
+  const { data: training } = useTraining(trainingId, Boolean(trainingId));
   const {
     data: scenarios,
     isLoading,
@@ -183,7 +191,18 @@ export default function TrainingScenarios({
     <div>
       {/* Header Section */}
       <div style={{ marginBottom: "32px" }}>
-        <Title level={2}>Training Scenarios</Title>
+        <div style={{ marginBottom: "16px" }}>
+          <Button
+            icon={<ArrowLeftOutlined />}
+            onClick={() => router.back()}
+            style={{ marginBottom: "16px" }}
+          >
+            Back to Trainings
+          </Button>
+        </div>
+        <Title level={2}>
+          {training?.title ? `${training.title} Scenarios` : "Scenarios"}
+        </Title>
         <Paragraph type="secondary" style={{ fontSize: "16px" }}>
           Choose a scenario to begin your training session. Each scenario
           provides a unique learning experience with focused objectives and
@@ -194,7 +213,21 @@ export default function TrainingScenarios({
       {/* Scenario Cards Grid */}
       <Row gutter={[24, 24]}>
         {filteredScenarios.map((scenario, index) => (
-          <ScenarioCard key={scenario.id} scenario={scenario} index={index} />
+          <ScenarioCard
+            key={scenario.id}
+            scenario={scenario}
+            index={index}
+            loading={startingId === scenario.id}
+            onStart={() => {
+              if (!scenario.id) return;
+              setStartingId(scenario.id);
+              emitStartTraining({
+                scenario_id: scenario.id,
+                field_values: [],
+                profile_id: user?.id || undefined,
+              });
+            }}
+          />
         ))}
       </Row>
     </div>

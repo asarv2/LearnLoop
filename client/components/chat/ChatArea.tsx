@@ -23,7 +23,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { useLatestMessageHints } from "@/lib/api/hooks/useHints";
 import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
-import { useScenario } from "@/lib/api/hooks/useScenarios";
 interface ChatAreaProps {
   displayMessages: Message[];
   isSendingMessage: boolean;
@@ -77,14 +76,8 @@ export default function ChatArea({
   const { data: userPersona } = useUserPersona(user?.id);
   const { data: allPersonas } = usePersonas();
 
-  // Scenario association (optional until schema lands)
-  const scenarioId: string | undefined =
-    (
-      chat as unknown as {
-        scenario_id?: string | null;
-      }
-    )?.scenario_id || undefined;
-  useScenario(scenarioId || "", Boolean(scenarioId));
+  // Scenario association - use chat.scenario_id directly
+  const scenarioId: string | undefined = chat?.scenario_id || undefined;
 
   // Create a memoized map for efficient persona lookup
   const personaMap = React.useMemo(() => {
