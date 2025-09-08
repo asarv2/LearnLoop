@@ -9,9 +9,9 @@ import TrainingScenarios from "@/components/chat/TrainingScenarios";
 import { Metadata } from "next";
 
 interface ScenariosPageProps {
-  params: {
+  params: Promise<{
     trainingId: string;
-  };
+  }>;
 }
 
 export const metadata: Metadata = {
