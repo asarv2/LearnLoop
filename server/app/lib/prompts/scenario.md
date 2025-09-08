@@ -30,13 +30,15 @@ Output exactly a single JSON object with the following fields:
 ---
 
 ### Example
+Engineer with a "Denial" personality, practicing "Discussing Underperformance":
 
 {
-  "title": "Addressing Project Delays in Mechanical Design",
-  "problem_statement": "The project is currently delayed because the mechanical design has not been completed on schedule. This has become the main bottleneck affecting overall progress. The team needs to discuss next steps to get the project back on track.",
+  "title": "Addressing Underperformance with a Junior ML Engineer",
+  "problem_statement": "A junior machine learning engineer has consistently missed project deadlines and their recent code reviews have revealed recurring issues. Despite previous feedback, the employee disagrees with the assessment and attributes the problems to external factors. The situation requires a constructive conversation to clarify expectations and establish a path forward.",
   "objectives": [
-    "Identify the cause of the delay",
-    "Communicate concerns to your supervisor",
-    "Propose a plan to recover the project timeline"
+    "Clearly outline recent performance concerns",
+    "Invite the employee to share their perspective",
+    "Collaboratively set specific improvement goals",
+    "Document agreed-upon next steps"
   ]
 }
