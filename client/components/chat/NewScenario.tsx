@@ -649,14 +649,21 @@ function PersonaField({
     <Flex direction="column" gap="3">
       <Select value={selectedPersonaId} onValueChange={handlePersonaSelect}>
         <SelectTrigger className="w-full">
-          <SelectValue placeholder="Choose a candidate personality..." />
+          <SelectValue placeholder="Choose a personality..." />
         </SelectTrigger>
         <SelectContent>
-          {parameters?.map((parameter) => (
-            <SelectItem key={parameter.id || ""} value={parameter.id || ""}>
-              {parameter.name || "Unnamed Parameter"}
-            </SelectItem>
-          ))}
+          {parameters?.map((parameter) => {
+            // Remove "Employee" from the end of the parameter name for display
+            const displayName = (parameter.name || "Unnamed Parameter").replace(
+              /\s+Employee$/i,
+              ""
+            );
+            return (
+              <SelectItem key={parameter.id || ""} value={parameter.id || ""}>
+                {displayName}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
       {selectedPersonaId && (
