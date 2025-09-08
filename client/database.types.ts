@@ -102,6 +102,7 @@ export type Database = {
           id: string
           parameter_ids: string[] | null
           profile_id: string | null
+          scenario_id: string | null
           title: string
           trace_id: string | null
           training_id: string | null
@@ -116,6 +117,7 @@ export type Database = {
           id?: string
           parameter_ids?: string[] | null
           profile_id?: string | null
+          scenario_id?: string | null
           title: string
           trace_id?: string | null
           training_id?: string | null
@@ -130,6 +132,7 @@ export type Database = {
           id?: string
           parameter_ids?: string[] | null
           profile_id?: string | null
+          scenario_id?: string | null
           title?: string
           trace_id?: string | null
           training_id?: string | null
@@ -148,6 +151,13 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chats_scenario_id_fkey"
+            columns: ["scenario_id"]
+            isOneToOne: false
+            referencedRelation: "scenarios"
             referencedColumns: ["id"]
           },
           {
@@ -627,6 +637,9 @@ export type Database = {
           description: string | null
           field_ids: string[] | null
           id: string
+          objectives: string[]
+          parent_id: string | null
+          problem_statement: string | null
           rubric_id: string | null
           title: string
           training_id: string | null
@@ -637,6 +650,9 @@ export type Database = {
           description?: string | null
           field_ids?: string[] | null
           id?: string
+          objectives?: string[]
+          parent_id?: string | null
+          problem_statement?: string | null
           rubric_id?: string | null
           title: string
           training_id?: string | null
@@ -647,6 +663,9 @@ export type Database = {
           description?: string | null
           field_ids?: string[] | null
           id?: string
+          objectives?: string[]
+          parent_id?: string | null
+          problem_statement?: string | null
           rubric_id?: string | null
           title?: string
           training_id?: string | null

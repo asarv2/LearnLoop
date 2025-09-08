@@ -83,6 +83,7 @@ interface WebSocketContextType {
     profile_id?: string;
   }) => void;
   emitSendTrainingMessage: (data: { chat_id: string; message: string }) => void;
+  emitSendIntroMessage: (data: { chat_id: string; message: string }) => void;
   emitStopTraining: (data: { chat_id: string }) => void;
   emitEndTraining: (data: { chat_id: string }) => void;
   emitSubmitAssessment: (data: {
@@ -854,6 +855,26 @@ export function WebSocketProvider({
     []
   );
 
+  const emitSendIntroMessage = useCallback(
+    (data: { chat_id: string; message: string }) => {
+      console.log("WebSocket: emitSendIntroMessage called with:", data);
+      if (!socketRef.current?.connected) {
+        logError("Cannot send intro message - WebSocket not connected");
+        toast.error("WebSocket not connected. Please refresh the page.");
+        return;
+      }
+      logInfo("Emitting send_training_message for intro", {
+        chatId: data.chat_id,
+      });
+      // Send the intro message
+      socketRef.current.emit("send_training_message", {
+        chat_id: data.chat_id,
+        message: data.message,
+      });
+    },
+    []
+  );
+
   const emitStopTraining = useCallback((data: { chat_id: string }) => {
     if (!socketRef.current?.connected) {
       logError("Cannot stop training - WebSocket not connected");
@@ -923,6 +944,7 @@ export function WebSocketProvider({
     emitStartTraining,
     emitJoinTraining,
     emitSendTrainingMessage,
+    emitSendIntroMessage,
     emitStopTraining,
     emitEndTraining,
     emitSubmitAssessment,
