@@ -39,7 +39,7 @@ import {
   useParameters,
   useParametersByField,
 } from "@/lib/api/hooks/useParameters";
-import { useScenario, useUpdateScenario } from "@/lib/api/hooks/useScenarios";
+import { useScenario } from "@/lib/api/hooks/useScenarios";
 import { useTraining } from "@/lib/api/hooks/useTrainings";
 
 // Types
@@ -704,7 +704,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
   // Hooks for mutations
   const { emitStartTraining, emitGenerateScenario } = useWebSocket();
-  const { mutateAsync: updateScenario } = useUpdateScenario(scenarioId);
 
   // Scenario generation draft state
   const [showGenerateModal, setShowGenerateModal] = useState(false);
@@ -1317,265 +1316,197 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 style={{
                   width: "2px",
                   height: "24px",
-                  background: "var(--gray-6)",
+                  background: allStepsComplete
+                    ? "var(--green-8)"
+                    : "var(--gray-6)",
                   borderRadius: "2px",
                 }}
               />
             </Flex>
           )}
 
-          {/* Scenario Content */}
+          {/* Scenario Content - Generate Scenario Step */}
           {((draftProblem && draftProblem.trim().length > 0) ||
             Boolean((scenario?.problem_statement || "").trim())) && (
-            <Box>
+            <Box mb="4">
               <Card
                 style={{
                   background: "white",
-                  border: "1px solid var(--gray-6)",
+                  border: `1px solid ${
+                    scenarioReady ? "var(--green-8)" : "var(--gray-6)"
+                  }`,
                   borderRadius: "12px",
                   boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                  transition: "all 0.2s ease",
+                  position: "relative",
+                  overflow: "visible",
                 }}
               >
                 <Box p="6">
-                  <Flex direction="column" gap="3">
-                    <Flex align="center" justify="between">
-                      <Text size="2" weight="bold">
-                        Problem statement
-                      </Text>
-                      <Button
-                        size="1"
-                        variant="soft"
-                        onClick={() => setShowGenerateModal(true)}
-                        style={{
-                          background: "var(--violet-2)",
-                          color: "var(--violet-11)",
-                        }}
-                      >
-                        Regenerate
-                      </Button>
-                    </Flex>
-                    <textarea
-                      value={draftProblem}
-                      onChange={(e) => setDraftProblem(e.target.value)}
-                      rows={3}
+                  <Flex align="center" gap="4">
+                    <Box
                       style={{
-                        width: "100%",
-                        padding: "10px 12px",
-                        borderRadius: "8px",
-                        border: "1px solid var(--gray-6)",
-                        outline: "none",
-                        resize: "vertical",
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "50%",
+                        background: scenarioReady
+                          ? "var(--green-9)"
+                          : "var(--gray-7)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
                       }}
-                    />
-                    <Box>
-                      <Flex align="center" justify="between" mb="2">
-                        <Text size="2" weight="bold">
-                          Objectives
+                    >
+                      {scenarioReady ? (
+                        <CheckIcon color="white" width="16" height="16" />
+                      ) : (
+                        <Text size="2" weight="bold" style={{ color: "white" }}>
+                          {fieldValues.filter((fv) => {
+                            const field = fields?.find(
+                              (f) => f.id === fv.fieldId
+                            );
+                            return field ? !field.hidden : true;
+                          }).length + 1}
                         </Text>
-                        <Button
-                          size="1"
-                          variant="soft"
-                          onClick={() =>
-                            setDraftObjectives([...(draftObjectives || []), ""])
-                          }
-                        >
-                          Add Objective
-                        </Button>
+                      )}
+                    </Box>
+                    <Box style={{ flex: 1 }}>
+                      <Flex align="center" gap="2" mb="3">
+                        <Text size="4" weight="bold">
+                          Generate Scenario
+                        </Text>
+                        {scenarioReady && (
+                          <Badge size="1" variant="soft" color="green">
+                            Complete
+                          </Badge>
+                        )}
                       </Flex>
-                      <Flex direction="column" gap="2">
-                        {(draftObjectives || []).map((obj, idx) => (
-                          <Flex key={idx} align="center" gap="2">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(obj && obj.trim())}
-                              onChange={() => {
-                                /* cosmetic */
-                              }}
-                            />
-                            <input
-                              type="text"
-                              value={obj}
-                              onChange={(e) => {
-                                const next = [...(draftObjectives || [])];
-                                next[idx] = e.target.value;
-                                setDraftObjectives(next);
-                              }}
-                              style={{
-                                flex: 1,
-                                padding: "8px 10px",
-                                borderRadius: "8px",
-                                border: "1px solid var(--gray-6)",
-                                outline: "none",
-                              }}
-                            />
+                      <Flex direction="column" gap="3">
+                        <Box>
+                          <Text size="2" weight="bold" mb="2">
+                            Problem statement
+                          </Text>
+                          <textarea
+                            value={draftProblem}
+                            onChange={(e) => setDraftProblem(e.target.value)}
+                            rows={3}
+                            style={{
+                              width: "100%",
+                              padding: "10px 12px",
+                              borderRadius: "8px",
+                              border: "1px solid var(--gray-6)",
+                              outline: "none",
+                              resize: "vertical",
+                            }}
+                          />
+                        </Box>
+                        <Box>
+                          <Flex align="center" justify="between" mb="2">
+                            <Text size="2" weight="bold">
+                              Objectives
+                            </Text>
                             <Button
                               size="1"
-                              variant="ghost"
-                              onClick={() => {
-                                const next = [...(draftObjectives || [])];
-                                next.splice(idx, 1);
-                                setDraftObjectives(next);
-                              }}
+                              variant="soft"
+                              onClick={() =>
+                                setDraftObjectives([
+                                  ...(draftObjectives || []),
+                                  "",
+                                ])
+                              }
                             >
-                              ✕
+                              Add Objective
                             </Button>
                           </Flex>
-                        ))}
+                          <Flex direction="column" gap="2">
+                            {(draftObjectives || []).map((obj, idx) => (
+                              <Flex key={idx} align="center" gap="2">
+                                <input
+                                  type="text"
+                                  value={obj}
+                                  onChange={(e) => {
+                                    const next = [...(draftObjectives || [])];
+                                    next[idx] = e.target.value;
+                                    setDraftObjectives(next);
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    padding: "8px 10px",
+                                    borderRadius: "8px",
+                                    border: "1px solid var(--gray-6)",
+                                    outline: "none",
+                                  }}
+                                />
+                                <Button
+                                  size="1"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    const next = [...(draftObjectives || [])];
+                                    next.splice(idx, 1);
+                                    setDraftObjectives(next);
+                                  }}
+                                >
+                                  ✕
+                                </Button>
+                              </Flex>
+                            ))}
+                          </Flex>
+                        </Box>
+                        <Flex gap="3" justify="end">
+                          <Button
+                            size="2"
+                            variant="solid"
+                            onClick={() => setShowGenerateModal(true)}
+                            style={{
+                              background: "var(--violet-9)",
+                              color: "white",
+                            }}
+                          >
+                            Regenerate
+                          </Button>
+                        </Flex>
                       </Flex>
                     </Box>
-                    <Flex gap="3" justify="end">
-                      <Button
-                        onClick={async () => {
-                          try {
-                            await updateScenario({
-                              title: draftTitle || scenario?.title || "",
-                              problem_statement: draftProblem,
-                              objectives: draftObjectives,
-                            });
-                          } catch (e) {
-                            console.error("Failed to save scenario", e);
-                          }
-                        }}
-                      >
-                        Save
-                      </Button>
-                    </Flex>
                   </Flex>
                 </Box>
               </Card>
             </Box>
           )}
 
-          {/* Generate Scenario Card */}
-          <Box>
-            <Card
-              style={{
-                background: "white",
-                border: "1px solid var(--violet-7)",
-                borderRadius: "12px",
-                boxShadow: "0 4px 12px rgba(139, 69, 19, 0.15)",
-                transition: "all 0.2s ease",
-              }}
-            >
-              <Box p="6">
-                <Flex align="center" gap="4">
-                  <Box
-                    style={{
-                      width: "32px",
-                      height: "32px",
-                      borderRadius: "50%",
-                      background: "var(--violet-9)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <FileTextIcon color="white" width="16" height="16" />
-                  </Box>
-                  <Box style={{ flex: 1 }}>
-                    <Flex align="center" gap="2" mb="3">
-                      <Text size="4" weight="bold">
-                        Generate Scenario
-                      </Text>
-                      {allStepsComplete && (
-                        <Badge size="1" variant="soft" color="violet">
-                          Ready to generate
-                        </Badge>
-                      )}
-                    </Flex>
+          {/* Progress Bar after Generate Scenario step */}
+          {((draftProblem && draftProblem.trim().length > 0) ||
+            Boolean((scenario?.problem_statement || "").trim())) && (
+            <Flex justify="center" mb="4">
+              <Box
+                style={{
+                  width: "2px",
+                  height: "24px",
+                  background: scenarioReady
+                    ? "var(--green-8)"
+                    : "var(--gray-6)",
+                  borderRadius: "2px",
+                }}
+              />
+            </Flex>
+          )}
 
-                    <Button
-                      size="3"
-                      disabled={!allStepsComplete || isGenerating}
-                      onClick={() => {
-                        const hasGenerated =
-                          (draftProblem && draftProblem.trim().length > 0) ||
-                          Boolean((scenario?.problem_statement || "").trim());
-                        if (!allStepsComplete) return;
-                        if (!hasGenerated) {
-                          // First-time generate: no prompt
-                          setIsGenerating(true);
-                          const payloadFieldValues = fieldValues.map((fv) => ({
-                            fieldId: fv.fieldId,
-                            value: fv.value,
-                            parameterId: fv.parameterId,
-                          }));
-                          emitGenerateScenario({
-                            scenario_id: scenarioId,
-                            field_values: payloadFieldValues,
-                          });
-                        } else {
-                          // Regenerate uses modal for extra prompt
-                          setShowGenerateModal(true);
-                        }
-                      }}
-                      style={{
-                        width: "100%",
-                        background: !allStepsComplete
-                          ? "var(--gray-7)"
-                          : "var(--violet-9)",
-                        color: !allStepsComplete ? "var(--gray-11)" : "white",
-                      }}
-                    >
-                      {isGenerating ? (
-                        <Flex align="center" gap="2">
-                          <Spinner size="2" />
-                          <Text>Generating...</Text>
-                        </Flex>
-                      ) : (
-                        <Flex align="center" gap="2">
-                          <FileTextIcon />
-                          <Text>
-                            {(draftProblem && draftProblem.trim().length > 0) ||
-                            Boolean((scenario?.problem_statement || "").trim())
-                              ? "Regenerate"
-                              : "Generate Scenario"}
-                          </Text>
-                        </Flex>
-                      )}
-                    </Button>
-                  </Box>
-                </Flex>
-              </Box>
-            </Card>
-          </Box>
-
-          {/* Progress Bar between Generate Scenario and Start Scenario */}
-          {allStepsComplete &&
-            ((draftProblem && draftObjectives.length > 0) || scenarioReady) && (
-              <Flex justify="center" mb="4">
-                <Box
-                  style={{
-                    width: "2px",
-                    height: "24px",
-                    background: "var(--gray-6)",
-                    borderRadius: "2px",
-                  }}
-                />
-              </Flex>
-            )}
-
-          {/* Start Button: show only when generation present and inputs complete */}
-          {allStepsComplete &&
-            ((draftProblem && draftObjectives.length > 0) || scenarioReady) && (
+          {/* Generate Scenario Card - only show when problem statement is empty and no objectives */}
+          {!(
+            (draftProblem && draftProblem.trim().length > 0) ||
+            Boolean((scenario?.problem_statement || "").trim())
+          ) &&
+            !(
+              (draftObjectives && draftObjectives.length > 0) ||
+              (scenario?.objectives && scenario.objectives.length > 0)
+            ) && (
               <Box>
                 <Card
                   style={{
-                    background:
-                      allStepsComplete && scenarioReady
-                        ? "white"
-                        : "var(--gray-2)",
-                    border: `1px solid ${
-                      allStepsComplete && scenarioReady
-                        ? "var(--blue-7)"
-                        : "var(--gray-6)"
-                    }`,
+                    background: "white",
+                    border: "1px solid var(--violet-7)",
                     borderRadius: "12px",
-                    boxShadow:
-                      allStepsComplete && scenarioReady
-                        ? "0 4px 12px rgba(0, 100, 200, 0.15)"
-                        : "0 1px 3px rgba(0, 0, 0, 0.1)",
+                    boxShadow: "0 4px 12px rgba(139, 69, 19, 0.15)",
                     transition: "all 0.2s ease",
                   }}
                 >
@@ -1586,133 +1517,231 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                           width: "32px",
                           height: "32px",
                           borderRadius: "50%",
-                          background: allStepsComplete
-                            ? "var(--blue-9)"
-                            : "var(--gray-7)",
+                          background: "var(--violet-9)",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           flexShrink: 0,
                         }}
                       >
-                        <PlayIcon color="white" width="16" height="16" />
+                        <FileTextIcon color="white" width="16" height="16" />
                       </Box>
                       <Box style={{ flex: 1 }}>
                         <Flex align="center" gap="2" mb="3">
                           <Text size="4" weight="bold">
-                            Start Scenario
+                            Generate Scenario
                           </Text>
                           {allStepsComplete && (
-                            <Badge size="1" variant="soft" color="blue">
-                              Ready to start
+                            <Badge size="1" variant="soft" color="violet">
+                              Ready to generate
                             </Badge>
                           )}
                         </Flex>
 
                         <Button
                           size="3"
-                          onClick={startScenario}
-                          disabled={isLoading}
+                          disabled={!allStepsComplete || isGenerating}
+                          onClick={() => {
+                            if (!allStepsComplete) return;
+                            // First-time generate: no prompt
+                            setIsGenerating(true);
+                            const payloadFieldValues = fieldValues.map(
+                              (fv) => ({
+                                fieldId: fv.fieldId,
+                                value: fv.value,
+                                parameterId: fv.parameterId,
+                              })
+                            );
+                            emitGenerateScenario({
+                              scenario_id: scenarioId,
+                              field_values: payloadFieldValues,
+                            });
+                          }}
                           style={{
                             width: "100%",
-                            background: "var(--blue-9)",
+                            background: !allStepsComplete
+                              ? "var(--gray-7)"
+                              : "var(--violet-9)",
+                            color: !allStepsComplete
+                              ? "var(--gray-11)"
+                              : "white",
                           }}
                         >
-                          {isLoading ? (
+                          {isGenerating ? (
                             <Flex align="center" gap="2">
                               <Spinner size="2" />
-                              <Text>Starting Scenario...</Text>
+                              <Text>Generating...</Text>
                             </Flex>
                           ) : (
                             <Flex align="center" gap="2">
-                              <PlayIcon />
-                              <Text>Start Scenario</Text>
+                              <FileTextIcon />
+                              <Text>Generate Scenario</Text>
                             </Flex>
                           )}
                         </Button>
-
-                        {isLoading && progress.visible && (
-                          <Box mt="4">
-                            {/* Progress bar */}
-                            <Box
-                              style={{
-                                width: "100%",
-                                height: "8px",
-                                background: "var(--gray-4)",
-                                borderRadius: "999px",
-                                overflow: "hidden",
-                                marginBottom: "8px",
-                              }}
-                            >
-                              {(() => {
-                                const completed = progress.steps.filter(
-                                  (s) => s.complete
-                                ).length;
-                                const percent = Math.round(
-                                  (completed / progress.steps.length) * 100
-                                );
-                                return (
-                                  <Box
-                                    style={{
-                                      width: `${percent}%`,
-                                      height: "100%",
-                                      background: "var(--blue-9)",
-                                      transition: "width 300ms ease",
-                                    }}
-                                  />
-                                );
-                              })()}
-                            </Box>
-                            {/* Checklist */}
-                            <Flex direction="column" gap="2">
-                              {progress.steps.map((step, idx) => (
-                                <Flex key={idx} align="center" gap="3">
-                                  <Box
-                                    style={{
-                                      width: "18px",
-                                      height: "18px",
-                                      borderRadius: "50%",
-                                      border: `2px solid ${
-                                        step.complete
-                                          ? "var(--green-9)"
-                                          : "var(--gray-7)"
-                                      }`,
-                                      background: step.complete
-                                        ? "var(--green-9)"
-                                        : "transparent",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    {step.complete ? (
-                                      <CheckIcon
-                                        width="10"
-                                        height="10"
-                                        color="white"
-                                      />
-                                    ) : (
-                                      <Spinner size="1" />
-                                    )}
-                                  </Box>
-                                  <Text
-                                    size="3"
-                                    style={{ opacity: step.complete ? 0.8 : 1 }}
-                                  >
-                                    {step.label}
-                                  </Text>
-                                </Flex>
-                              ))}
-                            </Flex>
-                          </Box>
-                        )}
                       </Box>
                     </Flex>
                   </Box>
                 </Card>
               </Box>
             )}
+
+          {/* Start Button: show only when problem statement exists */}
+          {allStepsComplete && scenarioReady && (
+            <Box>
+              <Card
+                style={{
+                  background:
+                    allStepsComplete && scenarioReady
+                      ? "white"
+                      : "var(--gray-2)",
+                  border: `1px solid ${
+                    allStepsComplete && scenarioReady
+                      ? "var(--blue-7)"
+                      : "var(--gray-6)"
+                  }`,
+                  borderRadius: "12px",
+                  boxShadow:
+                    allStepsComplete && scenarioReady
+                      ? "0 4px 12px rgba(0, 100, 200, 0.15)"
+                      : "0 1px 3px rgba(0, 0, 0, 0.1)",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                <Box p="6">
+                  <Flex align="center" gap="4">
+                    <Box
+                      style={{
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "50%",
+                        background: allStepsComplete
+                          ? "var(--blue-9)"
+                          : "var(--gray-7)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <PlayIcon color="white" width="16" height="16" />
+                    </Box>
+                    <Box style={{ flex: 1 }}>
+                      <Flex align="center" gap="2" mb="3">
+                        <Text size="4" weight="bold">
+                          Start Scenario
+                        </Text>
+                        {allStepsComplete && (
+                          <Badge size="1" variant="soft" color="blue">
+                            Ready to start
+                          </Badge>
+                        )}
+                      </Flex>
+
+                      <Button
+                        size="3"
+                        onClick={startScenario}
+                        disabled={isLoading}
+                        style={{
+                          width: "100%",
+                          background: "var(--blue-9)",
+                        }}
+                      >
+                        {isLoading ? (
+                          <Flex align="center" gap="2">
+                            <Spinner size="2" />
+                            <Text>Starting Scenario...</Text>
+                          </Flex>
+                        ) : (
+                          <Flex align="center" gap="2">
+                            <PlayIcon />
+                            <Text>Start Scenario</Text>
+                          </Flex>
+                        )}
+                      </Button>
+
+                      {isLoading && progress.visible && (
+                        <Box mt="4">
+                          {/* Progress bar */}
+                          <Box
+                            style={{
+                              width: "100%",
+                              height: "8px",
+                              background: "var(--gray-4)",
+                              borderRadius: "999px",
+                              overflow: "hidden",
+                              marginBottom: "8px",
+                            }}
+                          >
+                            {(() => {
+                              const completed = progress.steps.filter(
+                                (s) => s.complete
+                              ).length;
+                              const percent = Math.round(
+                                (completed / progress.steps.length) * 100
+                              );
+                              return (
+                                <Box
+                                  style={{
+                                    width: `${percent}%`,
+                                    height: "100%",
+                                    background: "var(--blue-9)",
+                                    transition: "width 300ms ease",
+                                  }}
+                                />
+                              );
+                            })()}
+                          </Box>
+                          {/* Checklist */}
+                          <Flex direction="column" gap="2">
+                            {progress.steps.map((step, idx) => (
+                              <Flex key={idx} align="center" gap="3">
+                                <Box
+                                  style={{
+                                    width: "18px",
+                                    height: "18px",
+                                    borderRadius: "50%",
+                                    border: `2px solid ${
+                                      step.complete
+                                        ? "var(--green-9)"
+                                        : "var(--gray-7)"
+                                    }`,
+                                    background: step.complete
+                                      ? "var(--green-9)"
+                                      : "transparent",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {step.complete ? (
+                                    <CheckIcon
+                                      width="10"
+                                      height="10"
+                                      color="white"
+                                    />
+                                  ) : (
+                                    <Spinner size="1" />
+                                  )}
+                                </Box>
+                                <Text
+                                  size="3"
+                                  style={{ opacity: step.complete ? 0.8 : 1 }}
+                                >
+                                  {step.label}
+                                </Text>
+                              </Flex>
+                            ))}
+                          </Flex>
+                        </Box>
+                      )}
+                    </Box>
+                  </Flex>
+                </Box>
+              </Card>
+            </Box>
+          )}
         </Box>
       </Container>
 
@@ -1746,7 +1775,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 Add optional instructions
               </Heading>
               <Text size="2" color="gray">
-                You can guide the generator with extra details.
+                You can guide the AI with extra details.
               </Text>
               <textarea
                 value={additionalPrompt}
@@ -1762,14 +1791,39 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   resize: "vertical",
                 }}
               />
-              <Flex justify="end" gap="3" mt="3">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "12px",
+                  marginTop: "12px",
+                }}
+              >
                 <Button
                   variant="ghost"
+                  size="2"
                   onClick={() => setShowGenerateModal(false)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "6px",
+                    border: "1px solid var(--gray-6)",
+                    background: "transparent",
+                    color: "var(--gray-11)",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--gray-3)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                  }}
                 >
                   Cancel
                 </Button>
                 <Button
+                  variant="solid"
+                  size="2"
                   disabled={isGenerating}
                   onClick={() => {
                     if (!allStepsComplete || !scenario) {
@@ -1790,7 +1844,26 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                       additional_prompt: additionalPrompt.trim() || undefined,
                     });
                   }}
-                  style={{ background: "var(--violet-9)", color: "white" }}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "6px",
+                    border: "none",
+                    background: "var(--violet-9)",
+                    color: "white",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    opacity: isGenerating ? 0.7 : 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isGenerating) {
+                      e.currentTarget.style.background = "var(--violet-10)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isGenerating) {
+                      e.currentTarget.style.background = "var(--violet-9)";
+                    }
+                  }}
                 >
                   {isGenerating ? (
                     <Flex align="center" gap="2">
@@ -1801,7 +1874,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                     "Generate"
                   )}
                 </Button>
-              </Flex>
+              </div>
             </div>
           </div>,
           document.body

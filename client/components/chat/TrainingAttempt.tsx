@@ -10,7 +10,7 @@ import { TrainingProvider, useTraining } from "@/contexts/training-context";
 import { useChatForAttempt } from "@/lib/api/hooks/useChats";
 import { useFields } from "@/lib/api/hooks/useFields";
 import { useParameters } from "@/lib/api/hooks/useParameters";
-import { useTraining as useTrainingData } from "@/lib/api/hooks/useTrainings";
+import { useScenario } from "@/lib/api/hooks/useScenarios";
 import { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import { logError } from "@/utils/logger";
 import { Box, Text } from "@radix-ui/themes";
@@ -24,10 +24,9 @@ import FeedbackModal from "./FeedbackModal";
 
 interface TrainingAttemptProps {
   attemptId: string;
-  trainingId: string;
 }
 
-function TrainingAttemptContent({ trainingId }: { trainingId: string }) {
+function TrainingAttemptContent() {
   const router = useRouter();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -51,20 +50,22 @@ function TrainingAttemptContent({ trainingId }: { trainingId: string }) {
     submitAssessment,
   } = useTraining();
 
-  // Fetch training data to get scenario information
-  const { data: trainingData } = useTrainingData(
-    trainingId,
-    Boolean(trainingId)
+  // Get scenario data from the chat's scenario_id (the authoritative source)
+  const scenarioId: string | undefined = chat?.scenario_id || undefined;
+  const { data: scenarioData } = useScenario(
+    scenarioId || "",
+    Boolean(scenarioId)
   );
 
-  // Extract scenario data from training
+  // Transform scenario data to match ChatHeader's expected format
   const scenario = useMemo(() => {
-    if (!trainingData?.scenarios || trainingData.scenarios.length === 0) {
-      return null;
-    }
-    // For now, use the first scenario. In the future, this could be determined by the specific attempt or other logic
-    return trainingData.scenarios[0];
-  }, [trainingData]);
+    if (!scenarioData) return null;
+    return {
+      title: scenarioData.title,
+      problem_statement: scenarioData.problem_statement || null,
+      objectives: scenarioData.objectives || [],
+    };
+  }, [scenarioData]);
 
   // Helper function to get assessment ID
   const getAssessmentId = () => {
@@ -249,10 +250,7 @@ function TrainingAttemptContent({ trainingId }: { trainingId: string }) {
   );
 }
 
-export default function TrainingAttempt({
-  attemptId,
-  trainingId,
-}: TrainingAttemptProps) {
+export default function TrainingAttempt({ attemptId }: TrainingAttemptProps) {
   const { data: chat, isLoading } = useChatForAttempt(attemptId);
   const chatId = chat?.id;
 
@@ -275,7 +273,7 @@ export default function TrainingAttempt({
   // Only render the TrainingProvider once we have a stable chatId
   return (
     <TrainingProvider chatId={chatId}>
-      <TrainingAttemptContent trainingId={trainingId} />
+      <TrainingAttemptContent />
     </TrainingProvider>
   );
 }
