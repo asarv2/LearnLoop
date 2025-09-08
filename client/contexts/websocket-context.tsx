@@ -918,23 +918,32 @@ export function WebSocketProvider({
   );
 
   const emitSendIntroMessage = useCallback(
-    (data: { chat_id: string; message: string }) => {
-      console.log("WebSocket: emitSendIntroMessage called with:", data);
-      if (!socketRef.current?.connected) {
-        logError("Cannot send intro message - WebSocket not connected");
-        toast.error("WebSocket not connected. Please refresh the page.");
-        return;
+    async (data: { chat_id: string; message: string }) => {
+      try {
+        if (!socketRef.current?.connected) {
+          logError("Cannot send message - WebSocket not connected");
+          toast.error("WebSocket not connected. Please refresh the page.");
+          return;
+        }
+
+        // Ensure we're joined and RTC/voice path is ready (like Training page)
+        try {
+          joinRoom(data.chat_id);
+        } catch {}
+
+        try {
+          await enableVoiceMode(data.chat_id);
+        } catch (e) {
+          logError("Failed to enable voice mode for intro message", e as Error);
+        }
+
+        // Route via the normal message path (RTC DC preferred, websocket fallback)
+        sendWebRTCMessage(data.chat_id, data.message);
+      } catch (err) {
+        logError("emitSendIntroMessage failed", err as Error);
       }
-      logInfo("Emitting send_training_message for intro", {
-        chatId: data.chat_id,
-      });
-      // Send the intro message
-      socketRef.current.emit("send_training_message", {
-        chat_id: data.chat_id,
-        message: data.message,
-      });
     },
-    []
+    [enableVoiceMode, joinRoom, sendWebRTCMessage]
   );
 
   const emitStopTraining = useCallback((data: { chat_id: string }) => {

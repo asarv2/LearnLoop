@@ -34,6 +34,9 @@ function TrainingAttemptContent() {
   const [showIntroModal, setShowIntroModal] = useState(false);
   const [hasShownIntroModal, setHasShownIntroModal] = useState(false);
 
+  // WebSocket intro message sender (normal send path under the hood)
+  const { emitSendIntroMessage } = useWebSocket();
+
   // Use the training context for all training-related state and actions
   const {
     chat,
