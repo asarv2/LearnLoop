@@ -195,15 +195,19 @@ class Scenarios(_Base, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     title: str = Field(sa_column=Column('title', Text))
+    objectives: List[str] = Field(sa_column=Column('objectives', ARRAY(Text()), server_default=text("'{}'::text[]")))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
     rubric_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('rubric_id', Uuid(as_uuid=True)))
     field_ids: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('field_ids', ARRAY(Uuid(as_uuid=True))))
+    problem_statement: Optional[str] = Field(default=None, sa_column=Column('problem_statement', Text, comment='description of the problem'))
+    parent_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('parent_id', Uuid, comment='parent scenario id'))
 
     rubric: Optional['Rubrics'] = Relationship(back_populates='scenarios')
     training: Optional['Trainings'] = Relationship(back_populates='scenarios')
+    chats: List['Chats'] = Relationship(back_populates='scenario')
 
 
 class Standards(_Base, table=True):
@@ -298,6 +302,7 @@ class Chats(_Base, table=True):
     __table_args__ = (
         ForeignKeyConstraint(['attempt_id'], ['attempts.id'], ondelete='CASCADE', name='chats_attempt_id_fkey'),
         ForeignKeyConstraint(['profile_id'], ['profiles.id'], ondelete='CASCADE', name='chats_profile_id_fkey'),
+        ForeignKeyConstraint(['scenario_id'], ['scenarios.id'], name='chats_scenario_id_fkey'),
         ForeignKeyConstraint(['training_id'], ['trainings.id'], name='chats_training_id_fkey'),
         PrimaryKeyConstraint('id', name='chats_pkey'),
         Index('idx_chats_training_id', 'training_id')
@@ -315,9 +320,11 @@ class Chats(_Base, table=True):
     attempt_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('attempt_id', Uuid(as_uuid=True)))
     parameter_ids: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('parameter_ids', ARRAY(Uuid(as_uuid=True))))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text, comment='description of chat, i.e, scenario'))
+    scenario_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('scenario_id', Uuid(as_uuid=True)))
 
     attempt: Optional['Attempts'] = Relationship(back_populates='chats')
     profile: Optional['Profiles'] = Relationship(back_populates='chats')
+    scenario: Optional['Scenarios'] = Relationship(back_populates='chats')
     training: Optional['Trainings'] = Relationship(back_populates='chats')
     assessments: List['Assessments'] = Relationship(back_populates='chat')
     feedback: List['Feedback'] = Relationship(back_populates='chat')
