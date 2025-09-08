@@ -144,8 +144,6 @@ def get_parameter_history(
         document_params = []
         other_params = []
         
-        # Track AI trainer information for clear identification
-        ai_trainer_info: list[str] = []
         
         for param in all_parameters:
             if not param.field_id or param.field_id not in field_map:
@@ -158,12 +156,10 @@ def get_parameter_history(
                 if param.value and param.value in all_personas:
                     persona = all_personas[param.value]
                     value = persona.description if persona.description else "No description available"
-                    # Add AI trainer identification
-                    ai_trainer_info.append(f"AI TRAINER: {persona.name} - {value}")
                 else:
                     value = "Persona not found"
                 field_description = field.description if field.description else ""
-                formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
+                formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}"
                 persona_params.append(formatted_line)
             elif field.field_type == 'document':
                 if param.value and param.value in all_documents:
@@ -178,19 +174,11 @@ def get_parameter_history(
                 # For numerical, categorical, or text fields
                 value = param.value if param.value else "No value set"
                 field_description = field.description if field.description else ""
-                formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}: {value}"
+                formatted_line = f"The {field.name} ({field_description}) for this chat is {param.name}"
                 other_params.append(formatted_line)
         
-        # Return messages with AI trainer clearly identified first
+        # Return messages
         messages = []
-        
-        # Add AI trainer identification at the beginning for clarity
-        if ai_trainer_info:
-            content = "IMPORTANT: " + "\n".join(ai_trainer_info) + "\n\nThis AI trainer will be speaking as the 'assistant' in the conversation history below."
-            messages.append({
-                "role": "user",
-                "content": content
-            })
         
         if persona_params:
             content = "\n".join(persona_params)
@@ -220,25 +208,34 @@ def get_parameter_history(
 
 def get_text_formatted_instructions(
     instructions: List[TResponseInputItem],
+    history_format: bool = True,
 ) -> str:
     """
-    Get the conversation history formatted as text with YOU/USER labels.
+    Get the conversation history formatted as text with YOU/USER labels,
+    or just concatenate content if history_format is False.
 
     Args:
-        messages: List of Messages objects from the database
+        instructions: List of Messages objects from the database
+        history_format: Whether to include role labels
 
     Returns:
-        Text-formatted conversation history with YOU/USER labels
+        Text-formatted conversation history
     """
     formatted_lines = []
-    
+
     for message in instructions:
-        if message.get("content", None):
-            if message.get("role", None) == 'user':
-                formatted_lines.append(f"USER: {message.get('content', None)}")
-            elif message.get("role", None) == 'assistant':
-                formatted_lines.append(f"YOU: {message.get('content', None)}")
-    
+        content = message.get("content", None)
+        if not content:
+            continue
+        if history_format:
+            role = message.get("role", None)
+            if role == 'user':
+                formatted_lines.append(f"USER: {content}")
+            elif role == 'assistant':
+                formatted_lines.append(f"YOU: {content}")
+        else:
+            formatted_lines.append(str(content))
+
     return "\n\n".join(formatted_lines)
 
 
