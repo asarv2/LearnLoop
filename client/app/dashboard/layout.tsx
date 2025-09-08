@@ -67,11 +67,11 @@ const menuItems = [
 ];
 
 const userMenuItems: MenuProps["items"] = [
-  {
-    key: "profile",
-    icon: <UserOutlined />,
-    label: "Profile",
-  },
+  // {
+  //   key: "profile",
+  //   icon: <UserOutlined />,
+  //   label: "Profile",
+  // },
   {
     key: "logout",
     icon: <LogoutOutlined />,
