@@ -9,25 +9,35 @@ from agents.realtime.items import (AssistantMessageItem, AssistantText,
 from agents.realtime.model_events import RealtimeItem
 from app.db import get_session, reset_connection_pool
 from app.models import (Assessments, Chats, Documents, Fields, Messages,
-                        Parameters, Personas, Questions, Rubrics, Standards)
+                        Parameters, Personas, Questions, Rubrics, Scenarios,
+                        Standards)
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
 
 def get_preamble(
-    chat: Chats
+    scenario: Scenarios
 ) -> TResponseInputItem:
     """
-    Create a user message with the chat's description and name.
+    Create a user message with the scenario's title, problem statement, and objectives.
     """
-    title = getattr(chat, "title", None) or getattr(chat, "title", "")
-    description = getattr(chat, "description", None)
-    content = f"{title}\nDescription: {description}. The following is the current history of the conversation. Continue the conversation from this point on:"
+    title = scenario.title
+    problem_statement = scenario.problem_statement or "No problem statement provided"
+    objectives = scenario.objectives or []
+    
+    # Format objectives as a bulleted list
+    objectives_text = ""
+    if objectives:
+        objectives_text = "\nObjectives:\n" + "\n".join(f"• {obj}" for obj in objectives)
+    
+    content = f"{title}\n\nProblem Statement: {problem_statement}{objectives_text}\n\nThe following is the current history of the conversation. Continue the conversation from this point on:"
     return {
         "role": "user",
         "content": content
     }
+
+
 
 def get_conversation_history(
     messages: Sequence[Messages],
@@ -186,21 +196,21 @@ def get_parameter_history(
             content = "\n".join(persona_params)
             messages.append({
                 "role": "user",
-                "content": content
+                "content": "The following is YOUR persona information: " + content
             })
         
         if document_params:
             content = "\n".join(document_params)
             messages.append({
                 "role": "user",
-                "content": content
+                "content": "The following is YOUR document information: " + content
             })
         
         if other_params:
             content = "\n".join(other_params)
             messages.append({
                 "role": "user",
-                "content": content
+                "content": "The following is YOUR other information, also referred to as PARAMETERS: " + content
             })
         
         return messages  # type: ignore
