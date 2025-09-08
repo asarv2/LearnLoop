@@ -383,9 +383,10 @@ class OpenAIAgent(Agent):
         parameter_history = get_parameter_history(chat, db_session)
         conversation_history = get_conversation_history(messages)
 
-        instructions = [preamble] + parameter_history + conversation_history
+        instructions = [preamble] + parameter_history
+        conversation_history_realtime = get_text_formatted_instructions(conversation_history)
 
-        realtime_instructions = persona.realtime_prompt + "\n" + get_text_formatted_instructions(instructions)
+        realtime_instructions = persona.realtime_prompt + "\n" + get_text_formatted_instructions(instructions, history_format=False) + "\n" + conversation_history_realtime
 
         realtime_voice = persona.voice
         valid_voices = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"]
