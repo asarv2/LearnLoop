@@ -5,7 +5,7 @@ from typing import Any, List, Literal, Optional
 
 from agents import Runner, trace
 from app.db import get_session
-from app.models import Assessments, Chats, Messages, Questions
+from app.models import Assessments, Chats, Messages, Questions, Scenarios
 from app.services.agents.generic import GenericAgent
 from app.utils.chat import (get_conversation_history, get_parameter_history,
                             get_preamble)
@@ -145,7 +145,15 @@ async def run_training_specific_assessment(
         }
     
     # Get training context (preamble and parameters, but not conversation history)
-    preamble = get_preamble(chat)
+    # Get the scenario for the preamble
+    if not chat.scenario_id:
+        raise ValueError(f"Chat {chat_id} has no scenario_id")
+    
+    scenario = session.exec(select(Scenarios).where(Scenarios.id == chat.scenario_id)).one_or_none()
+    if not scenario:
+        raise ValueError(f"Scenario {chat.scenario_id} not found for chat {chat_id}")
+    
+    preamble = get_preamble(scenario)
     parameter_history = get_parameter_history(chat, session)
     
     context = [preamble] + parameter_history
@@ -234,7 +242,15 @@ async def run_conversation_specific_assessment(
     # Get messages from the chat
     messages = session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
 
-    preamble = get_preamble(chat)
+    # Get the scenario for the preamble
+    if not chat.scenario_id:
+        raise ValueError(f"Chat {chat_id} has no scenario_id")
+    
+    scenario = session.exec(select(Scenarios).where(Scenarios.id == chat.scenario_id)).one_or_none()
+    if not scenario:
+        raise ValueError(f"Scenario {chat.scenario_id} not found for chat {chat_id}")
+    
+    preamble = get_preamble(scenario)
     parameter_history = get_parameter_history(chat, session)
     conversation_history = get_conversation_history(messages)
 

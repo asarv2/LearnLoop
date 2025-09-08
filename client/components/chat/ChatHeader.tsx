@@ -133,23 +133,32 @@ export default function ChatHeader({
         }}
       >
         <Flex direction="column" gap="3">
-          {/* First Row - Navigation/Title on left, Controls on right */}
+          {/* First Row - Back button on left, Title centered, Controls on right */}
           <Flex align="center" justify="between">
-            {/* Left side - Back button and title */}
-            <Flex align="center" gap="4">
+            {/* Left side - Back button */}
+            <Flex align="center" gap="4" style={{ minWidth: "120px" }}>
               {onBack && (
                 <Button variant="ghost" size="2" onClick={onBack}>
                   <ArrowLeftIcon />
                   Back
                 </Button>
               )}
+            </Flex>
+
+            {/* Center - Title */}
+            <Flex align="center" justify="center" style={{ flex: 1 }}>
               <Heading size="5" weight="bold" color="blue">
                 {scenario?.title || "Training"}
               </Heading>
             </Flex>
 
             {/* Right side - Controls */}
-            <Flex align="center" gap="3" pr="3">
+            <Flex
+              align="center"
+              gap="3"
+              pr="3"
+              style={{ minWidth: "120px", justifyContent: "flex-end" }}
+            >
               {isInterviewActive ? (
                 <Text size="2" weight="medium" color="gray">
                   {formatTime(elapsedTime)}

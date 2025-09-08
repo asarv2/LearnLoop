@@ -36,7 +36,7 @@ from agents.realtime.model_events import \
 from app.bus import PCM_SR, SAMPLES_PER_CHUNK
 from app.db import get_session
 from app.extensions import AUDIO_DIR
-from app.models import Chats, Messages, Personas
+from app.models import Chats, Messages, Personas, Scenarios
 from app.services.agents.voice.base import Agent
 from app.store import list_messages
 from app.utils.chat import (get_conversation_history, get_parameter_history,
@@ -370,7 +370,16 @@ class OpenAIAgent(Agent):
 
         # get all messages for the chat
         messages = db_session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
-        preamble = get_preamble(chat)
+        
+        # Get the scenario for the preamble
+        if not chat.scenario_id:
+            raise ValueError(f"Chat {chat_id} has no scenario_id")
+        
+        scenario = db_session.exec(select(Scenarios).where(Scenarios.id == chat.scenario_id)).one_or_none()
+        if not scenario:
+            raise ValueError(f"Scenario {chat.scenario_id} not found for chat {chat_id}")
+        
+        preamble = get_preamble(scenario)
         parameter_history = get_parameter_history(chat, db_session)
         conversation_history = get_conversation_history(messages)
 
@@ -382,6 +391,8 @@ class OpenAIAgent(Agent):
         valid_voices = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"]
         if realtime_voice not in valid_voices:
             realtime_voice = "alloy"
+
+        print(f"realtime_instructions: {realtime_instructions}")
 
         oa_agent = OARealtimeAgent(
             name="OpenAI Realtime",

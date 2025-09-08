@@ -683,14 +683,15 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [fieldValues, setFieldValues] = useState<FieldValue[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [progress, setProgress] = useState({
+  const [generateProgress, setGenerateProgress] = useState({
     visible: false,
     steps: [
       { label: "Processing inputs", complete: false },
       { label: "Preparing model", complete: false },
-      { label: "Creating scenario", complete: false },
+      { label: "Generating scenario", complete: false },
     ],
   });
+  const preparingModelTimerRef = useRef<number | null>(null);
   const { user } = useAuth();
   const { data: fields } = useFields();
   // Fetch scenario data
@@ -737,37 +738,31 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   // Cleanup timers on component unmount
   useEffect(() => {
     return () => {
-      // Cleanup any pending timers when component unmounts
-      setProgress((prev) => ({ ...prev, visible: false }));
-    };
-  }, []);
-
-  // Listen for training started event to complete progress bar
-  useEffect(() => {
-    const handleTrainingStarted = (event: CustomEvent) => {
-      if (event.detail.success) {
-        // Complete the "Creating scenario" step
-        setProgress((prev) => ({
-          ...prev,
-          steps: prev.steps.map((s, i) =>
-            i === 2 ? { ...s, complete: true } : s
-          ),
-        }));
+      if (preparingModelTimerRef.current) {
+        window.clearTimeout(preparingModelTimerRef.current);
+        preparingModelTimerRef.current = null;
       }
     };
-
-    window.addEventListener(
-      "trainingStarted",
-      handleTrainingStarted as EventListener
-    );
-
-    return () => {
-      window.removeEventListener(
-        "trainingStarted",
-        handleTrainingStarted as EventListener
-      );
-    };
   }, []);
+
+  const beginGenerateProgress = () => {
+    setGenerateProgress((prev) => ({
+      ...prev,
+      visible: true,
+      steps: prev.steps.map((s, i) => ({ ...s, complete: i === 0 })),
+    }));
+    if (preparingModelTimerRef.current) {
+      window.clearTimeout(preparingModelTimerRef.current);
+    }
+    preparingModelTimerRef.current = window.setTimeout(() => {
+      setGenerateProgress((prev) => ({
+        ...prev,
+        steps: prev.steps.map((s, i) =>
+          i === 1 ? { ...s, complete: true } : s
+        ),
+      }));
+    }, 2000);
+  };
 
   // Listen for scenario generated events
   useEffect(() => {
@@ -775,11 +770,26 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       const d = e.detail || {};
       // Ensure this is for our parent scenario id
       if (!scenario || d.scenario_id !== scenario.id) return;
+      // Complete the final step of generation progress
+      setGenerateProgress((prev) => ({
+        ...prev,
+        steps: prev.steps.map((s, i) =>
+          i === 2 ? { ...s, complete: true } : s
+        ),
+      }));
+      if (preparingModelTimerRef.current) {
+        window.clearTimeout(preparingModelTimerRef.current);
+        preparingModelTimerRef.current = null;
+      }
       setDraftTitle(d.title || "");
       setDraftProblem(d.problem_statement || "");
       setDraftObjectives(Array.isArray(d.objectives) ? d.objectives : []);
       setShowGenerateModal(false);
       setIsGenerating(false);
+      // Hide the progress shortly after completion
+      window.setTimeout(() => {
+        setGenerateProgress((prev) => ({ ...prev, visible: false }));
+      }, 800);
     };
     window.addEventListener(
       "scenarioGenerated",
@@ -957,6 +967,67 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const createDocument = useCreateDocument();
   const createParameterGlobal = useCreateParameter();
 
+  const renderGenerateProgress = () => {
+    if (!generateProgress.visible) return null;
+    const completed = generateProgress.steps.filter((s) => s.complete).length;
+    const percent = Math.round(
+      (completed / generateProgress.steps.length) * 100
+    );
+    return (
+      <Box mt="4">
+        <Box
+          style={{
+            width: "100%",
+            height: "8px",
+            background: "var(--gray-4)",
+            borderRadius: "999px",
+            overflow: "hidden",
+            marginBottom: "8px",
+          }}
+        >
+          <Box
+            style={{
+              width: `${percent}%`,
+              height: "100%",
+              background: "var(--violet-9)",
+              transition: "width 300ms ease",
+            }}
+          />
+        </Box>
+        <Flex direction="column" gap="2">
+          {generateProgress.steps.map((step, idx) => (
+            <Flex key={idx} align="center" gap="3">
+              <Box
+                style={{
+                  width: "18px",
+                  height: "18px",
+                  borderRadius: "50%",
+                  border: `2px solid ${
+                    step.complete ? "var(--green-9)" : "var(--gray-7)"
+                  }`,
+                  background: step.complete ? "var(--green-9)" : "transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                {step.complete ? (
+                  <CheckIcon width="10" height="10" color="white" />
+                ) : (
+                  <Spinner size="1" />
+                )}
+              </Box>
+              <Text size="3" style={{ opacity: step.complete ? 0.8 : 1 }}>
+                {step.label}
+              </Text>
+            </Flex>
+          ))}
+        </Flex>
+      </Box>
+    );
+  };
+
   const startScenario = async () => {
     if (!allStepsComplete || !scenario || !scenarioReady) {
       alert("Please complete all fields and scenario details before starting");
@@ -964,24 +1035,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     }
 
     setIsLoading(true);
-    setProgress((prev) => ({
-      ...prev,
-      visible: true,
-      steps: prev.steps.map((s, i) => ({
-        ...s,
-        complete: i === 0 ? true : false,
-      })),
-    }));
-
-    // Delay the "Preparing model" checkmark by 2 seconds
-    const preparingModelTimer = setTimeout(() => {
-      setProgress((prev) => ({
-        ...prev,
-        steps: prev.steps.map((s, i) =>
-          i === 1 ? { ...s, complete: true } : s
-        ),
-      }));
-    }, 2000);
 
     try {
       // Process field values and handle document uploads
@@ -1076,8 +1129,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           return fv;
         })
       );
-
-      // (preparing model will complete via timer above)
 
       // Ensure hidden fields have a randomized value if not already set
       const finalFieldValues = processedFieldValues.map((fv) => {
@@ -1188,9 +1239,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       console.error("Error starting scenario:", error);
       alert("Failed to start scenario. Please try again.");
       setIsLoading(false);
-      setProgress((prev) => ({ ...prev, visible: false }));
-      // Cleanup timers on error
-      if (preparingModelTimer) clearTimeout(preparingModelTimer);
     }
   };
 
@@ -1466,6 +1514,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                             Regenerate
                           </Button>
                         </Flex>
+                        {renderGenerateProgress()}
                       </Flex>
                     </Box>
                   </Flex>
@@ -1545,6 +1594,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                             if (!allStepsComplete) return;
                             // First-time generate: no prompt
                             setIsGenerating(true);
+                            beginGenerateProgress();
                             const payloadFieldValues = fieldValues.map(
                               (fv) => ({
                                 fieldId: fv.fieldId,
@@ -1579,6 +1629,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                             </Flex>
                           )}
                         </Button>
+                        {renderGenerateProgress()}
                       </Box>
                     </Flex>
                   </Box>
@@ -1659,83 +1710,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                           </Flex>
                         )}
                       </Button>
-
-                      {isLoading && progress.visible && (
-                        <Box mt="4">
-                          {/* Progress bar */}
-                          <Box
-                            style={{
-                              width: "100%",
-                              height: "8px",
-                              background: "var(--gray-4)",
-                              borderRadius: "999px",
-                              overflow: "hidden",
-                              marginBottom: "8px",
-                            }}
-                          >
-                            {(() => {
-                              const completed = progress.steps.filter(
-                                (s) => s.complete
-                              ).length;
-                              const percent = Math.round(
-                                (completed / progress.steps.length) * 100
-                              );
-                              return (
-                                <Box
-                                  style={{
-                                    width: `${percent}%`,
-                                    height: "100%",
-                                    background: "var(--blue-9)",
-                                    transition: "width 300ms ease",
-                                  }}
-                                />
-                              );
-                            })()}
-                          </Box>
-                          {/* Checklist */}
-                          <Flex direction="column" gap="2">
-                            {progress.steps.map((step, idx) => (
-                              <Flex key={idx} align="center" gap="3">
-                                <Box
-                                  style={{
-                                    width: "18px",
-                                    height: "18px",
-                                    borderRadius: "50%",
-                                    border: `2px solid ${
-                                      step.complete
-                                        ? "var(--green-9)"
-                                        : "var(--gray-7)"
-                                    }`,
-                                    background: step.complete
-                                      ? "var(--green-9)"
-                                      : "transparent",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  {step.complete ? (
-                                    <CheckIcon
-                                      width="10"
-                                      height="10"
-                                      color="white"
-                                    />
-                                  ) : (
-                                    <Spinner size="1" />
-                                  )}
-                                </Box>
-                                <Text
-                                  size="3"
-                                  style={{ opacity: step.complete ? 0.8 : 1 }}
-                                >
-                                  {step.label}
-                                </Text>
-                              </Flex>
-                            ))}
-                          </Flex>
-                        </Box>
-                      )}
                     </Box>
                   </Flex>
                 </Box>
@@ -1833,6 +1807,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                       return;
                     }
                     setIsGenerating(true);
+                    beginGenerateProgress();
                     const payloadFieldValues = fieldValues.map((fv) => ({
                       fieldId: fv.fieldId,
                       value: fv.value,

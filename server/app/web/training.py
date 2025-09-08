@@ -186,21 +186,76 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
             # Document uploads are handled on the frontend before this call
             logger.info("Document uploads completed on frontend")
 
-            # Get persona ID and any feedback updates using a separate session
+            # Get persona ID and attach a default persona parameter if missing
             try:
                 # Create a separate session for persona extraction to avoid transaction conflicts
                 persona_session = next(get_session())
                 try:
+                    param_ids_iter = chat.parameter_ids if chat.parameter_ids is not None else []
                     persona_id = get_persona_id_from_chat(
-                        persona_session, 
-                        str(chat.id), 
-                        [str(pid) for pid in (chat.parameter_ids or [])]
+                        persona_session,
+                        str(chat.id),
+                        [str(pid) for pid in param_ids_iter]
                     )
                 finally:
-                    persona_session.close()
+                    try:
+                        persona_session.close()
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.error(f"Error getting persona ID for chat {chat.id}: {str(e)}")
                 persona_id = None
+
+            # If no persona is found, attempt to attach a default persona parameter
+            if not persona_id:
+                try:
+                    # Find a persona field from the scenario's fields
+                    persona_field_id = None
+                    field_ids_list: list[uuid.UUID] = []
+                    scenario_field_ids = getattr(scenario, "field_ids", None)
+                    if scenario_field_ids is not None:
+                        field_ids_list = list(scenario_field_ids)
+                    for fid in field_ids_list:
+                        fld = db_session.exec(select(Fields).where(Fields.id == fid)).one_or_none()
+                        if fld and getattr(fld, "field_type", None) == "persona":
+                            persona_field_id = fld.id
+                            break
+
+                    if persona_field_id:
+                        # Pick a default persona parameter (latest updated or first available)
+                        candidate_param = db_session.exec(
+                            select(Parameters).where(Parameters.field_id == persona_field_id)
+                        ).first()
+
+                        if candidate_param and candidate_param.id:
+                            existing_ids = list(chat.parameter_ids) if chat.parameter_ids is not None else []
+                            updated_parameter_ids: list[uuid.UUID] = existing_ids + [candidate_param.id]
+                            chat.parameter_ids = updated_parameter_ids
+                            db_session.add(chat)
+                            db_session.commit()
+                            db_session.refresh(chat)
+
+                            # Re-evaluate persona_id after attaching
+                            try:
+                                persona_session2 = next(get_session())
+                                try:
+                                    param_ids_iter2 = chat.parameter_ids if chat.parameter_ids is not None else []
+                                    persona_id = get_persona_id_from_chat(
+                                        persona_session2,
+                                        str(chat.id),
+                                        [str(pid) for pid in param_ids_iter2]
+                                    )
+                                finally:
+                                    try:
+                                        persona_session2.close()
+                                    except Exception:
+                                        pass
+                            except Exception as e:
+                                logger.error(f"Error re-evaluating persona ID for chat {chat.id}: {str(e)}")
+                    else:
+                        logger.warning(f"No persona field configured on scenario {scenario.id}; assistant persona will be unset")
+                except Exception:
+                    logger.exception("Failed to attach default persona parameter to chat")
 
             # Skip old scenario agent and initial message
 
@@ -779,10 +834,11 @@ async def process_training_message_websocket(
             # Create a separate session for persona extraction to avoid transaction conflicts
             persona_session = next(get_session())
             try:
+                param_ids_iter3 = chat.parameter_ids if chat.parameter_ids is not None else []
                 assistant_persona_id = get_persona_id_from_chat(
-                    persona_session, 
-                    str(chat.id), 
-                    [str(pid) for pid in (chat.parameter_ids or [])]
+                    persona_session,
+                    str(chat.id),
+                    [str(pid) for pid in param_ids_iter3]
                 )
                 if not assistant_persona_id:
                     logger.error(f"No persona found for chat {chat_id}")
@@ -816,7 +872,16 @@ async def process_training_message_websocket(
 
         # Get conversation history
         messages = db_session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
-        preamble = get_preamble(chat)
+        
+        # Get the scenario for the preamble
+        if not chat.scenario_id:
+            raise ValueError(f"Chat {chat_id} has no scenario_id")
+        
+        scenario = db_session.exec(select(Scenarios).where(Scenarios.id == chat.scenario_id)).one_or_none()
+        if not scenario:
+            raise ValueError(f"Scenario {chat.scenario_id} not found for chat {chat_id}")
+        
+        preamble = get_preamble(scenario)
         parameter_history = get_parameter_history(chat, db_session)
         conversation_history = get_conversation_history(messages)
 
