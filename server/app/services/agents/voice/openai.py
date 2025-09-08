@@ -393,8 +393,6 @@ class OpenAIAgent(Agent):
         if realtime_voice not in valid_voices:
             realtime_voice = "alloy"
 
-        print(f"realtime_instructions: {realtime_instructions}")
-
         oa_agent = OARealtimeAgent(
             name="OpenAI Realtime",
             instructions=realtime_instructions,
