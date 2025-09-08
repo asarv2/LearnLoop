@@ -5,6 +5,7 @@ import { LockOutlined, MailOutlined, UserOutlined } from "@ant-design/icons";
 import { Alert, Button, Form, Input, Modal, Typography } from "antd";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "@/lib/toast";
 
 const { Title, Text, Link } = Typography;
 
@@ -26,11 +27,6 @@ export default function AuthModal({
   const [error, setError] = useState<string | null>(null);
   const supabase = useSupabaseBrowser();
   const router = useRouter();
-  // Simple success function without context dependency
-  const showSuccess = (content: string) => {
-    // Simple alert for now to avoid context issues
-    alert(content);
-  };
 
   const handleSubmit = async (values: {
     email: string;
@@ -56,7 +52,7 @@ export default function AuthModal({
 
         // For signup, always redirect to dashboard (no email verification required)
         if (data.user) {
-          showSuccess("Account created successfully!");
+          toast.success("Account created successfully!");
           router.push("/dashboard/trainings");
           onClose();
         }
@@ -67,8 +63,7 @@ export default function AuthModal({
         });
 
         if (error) throw error;
-
-        showSuccess("Welcome back!");
+        toast.success("Welcome back!");
         router.push("/dashboard/trainings");
         onClose();
       }

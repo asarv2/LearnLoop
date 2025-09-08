@@ -75,6 +75,22 @@ interface WebSocketContextType {
       file?: File;
     }>;
     profile_id?: string;
+    scenario_draft?: {
+      title: string;
+      problem_statement: string;
+      parent_id?: string;
+      objectives?: string[];
+    };
+  }) => void;
+  emitGenerateScenario: (data: {
+    scenario_id: string;
+    field_values: Array<{
+      fieldId: string;
+      value: string;
+      parameterId?: string;
+      file?: File;
+    }>;
+    additional_prompt?: string;
   }) => void;
   emitJoinTraining: (data: {
     attempt_id: string;
@@ -210,6 +226,30 @@ export function WebSocketProvider({
             );
           }, 750); // 0.75 second delay
         } else {
+          toast.error(data.message);
+        }
+      }
+    );
+
+    // Scenario generation response
+    socket.on(
+      "scenario_generated",
+      (data: {
+        success: boolean;
+        message?: string;
+        scenario_id: string;
+        title: string;
+        problem_statement: string;
+        objectives: string[];
+      }) => {
+        logInfo("Scenario generated", data);
+        if (data.success) {
+          window.dispatchEvent(
+            new CustomEvent("scenarioGenerated", {
+              detail: data,
+            })
+          );
+        } else if (data.message) {
           toast.error(data.message);
         }
       }
@@ -821,6 +861,28 @@ export function WebSocketProvider({
     []
   );
 
+  const emitGenerateScenario = useCallback(
+    (data: {
+      scenario_id: string;
+      field_values: Array<{
+        fieldId: string;
+        value: string;
+        parameterId?: string;
+        file?: File;
+      }>;
+      additional_prompt?: string;
+    }) => {
+      if (!socketRef.current?.connected) {
+        logError("Cannot generate scenario - WebSocket not connected");
+        toast.error("WebSocket not connected. Please refresh the page.");
+        return;
+      }
+      logInfo("Emitting generate_scenario", { scenarioId: data.scenario_id });
+      socketRef.current.emit("generate_scenario", data);
+    },
+    []
+  );
+
   const emitJoinTraining = useCallback(
     (data: {
       attempt_id: string;
@@ -921,6 +983,7 @@ export function WebSocketProvider({
     audioPlaybackRef,
     getTrackState,
     emitStartTraining,
+    emitGenerateScenario,
     emitJoinTraining,
     emitSendTrainingMessage,
     emitStopTraining,
