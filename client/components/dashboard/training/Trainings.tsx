@@ -19,9 +19,10 @@ import {
   SafetyOutlined,
   TeamOutlined,
   TrophyOutlined,
+  UnorderedListOutlined,
   UserDeleteOutlined,
 } from "@ant-design/icons";
-import { Badge, Button, Card, Col, Row, Spin, Typography } from "antd";
+import { Badge, Button, Card, Col, Row, Spin, Tooltip, Typography } from "antd";
 import Link from "next/link";
 
 const { Title, Paragraph } = Typography;
@@ -90,8 +91,51 @@ function TrainingCard({
           cursor: training.active ? "pointer" : "default",
           transition: "all 0.3s ease",
           opacity: training.active ? 1 : 0.8,
+          position: "relative",
         }}
       >
+        {/* Scenarios Icon with Tooltip */}
+        {training.active && training.id && (
+          <Tooltip
+            title="View all scenarios"
+            placement="top"
+            overlayStyle={{ zIndex: 1000 }}
+          >
+            <Link href={`/dashboard/trainings/t/${training.id}/scenarios`}>
+              <div
+                style={{
+                  position: "absolute",
+                  top: "12px",
+                  right: "12px",
+                  zIndex: 10,
+                  cursor: "pointer",
+                  padding: "4px",
+                  borderRadius: "4px",
+                  backgroundColor: "rgba(255, 255, 255, 0.9)",
+                  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor =
+                    "rgba(255, 255, 255, 1)";
+                  e.currentTarget.style.transform = "scale(1.1)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor =
+                    "rgba(255, 255, 255, 0.9)";
+                  e.currentTarget.style.transform = "scale(1)";
+                }}
+              >
+                <UnorderedListOutlined
+                  style={{
+                    fontSize: "16px",
+                    color: color,
+                  }}
+                />
+              </div>
+            </Link>
+          </Tooltip>
+        )}
         <div style={{ textAlign: "center", marginBottom: "16px" }}>
           <div
             style={{

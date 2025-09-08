@@ -14,7 +14,9 @@ export type ScenarioUpdate =
 export const ScenarioCreateSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().nullable().optional(),
-  parameter_ids: z.array(z.string()).nullable().optional(),
+  problem_statement: z.string().nullable().optional(),
+  objectives: z.array(z.string()).nullable().optional(),
+  parent_id: z.string().nullable().optional(),
   rubric_id: z.string().nullable().optional(),
   training_id: z.string().nullable().optional(),
 });
@@ -22,7 +24,9 @@ export const ScenarioCreateSchema = z.object({
 export const ScenarioUpdateSchema = z.object({
   title: z.string().min(1, "Title is required").optional(),
   description: z.string().nullable().optional(),
-  parameter_ids: z.array(z.string()).nullable().optional(),
+  problem_statement: z.string().nullable().optional(),
+  objectives: z.array(z.string()).nullable().optional(),
+  parent_id: z.string().nullable().optional(),
   rubric_id: z.string().nullable().optional(),
   training_id: z.string().nullable().optional(),
 });

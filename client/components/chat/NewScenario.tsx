@@ -39,7 +39,7 @@ import {
   useParameters,
   useParametersByField,
 } from "@/lib/api/hooks/useParameters";
-import { useScenario } from "@/lib/api/hooks/useScenarios";
+import { useScenario, useUpdateScenario } from "@/lib/api/hooks/useScenarios";
 import { useTraining } from "@/lib/api/hooks/useTrainings";
 
 // Types
@@ -702,7 +702,15 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   );
 
   // Hooks for mutations
-  const { emitStartTraining } = useWebSocket();
+  const { emitStartTraining, emitGenerateScenario } = useWebSocket();
+  const { mutateAsync: updateScenario } = useUpdateScenario(scenarioId);
+
+  // Scenario generation draft state
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [additionalPrompt, setAdditionalPrompt] = useState("");
+  const [draftTitle, setDraftTitle] = useState<string>("");
+  const [draftProblem, setDraftProblem] = useState<string>("");
+  const [draftObjectives, setDraftObjectives] = useState<string[]>([]);
 
   // Initialize field values when scenario and training load
   useEffect(() => {
@@ -760,6 +768,29 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       );
     };
   }, []);
+
+  // Listen for scenario generated events
+  useEffect(() => {
+    const handleScenarioGenerated = (e: CustomEvent) => {
+      const d = e.detail || {};
+      // Ensure this is for our parent scenario id
+      if (!scenario || d.scenario_id !== scenario.id) return;
+      setDraftTitle(d.title || "");
+      setDraftProblem(d.problem_statement || "");
+      setDraftObjectives(Array.isArray(d.objectives) ? d.objectives : []);
+      setShowGenerateModal(false);
+    };
+    window.addEventListener(
+      "scenarioGenerated",
+      handleScenarioGenerated as EventListener
+    );
+    return () => {
+      window.removeEventListener(
+        "scenarioGenerated",
+        handleScenarioGenerated as EventListener
+      );
+    };
+  }, [scenario]);
 
   const updateFieldValue = (
     fieldId: string,
@@ -909,12 +940,25 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       return isStepComplete(fv.fieldId);
     });
 
+  // Determine scenario readiness: problem statement non-empty and >=1 objective (from draft or persisted)
+  const scenarioProblem = (
+    draftProblem ||
+    scenario?.problem_statement ||
+    ""
+  ).trim();
+  const scenarioObjectives =
+    draftObjectives && draftObjectives.length > 0
+      ? draftObjectives
+      : scenario?.objectives || [];
+  const scenarioReady =
+    scenarioProblem.length > 0 && scenarioObjectives.length >= 1;
+
   const createDocument = useCreateDocument();
   const createParameterGlobal = useCreateParameter();
 
   const startScenario = async () => {
-    if (!allStepsComplete || !scenario) {
-      alert("Please complete all fields before starting the scenario");
+    if (!allStepsComplete || !scenario || !scenarioReady) {
+      alert("Please complete all fields and scenario details before starting");
       return;
     }
 
@@ -1129,6 +1173,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         scenario_id: scenarioId,
         field_values: finalFieldValues,
         profile_id: user?.id || undefined,
+        scenario_draft: {
+          title: (draftTitle || scenario.title).trim(),
+          problem_statement: scenarioProblem,
+          parent_id: scenario.id,
+          objectives: scenarioObjectives,
+        },
       });
 
       // Note: "Creating scenario" will complete when WebSocket responds
@@ -1258,6 +1308,164 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               />
             ))}
 
+          {/* Generate Scenario Card (precursor) */}
+          {allStepsComplete && !scenarioReady && (
+            <Box>
+              <Card
+                style={{
+                  background: "white",
+                  border: "1px solid var(--violet-7)",
+                  borderRadius: "12px",
+                  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+                }}
+              >
+                <Box p="6">
+                  <Flex direction="column" gap="4">
+                    <Flex align="center" justify="between">
+                      <Heading size="5">Generate Scenario</Heading>
+                      <Button
+                        size="2"
+                        onClick={() => setShowGenerateModal(true)}
+                        style={{
+                          background: "var(--violet-9)",
+                          color: "white",
+                        }}
+                      >
+                        Generate
+                      </Button>
+                    </Flex>
+                    {(draftTitle ||
+                      draftProblem ||
+                      (draftObjectives || []).length > 0) && (
+                      <Box>
+                        <Flex direction="column" gap="3">
+                          <Box>
+                            <Text size="2" weight="bold">
+                              Title
+                            </Text>
+                            <input
+                              type="text"
+                              value={draftTitle}
+                              onChange={(e) => setDraftTitle(e.target.value)}
+                              style={{
+                                width: "100%",
+                                padding: "10px 12px",
+                                borderRadius: "8px",
+                                border: "1px solid var(--gray-6)",
+                                outline: "none",
+                              }}
+                            />
+                          </Box>
+                          <Box>
+                            <Text size="2" weight="bold">
+                              Problem statement
+                            </Text>
+                            <textarea
+                              value={draftProblem}
+                              onChange={(e) => setDraftProblem(e.target.value)}
+                              rows={3}
+                              style={{
+                                width: "100%",
+                                padding: "10px 12px",
+                                borderRadius: "8px",
+                                border: "1px solid var(--gray-6)",
+                                outline: "none",
+                                resize: "vertical",
+                              }}
+                            />
+                          </Box>
+                          <Box>
+                            <Flex align="center" justify="between" mb="2">
+                              <Text size="2" weight="bold">
+                                Objectives
+                              </Text>
+                              <Button
+                                size="1"
+                                variant="soft"
+                                onClick={() =>
+                                  setDraftObjectives([
+                                    ...(draftObjectives || []),
+                                    "",
+                                  ])
+                                }
+                              >
+                                Add Objective
+                              </Button>
+                            </Flex>
+                            <Flex direction="column" gap="2">
+                              {(draftObjectives || []).map((obj, idx) => (
+                                <Flex key={idx} align="center" gap="2">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(obj && obj.trim())}
+                                    onChange={() => {
+                                      /* purely cosmetic */
+                                    }}
+                                  />
+                                  <input
+                                    type="text"
+                                    value={obj}
+                                    onChange={(e) => {
+                                      const next = [...(draftObjectives || [])];
+                                      next[idx] = e.target.value;
+                                      setDraftObjectives(next);
+                                    }}
+                                    style={{
+                                      flex: 1,
+                                      padding: "8px 10px",
+                                      borderRadius: "8px",
+                                      border: "1px solid var(--gray-6)",
+                                      outline: "none",
+                                    }}
+                                  />
+                                  <Button
+                                    size="1"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      const next = [...(draftObjectives || [])];
+                                      next.splice(idx, 1);
+                                      setDraftObjectives(next);
+                                    }}
+                                  >
+                                    ✕
+                                  </Button>
+                                </Flex>
+                              ))}
+                            </Flex>
+                          </Box>
+
+                          <Flex gap="3" justify="end">
+                            <Button
+                              variant="soft"
+                              onClick={() => setShowGenerateModal(true)}
+                            >
+                              Regenerate
+                            </Button>
+                            <Button
+                              onClick={async () => {
+                                try {
+                                  await updateScenario({
+                                    title: draftTitle || scenario?.title || "",
+                                    problem_statement: draftProblem,
+                                    objectives: draftObjectives,
+                                  });
+                                } catch (e) {
+                                  console.error("Failed to save scenario", e);
+                                }
+                              }}
+                            >
+                              Save
+                            </Button>
+                          </Flex>
+                        </Flex>
+                      </Box>
+                    )}
+                  </Flex>
+                </Box>
+              </Card>
+            </Box>
+          )}
+
           {/* Progress Bar between last field and Start Scenario */}
           {fieldValues.length > 0 && (
             <Flex justify="center" mb="4">
@@ -1276,14 +1484,18 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           <Box>
             <Card
               style={{
-                background: allStepsComplete ? "white" : "var(--gray-2)",
+                background:
+                  allStepsComplete && scenarioReady ? "white" : "var(--gray-2)",
                 border: `1px solid ${
-                  allStepsComplete ? "var(--blue-7)" : "var(--gray-6)"
+                  allStepsComplete && scenarioReady
+                    ? "var(--blue-7)"
+                    : "var(--gray-6)"
                 }`,
                 borderRadius: "12px",
-                boxShadow: allStepsComplete
-                  ? "0 4px 12px rgba(0, 100, 200, 0.15)"
-                  : "0 1px 3px rgba(0, 0, 0, 0.1)",
+                boxShadow:
+                  allStepsComplete && scenarioReady
+                    ? "0 4px 12px rgba(0, 100, 200, 0.15)"
+                    : "0 1px 3px rgba(0, 0, 0, 0.1)",
                 transition: "all 0.2s ease",
               }}
             >
@@ -1320,14 +1532,20 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                     <Button
                       size="3"
                       onClick={startScenario}
-                      disabled={!allStepsComplete || isLoading}
+                      disabled={
+                        !allStepsComplete || !scenarioReady || isLoading
+                      }
                       style={{
                         width: "100%",
-                        background: allStepsComplete
-                          ? "var(--blue-9)"
-                          : "var(--gray-6)",
-                        opacity: allStepsComplete ? 1 : 0.6,
-                        cursor: allStepsComplete ? "pointer" : "not-allowed",
+                        background:
+                          allStepsComplete && scenarioReady
+                            ? "var(--blue-9)"
+                            : "var(--gray-6)",
+                        opacity: allStepsComplete && scenarioReady ? 1 : 0.6,
+                        cursor:
+                          allStepsComplete && scenarioReady
+                            ? "pointer"
+                            : "not-allowed",
                       }}
                     >
                       {isLoading ? (
@@ -1426,6 +1644,88 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           </Box>
         </Box>
       </Container>
+
+      {/* Generate Scenario Modal */}
+      {showGenerateModal &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.4)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 10000,
+            }}
+            onClick={() => setShowGenerateModal(false)}
+          >
+            <div
+              style={{
+                width: "min(640px, 92vw)",
+                background: "white",
+                borderRadius: "12px",
+                border: "1px solid var(--gray-6)",
+                padding: "20px",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Heading size="5" style={{ marginBottom: 8 }}>
+                Add optional instructions
+              </Heading>
+              <Text size="2" color="gray">
+                You can guide the generator with extra details.
+              </Text>
+              <textarea
+                value={additionalPrompt}
+                onChange={(e) => setAdditionalPrompt(e.target.value)}
+                rows={4}
+                style={{
+                  width: "100%",
+                  marginTop: 12,
+                  padding: "12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--gray-6)",
+                  outline: "none",
+                  resize: "vertical",
+                }}
+              />
+              <Flex justify="end" gap="3" mt="3">
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowGenerateModal(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!allStepsComplete || !scenario) {
+                      alert(
+                        "Please complete all fields before generating the scenario"
+                      );
+                      return;
+                    }
+                    const payloadFieldValues = fieldValues.map((fv) => ({
+                      fieldId: fv.fieldId,
+                      value: fv.value,
+                      parameterId: fv.parameterId,
+                    }));
+                    emitGenerateScenario({
+                      scenario_id: scenarioId,
+                      field_values: payloadFieldValues,
+                      additional_prompt: additionalPrompt.trim() || undefined,
+                    });
+                  }}
+                  style={{ background: "var(--violet-9)", color: "white" }}
+                >
+                  Generate
+                </Button>
+              </Flex>
+            </div>
+          </div>,
+          document.body
+        )}
     </Box>
   );
 }

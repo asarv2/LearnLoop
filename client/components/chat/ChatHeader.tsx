@@ -17,8 +17,11 @@ interface InterviewHeaderProps {
   completedAtIso?: string | null;
   isAudioMode?: boolean;
   onToggleAudioMode?: () => void;
-  chatTitle: string;
-  chatDescription: string;
+  scenario?: {
+    title: string;
+    problem_statement: string | null;
+    objectives: string[];
+  } | null;
   hasAssessment?: boolean;
   hasFeedback?: boolean;
   documentId?: string;
@@ -36,8 +39,7 @@ export default function ChatHeader({
   completedAtIso,
   isAudioMode = false,
   onToggleAudioMode,
-  chatTitle,
-  chatDescription,
+  scenario,
   hasAssessment = false,
   hasFeedback = false,
   documentId,
@@ -130,181 +132,269 @@ export default function ChatHeader({
           width: "100%",
         }}
       >
-        <Flex align="center" justify="between">
-          {/* Left side - Back button, Platform title and candidate */}
-          <Flex align="center" gap="4">
-            {onBack && (
-              <Button variant="ghost" size="2" onClick={onBack}>
-                <ArrowLeftIcon />
-                Back
-              </Button>
-            )}
-            <Box>
+        <Flex direction="column" gap="3">
+          {/* First Row - Navigation/Title on left, Controls on right */}
+          <Flex align="center" justify="between">
+            {/* Left side - Back button and title */}
+            <Flex align="center" gap="4">
+              {onBack && (
+                <Button variant="ghost" size="2" onClick={onBack}>
+                  <ArrowLeftIcon />
+                  Back
+                </Button>
+              )}
               <Heading size="5" weight="bold" color="blue">
-                {chatTitle}:{" "}
-                <span
+                {scenario?.title || "Training"}
+              </Heading>
+            </Flex>
+
+            {/* Right side - Controls */}
+            <Flex align="center" gap="3" pr="3">
+              {isInterviewActive ? (
+                <Text size="2" weight="medium" color="gray">
+                  {formatTime(elapsedTime)}
+                </Text>
+              ) : (
+                <>
+                  <Text size="2" weight="medium" color="gray">
+                    Duration: {formatTime(elapsedTime)}
+                  </Text>
+                  {hasAssessment && !hasFeedback && onShowAssessment && (
+                    <Button
+                      onClick={onShowAssessment}
+                      variant="outline"
+                      size="2"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        padding: "12px 16px",
+                        borderRadius: "12px",
+                        border: "1px solid var(--gray-6)",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        background: "white",
+                        color: "var(--gray-12)",
+                        cursor: "pointer",
+                        outline: "none",
+                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                        transition: "all 0.2s ease",
+                        height: "48px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      Assessment
+                    </Button>
+                  )}
+                  {hasFeedback && onShowFeedback && (
+                    <Button
+                      onClick={onShowFeedback}
+                      variant="outline"
+                      size="2"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        padding: "12px 16px",
+                        borderRadius: "12px",
+                        border: "1px solid var(--gray-6)",
+                        fontSize: "14px",
+                        fontWeight: "500",
+                        background: "white",
+                        color: "var(--gray-12)",
+                        cursor: "pointer",
+                        outline: "none",
+                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                        transition: "all 0.2s ease",
+                        height: "48px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      Feedback
+                    </Button>
+                  )}
+                </>
+              )}
+
+              {/* Audio Mode Toggle - only show for active interviews */}
+              {isInterviewActive && onToggleAudioMode && (
+                <Button
+                  variant={isAudioMode ? "solid" : "soft"}
+                  color={isAudioMode ? "purple" : "gray"}
+                  size="2"
+                  onClick={onToggleAudioMode}
                   style={{
-                    color: "var(--gray-11)",
-                    fontWeight: "normal",
-                    fontSize: "16px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
                   }}
                 >
-                  {chatDescription}
-                </span>
-              </Heading>
-            </Box>
-          </Flex>
-
-          {/* Right side - Controls */}
-          <Flex align="center" gap="3" pr="3">
-            {isInterviewActive ? (
-              <Text size="2" weight="medium" color="gray">
-                {formatTime(elapsedTime)}
-              </Text>
-            ) : (
-              <>
-                <Text size="2" weight="medium" color="gray">
-                  Duration: {formatTime(elapsedTime)}
-                </Text>
-                {hasAssessment && !hasFeedback && onShowAssessment && (
-                  <Button
-                    onClick={onShowAssessment}
-                    variant="outline"
-                    size="2"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      padding: "12px 16px",
-                      borderRadius: "12px",
-                      border: "1px solid var(--gray-6)",
-                      fontSize: "14px",
-                      fontWeight: "500",
-                      background: "white",
-                      color: "var(--gray-12)",
-                      cursor: "pointer",
-                      outline: "none",
-                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                      transition: "all 0.2s ease",
-                      height: "48px",
-                      flexShrink: 0,
-                    }}
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    style={{ flexShrink: 0 }}
                   >
-                    Assessment
-                  </Button>
-                )}
-                {hasFeedback && onShowFeedback && (
-                  <Button
-                    onClick={onShowFeedback}
-                    variant="outline"
-                    size="2"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      padding: "12px 16px",
-                      borderRadius: "12px",
-                      border: "1px solid var(--gray-6)",
-                      fontSize: "14px",
-                      fontWeight: "500",
-                      background: "white",
-                      color: "var(--gray-12)",
-                      cursor: "pointer",
-                      outline: "none",
-                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                      transition: "all 0.2s ease",
-                      height: "48px",
-                      flexShrink: 0,
-                    }}
-                  >
-                    Feedback
-                  </Button>
-                )}
-              </>
-            )}
+                    <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z" />
+                    <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+                    <path d="M12 18v4" />
+                    <path d="M8 22h8" />
+                  </svg>
+                  {isAudioMode ? "Audio" : "Audio"}
+                </Button>
+              )}
 
-            {/* Audio Mode Toggle - only show for active interviews */}
-            {isInterviewActive && onToggleAudioMode && (
-              <Button
-                variant={isAudioMode ? "solid" : "soft"}
-                color={isAudioMode ? "purple" : "gray"}
-                size="2"
-                onClick={onToggleAudioMode}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                }}
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  style={{ flexShrink: 0 }}
-                >
-                  <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Z" />
-                  <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
-                  <path d="M12 18v4" />
-                  <path d="M8 22h8" />
-                </svg>
-                {isAudioMode ? "Audio" : "Audio"}
-              </Button>
-            )}
-
-            {/* Document Viewer Button - show whenever a document is present */}
-            {documentId && (
-              <>
-                <Tooltip.Provider>
-                  <Tooltip.Root>
-                    <Tooltip.Trigger asChild>
-                      <Button
-                        variant="soft"
-                        size="2"
-                        radius="full"
-                        onClick={() => setIsDocumentModalOpen(true)}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          borderRadius: "12px",
-                          flexShrink: 0,
-                        }}
-                        aria-label={
-                          documentFieldName
+              {/* Document Viewer Button - show whenever a document is present */}
+              {documentId && (
+                <>
+                  <Tooltip.Provider>
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <Button
+                          variant="soft"
+                          size="2"
+                          radius="full"
+                          onClick={() => setIsDocumentModalOpen(true)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            borderRadius: "12px",
+                            flexShrink: 0,
+                          }}
+                          aria-label={
+                            documentFieldName
+                              ? `Show ${documentFieldName}`
+                              : "Show document"
+                          }
+                        >
+                          <FileTextIcon width="18" height="18" />
+                        </Button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Portal>
+                        <Tooltip.Content
+                          className="TooltipContent"
+                          sideOffset={5}
+                          style={{
+                            backgroundColor: "var(--gray-12)",
+                            color: "white",
+                            borderRadius: "6px",
+                            padding: "8px 12px",
+                            fontSize: "14px",
+                            lineHeight: "1.4",
+                            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                            zIndex: 1000,
+                          }}
+                        >
+                          {documentFieldName
                             ? `Show ${documentFieldName}`
-                            : "Show document"
-                        }
-                      >
-                        <FileTextIcon width="18" height="18" />
-                      </Button>
-                    </Tooltip.Trigger>
-                    <Tooltip.Portal>
-                      <Tooltip.Content
-                        className="TooltipContent"
-                        sideOffset={5}
+                            : "Show document"}
+                          <Tooltip.Arrow style={{ fill: "var(--gray-12)" }} />
+                        </Tooltip.Content>
+                      </Tooltip.Portal>
+                    </Tooltip.Root>
+                  </Tooltip.Provider>
+
+                  <Dialog.Root
+                    open={isDocumentModalOpen}
+                    onOpenChange={setIsDocumentModalOpen}
+                  >
+                    <Dialog.Portal>
+                      <Dialog.Overlay
                         style={{
-                          backgroundColor: "var(--gray-12)",
-                          color: "white",
-                          borderRadius: "6px",
-                          padding: "8px 12px",
-                          fontSize: "14px",
-                          lineHeight: "1.4",
-                          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
-                          zIndex: 1000,
+                          position: "fixed",
+                          inset: 0,
+                          backgroundColor: "rgba(0, 0, 0, 0.5)",
+                          animation: "fadeIn 0.2s ease-out",
+                        }}
+                      />
+                      <Dialog.Content
+                        style={{
+                          position: "fixed",
+                          top: "50%",
+                          left: "50%",
+                          transform: "translate(-50%, -50%)",
+                          backgroundColor: "white",
+                          borderRadius: "8px",
+                          padding: "24px",
+                          width: "90vw",
+                          maxWidth: "1000px",
+                          height: "85vh",
+                          overflow: "hidden",
+                          boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
+                          border: "1px solid var(--gray-6)",
                         }}
                       >
-                        {documentFieldName
-                          ? `Show ${documentFieldName}`
-                          : "Show document"}
-                        <Tooltip.Arrow style={{ fill: "var(--gray-12)" }} />
-                      </Tooltip.Content>
-                    </Tooltip.Portal>
-                  </Tooltip.Root>
-                </Tooltip.Provider>
+                        <Flex
+                          direction="column"
+                          gap="4"
+                          style={{ height: "100%" }}
+                        >
+                          <Flex align="center" justify="between">
+                            <Dialog.Title asChild>
+                              <Heading
+                                size="5"
+                                weight="bold"
+                                style={{ color: "var(--gray-12)" }}
+                              >
+                                {documentFieldName || "Document"} -{" "}
+                                {scenario?.title || "Training"}
+                              </Heading>
+                            </Dialog.Title>
+                            <Dialog.Close asChild>
+                              <Button
+                                variant="ghost"
+                                size="2"
+                                style={{
+                                  backgroundColor: "rgba(239, 68, 68, 0.1)",
+                                  color: "#ef4444",
+                                  border: "1px solid rgba(239, 68, 68, 0.2)",
+                                  borderRadius: "6px",
+                                }}
+                              >
+                                <Cross2Icon width="16" height="16" />
+                              </Button>
+                            </Dialog.Close>
+                          </Flex>
+                          <Separator size="4" />
+                          <Box
+                            style={{
+                              flex: 1,
+                              border: "1px solid var(--gray-7)",
+                              borderRadius: "6px",
+                              overflow: "hidden",
+                            }}
+                          >
+                            <iframe
+                              src={`/api/v1/documents/${documentId}/file`}
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                border: "none",
+                              }}
+                              title={`${documentFieldName || "Document"} - ${
+                                scenario?.title || "Training"
+                              }`}
+                            />
+                          </Box>
+                        </Flex>
+                      </Dialog.Content>
+                    </Dialog.Portal>
+                  </Dialog.Root>
+                </>
+              )}
 
+              {/* Resume Button - only for interview training and if resumeId exists */}
+              {false && (
                 <Dialog.Root
-                  open={isDocumentModalOpen}
-                  onOpenChange={setIsDocumentModalOpen}
+                  open={isResumeModalOpen}
+                  onOpenChange={setIsResumeModalOpen}
                 >
+                  <Dialog.Trigger asChild>
+                    <Button variant="soft" size="2">
+                      <FileTextIcon />
+                      View Resume
+                    </Button>
+                  </Dialog.Trigger>
                   <Dialog.Portal>
                     <Dialog.Overlay
                       style={{
@@ -324,7 +414,7 @@ export default function ChatHeader({
                         borderRadius: "8px",
                         padding: "24px",
                         width: "90vw",
-                        maxWidth: "1000px",
+                        maxWidth: "900px",
                         height: "85vh",
                         overflow: "hidden",
                         boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
@@ -343,7 +433,7 @@ export default function ChatHeader({
                               weight="bold"
                               style={{ color: "var(--gray-12)" }}
                             >
-                              {documentFieldName || "Document"} - {chatTitle}
+                              Document - {scenario?.title || "Training"}
                             </Heading>
                           </Dialog.Title>
                           <Dialog.Close asChild>
@@ -370,140 +460,132 @@ export default function ChatHeader({
                             overflow: "hidden",
                           }}
                         >
-                          <iframe
-                            src={`/api/v1/documents/${documentId}/file`}
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              border: "none",
-                            }}
-                            title={`${
-                              documentFieldName || "Document"
-                            } - ${chatTitle}`}
-                          />
+                          {false ? (
+                            <iframe
+                              src={`/api/resume/`}
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                border: "none",
+                              }}
+                              title={`Document - ${
+                                scenario?.title || "Training"
+                              }`}
+                            />
+                          ) : (
+                            <Flex
+                              align="center"
+                              justify="center"
+                              style={{
+                                height: "100%",
+                                color: "var(--gray-10)",
+                              }}
+                            >
+                              <Text size="3">No resume file available</Text>
+                            </Flex>
+                          )}
                         </Box>
                       </Flex>
                     </Dialog.Content>
                   </Dialog.Portal>
                 </Dialog.Root>
-              </>
-            )}
+              )}
 
-            {/* Resume Button - only for interview training and if resumeId exists */}
-            {false && (
-              <Dialog.Root
-                open={isResumeModalOpen}
-                onOpenChange={setIsResumeModalOpen}
-              >
-                <Dialog.Trigger asChild>
-                  <Button variant="soft" size="2">
-                    <FileTextIcon />
-                    View Resume
-                  </Button>
-                </Dialog.Trigger>
-                <Dialog.Portal>
-                  <Dialog.Overlay
+              {/* End Interview/Training Button - only show for active trainings */}
+              {isInterviewActive && (
+                <Button
+                  variant="solid"
+                  color="red"
+                  size="2"
+                  onClick={onEndInterview}
+                  loading={isEndingInterview}
+                  disabled={isEndingInterview}
+                >
+                  {isEndingInterview
+                    ? endButtonText.replace("End", "Ending...")
+                    : endButtonText}
+                </Button>
+              )}
+            </Flex>
+          </Flex>
+
+          {/* Second Row - Problem Statement and Objectives */}
+          {(scenario?.problem_statement ||
+            (scenario?.objectives && scenario.objectives.length > 0)) && (
+            <Flex
+              direction="row"
+              gap="4"
+              style={{
+                alignItems: "flex-start",
+              }}
+            >
+              {/* Problem Statement - Left */}
+              {scenario?.problem_statement && (
+                <Box style={{ flex: 1 }}>
+                  <Text
+                    size="2"
                     style={{
-                      position: "fixed",
-                      inset: 0,
-                      backgroundColor: "rgba(0, 0, 0, 0.5)",
-                      animation: "fadeIn 0.2s ease-out",
-                    }}
-                  />
-                  <Dialog.Content
-                    style={{
-                      position: "fixed",
-                      top: "50%",
-                      left: "50%",
-                      transform: "translate(-50%, -50%)",
-                      backgroundColor: "white",
-                      borderRadius: "8px",
-                      padding: "24px",
-                      width: "90vw",
-                      maxWidth: "900px",
-                      height: "85vh",
-                      overflow: "hidden",
-                      boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
-                      border: "1px solid var(--gray-6)",
+                      color: "var(--gray-11)",
+                      lineHeight: "1.4",
                     }}
                   >
-                    <Flex direction="column" gap="4" style={{ height: "100%" }}>
-                      <Flex align="center" justify="between">
-                        <Dialog.Title asChild>
-                          <Heading
-                            size="5"
-                            weight="bold"
-                            style={{ color: "var(--gray-12)" }}
-                          >
-                            Document - {chatTitle}
-                          </Heading>
-                        </Dialog.Title>
-                        <Dialog.Close asChild>
-                          <Button
-                            variant="ghost"
-                            size="2"
-                            style={{
-                              backgroundColor: "rgba(239, 68, 68, 0.1)",
-                              color: "#ef4444",
-                              border: "1px solid rgba(239, 68, 68, 0.2)",
-                              borderRadius: "6px",
-                            }}
-                          >
-                            <Cross2Icon width="16" height="16" />
-                          </Button>
-                        </Dialog.Close>
-                      </Flex>
-                      <Separator size="4" />
-                      <Box
-                        style={{
-                          flex: 1,
-                          border: "1px solid var(--gray-7)",
-                          borderRadius: "6px",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {false ? (
-                          <iframe
-                            src={`/api/resume/`}
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              border: "none",
-                            }}
-                            title={`Document - ${chatTitle}`}
-                          />
-                        ) : (
-                          <Flex
-                            align="center"
-                            justify="center"
-                            style={{ height: "100%", color: "var(--gray-10)" }}
-                          >
-                            <Text size="3">No resume file available</Text>
-                          </Flex>
-                        )}
-                      </Box>
-                    </Flex>
-                  </Dialog.Content>
-                </Dialog.Portal>
-              </Dialog.Root>
-            )}
+                    {scenario.problem_statement}
+                  </Text>
+                </Box>
+              )}
 
-            {/* End Interview/Training Button - only show for active trainings */}
-            {isInterviewActive && (
-              <Button
-                variant="solid"
-                color="red"
-                size="2"
-                onClick={onEndInterview}
-                loading={isEndingInterview}
-                disabled={isEndingInterview}
-              >
-                {isEndingInterview
-                  ? endButtonText.replace("End", "Ending...")
-                  : endButtonText}
-              </Button>
-            )}
-          </Flex>
+              {/* Divider */}
+              {scenario?.problem_statement &&
+                scenario?.objectives &&
+                scenario.objectives.length > 0 && (
+                  <Box
+                    style={{
+                      width: "1px",
+                      height: "60px",
+                      background: "var(--gray-6)",
+                      margin: "0 8px",
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+
+              {/* Objectives - Right */}
+              {scenario?.objectives && scenario.objectives.length > 0 && (
+                <Box style={{ flex: 1 }}>
+                  <Box>
+                    {scenario.objectives.map((objective, index) => (
+                      <Flex
+                        key={index}
+                        align="start"
+                        gap="2"
+                        style={{ marginBottom: "6px" }}
+                      >
+                        <Box
+                          style={{
+                            width: "6px",
+                            height: "6px",
+                            borderRadius: "50%",
+                            background: "var(--blue-9)",
+                            marginTop: "6px",
+                            flexShrink: 0,
+                          }}
+                        />
+                        <Text
+                          size="2"
+                          style={{
+                            color: "var(--gray-11)",
+                            lineHeight: "1.4",
+                          }}
+                        >
+                          {objective}
+                        </Text>
+                      </Flex>
+                    ))}
+                  </Box>
+                </Box>
+              )}
+            </Flex>
+          )}
         </Flex>
       </Box>
       <style jsx global>{`
