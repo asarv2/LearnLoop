@@ -417,6 +417,23 @@ export function WebSocketProvider({
       }
     );
 
+    // Bridge precise client correction to server
+    const onClientStop = (e: Event) => {
+      try {
+        const d = (e as CustomEvent).detail as {
+          chat_id: string;
+          message_id: string;
+          stop_ts_ms: number;
+        };
+        if (!d?.chat_id || !d?.message_id) return;
+        socketRef.current?.emit("client_interrupted", d);
+      } catch {}
+    };
+    window.addEventListener(
+      "clientTranscriptStop",
+      onClientStop as EventListener
+    );
+
     socket.on(
       "training_message_error",
       (data: { chat_id: string; message_id: string; error: string }) => {
@@ -637,6 +654,10 @@ export function WebSocketProvider({
       socketRef.current = null;
       setIsConnected(false);
       cleanupRTC();
+      window.removeEventListener(
+        "clientTranscriptStop",
+        onClientStop as EventListener
+      );
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId, router]);

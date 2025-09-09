@@ -182,7 +182,7 @@ export default function AssessmentWizard({
                 value={option}
                 control={<Radio />}
                 label={option}
-                sx={{ mb: 1.5, alignItems: "flex-start" }}
+                sx={{ mb: 1.5, alignItems: "center" }}
               />
             ))}
           </RadioGroup>

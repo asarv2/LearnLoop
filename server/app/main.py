@@ -66,8 +66,14 @@ from app.rtc import (WebRTCSession, get_room,  # get_room from your new code
 
 
 # ── Loop lag watchdog ─────────────────────────────────────────────────────────
-async def _loop_lag_watchdog(threshold_ms=40, period_ms=20):
-    """Monitor event loop lag and log warnings if it exceeds threshold."""
+async def _loop_lag_watchdog(threshold_ms: int = 150, period_ms: int = 50) -> None:
+    """Monitor event loop lag and log warnings if it exceeds threshold.
+
+    Controlled by env vars:
+      - LOOP_LAG_WATCHDOG: "0" to disable (default: enabled)
+      - LOOP_LAG_THRESHOLD_MS: warning threshold (default: 150)
+      - LOOP_LAG_PERIOD_MS: sampling period (default: 50)
+    """
     last = time.perf_counter()
     period = period_ms / 1000.0
     while True:
@@ -77,6 +83,20 @@ async def _loop_lag_watchdog(threshold_ms=40, period_ms=20):
         if lag_ms > threshold_ms:
             logger.warning("Event loop lag: %.1f ms", lag_ms)
         last = now
+
+def _maybe_start_watchdog() -> None:
+    enabled = os.getenv("LOOP_LAG_WATCHDOG", "1") != "0"
+    if not enabled:
+        return
+    try:
+        t_ms = int(os.getenv("LOOP_LAG_THRESHOLD_MS", "150"))
+    except Exception:
+        t_ms = 150
+    try:
+        p_ms = int(os.getenv("LOOP_LAG_PERIOD_MS", "50"))
+    except Exception:
+        p_ms = 50
+    asyncio.create_task(_loop_lag_watchdog(threshold_ms=t_ms, period_ms=p_ms))
 
 # ── sid <-> profile map (very light; OK to keep in-memory or back by Redis) ──
 SID_TO_PROFILE: dict[str, str] = {}
@@ -110,7 +130,7 @@ set_emitter(emit_to_room)
 async def connect(sid, environ, auth):
     # Start the loop lag watchdog on first connection (only once)
     if not hasattr(connect, '_watchdog_started'):
-        asyncio.create_task(_loop_lag_watchdog())
+        _maybe_start_watchdog()
         connect._watchdog_started = True
     
     # read profileId from query string (?profileId=...)
