@@ -20,6 +20,8 @@ from app.store import list_messages, upsert_text_chunk
 FullChatCallback  = Callable[[str, list], Awaitable[None]]       # (room_id, messages[]) -> None
 MessageCB         = Callable[[str, str], Awaitable[None]]        # (room_id, message_id) -> None
 TextChunkBroadcaster = Callable[[Dict[str, Any]], Awaitable[None]]
+TranscriptBroadcaster = Callable[[Dict[str, Any]], Awaitable[None]]
+TranscriptStopBroadcaster = Callable[[Dict[str, Any]], Awaitable[None]]
 
 class StoppableAgent(Protocol):
     async def stop(self) -> None: ...
@@ -31,6 +33,8 @@ class Room:
     on_full_chat: Optional[FullChatCallback] = None
     on_agent_message: Optional[MessageCB] = None
     on_text_chunk: Optional[TextChunkBroadcaster] = None   # 👈 NEW
+    on_transcript: Optional[TranscriptBroadcaster] = None
+    on_transcript_stop: Optional[TranscriptStopBroadcaster] = None
     # keep a handle on agents so we can stop them on cleanup
     agents: List[StoppableAgent] = field(default_factory=list)
 
@@ -77,6 +81,34 @@ class Room:
         if self.on_full_chat and is_final:
             await self.on_full_chat(self.id, list_messages(self.id))
         return msg.id
+
+    async def broadcast_transcript(self, *, agent_id: str, message_id: Optional[str], start_ts_ms: int, words: List[Dict[str, Any]], full_text: str):
+        if self.on_transcript is None:
+            return
+        payload = {
+            "room_id": self.id,
+            "agent_id": agent_id,
+            "message_id": message_id,
+            "start_ts_ms": start_ts_ms,
+            "words": words,
+            "text": full_text,
+        }
+        try:
+            print(f"[ctc][room] tx words={len(words)} msg={message_id}")
+        except Exception:
+            pass
+        await self.on_transcript(payload)
+
+    async def broadcast_transcript_stop(self, *, agent_id: str, message_id: Optional[str], stop_ts_ms: int):
+        if self.on_transcript_stop is None:
+            return
+        payload = {
+            "room_id": self.id,
+            "agent_id": agent_id,
+            "message_id": message_id,
+            "stop_ts_ms": stop_ts_ms,
+        }
+        await self.on_transcript_stop(payload)
 
 
 

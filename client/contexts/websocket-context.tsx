@@ -337,6 +337,46 @@ export function WebSocketProvider({
       }
     );
 
+    // Word-level transcript events
+    socket.on(
+      "transcript",
+      (ev: {
+        room_id: string;
+        agent_id: string;
+        message_id?: string | null;
+        start_ts_ms: number;
+        text: string;
+        words: { start_ms: number; end_ms: number; text: string }[];
+      }) => {
+        try {
+          // Debug log to verify client reception
+          logInfo("transcript (raw)", { messageId: ev.message_id, wordsLength: ev.words?.length ?? 0 });
+        } catch {}
+        // Forward as a DOM event for chat components to consume and attach by message id
+        window.dispatchEvent(
+          new CustomEvent("agentTranscript", {
+            detail: ev,
+          })
+        );
+      }
+    );
+
+    socket.on(
+      "transcript_stop",
+      (ev: {
+        room_id: string;
+        agent_id: string;
+        message_id?: string | null;
+        stop_ts_ms: number;
+      }) => {
+        window.dispatchEvent(
+          new CustomEvent("agentTranscriptStop", {
+            detail: ev,
+          })
+        );
+      }
+    );
+
     socket.on(
       "training_message_error",
       (data: { chat_id: string; message_id: string; error: string }) => {
