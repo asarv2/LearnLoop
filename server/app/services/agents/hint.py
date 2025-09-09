@@ -106,7 +106,7 @@ async def run_hint_agent(
         system_prompt=system_prompt,
         temperature=0.0,
         output_type=HintResponse,
-        model="gemini/gemini-2.5-flash-lite",
+        model="openai/gpt-4.1-mini",
     )
 
     try:

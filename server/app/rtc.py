@@ -71,6 +71,11 @@ class WebRTCSession:
         self.pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=build_ice_servers()))
         self.room = get_room(room_id)
         self.room.register_agent(self.sid, "human")
+        # Mark human presence (lazy start OpenAI if first human)
+        try:
+            asyncio.create_task(self.room.human_join(self.sid))
+        except Exception:
+            pass
         self.subscriber = self.room.bus.subscribe(self.sid)
         self.out_track = OutboundTrack(self.subscriber)
 
@@ -183,6 +188,11 @@ class WebRTCSession:
             await self.pc.close()
         finally:
             self.room.bus.unsubscribe(self.sid)
+            # On RTC disconnect, update human presence and possibly stop OpenAI
+            try:
+                await self.room.human_leave(self.sid)
+            except Exception:
+                pass
 
 # Global session storage
 sessions: Dict[str, WebRTCSession] = {}

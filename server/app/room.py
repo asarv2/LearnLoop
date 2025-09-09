@@ -46,9 +46,71 @@ class Room:
     user_profile_id: Optional[str] = None
     user_persona_id: Optional[str] = None
 
+    # Track human RTC participants (by sid)
+    human_sids: set[str] = field(default_factory=set)
+
+    # OpenAI agent lifecycle (lazy start/stop)
+    openai_agent: Optional[OpenAIAgent] = None
+    _openai_started: bool = False
+    _idle_shutdown_task: Optional[asyncio.Task] = None
+
     def register_agent(self, agent_id: str, description: str = ""):
         # just metadata; can expand later
         pass
+
+    # ── Human presence tracking ───────────────────────────────────────────────
+    def _cancel_idle_shutdown(self):
+        t = self._idle_shutdown_task
+        if t and not t.done():
+            try:
+                t.cancel()
+            except Exception:
+                pass
+        self._idle_shutdown_task = None
+
+    async def _start_openai(self):
+        if self._openai_started:
+            return
+        if self.openai_agent is None:
+            self.openai_agent = OpenAIAgent(id="agent:openai", bus=self.bus, room=self)
+        try:
+            self.openai_agent.start()
+            self._openai_started = True
+        except Exception:
+            self._openai_started = False
+
+    async def _stop_openai(self):
+        if not self._openai_started:
+            return
+        try:
+            if self.openai_agent is not None:
+                await self.openai_agent.stop()
+        except Exception:
+            pass
+        finally:
+            self._openai_started = False
+
+    async def human_join(self, sid: str):
+        self.human_sids.add(sid)
+        self._cancel_idle_shutdown()
+        # Lazy-start OpenAI on first human
+        if len(self.human_sids) == 1:
+            await self._start_openai()
+
+    async def human_leave(self, sid: str, *, idle_ms: int = 5000):
+        self.human_sids.discard(sid)
+        if len(self.human_sids) > 0:
+            return
+        # Graceful idle shutdown: stop OpenAI after a short delay to allow fast reconnects
+        self._cancel_idle_shutdown()
+        async def _idle():
+            try:
+                await asyncio.sleep(max(0, idle_ms) / 1000.0)
+                if len(self.human_sids) == 0:
+                    await self._stop_openai()
+            except asyncio.CancelledError:
+                pass
+        self._idle_shutdown_task = asyncio.create_task(_idle())
 
     async def append_text_chunk(self, *, source_id: str, role: str,
                                 text: str, message_id: Optional[str],
@@ -156,10 +218,9 @@ def get_room(room_id: Optional[str] = None) -> Room:
     # echo.start()
     # r.agents.append(echo)
 
-    # OpenAI agent
-    openai = OpenAIAgent(id="agent:openai", bus=bus, room=r)
-    openai.start()
-    r.agents.append(openai)
+    # Do not auto-start OpenAI; start lazily on first human join
+    r.openai_agent = OpenAIAgent(id="agent:openai", bus=bus, room=r)
+    r.agents.append(r.openai_agent)
 
     # # Logger (optional)
     # logger = LoggerAgent(id="agent:logger", bus=bus, room=r, recorder=None)

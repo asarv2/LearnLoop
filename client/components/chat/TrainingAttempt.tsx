@@ -7,7 +7,6 @@
 "use client";
 
 import { TrainingProvider, useTraining } from "@/contexts/training-context";
-import { useWebSocket } from "@/contexts/websocket-context";
 import { useChatForAttempt } from "@/lib/api/hooks/useChats";
 import { useFields } from "@/lib/api/hooks/useFields";
 import { useParameters } from "@/lib/api/hooks/useParameters";
@@ -17,12 +16,11 @@ import { logError } from "@/utils/logger";
 import { Box, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import AssessmentWizard from "./AssessmentWizard";
 import ChatArea from "./ChatArea";
 import ChatHeader from "./ChatHeader";
 import FeedbackModal from "./FeedbackModal";
-import IntroMessageModal from "./IntroMessageModal";
 
 interface TrainingAttemptProps {
   attemptId: string;
@@ -31,11 +29,6 @@ interface TrainingAttemptProps {
 function TrainingAttemptContent() {
   const router = useRouter();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [showIntroModal, setShowIntroModal] = useState(false);
-  const [hasShownIntroModal, setHasShownIntroModal] = useState(false);
-
-  // WebSocket intro message sender (normal send path under the hood)
-  const { emitSendIntroMessage } = useWebSocket();
 
   // Use the training context for all training-related state and actions
   const {
@@ -104,41 +97,6 @@ function TrainingAttemptContent() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  // Show intro modal when chat loads and there are no messages (only once)
-  useEffect(() => {
-    if (chat && messages && messages.length === 0 && !hasShownIntroModal) {
-      setShowIntroModal(true);
-      setHasShownIntroModal(true);
-    }
-  }, [chat, messages, hasShownIntroModal]);
-
-  const handleIntroMessageSelect = (message: string) => {
-    console.log(
-      "TrainingAttempt received intro message:",
-      message,
-      "chat?.id:",
-      chat?.id
-    );
-    if (chat?.id) {
-      console.log("Calling emitSendIntroMessage with:", {
-        chat_id: chat.id,
-        message,
-      });
-      emitSendIntroMessage({
-        chat_id: chat.id,
-        message,
-      });
-      setShowIntroModal(false);
-    } else {
-      console.error("No chat ID available for intro message");
-    }
-  };
-
-  const handleCloseIntroModal = () => {
-    setShowIntroModal(false);
-    // User can close modal and type their own message
-  };
 
   const endInterview = async () => {
     try {
@@ -286,13 +244,6 @@ function TrainingAttemptContent() {
               chat={chat}
             />
           )}
-
-          {/* Intro Message Modal */}
-          <IntroMessageModal
-            isOpen={showIntroModal}
-            onClose={handleCloseIntroModal}
-            onSelectMessage={handleIntroMessageSelect}
-          />
         </>
       )}
     </Box>

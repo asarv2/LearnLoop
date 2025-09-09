@@ -3,12 +3,13 @@ import uuid
 from typing import AsyncGenerator
 
 from agents import Agent, ModelSettings, Runner, trace
-from agents.extensions.models.litellm_model import LitellmModel
 from agents.items import TResponseInputItem
+from agents.models.openai_responses import OpenAIResponsesModel
 from app.db import get_session
 from app.models import Personas
 from dotenv import load_dotenv
 from fastapi import Depends
+from openai import AsyncOpenAI
 from openai.types.responses import ResponseTextDeltaEvent
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -60,7 +61,7 @@ class GenericAgent:
         agent_name: str,
         system_prompt: str,
         temperature: float,
-        model: str = "gemini/gemini-2.5-flash",
+        model: str = "openai/gpt-4.1",
         output_type: type[BaseModel] | None = None
     ):
         self.agent_name = agent_name
@@ -71,11 +72,11 @@ class GenericAgent:
 
     def agent(self) -> Agent:
         return Agent(
-            name=f"{self.agent_name} Agent",
+            name=f"{self.agent_name}",
             instructions=self.system_prompt,
-            model=LitellmModel(
+            model=OpenAIResponsesModel(
                 model=self.model,
-                api_key=os.getenv("GOOGLE_GENERATIVE_AI_API_KEY"),
+                openai_client=AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")),
             ),
             model_settings=ModelSettings(
                 temperature=self.temperature,

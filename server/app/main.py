@@ -121,6 +121,12 @@ async def connect(sid, environ, auth):
         SID_TO_PROFILE[sid] = profile_id
         PROFILE_TO_SID[profile_id] = sid
 
+    # Persist profile_id in Socket.IO session for Redis/clustering safety
+    try:
+        await sio.save_session(sid, {"profile_id": profile_id})
+    except Exception:
+        pass
+
     # (optional, but handy)
     await sio.emit("server_capabilities", {"webrtc": True, "audio": True}, room=sid)
     await sio.emit("connection_confirmed", {"sid": sid, "server_time": time.time()}, room=sid)
@@ -153,7 +159,12 @@ async def offer(sid, data: Dict[str, Any]):
     room = get_room(room_id)
 
     # remember who this socket/user is for this room
-    room.user_profile_id = get_profile_id_for_sid(sid)
+    try:
+        sess = await sio.get_session(sid)
+    except Exception:
+        sess = None
+    pid_from_session = (sess or {}).get("profile_id") if isinstance(sess, dict) else None
+    room.user_profile_id = pid_from_session or get_profile_id_for_sid(sid)
 
     # hook up text broadcast once (idempotent)
     if room.on_text_chunk is None:
@@ -182,12 +193,20 @@ async def offer(sid, data: Dict[str, Any]):
 
     if sid not in sessions:
         sessions[sid] = WebRTCSession(sid, room_id)
+    else:
+        # If an old session exists for this sid, close it and recreate to avoid audio deadlocks
+        try:
+            old = sessions.pop(sid)
+            await old.close()
+        except Exception:
+            pass
+        sessions[sid] = WebRTCSession(sid, room_id)
 
     ans = await sessions[sid].handle_offer(data)
     await sio.emit("answer", ans, room=sid)
 
     # ✅ tell the client the server's out track is ready to play
-    pid = get_profile_id_for_sid(sid)
+    pid = pid_from_session or get_profile_id_for_sid(sid)
     await sio.emit("webrtc_audio_ready", {"profile_id": pid}, room=sid)
 
 @sio.event

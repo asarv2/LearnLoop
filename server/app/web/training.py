@@ -646,9 +646,27 @@ async def handle_training_message_websocket(sid: str, data: Dict[str, Any]) -> N
         chat_id = data.get("chat_id")
         message = (data.get("message") or "").strip()
         
-        # Get profile_id from sid for persona mapping
-        from app.main import get_profile_id_for_sid
-        profile_id = get_profile_id_for_sid(sid)
+        # Get profile_id from Socket.IO session for clustering safety (fallback to in-memory)
+        profile_id = None
+        try:
+            from app.main import get_profile_id_for_sid, get_socketio_instance
+            sio = get_socketio_instance()
+            try:
+                sess = await sio.get_session(sid)  # type: ignore
+            except Exception:
+                sess = None
+            profile_id = (sess or {}).get("profile_id") if isinstance(sess, dict) else None
+            if not profile_id:
+                profile_id = get_profile_id_for_sid(sid)
+        except Exception:
+            pass
+        
+        # Ensure sender is in the room to receive room-scoped events (no-op if already joined)
+        try:
+            sio = get_sio_instance()
+            await sio.enter_room(sid, str(chat_id))
+        except Exception:
+            pass
         
         # Use the traditional training flow
         await process_training_message_websocket(
@@ -676,10 +694,28 @@ async def handle_training_message_rtc(sid: str, data: Dict[str, Any]) -> None:
 
         from app.room import get_room
         room = get_room(chat_id)
+        
+        # Ensure sender is in the room to receive room-scoped events (no-op if already joined)
+        try:
+            sio = get_sio_instance()
+            await sio.enter_room(sid, str(chat_id))
+        except Exception:
+            pass
 
-        # Get profile_id from sid for persona mapping
-        from app.main import get_profile_id_for_sid
-        profile_id = get_profile_id_for_sid(sid)
+        # Get profile_id from Socket.IO session for clustering safety (fallback to in-memory)
+        profile_id = None
+        try:
+            from app.main import get_profile_id_for_sid, get_socketio_instance
+            sio = get_socketio_instance()
+            try:
+                sess = await sio.get_session(sid)  # type: ignore
+            except Exception:
+                sess = None
+            profile_id = (sess or {}).get("profile_id") if isinstance(sess, dict) else None
+            if not profile_id:
+                profile_id = get_profile_id_for_sid(sid)
+        except Exception:
+            pass
         
         # Get user persona_id if available
         persona_id = None

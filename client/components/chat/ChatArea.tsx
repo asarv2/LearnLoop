@@ -17,6 +17,7 @@ import * as Tooltip from "@radix-ui/react-tooltip";
 import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
 import { Mic, MicOff } from "lucide-react";
 import React, { useCallback, useEffect, useState } from "react";
+import IntroMessageModal from "./IntroMessageModal";
 
 // Import necessary hooks
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -50,6 +51,8 @@ export default function ChatArea({
     micOn,
     voiceMode,
     enableVoiceMode,
+    joinRoom,
+    isRoomJoined,
     toggleMic,
     sendWebRTCMessage,
     getLocalMicStream,
@@ -254,13 +257,15 @@ export default function ChatArea({
     }
   }, [chat?.id, voiceMode, enableVoiceMode]);
 
-  // Automatically enable voice mode when chat becomes available (id changes)
+  // Automatically join room and enable voice mode when chat becomes available (id changes)
   useEffect(() => {
     if (!chat?.id) return;
     if (autoEnableVoiceModeRef.current === chat.id) return;
     autoEnableVoiceModeRef.current = chat.id;
+    // Ensure we're in the server room before any messages arrive
+    joinRoom(chat.id);
     if (!voiceMode) enableVoiceMode(chat.id);
-  }, [chat?.id, voiceMode, enableVoiceMode]);
+  }, [chat?.id, voiceMode, enableVoiceMode, joinRoom]);
 
   // Toggle mic handler
   const onToggleMic = useCallback(() => {
@@ -437,17 +442,63 @@ export default function ChatArea({
     const message = currentMessage.trim();
     if (!message || !chat?.id) return;
 
-    if (!voiceMode) return; // prevent sending when voice mode is OFF
-    // realtime path (DC preferred, websocket fallback inside)
+    // Ensure room join just in case (idempotent, cheap)
+    joinRoom(chat.id);
+    // Allow immediate send even if voiceMode not yet flagged or DC not ready:
+    // sendWebRTCMessage will fallback to socket emitter when DC isn't open.
     sendWebRTCMessage(chat.id, message);
     setCurrentMessage("");
   }, [
     chat?.id,
     currentMessage,
-    voiceMode,
+    joinRoom,
     sendWebRTCMessage,
     setCurrentMessage,
   ]);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Intro Message Modal (moved from TrainingAttempt)
+  // ────────────────────────────────────────────────────────────────────────────
+  const [showIntroModal, setShowIntroModal] = useState(false);
+  const hasShownIntroModalRef = React.useRef<string | null>(null);
+
+  // Open intro modal once per chat when there are zero messages, AFTER confirmed room join
+  useEffect(() => {
+    if (!chat?.id) return;
+    if (hasShownIntroModalRef.current === chat.id) return;
+    // Debounce to allow messages to sync and room ack to arrive
+    const t = setTimeout(() => {
+      if (displayMessages.length === 0 && isRoomJoined(chat.id)) {
+        hasShownIntroModalRef.current = chat.id;
+        setShowIntroModal(true);
+      }
+    }, 150);
+    return () => clearTimeout(t);
+  }, [chat?.id, displayMessages.length, isRoomJoined]);
+
+  const handleIntroMessageSelect = useCallback(
+    (message: string) => {
+      if (!chat?.id) return;
+      try {
+        // Ensure room membership
+        joinRoom(chat.id);
+        // Send immediately (websocket fallback if RTC not ready)
+        sendWebRTCMessage(chat.id, message);
+        // Kick off voice mode in the background (no await)
+        void enableVoiceMode(chat.id);
+      } finally {
+        setShowIntroModal(false);
+      }
+    },
+    [chat?.id, joinRoom, enableVoiceMode, sendWebRTCMessage]
+  );
+
+  // Close intro modal automatically if messages appear (e.g., from another tab or delayed fetch)
+  useEffect(() => {
+    if (showIntroModal && displayMessages.length > 0) {
+      setShowIntroModal(false);
+    }
+  }, [showIntroModal, displayMessages.length]);
 
   // Early return if chat is not available
   if (!chat) {
@@ -514,24 +565,41 @@ export default function ChatArea({
                 message.role === "user" ||
                 message.persona_id === userPersona?.id;
               const isAssistantMessage = message.role === "assistant";
+              const isEmptyContent =
+                !message.content || String(message.content).trim() === "";
+              const hasTranscriptWords = Boolean(
+                transcripts[message.id]?.words?.length
+              );
 
-              // Show either the full message card OR the pulsating circle for empty user messages
-              if (!message.completed && !message.content && isUserMessage) {
-                // Show pulsating circle for empty user message
+              // Show either the full message card OR the pulsating circle for empty messages
+              if (!message.completed && isEmptyContent && !hasTranscriptWords) {
+                // Show pulsating circle for in-progress empty message (user or assistant)
                 return (
                   <Box key={message.id}>
-                    <Flex direction="row-reverse" align="center" gap="3">
+                    <Flex
+                      direction={isUserMessage ? "row-reverse" : "row"}
+                      align="center"
+                      gap="3"
+                    >
                       {/* Avatar */}
                       <Card
                         size="1"
                         style={{
                           padding: "8px",
-                          background: "var(--blue-3)",
-                          border: "1px solid var(--blue-6)",
+                          background: isUserMessage
+                            ? "var(--blue-3)"
+                            : "var(--green-3)",
+                          border: `1px solid ${
+                            isUserMessage ? "var(--blue-6)" : "var(--green-6)"
+                          }`,
                           opacity: 0.8,
                         }}
                       >
-                        <PersonIcon color="var(--blue-9)" />
+                        {isUserMessage ? (
+                          <PersonIcon color="var(--blue-9)" />
+                        ) : (
+                          <ChatBubbleIcon color="var(--green-9)" />
+                        )}
                       </Card>
 
                       {/* Pulsating Circle */}
@@ -539,31 +607,33 @@ export default function ChatArea({
                         <div
                           style={{
                             width: `${Math.max(
-                              8,
+                              isUserMessage ? 8 : 14,
                               Math.min(
-                                40,
+                                isUserMessage ? 40 : 48,
                                 ((audioBufferRef.current[
                                   audioBufferRef.current.length - 1
                                 ] || 0) /
                                   255) *
-                                  32 +
-                                  8
+                                  (isUserMessage ? 32 : 34) +
+                                  (isUserMessage ? 8 : 14)
                               )
                             )}px`,
                             height: `${Math.max(
-                              8,
+                              isUserMessage ? 8 : 14,
                               Math.min(
-                                40,
+                                isUserMessage ? 40 : 48,
                                 ((audioBufferRef.current[
                                   audioBufferRef.current.length - 1
                                 ] || 0) /
                                   255) *
-                                  32 +
-                                  8
+                                  (isUserMessage ? 32 : 34) +
+                                  (isUserMessage ? 8 : 14)
                               )
                             )}px`,
                             borderRadius: "50%",
-                            background: "var(--blue-9)",
+                            background: isUserMessage
+                              ? "var(--blue-9)"
+                              : "var(--green-9)",
                             animation: "pulse 1.5s ease-in-out infinite",
                             transition: "width 0.1s ease, height 0.1s ease",
                           }}
@@ -659,29 +729,10 @@ export default function ChatArea({
                                     .join(" ")
                                     .replace(/\s+([,.;!?])/g, "$1");
                                 }
-
-                                // Fallback: existing content or thinking indicator
-                                if (
-                                  !message.completed &&
-                                  !message.content &&
-                                  isAssistantMessage
-                                ) {
-                                  return `${
-                                    personaMap.get(message.persona_id || "") ||
-                                    "Assistant"
-                                  } is thinking...`;
-                                }
                                 return message.content || "";
                               })()}
                             </Markdown>
                           </Text>
-                          {message.completed && (
-                            <Text size="1" style={{ color: "var(--gray-11)" }}>
-                              {new Date(
-                                message.created_at
-                              ).toLocaleTimeString()}
-                            </Text>
-                          )}
                         </Flex>
                       </Card>
                     </Box>
@@ -908,11 +959,7 @@ export default function ChatArea({
                         />
                         <Button
                           onClick={onSend}
-                          disabled={
-                            !voiceMode ||
-                            !currentMessage.trim() ||
-                            isSendingMessage
-                          }
+                          disabled={!currentMessage.trim() || isSendingMessage}
                           size="1"
                           style={{
                             position: "absolute",
@@ -921,9 +968,7 @@ export default function ChatArea({
                             transform: "translateY(-50%)",
                             borderRadius: "20px",
                             background:
-                              currentMessage.trim() &&
-                              !isSendingMessage &&
-                              voiceMode
+                              currentMessage.trim() && !isSendingMessage
                                 ? "var(--blue-9)"
                                 : "var(--gray-6)",
                             border: "none",
@@ -933,9 +978,7 @@ export default function ChatArea({
                             alignItems: "center",
                             justifyContent: "center",
                             cursor:
-                              currentMessage.trim() &&
-                              !isSendingMessage &&
-                              voiceMode
+                              currentMessage.trim() && !isSendingMessage
                                 ? "pointer"
                                 : "not-allowed",
                           }}
@@ -1084,6 +1127,12 @@ export default function ChatArea({
           </Box>
         )}
       </Box>
+      {/* Intro Message Modal */}
+      <IntroMessageModal
+        isOpen={showIntroModal}
+        onClose={() => setShowIntroModal(false)}
+        onSelectMessage={handleIntroMessageSelect}
+      />
     </>
   );
 }

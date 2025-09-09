@@ -101,6 +101,7 @@ export type Database = {
           description: string | null
           id: string
           parameter_ids: string[] | null
+          persona_ids: string[]
           profile_id: string | null
           scenario_id: string | null
           title: string
@@ -116,6 +117,7 @@ export type Database = {
           description?: string | null
           id?: string
           parameter_ids?: string[] | null
+          persona_ids?: string[]
           profile_id?: string | null
           scenario_id?: string | null
           title: string
@@ -131,6 +133,7 @@ export type Database = {
           description?: string | null
           id?: string
           parameter_ids?: string[] | null
+          persona_ids?: string[]
           profile_id?: string | null
           scenario_id?: string | null
           title?: string
@@ -641,6 +644,7 @@ export type Database = {
           field_ids: string[] | null
           id: string
           objectives: string[]
+          parameter_ids: string[]
           parent_id: string | null
           problem_statement: string | null
           rubric_id: string | null
@@ -654,6 +658,7 @@ export type Database = {
           field_ids?: string[] | null
           id?: string
           objectives?: string[]
+          parameter_ids?: string[]
           parent_id?: string | null
           problem_statement?: string | null
           rubric_id?: string | null
@@ -667,6 +672,7 @@ export type Database = {
           field_ids?: string[] | null
           id?: string
           objectives?: string[]
+          parameter_ids?: string[]
           parent_id?: string | null
           problem_statement?: string | null
           rubric_id?: string | null
