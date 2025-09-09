@@ -206,6 +206,7 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
             {"start_ms": int(w.start_ms), "end_ms": int(w.end_ms), "text": str(w.text)}
             for w in tr.words
         ]
+        print(f"words_data: {words_data}")
         return TranscriptResponse(text=tr.text, words=words_data)
     except HTTPException:
         raise
