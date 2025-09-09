@@ -711,14 +711,18 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   );
 
   // Hooks for mutations
-  const { emitStartTraining, emitGenerateScenario } = useWebSocket();
+  const {
+    emitStartTraining,
+    emitGenerateScenario,
+    emitUpdateScenarioParameters,
+  } = useWebSocket();
 
   // Scenario generation draft state
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [additionalPrompt, setAdditionalPrompt] = useState("");
-  const [draftTitle, setDraftTitle] = useState<string>("");
   const [draftProblem, setDraftProblem] = useState<string>("");
   const [draftObjectives, setDraftObjectives] = useState<string[]>([]);
+  const [savedScenarioId, setSavedScenarioId] = useState<string | null>(null);
 
   // Initialize field values when scenario and training load
   useEffect(() => {
@@ -776,7 +780,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     const handleScenarioGenerated = (e: CustomEvent) => {
       const d = e.detail || {};
       // Ensure this is for our parent scenario id
-      if (!scenario || d.scenario_id !== scenario.id) return;
+      if (!scenario) return;
+      // Accept any generated child and store its id for Start/Regenerate chaining
+      setSavedScenarioId(d.scenario_id || null);
       // Complete the final step of generation progress
       setGenerateProgress((prev) => ({
         ...prev,
@@ -788,7 +794,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         window.clearTimeout(preparingModelTimerRef.current);
         preparingModelTimerRef.current = null;
       }
-      setDraftTitle(d.title || "");
       setDraftProblem(d.problem_statement || "");
       setDraftObjectives(Array.isArray(d.objectives) ? d.objectives : []);
       setShowGenerateModal(false);
@@ -1227,17 +1232,21 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         }
       });
 
-      // Emit start training event via WebSocket with processed field values
+      // Update active scenario's parameter ids before starting
+      const scenarioToUse = savedScenarioId || scenarioId;
+      emitUpdateScenarioParameters({
+        scenario_id: scenarioToUse,
+        field_values: finalFieldValues.map((fv) => ({
+          fieldId: fv.fieldId,
+          value: fv.value,
+          parameterId: fv.parameterId,
+        })),
+      });
+
+      // Start training with only scenario_id
       emitStartTraining({
-        scenario_id: scenarioId,
-        field_values: finalFieldValues,
+        scenario_id: scenarioToUse,
         profile_id: user?.id || undefined,
-        scenario_draft: {
-          title: (draftTitle || scenario.title).trim(),
-          problem_statement: scenarioProblem,
-          parent_id: scenario.id,
-          objectives: scenarioObjectives,
-        },
       });
 
       // Note: "Creating scenario" will complete when WebSocket responds
@@ -1610,7 +1619,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                               })
                             );
                             emitGenerateScenario({
-                              scenario_id: scenarioId,
+                              scenario_id: savedScenarioId || scenarioId,
                               field_values: payloadFieldValues,
                             });
                           }}
@@ -1821,7 +1830,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                       parameterId: fv.parameterId,
                     }));
                     emitGenerateScenario({
-                      scenario_id: scenarioId,
+                      scenario_id: savedScenarioId || scenarioId,
                       field_values: payloadFieldValues,
                       additional_prompt: additionalPrompt.trim() || undefined,
                     });

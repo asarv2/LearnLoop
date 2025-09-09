@@ -61,7 +61,7 @@ class GenericAgent:
         agent_name: str,
         system_prompt: str,
         temperature: float,
-        model: str = "openai/gpt-4.1",
+        model: str = "gpt-4.1",
         output_type: type[BaseModel] | None = None
     ):
         self.agent_name = agent_name

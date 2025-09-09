@@ -182,14 +182,13 @@ class OpenAIAgent(Agent):
             self._tts_drain_task = asyncio.create_task(self._drain_tts())
 
     async def _get_assistant_persona_id(self) -> Optional[str]:
-        """Get the assistant persona ID from the chat parameters."""
+        """Get assistant persona from chat.persona_ids; fallback to first if multiple."""
         if self._assistant_persona_id is not None:
             return self._assistant_persona_id
         
         try:
             from app.db import get_session
             from app.models import Chats
-            from app.utils.chat import get_persona_id_from_chat
             from sqlmodel import select
             
             db_session = next(get_session())
@@ -202,12 +201,17 @@ class OpenAIAgent(Agent):
                 if not chat:
                     return None
                 
-                # Get persona ID from chat parameters
-                persona_id = get_persona_id_from_chat(
-                    db_session, 
-                    str(chat.id), 
-                    [str(pid) for pid in (chat.parameter_ids or [])]
-                )
+                # Prefer chat.persona_ids (array) if present
+                persona_id = None
+                try:
+                    from sqlalchemy import text as _text
+                    conn = db_session.connection()
+                    row = conn.execute(_text("SELECT persona_ids FROM chats WHERE id = :id"), {"id": str(chat.id)}).fetchone()
+                    pid_list = list(row[0]) if row and row[0] else []
+                    if pid_list:
+                        persona_id = str(pid_list[0])
+                except Exception:
+                    pass
                 
                 if persona_id:
                     self._assistant_persona_id = str(persona_id)
@@ -432,7 +436,9 @@ class OpenAIAgent(Agent):
             raise ValueError(f"Scenario {chat.scenario_id} not found for chat {chat_id}")
         
         preamble = get_preamble(scenario)
-        parameter_history = get_parameter_history(chat, db_session)
+        # Build parameter history from scenario.parameter_ids instead of chat
+        from app.utils.chat import get_parameter_history_from_scenario
+        parameter_history = get_parameter_history_from_scenario(scenario, db_session)
         conversation_history = get_conversation_history(messages)
 
         instructions = [preamble] + parameter_history

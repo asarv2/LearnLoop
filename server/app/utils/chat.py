@@ -500,6 +500,70 @@ def get_parameter_history_simple(
         fresh_session.close()
 
 
+def get_parameter_history_from_scenario(
+    scenario: Scenarios,
+    session: Session,
+) -> list[TResponseInputItem]:
+    """
+    Build parameter history lines from scenario.parameter_ids instead of chat.
+    Returns a single user message with concatenated parameter lines, or empty list.
+    """
+    try:
+        parameter_ids = getattr(scenario, "parameter_ids", None) or []
+        if not parameter_ids:
+            return []
+
+        # Use fresh session to avoid prepared statement issues in long-lived sessions
+        fresh_session = next(get_session())
+        try:
+            param_lines: list[str] = []
+            for pid in parameter_ids:
+                param = fresh_session.exec(select(Parameters).where(Parameters.id == pid)).one_or_none()
+                if not param or not param.field_id:
+                    continue
+                field = fresh_session.exec(select(Fields).where(Fields.id == param.field_id)).one_or_none()
+                if not field:
+                    continue
+                field_name = field.name or "parameter"
+                field_description = field.description or ""
+
+                if field.field_type == 'persona' and param.value:
+                    persona = fresh_session.exec(select(Personas).where(Personas.id == param.value)).one_or_none()
+                    if persona:
+                        persona_desc = persona.description if persona.description else "No description available"
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is {persona.name}: {persona_desc}")
+                    else:
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is {param.name}")
+                elif field.field_type == 'document' and param.value:
+                    document = fresh_session.exec(select(Documents).where(Documents.id == param.value)).one_or_none()
+                    if document:
+                        doc_content = document.content if document.content else "No content available"
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is document {str(param.value)[:8]}: {doc_content}")
+                    else:
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is {param.name}")
+                elif field.field_type == 'categorical':
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {param.name}")
+                else:
+                    value = param.value if param.value else param.name
+                    if value:
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
+
+            if param_lines:
+                return [{
+                    "role": "user",
+                    "content": "The following are the parameters for this training session:\n" + "\n".join(param_lines)
+                }]
+            return []
+        finally:
+            try:
+                fresh_session.close()
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error(f"Error building parameter history from scenario {scenario.id}: {e}")
+        return []
+
+
 def get_persona_id_from_chat(db_session, chat_id: str, parameter_ids: list[str]) -> Optional[uuid.UUID]:
     """
     Extract persona_id from chat's parameter_ids by finding the parameter with field_type 'persona'
