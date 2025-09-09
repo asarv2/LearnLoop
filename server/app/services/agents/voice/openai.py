@@ -254,9 +254,41 @@ class OpenAIAgent(Agent):
                 db_session = next(get_session())
                 try:
                     conn = db_session.connection()
+                    # Ensure the DB row exists for this message id (assistant placeholder may not have been flushed yet)
+                    try:
+                        persona_id = await self._get_assistant_persona_id()
+                    except Exception:
+                        persona_id = None
+                    conn.execute(
+                        _text(
+                            """
+                            INSERT INTO messages (id, chat_id, role, content, completed, persona_id)
+                            VALUES (:id, :chat_id, 'assistant', '', false, :persona_id)
+                            ON CONFLICT (id) DO NOTHING
+                            """
+                        ),
+                        {"id": str(msg_id), "chat_id": str(self.room.id), "persona_id": persona_id},
+                    )
+                    # Compute relative ms from created_at so it fits int4
+                    row = conn.execute(
+                        _text("SELECT created_at FROM messages WHERE id = :id"),
+                        {"id": str(msg_id)},
+                    ).fetchone()
+                    rel_ms = 0
+                    try:
+                        import datetime as _dt
+                        created_at = row[0] if row else None
+                        if isinstance(created_at, _dt.datetime):
+                            if created_at.tzinfo is None:
+                                created_at = created_at.replace(tzinfo=_dt.timezone.utc)
+                            created_ms = int(created_at.timestamp() * 1000)
+                            rel = int(now_ms) - created_ms
+                            rel_ms = max(0, min(rel, 2_147_483_647))
+                    except Exception:
+                        rel_ms = 0
                     conn.execute(
                         _text("UPDATE messages SET interruption_ms = :ts WHERE id = :id"),
-                        {"ts": int(now_ms), "id": str(msg_id)},
+                        {"ts": int(rel_ms), "id": str(msg_id)},
                     )
                     db_session.commit()
                 finally:
