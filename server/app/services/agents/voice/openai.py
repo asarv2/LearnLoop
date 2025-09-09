@@ -123,7 +123,8 @@ class OpenAIAgent(Agent):
         self._seen_user_msg_ids: set[str] = set()
         
         # For streaming assistant deltas from OAEventRaw
-        self._resp_streams: dict[str, dict[str, Any]] = {}  # response_id -> {msg_id, chunk_idx, buffer}
+        # response_id -> {msg_id, chunk_idx, buffer, has_received_audio}
+        self._resp_streams: dict[str, dict[str, Any]] = {}
         # Single active user anchor (one bubble max)
         self._user_anchor: dict[str, Any] = {"msg_id": None, "chunk_idx": 0, "had_text": False, "open": False}
         self._anchor_item_ids: set[str] = set()          # all item_ids contributing to this anchor
@@ -139,6 +140,16 @@ class OpenAIAgent(Agent):
 
         # --- Persona ID for assistant messages ---
         self._assistant_persona_id: Optional[str] = None
+
+        # Track the most recent response id to associate first audio chunks
+        self._current_response_id: Optional[str] = None
+
+        # --- CTC alignment accumulators ---
+        self._resp_audio: dict[str, np.ndarray] = {}
+        self._resp_text: dict[str, list[str]] = {}
+        self._resp_audio_start_ts_ms: dict[str, int] = {}
+        self._rid_to_msg: dict[str, str] = {}
+        self._processed_done: set[str] = set()
 
         # --- Uplink queue for decoupling audio capture from network I/O ---
         self._uplink_q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=256)
@@ -261,6 +272,45 @@ class OpenAIAgent(Agent):
                     self._uplink_q.task_done()
         except asyncio.CancelledError:
             pass
+
+    async def _align_ctc(self, *, audio_f32: np.ndarray, sr: int, reference_text: str, stage: str = "final", num_chunks: Optional[int] = None, chunk_ms: int = 20) -> tuple[str, list[dict[str, Any]]]:
+        """Call external model service /align_ctc; returns (text, words[])."""
+        try:
+            base = os.getenv("MODEL_SERVICE_URL") or "http://localhost:8001"
+            if not base:
+                return reference_text, []
+            import httpx  # type: ignore
+            b = audio_f32.astype(np.float32).tobytes()
+            payload: dict[str, Any] = {
+                "audio_b64": base64.b64encode(b).decode("utf-8"),
+                "sr": int(sr),
+                "reference_text": reference_text or "",
+                "stage": stage,
+                "chunk_ms": int(chunk_ms),
+            }
+            if num_chunks is not None:
+                payload["num_chunks"] = int(num_chunks)
+            url = base.rstrip("/") + "/align_ctc"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(url, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+            text = str(data.get("text") or reference_text or "")
+            words_in = data.get("words") or []
+            words: list[dict[str, Any]] = []
+            if isinstance(words_in, list):
+                for w in words_in:
+                    try:
+                        words.append({
+                            "start_ms": int(w.get("start_ms", 0)),
+                            "end_ms": int(w.get("end_ms", 0)),
+                            "text": str(w.get("text", "")),
+                        })
+                    except Exception:
+                        pass
+            return text, words
+        except Exception:
+            return reference_text, []
 
     def _wire_user_text_stream(self, session: RealtimeSession) -> None:
         """
@@ -601,11 +651,49 @@ class OpenAIAgent(Agent):
             try:
                 # --- Audio started/continued ---
                 if isinstance(ev, OAEventAudio):
+                    # print(f"[openai] audio item_id: {ev.item_id}, idx: {ev.content_index}")
                     # Small guard to prevent endless mute
                     if self._tts_blocked:
                         self._tts_blocked = False
                         self._ensure_unblocked_and_draining()
-                    
+
+                    # Heuristic coupling: on first audio for current response, flush buffered text
+                    target_rid = None
+                    rid = getattr(self, "_current_response_id", None)
+                    if rid and rid in self._resp_streams:
+                        target_rid = rid
+                    elif len(self._resp_streams) == 1:
+                        try:
+                            target_rid = next(iter(self._resp_streams.keys()))
+                        except StopIteration:
+                            target_rid = None
+                    if target_rid:
+                        st = self._resp_streams.get(target_rid)
+                        if st is not None and not st.get("has_received_audio"):
+                            st["has_received_audio"] = True
+                            buffered_text = "".join(st.get("buffer", []))
+                            if buffered_text:
+                                persona_id = await self._get_assistant_persona_id()
+                                if st.get("msg_id") is None:
+                                    st["msg_id"] = await self.publish_text_chunk(
+                                        text="",
+                                        message_id=None,
+                                        chunk_idx=0,
+                                        is_final=False,
+                                        persona_id=persona_id,
+                                    )
+                                await self.publish_text_chunk(
+                                    text=buffered_text,
+                                    message_id=st["msg_id"],
+                                    chunk_idx=st["chunk_idx"],
+                                    is_final=False,
+                                    persona_id=persona_id,
+                                )
+                                st["chunk_idx"] += 1
+                                # Save flushed text for partial CTC reference
+                                st["last_flushed_text"] = buffered_text
+                                st["buffer"].clear()
+
                     # bytes or base64 string depending on SDK/version
                     audio_bytes = getattr(ev.audio, "audio", None) \
                                or getattr(ev.audio, "data", None) \
@@ -634,6 +722,51 @@ class OpenAIAgent(Agent):
                     # Append to shared buffer and (re)start the drainer if not blocked
                     self._audio_buf = np.concatenate([self._audio_buf, f32])
                     self._ensure_unblocked_and_draining()
+
+                    # Accumulate per-response audio for alignment
+                    rid_for_audio = getattr(self, "_current_response_id", None) or "_default"
+                    prev_audio = self._resp_audio.get(rid_for_audio)
+                    self._resp_audio[rid_for_audio] = (np.concatenate([prev_audio, f32]) if isinstance(prev_audio, np.ndarray) else np.copy(f32))
+                    if rid_for_audio not in self._resp_audio_start_ts_ms:
+                        self._resp_audio_start_ts_ms[rid_for_audio] = int(time.time() * 1000)
+
+                    # If this was the first audio for the response, run PARTIAL CTC now (after audio is appended)
+                    try:
+                        if target_rid and target_rid in self._resp_streams:
+                            st2 = self._resp_streams.get(target_rid) or {}
+                            # default to False if key missing
+                            if st2.get("has_received_audio") and not st2.get("partial_sent"):
+                                buffered_text_now = "".join(st2.get("buffer", []))
+                                # Use whatever text we flushed (or have); prefer flushed text
+                                reference_text = (st2.get("last_flushed_text") or buffered_text_now or "")
+                                # Map response->message for clients
+                                if st2.get("msg_id"):
+                                    self._rid_to_msg[target_rid] = str(st2["msg_id"])  # type: ignore[arg-type]
+                                audio_arr = self._resp_audio.get(target_rid, np.zeros(0, dtype=np.float32))
+                                start_ts = self._resp_audio_start_ts_ms.get(target_rid, int(time.time() * 1000))
+                                n_chunks = int(os.getenv("CTC_PARTIAL_NUM_CHUNKS", "1"))
+                                print(f"[ctc][partial] rid={target_rid} samples={audio_arr.size} chunks={n_chunks} text_len={len(reference_text)}")
+                                if audio_arr.size > 0 and reference_text:
+                                    _, words_p = await self._align_ctc(
+                                        audio_f32=audio_arr,
+                                        sr=PCM_SR,
+                                        reference_text=reference_text,
+                                        stage="partial",
+                                        num_chunks=n_chunks,
+                                        chunk_ms=20,
+                                    )
+                                    print(f"[ctc][partial] words={len(words_p)}")
+                                    if words_p:
+                                        await self.room.broadcast_transcript(
+                                            agent_id=self.id,
+                                            message_id=str(st2["msg_id"]) if st2.get("msg_id") is not None else None,
+                                            start_ts_ms=start_ts,
+                                            words=words_p,
+                                            full_text=reference_text,
+                                        )
+                                st2["partial_sent"] = True
+                    except Exception:
+                        pass
 
                 # --- Audio finished (flush any micro tail just in case) ---
                 elif isinstance(ev, OAEventAudioEnd):
@@ -698,8 +831,10 @@ class OpenAIAgent(Agent):
                             self._ensure_unblocked_and_draining()
 
                             rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
-                            # Track it but DON'T create a room message yet - wait for actual text
-                            self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": []})
+                            # Track it but DON'T create a room message yet - wait for audio or actual text
+                            st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False})
+                            # Remember latest response id for associating first audio chunks
+                            self._current_response_id = rid
 
                         # Current response got interrupted/canceled? Hard stop now.
                         if evt_type in ("response.interrupted", "response.canceled", "response.cancelled"):
@@ -713,26 +848,28 @@ class OpenAIAgent(Agent):
 
                         # --- Assistant streaming text / transcript deltas ---
                         if evt_type in ("response.output_text.delta", "response.text.delta", "response.audio_transcript.delta"):
+                            # print(f"[openai] response.delta: {ev}")
                             rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
                             delta = payload.get("delta", "") or ""
                             if not delta:
                                 continue
 
-                            st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": []})
-                            # Create the message lazily on first actual text
-                            persona_id = await self._get_assistant_persona_id()
-                            if st["msg_id"] is None:
-                                st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
-
-                            st["buffer"].append(delta)
-                            await self.publish_text_chunk(
-                                text=delta,
-                                message_id=st["msg_id"],
-                                chunk_idx=st["chunk_idx"],
-                                is_final=False,
-                                persona_id=persona_id,
-                            )
-                            st["chunk_idx"] += 1
+                            st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False})
+                            # If we've already received audio, publish immediately; otherwise buffer
+                            if st.get("has_received_audio"):
+                                persona_id = await self._get_assistant_persona_id()
+                                if st["msg_id"] is None:
+                                    st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
+                                await self.publish_text_chunk(
+                                    text=delta,
+                                    message_id=st["msg_id"],
+                                    chunk_idx=st["chunk_idx"],
+                                    is_final=False,
+                                    persona_id=persona_id,
+                                )
+                                st["chunk_idx"] += 1
+                            else:
+                                st["buffer"].append(delta)
 
                         elif evt_type == "response.delta":
                             delta = payload.get("delta", "")
@@ -742,20 +879,21 @@ class OpenAIAgent(Agent):
                                     delta = ot.get("delta", "") or ""
                             if delta:
                                 rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
-                                st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": []})
-                                # Create the message lazily on first actual text
-                                persona_id = await self._get_assistant_persona_id()
-                                if st["msg_id"] is None:
-                                    st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
-                                st["buffer"].append(delta)
-                                await self.publish_text_chunk(
-                                    text=delta,
-                                    message_id=st["msg_id"],
-                                    chunk_idx=st["chunk_idx"],
-                                    is_final=False,
-                                    persona_id=persona_id,
-                                )
-                                st["chunk_idx"] += 1
+                                st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False})
+                                if st.get("has_received_audio"):
+                                    persona_id = await self._get_assistant_persona_id()
+                                    if st["msg_id"] is None:
+                                        st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
+                                    await self.publish_text_chunk(
+                                        text=delta,
+                                        message_id=st["msg_id"],
+                                        chunk_idx=st["chunk_idx"],
+                                        is_final=False,
+                                        persona_id=persona_id,
+                                    )
+                                    st["chunk_idx"] += 1
+                                else:
+                                    st["buffer"].append(delta)
 
                         # --- Assistant done/finalize ---
                         elif evt_type in ("response.output_text.done", "response.text.done", "response.audio_transcript.done",
@@ -765,10 +903,6 @@ class OpenAIAgent(Agent):
 
                             # If there were no deltas, many servers put the full text here
                             final_text = None
-                            # common shapes:
-                            #  - payload["output_text"] as str
-                            #  - payload["output_text"] as dict with "text" or "content"
-                            #  - payload["response"]["output_text"] as str/dict
                             ot = payload.get("output_text")
                             if not ot:
                                 resp_obj = payload.get("response") or {}
@@ -789,12 +923,42 @@ class OpenAIAgent(Agent):
                                 if not st or st["msg_id"] is None:
                                     msg_id = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
                                     await self.publish_text_chunk(text=final_text, message_id=msg_id, chunk_idx=0, is_final=True, persona_id=persona_id)
+                                    self._rid_to_msg[rid] = msg_id
                                 else:
                                     await self.publish_text_chunk(text="", message_id=st["msg_id"], chunk_idx=st["chunk_idx"], is_final=True, persona_id=persona_id)
+                                    self._rid_to_msg[rid] = str(st["msg_id"])  # type: ignore[arg-type]
                             else:
                                 # no text at all → do nothing (no blank bubble)
                                 pass
-                            
+
+                            # FINAL CTC alignment and broadcast
+                            try:
+                                had_deltas = len(self._resp_text.get(rid, [])) > 0
+                                joined = "".join(self._resp_text.get(rid, [])) if had_deltas else ""
+                                cand_payload = (final_text or "").strip()
+                                cand_joined = joined.strip()
+                                effective_text = cand_payload if (len(cand_payload) >= len(cand_joined)) else cand_joined
+                                audio_arr = self._resp_audio.get(rid, self._resp_audio.get("_default", np.zeros(0, dtype=np.float32)))
+                                start_ts = self._resp_audio_start_ts_ms.get(rid, int(time.time() * 1000))
+                                if (effective_text or "").strip() and audio_arr is not None:
+                                    tr_text, words = await self._align_ctc(
+                                        audio_f32=audio_arr,
+                                        sr=PCM_SR,
+                                        reference_text=effective_text,
+                                        stage="final",
+                                    )
+                                    msg_id_final = self._rid_to_msg.get(rid)
+                                    if words:
+                                        await self.room.broadcast_transcript(
+                                            agent_id=self.id,
+                                            message_id=msg_id_final,
+                                            start_ts_ms=start_ts,
+                                            words=words,
+                                            full_text=tr_text or effective_text,
+                                        )
+                            except Exception:
+                                pass
+
                             # If there are pending typed user turns (queued during barge-in),
                             # and no other responses remain active, send the next one now.
                             if not self._resp_streams and self._pending_user_msgs:
@@ -803,7 +967,11 @@ class OpenAIAgent(Agent):
                                     await session.send_message(next_text)
                                 except Exception:
                                     pass
-                            
+
+                            # Cleanup accumulators
+                            self._resp_audio.pop(rid, None)
+                            self._resp_text.pop(rid, None)
+                            self._resp_audio_start_ts_ms.pop(rid, None)
 
 
                         # --- User live mic transcript (stream into chat) ---

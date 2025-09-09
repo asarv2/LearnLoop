@@ -161,6 +161,25 @@ async def offer(sid, data: Dict[str, Any]):
             await sio.emit("text_chunk", payload, room=room.id)
         room.on_text_chunk = _broadcast
 
+    # Wire transcript broadcasters if not set
+    if room.on_transcript is None:
+        async def _broadcast_tx(payload):
+            try:
+                print(f"[ctc][emit] transcript words={len(payload.get('words', []))} msg={payload.get('message_id')} room={payload.get('room_id')}")
+            except Exception:
+                pass
+            await sio.emit("transcript", payload, room=room.id)
+        room.on_transcript = _broadcast_tx
+
+    if room.on_transcript_stop is None:
+        async def _broadcast_tx_stop(payload):
+            try:
+                print(f"[ctc][emit] transcript_stop msg={payload.get('message_id')} stop_ts={payload.get('stop_ts_ms')} room={payload.get('room_id')}")
+            except Exception:
+                pass
+            await sio.emit("transcript_stop", payload, room=room.id)
+        room.on_transcript_stop = _broadcast_tx_stop
+
     if sid not in sessions:
         sessions[sid] = WebRTCSession(sid, room_id)
 

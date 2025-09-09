@@ -38,6 +38,15 @@ class TranscriptResponse(BaseModel):
     words: list[dict[str, int | str]]
 
 
+class AlignCTCRequest(BaseModel):
+    audio_b64: str
+    sr: int
+    reference_text: str
+    stage: str = "final"  # "partial" | "final"
+    num_chunks: int | None = None  # used when stage=="partial"
+    chunk_ms: int = 20  # default 20ms per chunk
+
+
 class HealthResponse(BaseModel):
     status: str
     models_loaded: dict[str, bool]
@@ -149,6 +158,60 @@ async def align_audio_with_text(
         raise HTTPException(status_code=400, detail="Reference text cannot be empty")
     
     return await transcribe_audio(audio_file, reference_text)
+
+
+@app.post("/align_ctc", response_model=TranscriptResponse)
+async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
+    """JSON-based CTC alignment with optional stage and chunk controls.
+
+    - audio_b64: base64-encoded PCM float32 mono or PCM16 bytes
+    - sr: sampling rate of provided audio
+    - reference_text: text to align
+    - stage: "partial" or "final"
+    - num_chunks: when stage=="partial", number of chunks to include
+    - chunk_ms: chunk duration in milliseconds (default 20ms)
+    """
+    import base64
+
+    import numpy as np  # type: ignore
+    try:
+        if not (req.reference_text or "").strip():
+            raise HTTPException(status_code=400, detail="reference_text cannot be empty")
+
+        # Decode audio
+        raw = base64.b64decode(req.audio_b64)
+        # Try float32 first, else int16
+        if len(raw) % 4 == 0:
+            x = np.frombuffer(raw, dtype=np.float32)
+            if not np.isfinite(x).all():
+                # fallback to s16
+                x = (np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0)
+        else:
+            x = (np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0)
+
+        x = x.astype(np.float32)
+        sr = int(req.sr)
+
+        # If partial, truncate to num_chunks * chunk_ms
+        if (req.stage or "final").lower() == "partial" and int(req.num_chunks or 0) > 0:
+            chunk_ms = int(req.chunk_ms or 20)
+            samples_per_chunk = max(1, int(round(sr * (chunk_ms / 1000.0))))
+            limit = int(req.num_chunks or 0) * samples_per_chunk
+            if x.size > limit:
+                x = x[:limit]
+
+        # Align
+        tr = align_audio(x, sr, reference_text=req.reference_text)
+        words_data: list[dict[str, int | str]] = [
+            {"start_ms": int(w.start_ms), "end_ms": int(w.end_ms), "text": str(w.text)}
+            for w in tr.words
+        ]
+        return TranscriptResponse(text=tr.text, words=words_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"/align_ctc failed: {e}")
+        raise HTTPException(status_code=500, detail=f"alignment failed: {str(e)}")
 
 
 @app.get("/")
