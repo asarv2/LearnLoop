@@ -69,19 +69,7 @@ interface WebSocketContextType {
   // Training event emitters (unchanged)
   emitStartTraining: (data: {
     scenario_id: string;
-    field_values: Array<{
-      fieldId: string;
-      value: string;
-      parameterId?: string;
-      file?: File;
-    }>;
     profile_id?: string;
-    scenario_draft?: {
-      title: string;
-      problem_statement: string;
-      parent_id?: string;
-      objectives?: string[];
-    };
   }) => void;
   emitGenerateScenario: (data: {
     scenario_id: string;
@@ -92,6 +80,15 @@ interface WebSocketContextType {
       file?: File;
     }>;
     additional_prompt?: string;
+  }) => void;
+  emitUpdateScenarioParameters: (data: {
+    scenario_id: string;
+    field_values: Array<{
+      fieldId: string;
+      value: string;
+      parameterId?: string;
+      file?: File;
+    }>;
   }) => void;
   emitJoinTraining: (data: {
     attempt_id: string;
@@ -929,16 +926,7 @@ export function WebSocketProvider({
 
   // Training event emitters (unchanged)
   const emitStartTraining = useCallback(
-    (data: {
-      scenario_id: string;
-      field_values: Array<{
-        fieldId: string;
-        value: string;
-        parameterId?: string;
-        file?: File;
-      }>;
-      profile_id?: string;
-    }) => {
+    (data: { scenario_id: string; profile_id?: string }) => {
       if (!socketRef.current?.connected) {
         logError("Cannot start training - WebSocket not connected");
         toast.error("WebSocket not connected. Please refresh the page.");
@@ -968,6 +956,29 @@ export function WebSocketProvider({
       }
       logInfo("Emitting generate_scenario", { scenarioId: data.scenario_id });
       socketRef.current.emit("generate_scenario", data);
+    },
+    []
+  );
+
+  const emitUpdateScenarioParameters = useCallback(
+    (data: {
+      scenario_id: string;
+      field_values: Array<{
+        fieldId: string;
+        value: string;
+        parameterId?: string;
+        file?: File;
+      }>;
+    }) => {
+      if (!socketRef.current?.connected) {
+        logError("Cannot update scenario parameters - WebSocket not connected");
+        toast.error("WebSocket not connected. Please refresh the page.");
+        return;
+      }
+      logInfo("Emitting update_scenario_parameters", {
+        scenarioId: data.scenario_id,
+      });
+      socketRef.current.emit("update_scenario_parameters", data);
     },
     []
   );
@@ -1103,6 +1114,7 @@ export function WebSocketProvider({
     getTrackState,
     emitStartTraining,
     emitGenerateScenario,
+    emitUpdateScenarioParameters,
     emitJoinTraining,
     emitSendTrainingMessage,
     emitSendIntroMessage,

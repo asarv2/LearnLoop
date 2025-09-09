@@ -8,10 +8,11 @@ import logging
 import random
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 import socketio  # type: ignore
 from agents import Runner, trace
+from agents.items import TResponseInputItem
 from app.db import get_session
 from app.models import (Assessments, Attempts, Chats,  # ✨ Import Personas
                         Documents, Fields, Messages, Parameters, Personas,
@@ -28,7 +29,7 @@ from app.utils.chat import (get_conversation_history, get_parameter_history,
                             get_parameter_history_from_field_values,
                             get_parameter_history_simple,
                             get_persona_id_from_chat, get_preamble)
-from sqlalchemy import Column
+from sqlalchemy import Column, text
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
@@ -75,9 +76,8 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
         logger.info(f"Received start_training request from {sid} with data: {data}")
 
         scenario_id = data.get("scenario_id")
-        field_values = data.get("field_values", [])
+        # field_values and scenario_draft are deprecated in the simplified flow
         profile_id = data.get("profile_id")
-        scenario_draft = data.get("scenario_draft")  # optional { title, problem_statement, objectives, parent_id }
 
         if not scenario_id:
             logger.error(f"Missing scenario_id in request from {sid}")
@@ -96,41 +96,14 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
         db_session = next(get_session())
 
         try:
-            # Get the scenario to validate it exists (parent if draft provided)
-            parent_scenario_id = scenario_draft.get("parent_id") if isinstance(scenario_draft, dict) else None
-            lookup_id = parent_scenario_id or scenario_id
+            # Get the scenario to validate it exists
             result = db_session.exec(
-                select(Scenarios).where(Scenarios.id == lookup_id)
+                select(Scenarios).where(Scenarios.id == scenario_id)
             )
             scenario = result.one_or_none()
             if not scenario:
                 await emit_error(sid, "Scenario not found")
                 return
-
-            # Create parameter records for text and numerical fields
-            parameter_ids = []
-
-            for field_value in field_values:
-                field_id = field_value.get("fieldId")
-                value = field_value.get("value", "")
-                parameter_id = field_value.get("parameterId")
-
-                # Handle persona and categorical fields
-                if parameter_id:
-                    # Single parameter ID (categorical or persona)
-                    parameter_ids.append(parameter_id)
-                else:
-                    # For text, numerical, and document fields, create new parameters
-                    # The value will be the actual text/number or document ID
-                    new_param = Parameters(
-                        field_id=field_id,
-                        name=value,
-                        value=value,
-                    )
-                    db_session.add(new_param)
-                    db_session.commit()
-                    db_session.refresh(new_param)
-                    parameter_ids.append(str(new_param.id))
 
             # Create training attempt
             attempt = Attempts(
@@ -141,44 +114,17 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
             db_session.commit()
             db_session.refresh(attempt)
 
-            # Duplicate scenario at start if draft provided; else use existing
-            scenario_to_use_id = None
-            if isinstance(scenario_draft, dict) and scenario_draft.get("title") and scenario_draft.get("problem_statement") is not None:
-                try:
-                    # Duplicate minimal scenario row
-                    new_scenario = Scenarios(
-                        title=scenario_draft.get("title") or scenario.title,
-                        # Keep description same as parent
-                        description=getattr(scenario, "description", None),
-                        training_id=scenario.training_id,
-                        rubric_id=scenario.rubric_id,
-                        field_ids=scenario.field_ids,
-                        problem_statement=scenario_draft.get("problem_statement") or "",
-                        objectives=scenario_draft.get("objectives") or [],
-                        parent_id=scenario.id,
-                    )
-                    db_session.add(new_scenario)
-                    db_session.commit()
-                    db_session.refresh(new_scenario)
-                    scenario_to_use_id = str(new_scenario.id)
-                except Exception as e:
-                    logger.error(f"Error duplicating scenario at start: {e}")
-                    scenario_to_use_id = str(scenario.id)
-            else:
-                scenario_to_use_id = str(scenario.id)
-
             # Create chat
             chat = Chats(
                 attempt_id=attempt.id,
-                title=scenario.title if not isinstance(scenario_draft, dict) or not scenario_draft.get("title") else scenario_draft.get("title"),
+                title=scenario.title,
                 profile_id=profile_id,
                 voice="alloy",
-                parameter_ids=parameter_ids,
                 training_id=scenario.training_id
             )
             # Optionally set scenario_id if model supports it
             try:
-                setattr(chat, "scenario_id", scenario_to_use_id)
+                setattr(chat, "scenario_id", str(scenario.id))
             except Exception:
                 pass
             db_session.add(chat)
@@ -188,76 +134,47 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
             # Document uploads are handled on the frontend before this call
             logger.info("Document uploads completed on frontend")
 
-            # Get persona ID and attach a default persona parameter if missing
+            # Populate chat.persona_ids from scenario.parameter_ids (persona parameters only)
             try:
-                # Create a separate session for persona extraction to avoid transaction conflicts
-                persona_session = next(get_session())
+                # Fetch scenario.parameter_ids via raw SQL (column exists in DB but not in ORM)
+                conn = db_session.connection()
+                row = conn.execute(
+                    text("SELECT parameter_ids FROM scenarios WHERE id = :id"),
+                    {"id": str(scenario.id)},
+                ).fetchone()
+                scenario_parameter_ids: list[str] = list(row[0]) if row and row[0] else []
+
+                # Find persona ids from parameters
+                persona_ids: list[str] = []
+                for pid in scenario_parameter_ids:
+                    param = db_session.exec(select(Parameters).where(Parameters.id == pid)).one_or_none()
+                    if not param or not param.field_id:
+                        continue
+                    fld = db_session.exec(select(Fields).where(Fields.id == param.field_id)).one_or_none()
+                    if fld and getattr(fld, "field_type", None) == "persona" and param.value:
+                        try:
+                            # Ensure a valid UUID string
+                            _ = uuid.UUID(str(param.value))
+                            persona_ids.append(str(param.value))
+                        except Exception:
+                            logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
+
+                # Update chats.persona_ids via raw SQL
                 try:
-                    param_ids_iter = chat.parameter_ids if chat.parameter_ids is not None else []
-                    persona_id = get_persona_id_from_chat(
-                        persona_session,
-                        str(chat.id),
-                        [str(pid) for pid in param_ids_iter]
-                    )
-                finally:
-                    try:
-                        persona_session.close()
-                    except Exception:
-                        pass
-            except Exception as e:
-                logger.error(f"Error getting persona ID for chat {chat.id}: {str(e)}")
-                persona_id = None
-
-            # If no persona is found, attempt to attach a default persona parameter
-            if not persona_id:
-                try:
-                    # Find a persona field from the scenario's fields
-                    persona_field_id = None
-                    field_ids_list: list[uuid.UUID] = []
-                    scenario_field_ids = getattr(scenario, "field_ids", None)
-                    if scenario_field_ids is not None:
-                        field_ids_list = list(scenario_field_ids)
-                    for fid in field_ids_list:
-                        fld = db_session.exec(select(Fields).where(Fields.id == fid)).one_or_none()
-                        if fld and getattr(fld, "field_type", None) == "persona":
-                            persona_field_id = fld.id
-                            break
-
-                    if persona_field_id:
-                        # Pick a default persona parameter (latest updated or first available)
-                        candidate_param = db_session.exec(
-                            select(Parameters).where(Parameters.field_id == persona_field_id)
-                        ).first()
-
-                        if candidate_param and candidate_param.id:
-                            existing_ids = list(chat.parameter_ids) if chat.parameter_ids is not None else []
-                            updated_parameter_ids: list[uuid.UUID] = existing_ids + [candidate_param.id]
-                            chat.parameter_ids = updated_parameter_ids
-                            db_session.add(chat)
-                            db_session.commit()
-                            db_session.refresh(chat)
-
-                            # Re-evaluate persona_id after attaching
-                            try:
-                                persona_session2 = next(get_session())
-                                try:
-                                    param_ids_iter2 = chat.parameter_ids if chat.parameter_ids is not None else []
-                                    persona_id = get_persona_id_from_chat(
-                                        persona_session2,
-                                        str(chat.id),
-                                        [str(pid) for pid in param_ids_iter2]
-                                    )
-                                finally:
-                                    try:
-                                        persona_session2.close()
-                                    except Exception:
-                                        pass
-                            except Exception as e:
-                                logger.error(f"Error re-evaluating persona ID for chat {chat.id}: {str(e)}")
+                    if persona_ids:
+                        array_sql = "ARRAY[" + ", ".join([f"'{p}'" for p in persona_ids]) + "]::uuid[]"
                     else:
-                        logger.warning(f"No persona field configured on scenario {scenario.id}; assistant persona will be unset")
+                        array_sql = "NULL"
+                    conn = db_session.connection()
+                    conn.execute(
+                        text(f"UPDATE chats SET persona_ids = {array_sql} WHERE id = :id"),
+                        {"id": str(chat.id)},
+                    )
+                    db_session.commit()
                 except Exception:
-                    logger.exception("Failed to attach default persona parameter to chat")
+                    logger.exception("Failed to update chat.persona_ids")
+            except Exception:
+                logger.exception("Failed to derive persona_ids from scenario parameters")
 
             # Skip old scenario agent and initial message
 
@@ -867,25 +784,25 @@ async def process_training_message_websocket(
             }
         }, room=chat_id)
 
-        # ✨ 3. Get assistant's persona_id from chat parameters
+        # ✨ 3. Get assistant's persona_id from chat.persona_ids (array column)
+        assistant_persona_id = None
         try:
-            # Create a separate session for persona extraction to avoid transaction conflicts
-            persona_session = next(get_session())
-            try:
-                param_ids_iter3 = chat.parameter_ids if chat.parameter_ids is not None else []
-                assistant_persona_id = get_persona_id_from_chat(
-                    persona_session,
-                    str(chat.id),
-                    [str(pid) for pid in param_ids_iter3]
-                )
-                if not assistant_persona_id:
-                    logger.error(f"No persona found for chat {chat_id}")
-                    # Handle error...
-                    return
-            finally:
-                persona_session.close()
+            conn = db_session.connection()
+            row = conn.execute(
+                text("SELECT persona_ids FROM chats WHERE id = :id"),
+                {"id": str(chat_id)},
+            ).fetchone()
+            persona_ids: list[str] = list(row[0]) if row and row[0] else []
+            if persona_ids:
+                try:
+                    assistant_persona_id = uuid.UUID(persona_ids[0])
+                except Exception:
+                    logger.error(f"Invalid persona id on chat {chat_id}: {persona_ids[0]}")
         except Exception as e:
-            logger.error(f"Error getting assistant persona ID for chat {chat_id}: {str(e)}")
+            logger.error(f"Error reading chat.persona_ids for chat {chat_id}: {str(e)}")
+            assistant_persona_id = None
+        if not assistant_persona_id:
+            logger.error(f"No persona found for chat {chat_id}")
             return
 
         # Create assistant message placeholder
@@ -920,10 +837,65 @@ async def process_training_message_websocket(
             raise ValueError(f"Scenario {chat.scenario_id} not found for chat {chat_id}")
         
         preamble = get_preamble(scenario)
-        parameter_history = get_parameter_history_simple(chat, db_session)
+        # Build parameter history from scenario.parameter_ids
+        try:
+            conn = db_session.connection()
+            row = conn.execute(
+                text("SELECT parameter_ids FROM scenarios WHERE id = :id"),
+                {"id": str(scenario.id)},
+            ).fetchone()
+            scenario_parameter_ids: list[str] = list(row[0]) if row and row[0] else []
+        except Exception:
+            logger.exception("Failed to load scenario.parameter_ids")
+            scenario_parameter_ids = []
+
+        # Build simple parameter lines (mirror utils.get_parameter_history_simple but from scenario ids)
+        param_lines: list[str] = []
+        try:
+            for pid in scenario_parameter_ids:
+                param = db_session.exec(select(Parameters).where(Parameters.id == pid)).one_or_none()
+                if not param or not param.field_id:
+                    continue
+                field = db_session.exec(select(Fields).where(Fields.id == param.field_id)).one_or_none()
+                if not field:
+                    continue
+                field_name = field.name or "parameter"
+                field_description = field.description or ""
+                if getattr(field, "field_type", None) == "persona" and param.value:
+                    from app.models import Personas
+                    persona = db_session.exec(select(Personas).where(Personas.id == param.value)).one_or_none()
+                    if persona:
+                        persona_desc = persona.description if persona.description else "No description available"
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is {persona.name}: {persona_desc}")
+                    else:
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is {param.name}")
+                elif getattr(field, "field_type", None) == "document" and param.value:
+                    document = db_session.exec(select(Documents).where(Documents.id == param.value)).one_or_none()
+                    if document:
+                        doc_content = document.content if document.content else "No content available"
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is document {str(param.value)[:8]}: {doc_content}")
+                    else:
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is {param.name}")
+                elif getattr(field, "field_type", None) == "categorical":
+                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {param.name}")
+                else:
+                    value = param.value if param.value else param.name
+                    if value:
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
+        except Exception:
+            logger.exception("Failed building parameter history from scenario parameters")
+            param_lines = []
+
+        parameter_history: list[TResponseInputItem] = []
+        if param_lines:
+            parameter_history = [{
+                "role": "user",
+                "content": "The following are the parameters for this training session:\n" + "\n".join(param_lines)
+            }]
         conversation_history = get_conversation_history(messages)
 
-        instructions = [preamble] + parameter_history + conversation_history
+        # Coerce to the expected TResponseInputItem type for the agent runner
+        instructions = cast(list[TResponseInputItem], [preamble] + parameter_history + conversation_history)
 
         # Stream response using generic agent
         accumulated_content = ""
@@ -1032,28 +1004,28 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
 
     @sio.event  # type: ignore
     async def generate_scenario(sid: str, data: Dict[str, Any]) -> None:
-        """Generate a scenario draft (title, problem_statement, objectives[])"""
+        """Generate and persist a child scenario (returns new scenario_id)."""
         try:
             logger.info(f"generate_scenario event triggered for sid={sid}")
 
-            scenario_id = data.get("scenario_id")
+            parent_id = data.get("scenario_id")
             field_values = data.get("field_values", [])
             additional_prompt = (data.get("additional_prompt") or "").strip()
 
-            if not scenario_id:
+            if not parent_id:
                 await emit_error(sid, "Missing scenario_id")
                 return
 
             db_session = next(get_session())
             try:
-                parent = db_session.exec(select(Scenarios).where(Scenarios.id == scenario_id)).one_or_none()
+                parent = db_session.exec(select(Scenarios).where(Scenarios.id == parent_id)).one_or_none()
                 if not parent:
                     await emit_error(sid, "Scenario not found")
                     return
 
-                # Build parameter history using the new function
+                # Build parameter history from provided field values
                 parameter_history = get_parameter_history_from_field_values(field_values, db_session)
-                
+
                 preamble = [
                     f"TRAINING: {parent.title}",
                     f"Parent Problem Statement: {(parent.description or '').strip()}",
@@ -1071,7 +1043,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 param_content = ""
                 if parameter_history:
                     param_content = str(parameter_history[0].get("content", ""))
-                
+
                 combined = "\n".join([
                     "\n".join(preamble),
                     param_content,
@@ -1082,12 +1054,65 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     result = await Runner.run(agent.agent(), input=combined)
                     sr = result.final_output_as(ScenarioResponse)
 
+                # Create the child scenario row
+                child = Scenarios(
+                    title=sr.title,
+                    description=getattr(parent, "description", None),
+                    training_id=parent.training_id,
+                    rubric_id=parent.rubric_id,
+                    field_ids=parent.field_ids,
+                    problem_statement=sr.problem_statement,
+                    objectives=sr.objectives or [],
+                    parent_id=parent.id,
+                )
+                db_session.add(child)
+                db_session.commit()
+                db_session.refresh(child)
+
+                # Build/collect parameter_ids: reuse provided parameterId, else create
+                parameter_ids: list[str] = []
+                for fv in field_values:
+                    field_id = fv.get("fieldId")
+                    value = (fv.get("value") or "").strip()
+                    pid = fv.get("parameterId")
+                    if pid:
+                        parameter_ids.append(str(pid))
+                        continue
+                    if field_id:
+                        try:
+                            new_param = Parameters(
+                                field_id=field_id,
+                                name=value,
+                                value=value,
+                            )
+                            db_session.add(new_param)
+                            db_session.commit()
+                            db_session.refresh(new_param)
+                            parameter_ids.append(str(new_param.id))
+                        except Exception:
+                            logger.exception("Failed to create parameter from field value")
+
+                # Persist scenarios.parameter_ids via raw SQL
+                try:
+                    if parameter_ids:
+                        array_sql = "ARRAY[" + ", ".join([f"'{p}'" for p in parameter_ids]) + "]::uuid[]"
+                    else:
+                        array_sql = "NULL"
+                    conn = db_session.connection()
+                    conn.execute(
+                        text(f"UPDATE scenarios SET parameter_ids = {array_sql} WHERE id = :id"),
+                        {"id": str(child.id)},
+                    )
+                    db_session.commit()
+                except Exception:
+                    logger.exception("Failed to update scenarios.parameter_ids")
+
                 sio = get_sio_instance()
                 await sio.emit(
                     "scenario_generated",
                     {
                         "success": True,
-                        "scenario_id": str(parent.id),
+                        "scenario_id": str(child.id),
                         "title": sr.title,
                         "problem_statement": sr.problem_statement,
                         "objectives": sr.objectives or [],
@@ -1102,6 +1127,69 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
         except Exception:
             logger.exception("Error in generate_scenario event")
             await emit_error(sid, "Failed to generate scenario")
+
+    @sio.event  # type: ignore
+    async def update_scenario_parameters(sid: str, data: Dict[str, Any]) -> None:
+        """Update only scenarios.parameter_ids based on latest field_values (no title/ps/objectives change)."""
+        try:
+            scenario_id = data.get("scenario_id")
+            field_values = data.get("field_values", [])
+            if not scenario_id:
+                await emit_error(sid, "Missing scenario_id")
+                return
+            db_session = next(get_session())
+            try:
+                # Validate scenario exists
+                scenario = db_session.exec(select(Scenarios).where(Scenarios.id == scenario_id)).one_or_none()
+                if not scenario:
+                    await emit_error(sid, "Scenario not found")
+                    return
+
+                # Build/collect parameter_ids: reuse provided parameterId, else create
+                parameter_ids: list[str] = []
+                for fv in field_values:
+                    field_id = fv.get("fieldId")
+                    value = (fv.get("value") or "").strip()
+                    pid = fv.get("parameterId")
+                    if pid:
+                        parameter_ids.append(str(pid))
+                        continue
+                    if field_id:
+                        try:
+                            new_param = Parameters(
+                                field_id=field_id,
+                                name=value,
+                                value=value,
+                            )
+                            db_session.add(new_param)
+                            db_session.commit()
+                            db_session.refresh(new_param)
+                            parameter_ids.append(str(new_param.id))
+                        except Exception:
+                            logger.exception("Failed to create parameter from field value")
+
+                # Persist scenarios.parameter_ids via raw SQL
+                try:
+                    if parameter_ids:
+                        array_sql = "ARRAY[" + ", ".join([f"'{p}'" for p in parameter_ids]) + "]::uuid[]"
+                    else:
+                        array_sql = "NULL"
+                    conn = db_session.connection()
+                    conn.execute(
+                        text(f"UPDATE scenarios SET parameter_ids = {array_sql} WHERE id = :id"),
+                        {"id": str(scenario_id)},
+                    )
+                    db_session.commit()
+                except Exception:
+                    logger.exception("Failed to update scenarios.parameter_ids in update event")
+            finally:
+                try:
+                    db_session.close()
+                except Exception:
+                    pass
+        except Exception:
+            logger.exception("Error in update_scenario_parameters event")
+            await emit_error(sid, "Failed to update scenario parameters")
     
     @sio.event  # type: ignore
     async def join_training(sid: str, data: Dict[str, Any]) -> None:
