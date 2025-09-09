@@ -18,8 +18,8 @@ RUN pip install --no-cache-dir -e ".[prod]"
 # Copy application code
 COPY app/ ./app/
 
-# Create audio directory
-RUN mkdir -p /app/audio
+# Create required directories
+RUN mkdir -p /app/audio /app/model_cache
 
 # Expose port
 EXPOSE 8000
