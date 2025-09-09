@@ -64,6 +64,93 @@ export default function ChatArea({
   const [realtimeHints, setRealtimeHints] = useState<string[] | null>(null);
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
 
+  // Transcript state per message id
+  const [transcripts, setTranscripts] = useState<
+    Record<
+      string,
+      {
+        start_ts_ms: number;
+        words: { start_ms: number; end_ms: number; text: string }[];
+        text: string;
+      }
+    >
+  >({});
+  const [transcriptStops, setTranscriptStops] = useState<
+    Record<string, number>
+  >({});
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  // Lightweight render clock (~30fps)
+  useEffect(() => {
+    let raf: number | null = null;
+    let last = 0;
+    const loop = (t: number) => {
+      if (t - last >= 33) {
+        setNowMs(Date.now());
+        last = t;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  // Subscribe to transcript events from websocket-context
+  useEffect(() => {
+    const onAgentTranscript = (evt: Event) => {
+      const e = evt as CustomEvent;
+      const d = (e.detail || {}) as {
+        message_id?: string | null;
+        start_ts_ms: number;
+        text: string;
+        words: { start_ms: number; end_ms: number; text: string }[];
+      };
+      if (!d.message_id) return;
+      setTranscripts((prev) => ({
+        ...prev,
+        [d.message_id as string]: {
+          start_ts_ms: Number(d.start_ts_ms) || Date.now(),
+          words: Array.isArray(d.words) ? d.words : [],
+          text: String(d.text || ""),
+        },
+      }));
+    };
+
+    const onAgentTranscriptStop = (evt: Event) => {
+      const e = evt as CustomEvent;
+      const d = (e.detail || {}) as {
+        message_id?: string | null;
+        stop_ts_ms: number;
+      };
+      if (!d.message_id) return;
+      setTranscriptStops((prev) => ({
+        ...prev,
+        [d.message_id as string]: Number(d.stop_ts_ms) || Date.now(),
+      }));
+    };
+
+    window.addEventListener(
+      "agentTranscript",
+      onAgentTranscript as EventListener
+    );
+    window.addEventListener(
+      "agentTranscriptStop",
+      onAgentTranscriptStop as EventListener
+    );
+    return () => {
+      window.removeEventListener(
+        "agentTranscript",
+        onAgentTranscript as EventListener
+      );
+      window.removeEventListener(
+        "agentTranscriptStop",
+        onAgentTranscriptStop as EventListener
+      );
+    };
+  }, []);
+
   // Use the composite hook to get hints for the latest assistant message
   const { hints, isLoading: isLoadingHints } = useLatestMessageHints(
     chat?.id,
@@ -549,14 +636,43 @@ export default function ChatArea({
                             }}
                           >
                             <Markdown>
-                              {!message.completed &&
-                              !message.content &&
-                              isAssistantMessage
-                                ? `${
+                              {(() => {
+                                // Prefer transcript-driven progressive rendering if present
+                                const tr = transcripts[message.id];
+                                if (
+                                  tr &&
+                                  isAssistantMessage &&
+                                  Array.isArray(tr.words) &&
+                                  tr.words.length > 0
+                                ) {
+                                  const start = Number(tr.start_ts_ms) || 0;
+                                  const stop = transcriptStops[message.id];
+                                  let elapsed = nowMs - start;
+                                  if (Number.isFinite(stop)) {
+                                    elapsed = Math.min(elapsed, stop - start);
+                                  }
+                                  if (elapsed <= 0) return "";
+                                  const visible = tr.words
+                                    .filter((w) => w.start_ms <= elapsed)
+                                    .map((w) => w.text);
+                                  return visible
+                                    .join(" ")
+                                    .replace(/\s+([,.;!?])/g, "$1");
+                                }
+
+                                // Fallback: existing content or thinking indicator
+                                if (
+                                  !message.completed &&
+                                  !message.content &&
+                                  isAssistantMessage
+                                ) {
+                                  return `${
                                     personaMap.get(message.persona_id || "") ||
                                     "Assistant"
-                                  } is thinking...`
-                                : message.content || ""}
+                                  } is thinking...`;
+                                }
+                                return message.content || "";
+                              })()}
                             </Markdown>
                           </Text>
                           {message.completed && (

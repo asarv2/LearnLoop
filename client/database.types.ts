@@ -358,6 +358,7 @@ export type Database = {
           persona_id: string | null
           role: Database["public"]["Enums"]["message_role"]
           training_id: string | null
+          word_timestamps: Json[]
         }
         Insert: {
           chat_id: string
@@ -370,6 +371,7 @@ export type Database = {
           persona_id?: string | null
           role: Database["public"]["Enums"]["message_role"]
           training_id?: string | null
+          word_timestamps?: Json[]
         }
         Update: {
           chat_id?: string
@@ -382,6 +384,7 @@ export type Database = {
           persona_id?: string | null
           role?: Database["public"]["Enums"]["message_role"]
           training_id?: string | null
+          word_timestamps?: Json[]
         }
         Relationships: [
           {
