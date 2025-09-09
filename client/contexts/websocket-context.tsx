@@ -350,7 +350,10 @@ export function WebSocketProvider({
       }) => {
         try {
           // Debug log to verify client reception
-          logInfo("transcript (raw)", { messageId: ev.message_id, wordsLength: ev.words?.length ?? 0 });
+          logInfo("transcript (raw)", {
+            messageId: ev.message_id,
+            wordsLength: ev.words?.length ?? 0,
+          });
         } catch {}
         // Forward as a DOM event for chat components to consume and attach by message id
         window.dispatchEvent(

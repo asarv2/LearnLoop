@@ -682,14 +682,17 @@ class OpenAIAgent(Agent):
                                         is_final=False,
                                         persona_id=persona_id,
                                     )
-                                await self.publish_text_chunk(
-                                    text=buffered_text,
-                                    message_id=st["msg_id"],
-                                    chunk_idx=st["chunk_idx"],
-                                    is_final=False,
-                                    persona_id=persona_id,
-                                )
-                                st["chunk_idx"] += 1
+                                # If word timestamps are enabled, do not stream the buffered text; transcript will drive UI
+                                timestamps_enabled = bool(getattr(self.room, "word_timestamps_enabled", True))
+                                if not timestamps_enabled:
+                                    await self.publish_text_chunk(
+                                        text=buffered_text,
+                                        message_id=st["msg_id"],
+                                        chunk_idx=st["chunk_idx"],
+                                        is_final=False,
+                                        persona_id=persona_id,
+                                    )
+                                    st["chunk_idx"] += 1
                                 # Save flushed text for partial CTC reference
                                 st["last_flushed_text"] = buffered_text
                                 st["buffer"].clear()
@@ -855,31 +858,12 @@ class OpenAIAgent(Agent):
                                 continue
 
                             st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False})
-                            # If we've already received audio, publish immediately; otherwise buffer
-                            if st.get("has_received_audio"):
-                                persona_id = await self._get_assistant_persona_id()
-                                if st["msg_id"] is None:
-                                    st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
-                                await self.publish_text_chunk(
-                                    text=delta,
-                                    message_id=st["msg_id"],
-                                    chunk_idx=st["chunk_idx"],
-                                    is_final=False,
-                                    persona_id=persona_id,
-                                )
-                                st["chunk_idx"] += 1
-                            else:
+                            timestamps_enabled = bool(getattr(self.room, "word_timestamps_enabled", True))
+                            if timestamps_enabled:
+                                # Buffer only; final transcript will be emitted after alignment
                                 st["buffer"].append(delta)
-
-                        elif evt_type == "response.delta":
-                            delta = payload.get("delta", "")
-                            if not delta:
-                                ot = payload.get("output_text")
-                                if isinstance(ot, dict):
-                                    delta = ot.get("delta", "") or ""
-                            if delta:
-                                rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
-                                st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False})
+                            else:
+                                # If we've already received audio, publish immediately; otherwise buffer
                                 if st.get("has_received_audio"):
                                     persona_id = await self._get_assistant_persona_id()
                                     if st["msg_id"] is None:
@@ -894,6 +878,34 @@ class OpenAIAgent(Agent):
                                     st["chunk_idx"] += 1
                                 else:
                                     st["buffer"].append(delta)
+
+                        elif evt_type == "response.delta":
+                            delta = payload.get("delta", "")
+                            if not delta:
+                                ot = payload.get("output_text")
+                                if isinstance(ot, dict):
+                                    delta = ot.get("delta", "") or ""
+                            if delta:
+                                rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
+                                st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False})
+                                timestamps_enabled = bool(getattr(self.room, "word_timestamps_enabled", True))
+                                if timestamps_enabled:
+                                    st["buffer"].append(delta)
+                                else:
+                                    if st.get("has_received_audio"):
+                                        persona_id = await self._get_assistant_persona_id()
+                                        if st["msg_id"] is None:
+                                            st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
+                                        await self.publish_text_chunk(
+                                            text=delta,
+                                            message_id=st["msg_id"],
+                                            chunk_idx=st["chunk_idx"],
+                                            is_final=False,
+                                            persona_id=persona_id,
+                                        )
+                                        st["chunk_idx"] += 1
+                                    else:
+                                        st["buffer"].append(delta)
 
                         # --- Assistant done/finalize ---
                         elif evt_type in ("response.output_text.done", "response.text.done", "response.audio_transcript.done",
