@@ -1224,6 +1224,61 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
         """Submit assessment responses and generate feedback"""
         logger.info(f"submit_assessment event triggered for sid={sid}")
         await handle_submit_assessment(sid, data)
+
+    @sio.event  # type: ignore
+    async def client_interrupted(sid: str, data: Dict[str, Any]) -> None:
+        """Client signals that a message was interrupted on UI at a specific time."""
+        try:
+            chat_id = data.get("chat_id")
+            message_id = data.get("message_id")
+            stop_ts_ms = data.get("stop_ts_ms")
+            if not chat_id or not message_id or not isinstance(stop_ts_ms, (int, float)):
+                return
+            from app.db import get_session as _gs
+            from sqlalchemy import text as _text
+            sess = next(_gs())
+            try:
+                conn = sess.connection()
+                # Fetch created_at to compute relative ms (fit into int4)
+                row = conn.execute(
+                    _text("SELECT created_at FROM messages WHERE id = :id AND chat_id = :chat_id"),
+                    {"id": str(message_id), "chat_id": str(chat_id)},
+                ).fetchone()
+                if not row:
+                    # No row yet → nothing to do
+                    return
+                created_at = row[0]
+                rel_ms = 0
+                try:
+                    import datetime as _dt
+                    if isinstance(created_at, _dt.datetime):
+                        # Convert to epoch ms
+                        if created_at.tzinfo is None:
+                            created_at = created_at.replace(tzinfo=_dt.timezone.utc)
+                        created_ms = int(created_at.timestamp() * 1000)
+                        rel = int(stop_ts_ms) - created_ms
+                        rel_ms = max(0, min(rel, 2_147_483_647))
+                except Exception:
+                    rel_ms = 0
+                conn.execute(
+                    _text(
+                        """
+                        UPDATE messages
+                        SET interruption_ms = :ts
+                        WHERE id = :id AND chat_id = :chat_id
+                        """
+                    ),
+                    {"ts": int(rel_ms), "id": str(message_id), "chat_id": str(chat_id)},
+                )
+                sess.commit()
+            except Exception:
+                try: sess.rollback()
+                except Exception: pass
+            finally:
+                try: sess.close()
+                except Exception: pass
+        except Exception:
+            logger.exception("client_interrupted handler failed")
     
     logger.info("Successfully registered training WebSocket event handlers")
 

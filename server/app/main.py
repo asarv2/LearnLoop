@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 # Use uvloop for better performance
@@ -87,8 +88,12 @@ def get_socketio_instance() -> socketio.AsyncServer:
 def get_profile_id_for_sid(sid: str) -> Optional[str]:
     return SID_TO_PROFILE.get(sid)
 
+import uuid
+
 # ── Wire RTC emitter ──────────────────────────────────────────────────────────
 from app import rtc
+from app.db import session_scope
+from app.models import Profiles
 from app.store import set_emitter
 
 
@@ -118,12 +123,35 @@ async def connect(sid, environ, auth):
             profile_id = None
 
     if profile_id:
+        # If this profile already has a different active sid, force-close it
+        old_sid = PROFILE_TO_SID.get(profile_id)
+        if old_sid and old_sid != sid:
+            await _force_close_sid(old_sid)
+            SID_TO_PROFILE.pop(old_sid, None)
+            PROFILE_TO_SID.pop(profile_id, None)
+
         SID_TO_PROFILE[sid] = profile_id
         PROFILE_TO_SID[profile_id] = sid
 
     # Persist profile_id in Socket.IO session for Redis/clustering safety
     try:
         await sio.save_session(sid, {"profile_id": profile_id})
+    except Exception:
+        pass
+
+    # Update profile activity in DB
+    try:
+        if profile_id:
+            with session_scope() as db:
+                try:
+                    pid = uuid.UUID(profile_id)
+                    p = db.get(Profiles, pid)
+                    if p:
+                        p.active = True
+                        p.last_active = datetime.now(timezone.utc)
+                        db.add(p)
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -142,6 +170,38 @@ async def disconnect(sid):
     pid = SID_TO_PROFILE.pop(sid, None)
     if pid:
         PROFILE_TO_SID.pop(pid, None)
+        # Mark profile inactive
+        try:
+            with session_scope() as db:
+                try:
+                    p = db.get(Profiles, uuid.UUID(pid))
+                    if p:
+                        p.active = False
+                        p.last_active = datetime.now(timezone.utc)
+                        db.add(p)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+async def _force_close_sid(old_sid: str) -> None:
+    try:
+        old = sessions.pop(old_sid, None)
+        if old:
+            try:
+                await sio.leave_room(old_sid, old.room.id)
+            except Exception:
+                pass
+            try:
+                await old.close()
+            except Exception:
+                pass
+        try:
+            await sio.disconnect(old_sid)
+        except Exception:
+            pass
+    except Exception:
+        pass
 
 # ── WebRTC events (thin shim) ─────────────────────────────────────────────────
 @sio.event

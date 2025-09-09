@@ -399,6 +399,16 @@ export function WebSocketProvider({
         message_id?: string | null;
         stop_ts_ms: number;
       }) => {
+        // Inform server that client has clamped this message at stop_ts_ms
+        try {
+          if (socketRef.current && ev.message_id) {
+            socketRef.current.emit("client_interrupted", {
+              chat_id: ev.room_id,
+              message_id: ev.message_id,
+              stop_ts_ms: ev.stop_ts_ms,
+            });
+          }
+        } catch {}
         window.dispatchEvent(
           new CustomEvent("agentTranscriptStop", {
             detail: ev,
