@@ -8,7 +8,7 @@ from agents import Runner, trace
 from app.db import get_session
 from app.models import Chats, Messages
 from app.services.agents.generic import GenericAgent
-from app.utils.chat import get_parameter_history
+from app.utils.chat import get_parameter_history_from_scenario
 from fastapi import Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -71,7 +71,20 @@ async def run_scenario_agent(
             "message": f"Chat not found with ID {chat_id}",
         }
     
-    parameter_history = get_parameter_history(chat, session)
+    # Use scenario parameters for history when generating scenario content
+    if not chat.scenario_id:
+        return {
+            "success": False,
+            "message": f"Chat {chat_id} has no scenario_id",
+        }
+    from app.models import Scenarios
+    scenario = session.exec(select(Scenarios).where(Scenarios.id == chat.scenario_id)).one_or_none()
+    if not scenario:
+        return {
+            "success": False,
+            "message": f"Scenario {chat.scenario_id} not found for chat {chat_id}",
+        }
+    parameter_history = get_parameter_history_from_scenario(scenario, session)
 
     history = parameter_history
 

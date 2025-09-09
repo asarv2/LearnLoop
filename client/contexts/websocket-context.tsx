@@ -287,7 +287,7 @@ export function WebSocketProvider({
       (data: { success: boolean; message: string; chat_id: string }) => {
         logInfo("Training joined", data);
         if (data.success) {
-          toast.success(data.message);
+          // toast.success(data.message);
           confirmedRoomsRef.current.add(data.chat_id);
         } else {
           toast.error(data.message);
@@ -840,11 +840,21 @@ export function WebSocketProvider({
     async (chatId: string) => {
       if (!voiceMode) setVoiceMode(true);
       // Establish RTC only once; leave PC alive for page lifetime
+      // Try to proactively unlock audio on a user gesture (click/keypress)
+      try {
+        const el = audioPlaybackRef.current;
+        if (el) {
+          el.muted = false;
+          // best-effort; browsers may still block but user gesture context helps
+          void el.play();
+        }
+      } catch {}
+
       if (!isRTCConnected) {
         await connectRTC(chatId);
       }
     },
-    [voiceMode, isRTCConnected, connectRTC]
+    [voiceMode, isRTCConnected, connectRTC, audioPlaybackRef]
   );
 
   // Prefer new single text channel; fallback to legacy per-chat channel or websocket emitter
@@ -1132,7 +1142,7 @@ export function WebSocketProvider({
         ref={audioPlaybackRef}
         autoPlay
         playsInline
-        muted={true}
+        muted={!isAudioBridgeReady ? true : false}
         style={{ display: "none" }}
       />
       {children}

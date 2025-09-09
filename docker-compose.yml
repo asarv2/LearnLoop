@@ -55,6 +55,7 @@ services:
       # api + socket.io
       - ORIGIN=${ORIGIN}
       - REDIS_URL=redis://learnloop-redis:6379
+      - MODEL_URL=http://learnloop-model:8000
 
       # webrtc
       - STUN_URI=stun:learnloop-webrtc:3479

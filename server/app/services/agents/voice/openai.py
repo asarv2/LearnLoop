@@ -181,6 +181,93 @@ class OpenAIAgent(Agent):
         if self._tts_drain_task is None or self._tts_drain_task.done():
             self._tts_drain_task = asyncio.create_task(self._drain_tts())
 
+    async def _mark_interruption_for_active_response(self) -> None:
+        """Emit transcript_stop for the in-flight assistant message and persist interruption_ms.
+        If no message exists yet for the active response, create an empty placeholder first.
+        """
+        try:
+            # Identify the current response id
+            rid = self._current_response_id
+            if not rid:
+                if len(self._resp_streams) == 1:
+                    try:
+                        rid = next(iter(self._resp_streams.keys()))
+                    except Exception:
+                        rid = None
+            if not rid:
+                return
+
+            # Resolve message id for this response
+            msg_id: Optional[str] = None
+            st = self._resp_streams.get(rid)
+            if st is not None and st.get("msg_id") is not None:
+                try:
+                    msg_id = str(st.get("msg_id"))  # type: ignore[arg-type]
+                except Exception:
+                    msg_id = None
+            if not msg_id:
+                msg_id = self._rid_to_msg.get(rid)
+            if not msg_id:
+                # Create a placeholder assistant message so clients can clamp by id
+                try:
+                    persona_id = await self._get_assistant_persona_id()
+                except Exception:
+                    persona_id = None
+                try:
+                    msg_id_new = await self.publish_text_chunk(
+                        text="",
+                        message_id=None,
+                        chunk_idx=0,
+                        is_final=False,
+                        persona_id=persona_id,
+                    )
+                    msg_id = msg_id_new
+                    # Backfill mappings so future events attach correctly
+                    try:
+                        if rid:
+                            self._rid_to_msg[rid] = msg_id_new
+                            st2 = self._resp_streams.get(rid)
+                            if st2 is not None:
+                                st2["msg_id"] = msg_id_new
+                    except Exception:
+                        pass
+                except Exception:
+                    msg_id = None
+            if not msg_id:
+                return
+
+            now_ms = int(time.time() * 1000)
+
+            # Notify clients to clamp progressive transcript rendering
+            try:
+                await self.room.broadcast_transcript_stop(
+                    agent_id=self.id,
+                    message_id=msg_id,
+                    stop_ts_ms=now_ms,
+                )
+            except Exception:
+                pass
+
+            # Persist interruption timestamp on the message
+            try:
+                db_session = next(get_session())
+                try:
+                    m = db_session.exec(select(Messages).where(Messages.id == msg_id)).one_or_none()
+                    if m is not None:
+                        setattr(m, "interruption_ms", int(now_ms))
+                        db_session.add(m)
+                        db_session.commit()
+                        db_session.refresh(m)
+                finally:
+                    try:
+                        db_session.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     async def _get_assistant_persona_id(self) -> Optional[str]:
         """Get assistant persona from chat.persona_ids; fallback to first if multiple."""
         if self._assistant_persona_id is not None:
@@ -362,6 +449,11 @@ class OpenAIAgent(Agent):
             # 1) Local barge-in for ANY typed user chunk (not transcript)
             if role == "user" and source_id != TRANSCRIPT_SOURCE_ID:
                 agent_self._block_tts()
+                # Mark interruption immediately so the UI clamps transcript rendering
+                try:
+                    await agent_self._mark_interruption_for_active_response()
+                except Exception:
+                    pass
 
             # 2) Buffer typed text, then either send immediately or queue for after current response
             if role == "user" and source_id != TRANSCRIPT_SOURCE_ID:
@@ -824,6 +916,10 @@ class OpenAIAgent(Agent):
                     # Instant stop on user barge-in
                     if isinstance(ev, OAEventAudioInterrupted):
                         self._block_tts()
+                        try:
+                            await self._mark_interruption_for_active_response()
+                        except Exception:
+                            pass
 
                     # Handle raw events for streaming deltas
                     if isinstance(ev, (OAEventRaw, OAEventRawServer)):
@@ -860,6 +956,10 @@ class OpenAIAgent(Agent):
                         # Current response got interrupted/canceled? Hard stop now.
                         if evt_type in ("response.interrupted", "response.canceled", "response.cancelled"):
                             self._block_tts()
+                            try:
+                                await self._mark_interruption_for_active_response()
+                            except Exception:
+                                pass
                             if not self._resp_streams and self._pending_user_msgs:
                                 next_text = self._pending_user_msgs.pop(0)
                                 try:

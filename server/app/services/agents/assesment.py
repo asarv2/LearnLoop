@@ -7,8 +7,8 @@ from agents import Runner, trace
 from app.db import get_session
 from app.models import Assessments, Chats, Messages, Questions, Scenarios
 from app.services.agents.generic import GenericAgent
-from app.utils.chat import (get_conversation_history, get_parameter_history,
-                            get_preamble)
+from app.utils.chat import (get_conversation_history,
+                            get_parameter_history_from_scenario, get_preamble)
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -154,7 +154,7 @@ async def run_training_specific_assessment(
         raise ValueError(f"Scenario {chat.scenario_id} not found for chat {chat_id}")
     
     preamble = get_preamble(scenario)
-    parameter_history = get_parameter_history(chat, session)
+    parameter_history = get_parameter_history_from_scenario(scenario, session)
     
     context = [preamble] + parameter_history
 
@@ -251,7 +251,7 @@ async def run_conversation_specific_assessment(
         raise ValueError(f"Scenario {chat.scenario_id} not found for chat {chat_id}")
     
     preamble = get_preamble(scenario)
-    parameter_history = get_parameter_history(chat, session)
+    parameter_history = get_parameter_history_from_scenario(scenario, session)
     conversation_history = get_conversation_history(messages)
 
     context = [preamble] + parameter_history + conversation_history

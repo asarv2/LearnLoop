@@ -395,6 +395,7 @@ class Messages(_Base, table=True):
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
     error: Optional[str] = Field(default=None, sa_column=Column('error', Text))
     persona_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('persona_id', Uuid(as_uuid=True)))
+    interruption_ms: Optional[int] = Field(default=None, sa_column=Column('interruption_ms', Integer, comment='when message was interrupted'))
 
     chat: Optional['Chats'] = Relationship(back_populates='messages')
     persona: Optional['Personas'] = Relationship(back_populates='messages')

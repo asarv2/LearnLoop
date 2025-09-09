@@ -639,7 +639,6 @@ async def handle_training_message_rtc(sid: str, data: Dict[str, Any]) -> None:
         if profile_id:
             db_session = next(get_session())
             try:
-                from app.models import Personas
                 user_persona_result = db_session.exec(
                     select(Personas).where(Personas.profile_id == profile_id)
                 ).one_or_none()
@@ -862,7 +861,6 @@ async def process_training_message_websocket(
                 field_name = field.name or "parameter"
                 field_description = field.description or ""
                 if getattr(field, "field_type", None) == "persona" and param.value:
-                    from app.models import Personas
                     persona = db_session.exec(select(Personas).where(Personas.id == param.value)).one_or_none()
                     if persona:
                         persona_desc = persona.description if persona.description else "No description available"
