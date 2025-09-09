@@ -610,6 +610,14 @@ export function WebSocketProvider({
       if (d.profile_id !== profileId) return;
       setIsAudioBridgeReady(true);
       logInfo("Server audio bridge ready");
+      // Try to (re)start playback now that the bridge is confirmed
+      try {
+        const el = audioPlaybackRef.current;
+        if (el) {
+          el.muted = false;
+          void el.play();
+        }
+      } catch {}
     });
 
     return () => {

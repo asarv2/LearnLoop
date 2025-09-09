@@ -248,16 +248,17 @@ class OpenAIAgent(Agent):
             except Exception:
                 pass
 
-            # Persist interruption timestamp on the message
+            # Persist interruption timestamp on the message (raw SQL to avoid session races)
             try:
+                from sqlalchemy import text as _text
                 db_session = next(get_session())
                 try:
-                    m = db_session.exec(select(Messages).where(Messages.id == msg_id)).one_or_none()
-                    if m is not None:
-                        setattr(m, "interruption_ms", int(now_ms))
-                        db_session.add(m)
-                        db_session.commit()
-                        db_session.refresh(m)
+                    conn = db_session.connection()
+                    conn.execute(
+                        _text("UPDATE messages SET interruption_ms = :ts WHERE id = :id"),
+                        {"ts": int(now_ms), "id": str(msg_id)},
+                    )
+                    db_session.commit()
                 finally:
                     try:
                         db_session.close()
