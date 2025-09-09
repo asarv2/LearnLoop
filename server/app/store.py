@@ -14,6 +14,7 @@ from app.models import Chats
 from app.models import Messages as DBMessage
 from app.services.agents.hint import run_hint_agent
 from sqlmodel import select
+
 # test comment
 
 def _uuid_or_none(x):
@@ -45,6 +46,7 @@ class Message:
     role: str                # "user" | "agent" | "system"
     created_ms: int
     chunks: List[TextChunk] = field(default_factory=list)
+    persona_id: Optional[str] = None
 
 @dataclass
 class RoomRecord:
@@ -174,7 +176,7 @@ async def _flush_pending_writes(message_id: str, force: bool = False) -> Optiona
             return _upsert_db_message(
                 db,
                 chat_id=room_id, role=msg.role, msg_id=message_id,
-                text=pending_text, is_final=force, persona_id=None  # persona_id handled separately
+                text=pending_text, is_final=force, persona_id=msg.persona_id
             )
         except Exception:
             # Make sure the aborted txn is rolled back before returning the conn to the pool
@@ -210,10 +212,13 @@ async def upsert_text_chunk(
     created_ms_now = int(time.time()*1000)
 
     if msg is None:
-        msg = Message(id=mid, source_id=source_id, role=role, created_ms=created_ms_now)
+        msg = Message(id=mid, source_id=source_id, role=role, created_ms=created_ms_now, persona_id=persona_id)
         room.messages[mid] = msg
         logger.debug(f"Created new message: mid={mid}, role={role}, chunk_idx={chunk_idx}")
     else:
+        # Update persona_id if provided and not set yet
+        if persona_id and not msg.persona_id:
+            msg.persona_id = persona_id
         logger.debug(f"Reusing message: mid={mid}, role={role}, chunk_idx={chunk_idx}, is_final={is_final}")
 
     # append in-memory chunk
