@@ -43,6 +43,8 @@ local = [
 # Production dependencies (GPU-enabled) - PyTorch already in base image
 prod = [
     # PyTorch is already installed in the pytorch/pytorch base image
+    # Add minimal dependencies to ensure pip install succeeds
+    "wheel>=0.40.0",
 ]
 
 dev = [

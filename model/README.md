@@ -44,12 +44,12 @@ python -m app.main
 
 ```bash
 docker build -t learnloop-model-service .
-docker run -p 8001:8001 learnloop-model-service
+docker run -p 8000:8000 learnloop-model-service
 ```
 
 ## Environment Variables
 
-- `PORT`: Server port (default: 8001)
+- `PORT`: Server port (default: 8000)
 - `HOST`: Server host (default: 0.0.0.0)
 - `WHISPER_DEVICE`: Device for Whisper model (cpu/cuda, default: auto)
 
@@ -58,14 +58,14 @@ docker run -p 8001:8001 learnloop-model-service
 ### Transcribe Audio
 
 ```bash
-curl -X POST "http://localhost:8001/transcribe" \
+curl -X POST "http://localhost:8000/transcribe" \
   -F "audio_file=@audio.wav"
 ```
 
 ### Align Audio with Reference Text
 
 ```bash
-curl -X POST "http://localhost:8001/align" \
+curl -X POST "http://localhost:8000/align" \
   -F "audio_file=@audio.wav" \
   -F "reference_text=Hello world this is a test"
 ```
@@ -73,7 +73,7 @@ curl -X POST "http://localhost:8001/align" \
 ### Health Check
 
 ```bash
-curl "http://localhost:8001/health"
+curl "http://localhost:8000/health"
 ```
 
 ## Models
