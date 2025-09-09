@@ -182,8 +182,8 @@ services:
       /etc/nginx/conf.d/generated/api_socketio.upstream.conf
     networks: [web]
 
-# volumes:
-#   model_cache:
-#     driver: local
-#   model_audio:
-#     driver: local
+volumes:
+  model_cache:
+    driver: local
+  model_audio:
+    driver: local
