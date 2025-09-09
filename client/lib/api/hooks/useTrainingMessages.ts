@@ -138,6 +138,7 @@ export function useTrainingMessages(chatId: string, enabled = true) {
           completed_at: "",
           error: null,
           training_id: null,
+          word_timestamps: [],
         };
         return [...old, newAssistant];
       });
@@ -196,6 +197,7 @@ export function useTrainingMessages(chatId: string, enabled = true) {
             error: null,
             persona_id: null,
             training_id: null,
+            word_timestamps: [],
           },
         ];
       });

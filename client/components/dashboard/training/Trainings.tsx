@@ -19,10 +19,9 @@ import {
   SafetyOutlined,
   TeamOutlined,
   TrophyOutlined,
-  UnorderedListOutlined,
   UserDeleteOutlined,
 } from "@ant-design/icons";
-import { Badge, Button, Card, Col, Row, Spin, Tooltip, Typography } from "antd";
+import { Badge, Button, Card, Col, Row, Spin, Typography } from "antd";
 import Link from "next/link";
 
 const { Title, Paragraph } = Typography;
@@ -99,7 +98,7 @@ function TrainingCard({
         }}
       >
         {/* Scenarios Icon with Tooltip */}
-        {training.active && training.id && (
+        {/* {training.active && training.id && (
           <Link href={`/dashboard/trainings/t/${training.id}/scenarios`}>
             <Tooltip
               title="View all scenarios"
@@ -139,7 +138,7 @@ function TrainingCard({
               </div>
             </Tooltip>
           </Link>
-        )}
+        )} */}
         <div style={{ textAlign: "center", marginBottom: "16px" }}>
           <div
             style={{

@@ -49,6 +49,7 @@ interface WebSocketContextType {
   // Chat rooms (server-side training rooms)
   joinRoom: (chatId: string) => void;
   leaveRoom: (chatId: string) => void;
+  isRoomJoined: (chatId: string) => boolean;
 
   // Text send – prefers RTC data channel; falls back to websocket emitter
   sendWebRTCMessage: (chatId: string, message: string) => void;
@@ -154,12 +155,18 @@ export function WebSocketProvider({
 
   // message queue if data channel connecting
   const pendingText = useRef<string[]>([]);
+  // queue for websocket fallback when socket is not connected yet
+  const pendingSocketSendsRef = useRef<
+    Array<{ chatId: string; message: string }>
+  >([]);
 
   // remote audio element
   const { audioRef: audioPlaybackRef, getTrackState } = useRemoteAudio();
 
   // we still keep server-side per-chat text channels fallback
   const webRTCDataChannels = useRef<Map<string, RTCDataChannel>>(new Map());
+  // confirmed rooms (server ack)
+  const confirmedRoomsRef = useRef<Set<string>>(new Set());
 
   // ────────────────────────────────────────────────────────────────────────────
   // Socket lifecycle
@@ -180,12 +187,34 @@ export function WebSocketProvider({
     socket.on("connect", () => {
       setIsConnected(true);
       logInfo("WebSocket connected", { id: socket.id });
+      // Rejoin any previously joined rooms after a reconnect
+      try {
+        currentRoomsRef.current.forEach((chatId) => {
+          try {
+            socket.emit("join_training", {
+              chat_id: chatId,
+              profile_id: profileId,
+            });
+          } catch {}
+        });
+      } catch {}
+      // Flush any pending websocket sends now that we're connected
+      try {
+        while (pendingSocketSendsRef.current.length > 0) {
+          const item = pendingSocketSendsRef.current.shift()!;
+          socket.emit("send_training_message", {
+            chat_id: item.chatId,
+            message: item.message,
+          });
+        }
+      } catch {}
     });
 
     socket.on("disconnect", (reason: string) => {
       setIsConnected(false);
       logInfo("WebSocket disconnected", { reason });
       cleanupRTC();
+      confirmedRoomsRef.current.clear();
     });
 
     socket.on("connect_error", (err: Error) => {
@@ -262,6 +291,7 @@ export function WebSocketProvider({
         logInfo("Training joined", data);
         if (data.success) {
           toast.success(data.message);
+          confirmedRoomsRef.current.add(data.chat_id);
         } else {
           toast.error(data.message);
         }
@@ -642,6 +672,7 @@ export function WebSocketProvider({
     if (!el) return;
     el.srcObject = stream;
     el.muted = false;
+    // Try immediate play; if blocked by browser autoplay policy, expose a one-shot unlock
     el.play().catch((e) => logError("autoplay failed", e));
   };
 
@@ -851,10 +882,15 @@ export function WebSocketProvider({
       }
 
       // 3) Fallback to websocket emitter used by server
-      socketRef.current?.emit("send_training_message", {
-        chat_id: chatId,
-        message,
-      });
+      if (socketRef.current?.connected) {
+        socketRef.current.emit("send_training_message", {
+          chat_id: chatId,
+          message,
+        });
+      } else {
+        // queue until socket connects
+        pendingSocketSendsRef.current.push({ chatId, message });
+      }
     } catch (err) {
       logError("sendWebRTCMessage failed", err);
     }
@@ -864,13 +900,17 @@ export function WebSocketProvider({
   const currentRoomsRef = useRef<Set<string>>(new Set());
   const joinRoom = useCallback(
     (chatId: string) => {
-      if (!socketRef.current?.connected) return;
-      if (currentRoomsRef.current.has(chatId)) return;
-      socketRef.current.emit("join_training", {
-        chat_id: chatId,
-        profile_id: profileId,
-      });
-      currentRoomsRef.current.add(chatId);
+      // Track intent to be in this room regardless of connection state
+      if (!currentRoomsRef.current.has(chatId)) {
+        currentRoomsRef.current.add(chatId);
+      }
+      // If connected, emit immediately; otherwise connect handler will rejoin
+      if (socketRef.current?.connected) {
+        socketRef.current.emit("join_training", {
+          chat_id: chatId,
+          profile_id: profileId,
+        });
+      }
     },
     [profileId]
   );
@@ -880,6 +920,11 @@ export function WebSocketProvider({
     if (!currentRoomsRef.current.has(chatId)) return;
     socketRef.current.emit("leave_training", { chat_id: chatId });
     currentRoomsRef.current.delete(chatId);
+    confirmedRoomsRef.current.delete(chatId);
+  }, []);
+
+  const isRoomJoined = useCallback((chatId: string): boolean => {
+    return confirmedRoomsRef.current.has(chatId);
   }, []);
 
   // Training event emitters (unchanged)
@@ -1052,6 +1097,7 @@ export function WebSocketProvider({
     toggleMic,
     joinRoom,
     leaveRoom,
+    isRoomJoined,
     sendWebRTCMessage,
     audioPlaybackRef,
     getTrackState,
