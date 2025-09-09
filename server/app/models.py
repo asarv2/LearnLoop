@@ -388,6 +388,7 @@ class Messages(_Base, table=True):
     completed: bool = Field(sa_column=Column('completed', Boolean, default=False))
     chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
     role: str = Field(sa_column=Column('role', Enum('user', 'assistant', name='message_role')))
+    word_timestamps: List[uuid.UUID] = Field(sa_column=Column('word_timestamps', ARRAY(JSONB(astext_type=Text())), server_default=text("'{}'::jsonb[]")))
     content: Optional[str] = Field(default=None, sa_column=Column('content', Text))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
     error: Optional[str] = Field(default=None, sa_column=Column('error', Text))

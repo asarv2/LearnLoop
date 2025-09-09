@@ -15,6 +15,15 @@ export const MessageCreateSchema = z.object({
   content: z.string().min(1, "Content is required"),
   role: z.enum(["user", "assistant"]).optional(),
   metadata: z.any().optional(), // Json type
+  word_timestamps: z
+    .array(
+      z.object({
+        start_ms: z.number().int().nonnegative().optional(),
+        end_ms: z.number().int().nonnegative().optional(),
+        text: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 export const MessageUpdateSchema = z.object({
@@ -22,6 +31,15 @@ export const MessageUpdateSchema = z.object({
   content: z.string().min(1, "Content is required").optional(),
   role: z.enum(["user", "assistant"]).optional(),
   metadata: z.any().optional(), // Json type
+  word_timestamps: z
+    .array(
+      z.object({
+        start_ms: z.number().int().nonnegative().optional(),
+        end_ms: z.number().int().nonnegative().optional(),
+        text: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 async function getSupabase() {

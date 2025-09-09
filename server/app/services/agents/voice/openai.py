@@ -968,6 +968,37 @@ class OpenAIAgent(Agent):
                                             words=words,
                                             full_text=tr_text or effective_text,
                                         )
+                                        # Persist final word timestamps to DB
+                                        try:
+                                            if (msg_id_final or "").strip():
+                                                from app.db import \
+                                                    get_session as _get_session
+                                                from app.models import \
+                                                    Messages as _DBMsg
+                                                from sqlmodel import \
+                                                    select as _select
+                                                def _persist_words():
+                                                    db = next(_get_session())
+                                                    try:
+                                                        m = db.exec(_select(_DBMsg).where(_DBMsg.id == msg_id_final)).one_or_none()
+                                                        if m is not None:
+                                                            # store as JSON array
+                                                            m.word_timestamps = [
+                                                                {"start_ms": int(w.get("start_ms", 0)), "end_ms": int(w.get("end_ms", 0)), "text": str(w.get("text", ""))}
+                                                                for w in words
+                                                            ]
+                                                            db.add(m); db.commit(); db.refresh(m)
+                                                    except Exception:
+                                                        try: db.rollback()
+                                                        except Exception: pass
+                                                        raise
+                                                    finally:
+                                                        try: db.close()
+                                                        except Exception: pass
+                                                import asyncio as _asyncio
+                                                await _asyncio.to_thread(_persist_words)
+                                        except Exception:
+                                            pass
                             except Exception:
                                 pass
 
