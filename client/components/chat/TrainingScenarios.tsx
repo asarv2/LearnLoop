@@ -223,7 +223,6 @@ export default function TrainingScenarios({
               setStartingId(scenario.id);
               emitStartTraining({
                 scenario_id: scenario.id,
-                field_values: [],
                 profile_id: user?.id || undefined,
               });
             }}

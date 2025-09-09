@@ -48,6 +48,7 @@ export default function ChatArea({
   // WebSocket context
   const {
     isRTCConnected,
+    isAudioBridgeReady,
     micOn,
     voiceMode,
     enableVoiceMode,
@@ -437,15 +438,35 @@ export default function ChatArea({
     };
   }, [micOn, getLocalMicStream, cleanupWaveform]);
 
+  // Wait for RTC/audio readiness to avoid missing initial audio
+  const waitForVoiceReady = useCallback(
+    async (timeoutMs = 2000) => {
+      const start = Date.now();
+      // Fire off voice mode if not already
+      if (chat?.id && (!voiceMode || !isRTCConnected)) {
+        try {
+          await enableVoiceMode(chat.id);
+        } catch {}
+      }
+      // Spin until connected or audio bridge is ready (or timeout)
+      while (Date.now() - start < timeoutMs) {
+        if (isRTCConnected || isAudioBridgeReady) return;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    },
+    [chat?.id, enableVoiceMode, isRTCConnected, isAudioBridgeReady, voiceMode]
+  );
+
   // Send message handler
-  const onSend = useCallback(() => {
+  const onSend = useCallback(async () => {
     const message = currentMessage.trim();
     if (!message || !chat?.id) return;
 
     // Ensure room join just in case (idempotent, cheap)
     joinRoom(chat.id);
-    // Allow immediate send even if voiceMode not yet flagged or DC not ready:
-    // sendWebRTCMessage will fallback to socket emitter when DC isn't open.
+    // Prefer to wait briefly for RTC setup so we don't miss audio reply
+    await waitForVoiceReady(1500);
+    // sendWebRTCMessage will still fallback to socket if DC isn't ready
     sendWebRTCMessage(chat.id, message);
     setCurrentMessage("");
   }, [
@@ -454,6 +475,7 @@ export default function ChatArea({
     joinRoom,
     sendWebRTCMessage,
     setCurrentMessage,
+    waitForVoiceReady,
   ]);
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -477,20 +499,20 @@ export default function ChatArea({
   }, [chat?.id, displayMessages.length, isRoomJoined]);
 
   const handleIntroMessageSelect = useCallback(
-    (message: string) => {
+    async (message: string) => {
       if (!chat?.id) return;
       try {
         // Ensure room membership
         joinRoom(chat.id);
-        // Send immediately (websocket fallback if RTC not ready)
+        // Ensure RTC/audio is ready so we hear the first response
+        await waitForVoiceReady(1500);
+        // Send (RTC DC preferred, websocket fallback ok)
         sendWebRTCMessage(chat.id, message);
-        // Kick off voice mode in the background (no await)
-        void enableVoiceMode(chat.id);
       } finally {
         setShowIntroModal(false);
       }
     },
-    [chat?.id, joinRoom, enableVoiceMode, sendWebRTCMessage]
+    [chat?.id, joinRoom, sendWebRTCMessage, waitForVoiceReady]
   );
 
   // Close intro modal automatically if messages appear (e.g., from another tab or delayed fetch)
@@ -729,6 +751,85 @@ export default function ChatArea({
                                     .join(" ")
                                     .replace(/\s+([,.;!?])/g, "$1");
                                 }
+                                // Historical DB render with interruption clamp via word_timestamps
+                                try {
+                                  const isAssistant = isAssistantMessage;
+                                  const wtAny = (
+                                    message as unknown as {
+                                      word_timestamps?: unknown;
+                                    }
+                                  ).word_timestamps;
+                                  const hasWT =
+                                    Array.isArray(wtAny) && wtAny.length > 0;
+                                  const interruption = (
+                                    message as unknown as {
+                                      interruption_ms?: number | null;
+                                    }
+                                  ).interruption_ms;
+                                  const createdAt = (
+                                    message as unknown as {
+                                      created_at?: string;
+                                    }
+                                  ).created_at;
+
+                                  if (
+                                    isAssistant &&
+                                    hasWT &&
+                                    typeof interruption === "number" &&
+                                    createdAt
+                                  ) {
+                                    const createdMs = new Date(
+                                      createdAt
+                                    ).getTime();
+                                    const cutoffRel = interruption - createdMs; // ms from start of assistant message
+                                    if (
+                                      Number.isFinite(cutoffRel) &&
+                                      cutoffRel > 0
+                                    ) {
+                                      const words: {
+                                        start_ms: number;
+                                        end_ms: number;
+                                        text: string;
+                                      }[] = (wtAny as Array<unknown>)
+                                        .map((w) => {
+                                          const obj = w as {
+                                            start_ms?: unknown;
+                                            end_ms?: unknown;
+                                            text?: unknown;
+                                          };
+                                          return {
+                                            start_ms: Number(
+                                              (obj && obj.start_ms) ?? 0
+                                            ),
+                                            end_ms: Number(
+                                              (obj && obj.end_ms) ?? 0
+                                            ),
+                                            text: String(
+                                              (obj && obj.text) ?? ""
+                                            ),
+                                          };
+                                        })
+                                        .filter(
+                                          (w) =>
+                                            Number.isFinite(w.start_ms) &&
+                                            Number.isFinite(w.end_ms) &&
+                                            !!w.text
+                                        );
+
+                                      if (words.length > 0) {
+                                        const visible = words
+                                          .filter((w) => w.end_ms <= cutoffRel)
+                                          .map((w) => w.text);
+                                        if (visible.length > 0) {
+                                          return visible
+                                            .join(" ")
+                                            .replace(/\s+([,.;!?])/g, "$1");
+                                        }
+                                      }
+                                    }
+                                  }
+                                } catch {}
+
                                 return message.content || "";
                               })()}
                             </Markdown>

@@ -358,6 +358,7 @@ export type Database = {
           created_at: string
           error: string | null
           id: string
+          interruption_ms: number | null
           persona_id: string | null
           role: Database["public"]["Enums"]["message_role"]
           training_id: string | null
@@ -371,6 +372,7 @@ export type Database = {
           created_at?: string
           error?: string | null
           id?: string
+          interruption_ms?: number | null
           persona_id?: string | null
           role: Database["public"]["Enums"]["message_role"]
           training_id?: string | null
@@ -384,6 +386,7 @@ export type Database = {
           created_at?: string
           error?: string | null
           id?: string
+          interruption_ms?: number | null
           persona_id?: string | null
           role?: Database["public"]["Enums"]["message_role"]
           training_id?: string | null
