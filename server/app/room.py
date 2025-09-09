@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol
@@ -37,6 +38,9 @@ class Room:
     on_transcript_stop: Optional[TranscriptStopBroadcaster] = None
     # keep a handle on agents so we can stop them on cleanup
     agents: List[StoppableAgent] = field(default_factory=list)
+
+    # Feature flag: enable word-level timestamp transcripts
+    word_timestamps_enabled: bool = True
 
     # NEW: User identification fields
     user_profile_id: Optional[str] = None
@@ -83,7 +87,7 @@ class Room:
         return msg.id
 
     async def broadcast_transcript(self, *, agent_id: str, message_id: Optional[str], start_ts_ms: int, words: List[Dict[str, Any]], full_text: str):
-        if self.on_transcript is None:
+        if (not self.word_timestamps_enabled) or self.on_transcript is None:
             return
         payload = {
             "room_id": self.id,
@@ -98,6 +102,14 @@ class Room:
         except Exception:
             pass
         await self.on_transcript(payload)
+
+    # Toggle transcripts at runtime
+    def set_word_timestamps_enabled(self, enabled: bool):
+        self.word_timestamps_enabled = bool(enabled)
+
+    # Back-compat alias
+    def set_transcripts_enabled(self, enabled: bool):
+        self.set_word_timestamps_enabled(enabled)
 
     async def broadcast_transcript_stop(self, *, agent_id: str, message_id: Optional[str], stop_ts_ms: int):
         if self.on_transcript_stop is None:
