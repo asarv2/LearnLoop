@@ -150,6 +150,8 @@ class OpenAIAgent(Agent):
         self._resp_audio_start_ts_ms: dict[str, int] = {}
         self._rid_to_msg: dict[str, str] = {}
         self._processed_done: set[str] = set()
+        # Track model audio chunking to drive partial CTC timing
+        self._resp_audio_chunk_count: dict[str, int] = {}
 
         # --- Uplink queue for decoupling audio capture from network I/O ---
         self._uplink_q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=256)
@@ -728,6 +730,11 @@ class OpenAIAgent(Agent):
 
                     # Accumulate per-response audio for alignment
                     rid_for_audio = getattr(self, "_current_response_id", None) or "_default"
+                    # Count model-emitted audio chunks
+                    try:
+                        self._resp_audio_chunk_count[rid_for_audio] = 1 + int(self._resp_audio_chunk_count.get(rid_for_audio, 0))
+                    except Exception:
+                        pass
                     prev_audio = self._resp_audio.get(rid_for_audio)
                     self._resp_audio[rid_for_audio] = (np.concatenate([prev_audio, f32]) if isinstance(prev_audio, np.ndarray) else np.copy(f32))
                     if rid_for_audio not in self._resp_audio_start_ts_ms:
@@ -737,7 +744,14 @@ class OpenAIAgent(Agent):
                     try:
                         if target_rid and target_rid in self._resp_streams:
                             st2 = self._resp_streams.get(target_rid) or {}
-                            if st2.get("has_received_audio") and not st2.get("partial_ctc_done", False):
+                            # Run partial only when we've received exactly the configured number of model audio chunks
+                            n_chunks_target = int(os.getenv("CTC_PARTIAL_NUM_CHUNKS", "6"))
+                            if (
+                                st2.get("has_received_audio")
+                                and not st2.get("partial_ctc_done", False)
+                                and n_chunks_target > 0
+                                and int(self._resp_audio_chunk_count.get(target_rid, 0)) == n_chunks_target
+                            ):
                                 buffered_text_now = "".join(st2.get("buffer", []))
                                 # Combine pre-audio (flushed) + post-audio (buffer) for best reference
                                 reference_text = (st2.get("last_flushed_text") or "") + buffered_text_now
@@ -746,18 +760,17 @@ class OpenAIAgent(Agent):
                                     self._rid_to_msg[target_rid] = str(st2["msg_id"])  # type: ignore[arg-type]
                                 audio_arr = self._resp_audio.get(target_rid, np.zeros(0, dtype=np.float32))
                                 start_ts = self._resp_audio_start_ts_ms.get(target_rid, int(time.time() * 1000))
-                                n_chunks = int(os.getenv("CTC_PARTIAL_NUM_CHUNKS", "1"))
                                 if audio_arr.size > 0 and reference_text:
-                                    print(f"[ctc][partial] rid={target_rid} samples={audio_arr.size} chunks={n_chunks} text_len={len(reference_text)}")
+                                    logger.debug(
+                                        f"[ctc][partial] rid={target_rid} samples={audio_arr.size} chunks={n_chunks_target} text_len={len(reference_text)}"
+                                    )
                                     _, words_p = await self._align_ctc(
                                         audio_f32=audio_arr,
                                         sr=PCM_SR,
                                         reference_text=reference_text,
                                         stage="partial",
-                                        num_chunks=n_chunks,
-                                        chunk_ms=20,
                                     )
-                                    print(f"[ctc][partial] words={len(words_p)}")
+                                    logger.debug(f"[ctc][partial] words={len(words_p)}")
                                     if words_p:
                                         await self.room.broadcast_transcript(
                                             agent_id=self.id,
@@ -1039,6 +1052,7 @@ class OpenAIAgent(Agent):
                             self._resp_audio.pop(rid, None)
                             self._resp_text.pop(rid, None)
                             self._resp_audio_start_ts_ms.pop(rid, None)
+                            self._resp_audio_chunk_count.pop(rid, None)
 
 
                         # --- User live mic transcript (stream into chat) ---
