@@ -1247,19 +1247,9 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 if not row:
                     # No row yet → nothing to do
                     return
-                created_at = row[0]
-                rel_ms = 0
-                try:
-                    import datetime as _dt
-                    if isinstance(created_at, _dt.datetime):
-                        # Convert to epoch ms
-                        if created_at.tzinfo is None:
-                            created_at = created_at.replace(tzinfo=_dt.timezone.utc)
-                        created_ms = int(created_at.timestamp() * 1000)
-                        rel = int(stop_ts_ms) - created_ms
-                        rel_ms = max(0, min(rel, 2_147_483_647))
-                except Exception:
-                    rel_ms = 0
+                # stop_ts_ms is already relative to message start time from client
+                # No need to subtract created_at - just use it directly
+                rel_ms = max(0, min(int(stop_ts_ms), 2_147_483_647))
                 conn.execute(
                     _text(
                         """
