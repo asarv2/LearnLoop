@@ -329,14 +329,17 @@ async def upsert_text_chunk(
                     })
 
             if not is_final:
-                # Get accumulated content from in-memory chunks for streaming
-                acc = "".join(chunk.text for chunk in msg.chunks)
-                await _emit(room_id, "training_message_token", {
-                    "chat_id": room_id,
-                    "message_id": mid,
-                    "token": text or "",
-                    "accumulated_content": acc,
-                })
+                # Only emit token events when there is actual token text.
+                # This suppresses empty placeholder emissions used to create the message bubble
+                # (especially when word-level transcripts drive the UI).
+                if text:
+                    acc = "".join(chunk.text for chunk in msg.chunks)
+                    await _emit(room_id, "training_message_token", {
+                        "chat_id": room_id,
+                        "message_id": mid,
+                        "token": text,
+                        "accumulated_content": acc,
+                    })
             else:
                 # Final chunk - flush all pending writes and emit complete
                 result = await _flush_pending_writes(mid, force=True)

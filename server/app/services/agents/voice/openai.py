@@ -733,23 +733,22 @@ class OpenAIAgent(Agent):
                     if rid_for_audio not in self._resp_audio_start_ts_ms:
                         self._resp_audio_start_ts_ms[rid_for_audio] = int(time.time() * 1000)
 
-                    # If this was the first audio for the response, run PARTIAL CTC now (after audio is appended)
+                    # After first audio arrives, run PARTIAL CTC exactly once for this response
                     try:
                         if target_rid and target_rid in self._resp_streams:
                             st2 = self._resp_streams.get(target_rid) or {}
-                            # default to False if key missing
-                            if st2.get("has_received_audio") and not st2.get("partial_sent"):
+                            if st2.get("has_received_audio") and not st2.get("partial_ctc_done", False):
                                 buffered_text_now = "".join(st2.get("buffer", []))
-                                # Use whatever text we flushed (or have); prefer flushed text
-                                reference_text = (st2.get("last_flushed_text") or buffered_text_now or "")
+                                # Combine pre-audio (flushed) + post-audio (buffer) for best reference
+                                reference_text = (st2.get("last_flushed_text") or "") + buffered_text_now
                                 # Map response->message for clients
                                 if st2.get("msg_id"):
                                     self._rid_to_msg[target_rid] = str(st2["msg_id"])  # type: ignore[arg-type]
                                 audio_arr = self._resp_audio.get(target_rid, np.zeros(0, dtype=np.float32))
                                 start_ts = self._resp_audio_start_ts_ms.get(target_rid, int(time.time() * 1000))
                                 n_chunks = int(os.getenv("CTC_PARTIAL_NUM_CHUNKS", "1"))
-                                print(f"[ctc][partial] rid={target_rid} samples={audio_arr.size} chunks={n_chunks} text_len={len(reference_text)}")
                                 if audio_arr.size > 0 and reference_text:
+                                    print(f"[ctc][partial] rid={target_rid} samples={audio_arr.size} chunks={n_chunks} text_len={len(reference_text)}")
                                     _, words_p = await self._align_ctc(
                                         audio_f32=audio_arr,
                                         sr=PCM_SR,
@@ -767,7 +766,7 @@ class OpenAIAgent(Agent):
                                             words=words_p,
                                             full_text=reference_text,
                                         )
-                                st2["partial_sent"] = True
+                                st2["partial_ctc_done"] = True
                     except Exception:
                         pass
 
@@ -835,7 +834,7 @@ class OpenAIAgent(Agent):
 
                             rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
                             # Track it but DON'T create a room message yet - wait for audio or actual text
-                            st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False})
+                            st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False, "partial_ctc_done": False})
                             # Remember latest response id for associating first audio chunks
                             self._current_response_id = rid
 
@@ -857,7 +856,9 @@ class OpenAIAgent(Agent):
                             if not delta:
                                 continue
 
-                            st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False})
+                            st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False, "partial_ctc_done": False})
+                            # Always accumulate a full-text copy for robust finalization
+                            self._resp_text.setdefault(rid, []).append(delta)
                             timestamps_enabled = bool(getattr(self.room, "word_timestamps_enabled", True))
                             if timestamps_enabled:
                                 # Buffer only; final transcript will be emitted after alignment
@@ -887,7 +888,9 @@ class OpenAIAgent(Agent):
                                     delta = ot.get("delta", "") or ""
                             if delta:
                                 rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
-                                st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False})
+                                st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False, "partial_ctc_done": False})
+                                # Accumulate regardless of streaming strategy
+                                self._resp_text.setdefault(rid, []).append(delta)
                                 timestamps_enabled = bool(getattr(self.room, "word_timestamps_enabled", True))
                                 if timestamps_enabled:
                                     st["buffer"].append(delta)
@@ -926,8 +929,10 @@ class OpenAIAgent(Agent):
                                 final_text = ot.get("text") or ot.get("content") or ""
 
                             # Fall back to concatenated buffer (if deltas were streamed)
-                            if not final_text and st and st.get("buffer"):
-                                final_text = "".join(st["buffer"])
+                            if st:
+                                buffered_all = (st.get("last_flushed_text") or "") + "".join(st.get("buffer", []))
+                                if not final_text or len(buffered_all) > len(final_text or ""):
+                                    final_text = buffered_all
 
                             if final_text:
                                 # if we never created a message, do a one-shot create+finalize now
@@ -937,7 +942,14 @@ class OpenAIAgent(Agent):
                                     await self.publish_text_chunk(text=final_text, message_id=msg_id, chunk_idx=0, is_final=True, persona_id=persona_id)
                                     self._rid_to_msg[rid] = msg_id
                                 else:
-                                    await self.publish_text_chunk(text="", message_id=st["msg_id"], chunk_idx=st["chunk_idx"], is_final=True, persona_id=persona_id)
+                                    # Persist the complete final text and mark complete in the same call
+                                    await self.publish_text_chunk(
+                                        text=final_text,
+                                        message_id=st["msg_id"],
+                                        chunk_idx=st["chunk_idx"],
+                                        is_final=True,
+                                        persona_id=persona_id,
+                                    )
                                     self._rid_to_msg[rid] = str(st["msg_id"])  # type: ignore[arg-type]
                             else:
                                 # no text at all → do nothing (no blank bubble)
@@ -945,11 +957,12 @@ class OpenAIAgent(Agent):
 
                             # FINAL CTC alignment and broadcast
                             try:
-                                had_deltas = len(self._resp_text.get(rid, [])) > 0
-                                joined = "".join(self._resp_text.get(rid, [])) if had_deltas else ""
+                                # Choose the most complete text among payload, accumulated deltas, and buffered pre+post
+                                deltas_joined = "".join(self._resp_text.get(rid, []))
+                                buffered_all = ((st.get("last_flushed_text") if st else "") or "") + ("".join(st.get("buffer", [])) if st else "")
                                 cand_payload = (final_text or "").strip()
-                                cand_joined = joined.strip()
-                                effective_text = cand_payload if (len(cand_payload) >= len(cand_joined)) else cand_joined
+                                candidates = [cand_payload, deltas_joined.strip(), buffered_all.strip()]
+                                effective_text = max(candidates, key=lambda s: len(s or "")) if any(candidates) else (final_text or "")
                                 audio_arr = self._resp_audio.get(rid, self._resp_audio.get("_default", np.zeros(0, dtype=np.float32)))
                                 start_ts = self._resp_audio_start_ts_ms.get(rid, int(time.time() * 1000))
                                 if (effective_text or "").strip() and audio_arr is not None:
@@ -968,6 +981,17 @@ class OpenAIAgent(Agent):
                                             words=words,
                                             full_text=tr_text or effective_text,
                                         )
+                                        # Also emit a transcript stop so the UI can clamp rendering
+                                        try:
+                                            dur_ms = int(round((audio_arr.size / float(PCM_SR)) * 1000.0))
+                                            stop_ts = int(start_ts + dur_ms)
+                                            await self.room.broadcast_transcript_stop(
+                                                agent_id=self.id,
+                                                message_id=msg_id_final,
+                                                stop_ts_ms=stop_ts,
+                                            )
+                                        except Exception:
+                                            pass
                                         # Persist final word timestamps to DB
                                         try:
                                             if (msg_id_final or "").strip():
