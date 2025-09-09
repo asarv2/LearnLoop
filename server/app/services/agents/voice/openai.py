@@ -417,10 +417,18 @@ class OpenAIAgent(Agent):
             if num_chunks is not None:
                 payload["num_chunks"] = int(num_chunks)
             url = base.rstrip("/") + "/align_ctc"
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            # Use explicit client open/close to guard against uvloop EOF issues on close
+            client = httpx.AsyncClient(timeout=10.0)
+            try:
                 resp = await client.post(url, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
+            finally:
+                try:
+                    await client.aclose()
+                except Exception:
+                    # Suppress benign transport close errors (uvloop write_eof on closed transport)
+                    pass
             text = str(data.get("text") or reference_text or "")
             words_in = data.get("words") or []
             words: list[dict[str, Any]] = []
@@ -1133,17 +1141,6 @@ class OpenAIAgent(Agent):
                                             words=words,
                                             full_text=tr_text or effective_text,
                                         )
-                                        # Also emit a transcript stop so the UI can clamp rendering
-                                        try:
-                                            dur_ms = int(round((audio_arr.size / float(PCM_SR)) * 1000.0))
-                                            stop_ts = int(start_ts + dur_ms)
-                                            await self.room.broadcast_transcript_stop(
-                                                agent_id=self.id,
-                                                message_id=msg_id_final,
-                                                stop_ts_ms=stop_ts,
-                                            )
-                                        except Exception:
-                                            pass
                                         # Persist final word timestamps to DB
                                         try:
                                             if (msg_id_final or "").strip():

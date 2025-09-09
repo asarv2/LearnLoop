@@ -303,9 +303,11 @@ function CategoricalField({
     }
   };
 
-  // Hide custom-created parameters from the main options list
+  // Hide custom-created parameters from the main options list and parameters with empty/null descriptions
   const displayedParameters = parameters?.filter(
-    (p) => (p.description || "").toLowerCase() !== "custom scenario"
+    (p) =>
+      (p.description || "").toLowerCase() !== "custom scenario" &&
+      (p.description || "").trim() !== ""
   );
 
   // Suggestions for custom entries (only parameters with description "Custom Scenario")

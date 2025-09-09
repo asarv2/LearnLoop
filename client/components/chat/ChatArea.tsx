@@ -99,7 +99,7 @@ export default function ChatArea({
     return () => {
       if (raf) cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [chat?.id, transcripts]);
 
   // Subscribe to transcript events from websocket-context
   useEffect(() => {
@@ -133,6 +133,11 @@ export default function ChatArea({
         ...prev,
         [d.message_id as string]: Number(d.stop_ts_ms) || Date.now(),
       }));
+      // Defer client stop dispatch until UI-visible boundary is settled
+      try {
+        const mid = String(d.message_id);
+        setPendingClientStops((prev) => ({ ...prev, [mid]: true }));
+      } catch {}
     };
 
     window.addEventListener(
@@ -154,6 +159,66 @@ export default function ChatArea({
       );
     };
   }, []);
+
+  // Track message ids awaiting client-side interruption boundary dispatch
+  const [pendingClientStops, setPendingClientStops] = useState<
+    Record<string, boolean>
+  >({});
+
+  // When we have a pending stop, compute the boundary based on what the UI would actually show
+  // Visibility logic mirrors the render path: include words with start_ms <= elapsed (clamped by stop)
+  useEffect(() => {
+    if (!chat?.id) return;
+    const entries = Object.keys(pendingClientStops).filter(
+      (k) => pendingClientStops[k]
+    );
+    if (entries.length === 0) return;
+
+    const nextPending = { ...pendingClientStops };
+
+    for (const mid of entries) {
+      const tr = transcripts[mid];
+      if (!tr || !Array.isArray(tr.words) || tr.words.length === 0) {
+        continue;
+      }
+
+      const start = Number(tr.start_ts_ms) || 0;
+      const stopAbs = transcriptStops[mid];
+      let elapsed = Math.max(0, nowMs - start);
+      if (Number.isFinite(stopAbs)) {
+        elapsed = Math.min(elapsed, Number(stopAbs) - start);
+      }
+
+      // Determine the last word currently visible by start boundary
+      const visibleByStart = tr.words.filter((w) => w.start_ms <= elapsed);
+      if (visibleByStart.length === 0) {
+        // Not yet visible on UI; try again next tick
+        continue;
+      }
+
+      // Use the last visible word's end_ms so it matches what the client shows
+      const lastVisible = visibleByStart[visibleByStart.length - 1];
+      const corrected = Number(lastVisible?.end_ms) || 0;
+
+      window.dispatchEvent(
+        new CustomEvent("clientTranscriptStop", {
+          detail: {
+            chat_id: chat.id,
+            message_id: mid,
+            stop_ts_ms: corrected,
+          },
+        })
+      );
+
+      delete nextPending[mid];
+    }
+
+    if (
+      Object.keys(nextPending).length !== Object.keys(pendingClientStops).length
+    ) {
+      setPendingClientStops(nextPending);
+    }
+  }, [pendingClientStops, transcripts, transcriptStops, nowMs, chat?.id]);
 
   // Use the composite hook to get hints for the latest assistant message
   const { hints, isLoading: isLoadingHints } = useLatestMessageHints(
@@ -766,65 +831,100 @@ export default function ChatArea({
                                       interruption_ms?: number | null;
                                     }
                                   ).interruption_ms;
-                                  const createdAt = (
-                                    message as unknown as {
-                                      created_at?: string;
-                                    }
-                                  ).created_at;
 
                                   if (
                                     isAssistant &&
                                     hasWT &&
                                     typeof interruption === "number" &&
-                                    createdAt
+                                    interruption > 0
                                   ) {
-                                    const createdMs = new Date(
-                                      createdAt
-                                    ).getTime();
-                                    const cutoffRel = interruption - createdMs; // ms from start of assistant message
-                                    if (
-                                      Number.isFinite(cutoffRel) &&
-                                      cutoffRel > 0
-                                    ) {
-                                      const words: {
-                                        start_ms: number;
-                                        end_ms: number;
-                                        text: string;
-                                      }[] = (wtAny as Array<unknown>)
-                                        .map((w) => {
-                                          const obj = w as {
-                                            start_ms?: unknown;
-                                            end_ms?: unknown;
-                                            text?: unknown;
-                                          };
-                                          return {
-                                            start_ms: Number(
-                                              (obj && obj.start_ms) ?? 0
-                                            ),
-                                            end_ms: Number(
-                                              (obj && obj.end_ms) ?? 0
-                                            ),
-                                            text: String(
-                                              (obj && obj.text) ?? ""
-                                            ),
-                                          };
-                                        })
-                                        .filter(
-                                          (w) =>
-                                            Number.isFinite(w.start_ms) &&
-                                            Number.isFinite(w.end_ms) &&
-                                            !!w.text
-                                        );
+                                    // interruption_ms is already relative to message created_at (stored in DB)
+                                    const cutoffRel = interruption;
 
-                                      if (words.length > 0) {
-                                        const visible = words
-                                          .filter((w) => w.end_ms <= cutoffRel)
-                                          .map((w) => w.text);
-                                        if (visible.length > 0) {
-                                          return visible
-                                            .join(" ")
-                                            .replace(/\s+([,.;!?])/g, "$1");
+                                    // Debug logging for troubleshooting
+                                    if (
+                                      process.env.NODE_ENV === "development"
+                                    ) {
+                                      console.log(
+                                        `[ChatArea] Processing interruption for message ${message.id}:`,
+                                        {
+                                          interruption_ms: interruption,
+                                          cutoffRel,
+                                          wordCount: Array.isArray(wtAny)
+                                            ? wtAny.length
+                                            : 0,
+                                          hasWordTimestamps: hasWT,
                                         }
+                                      );
+                                    }
+
+                                    const words: {
+                                      start_ms: number;
+                                      end_ms: number;
+                                      text: string;
+                                    }[] = (wtAny as Array<unknown>)
+                                      .map((w) => {
+                                        const obj = w as {
+                                          start_ms?: unknown;
+                                          end_ms?: unknown;
+                                          text?: unknown;
+                                        };
+                                        return {
+                                          start_ms: Number(
+                                            (obj && obj.start_ms) ?? 0
+                                          ),
+                                          end_ms: Number(
+                                            (obj && obj.end_ms) ?? 0
+                                          ),
+                                          text: String((obj && obj.text) ?? ""),
+                                        };
+                                      })
+                                      .filter(
+                                        (w) =>
+                                          Number.isFinite(w.start_ms) &&
+                                          Number.isFinite(w.end_ms) &&
+                                          !!w.text
+                                      );
+
+                                    if (words.length > 0) {
+                                      // Find the last word that would have been spoken before interruption
+                                      // Sort words by start_ms to ensure proper order
+                                      const sortedWords = words.sort(
+                                        (a, b) => a.start_ms - b.start_ms
+                                      );
+
+                                      // Find the last word that would have been completed before interruption
+                                      const visibleWords = sortedWords.filter(
+                                        (w) => w.end_ms <= cutoffRel
+                                      );
+
+                                      if (visibleWords.length > 0) {
+                                        const result = visibleWords
+                                          .map((w) => w.text)
+                                          .join(" ")
+                                          .replace(/\s+([,.;!?])/g, "$1");
+
+                                        // Debug logging for troubleshooting
+                                        if (
+                                          process.env.NODE_ENV === "development"
+                                        ) {
+                                          console.log(
+                                            `[ChatArea] Interruption result for message ${message.id}:`,
+                                            {
+                                              visibleWordsCount:
+                                                visibleWords.length,
+                                              totalWordsCount:
+                                                sortedWords.length,
+                                              result:
+                                                result.substring(0, 100) +
+                                                (result.length > 100
+                                                  ? "..."
+                                                  : ""),
+                                            }
+                                          );
+                                        }
+
+                                        return result;
                                       }
                                     }
                                   }
