@@ -739,7 +739,13 @@ export function WebSocketProvider({
   // ────────────────────────────────────────────────────────────────────────────
   const connectRTC = useCallback(
     async (chatId: string) => {
-      if (isRTCConnected) return;
+      // If already connected to a different room, rebuild the PC bound to the new room
+      if (isRTCConnected) {
+        if (rtcRoomId === chatId) return;
+        // Switch rooms: tear down and continue with fresh connection
+        cleanupRTC();
+        setIsRTCConnected(false);
+      }
       if (!socketRef.current) {
         toast.error("Not connected to server");
         return;

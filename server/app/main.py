@@ -100,7 +100,8 @@ def _maybe_start_watchdog() -> None:
 
 # ── sid <-> profile map (very light; OK to keep in-memory or back by Redis) ──
 SID_TO_PROFILE: dict[str, str] = {}
-PROFILE_TO_SID: dict[str, str] = {}
+# Allow multiple active sockets per profile
+PROFILE_TO_SIDS: dict[str, set[str]] = {}
 
 def get_socketio_instance() -> socketio.AsyncServer:
     return sio
@@ -143,15 +144,13 @@ async def connect(sid, environ, auth):
             profile_id = None
 
     if profile_id:
-        # If this profile already has a different active sid, force-close it
-        old_sid = PROFILE_TO_SID.get(profile_id)
-        if old_sid and old_sid != sid:
-            await _force_close_sid(old_sid)
-            SID_TO_PROFILE.pop(old_sid, None)
-            PROFILE_TO_SID.pop(profile_id, None)
-
         SID_TO_PROFILE[sid] = profile_id
-        PROFILE_TO_SID[profile_id] = sid
+        # Track this sid under the profile's active set
+        sids = PROFILE_TO_SIDS.get(profile_id)
+        if sids is None:
+            sids = set()
+            PROFILE_TO_SIDS[profile_id] = sids
+        sids.add(sid)
 
     # Persist profile_id in Socket.IO session for Redis/clustering safety
     try:
@@ -189,18 +188,25 @@ async def disconnect(sid):
     # clean sid/profile maps
     pid = SID_TO_PROFILE.pop(sid, None)
     if pid:
-        PROFILE_TO_SID.pop(pid, None)
-        # Mark profile inactive
         try:
-            with session_scope() as db:
-                try:
-                    p = db.get(Profiles, uuid.UUID(pid))
-                    if p:
-                        p.active = False
-                        p.last_active = datetime.now(timezone.utc)
-                        db.add(p)
-                except Exception:
-                    pass
+            sids = PROFILE_TO_SIDS.get(pid)
+            if sids is not None:
+                sids.discard(sid)
+                if len(sids) == 0:
+                    # Last socket for this profile disconnected; mark inactive
+                    PROFILE_TO_SIDS.pop(pid, None)
+                    try:
+                        with session_scope() as db:
+                            try:
+                                p = db.get(Profiles, uuid.UUID(pid))
+                                if p:
+                                    p.active = False
+                                    p.last_active = datetime.now(timezone.utc)
+                                    db.add(p)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
         except Exception:
             pass
 
