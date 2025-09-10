@@ -637,14 +637,8 @@ export function WebSocketProvider({
       if (d.profile_id !== profileId) return;
       setIsAudioBridgeReady(true);
       logInfo("Server audio bridge ready");
-      // Try to (re)start playback now that the bridge is confirmed
-      try {
-        const el = audioPlaybackRef.current;
-        if (el) {
-          el.muted = false;
-          void el.play();
-        }
-      } catch {}
+      // Audio will be unlocked on first user interaction (mic toggle or message send)
+      // to comply with browser autoplay policy
     });
 
     return () => {
@@ -846,6 +840,17 @@ export function WebSocketProvider({
     const pc = pcRef.current;
     if (!pc) return; // not connected yet
 
+    // Try to unlock audio on first user interaction
+    try {
+      const el = audioPlaybackRef.current;
+      if (el) {
+        el.muted = false;
+        await el.play();
+      }
+    } catch (error) {
+      logError("Failed to unlock audio on mic toggle", error);
+    }
+
     // ensure we have a sender
     const sender = await ensureMicSender();
     if (!sender) return;
@@ -867,7 +872,7 @@ export function WebSocketProvider({
       setMicOn(false);
       logInfo("Mic OFF");
     }
-  }, [micOn, getMic]);
+  }, [micOn, getMic, audioPlaybackRef]);
 
   // Expose current local mic stream without creating a new one
   const getLocalMicStream = useCallback((): MediaStream | null => {

@@ -527,6 +527,17 @@ export default function ChatArea({
     const message = currentMessage.trim();
     if (!message || !chat?.id) return;
 
+    // Try to unlock audio on first user interaction
+    try {
+      const el = document.querySelector("audio") as HTMLAudioElement;
+      if (el) {
+        el.muted = false;
+        await el.play();
+      }
+    } catch (error) {
+      console.error("Failed to unlock audio on message send", error);
+    }
+
     // Ensure room join just in case (idempotent, cheap)
     joinRoom(chat.id);
     // Prefer to wait briefly for RTC setup so we don't miss audio reply
