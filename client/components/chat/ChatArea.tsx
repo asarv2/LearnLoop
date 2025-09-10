@@ -52,6 +52,7 @@ export default function ChatArea({
     micOn,
     voiceMode,
     enableVoiceMode,
+    connectRTC,
     joinRoom,
     isRoomJoined,
     toggleMic,
@@ -330,8 +331,13 @@ export default function ChatArea({
     autoEnableVoiceModeRef.current = chat.id;
     // Ensure we're in the server room before any messages arrive
     joinRoom(chat.id);
-    if (!voiceMode) enableVoiceMode(chat.id);
-  }, [chat?.id, voiceMode, enableVoiceMode, joinRoom]);
+    if (!voiceMode) {
+      enableVoiceMode(chat.id);
+    } else {
+      // Voice already on; ensure RTC is bound to the current room
+      void connectRTC(chat.id);
+    }
+  }, [chat?.id, voiceMode, enableVoiceMode, connectRTC, joinRoom]);
 
   // Toggle mic handler
   const onToggleMic = useCallback(() => {
