@@ -1,6 +1,8 @@
 export interface StorageAdapter {
   /** Return a time-limited, publicly readable URL for `key` (e.g. "doc/abc.pdf") */
   getSignedUrl(key: string, expiresIn: number): Promise<string>;
+  /** Return a time-limited, publicly readable URL for audio file `key` (e.g. "audio/abc.wav") */
+  getSignedUrlAudio(key: string, expiresIn: number): Promise<string>;
   /** Upload a file to storage and return the key */
   uploadFile(file: File, key: string): Promise<string>;
 }

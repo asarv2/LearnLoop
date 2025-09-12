@@ -12,6 +12,29 @@ export const supabaseAdapter = {
     return data.signedUrl;
   },
 
+  async getSignedUrlAudio(key: string, expiresIn: number) {
+    const supabase = await supabaseServer(cookies());
+    // Try audio bucket first, fall back to documents bucket
+    const { data, error } = await supabase.storage
+      .from("audio")
+      .createSignedUrl(key, expiresIn);
+
+    if (error) {
+      // Fall back to documents bucket if audio bucket doesn't exist
+      const documentsResult = await supabase.storage
+        .from("documents")
+        .createSignedUrl(key, expiresIn);
+
+      if (documentsResult.error) throw new Error(documentsResult.error.message);
+      if (!documentsResult.data?.signedUrl)
+        throw new Error("Failed to create signed URL");
+      return documentsResult.data.signedUrl;
+    }
+
+    if (!data?.signedUrl) throw new Error("Failed to create signed URL");
+    return data.signedUrl;
+  },
+
   async uploadFile(file: File, key: string) {
     const supabase = await supabaseServer(cookies());
     const { error } = await supabase.storage

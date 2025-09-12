@@ -100,9 +100,13 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          idle_timeout: number | null
+          max_turns: Json
           parameter_ids: string[] | null
           persona_ids: string[]
+          persona_mapping: Json
           profile_id: string | null
+          prompts: Json
           scenario_id: string | null
           title: string
           trace_id: string | null
@@ -116,9 +120,13 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          idle_timeout?: number | null
+          max_turns?: Json
           parameter_ids?: string[] | null
           persona_ids?: string[]
+          persona_mapping?: Json
           profile_id?: string | null
+          prompts?: Json
           scenario_id?: string | null
           title: string
           trace_id?: string | null
@@ -132,9 +140,13 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          idle_timeout?: number | null
+          max_turns?: Json
           parameter_ids?: string[] | null
           persona_ids?: string[]
+          persona_mapping?: Json
           profile_id?: string | null
+          prompts?: Json
           scenario_id?: string | null
           title?: string
           trace_id?: string | null
