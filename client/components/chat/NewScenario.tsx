@@ -44,13 +44,6 @@ import { useTraining } from "@/lib/api/hooks/useTrainings";
 
 // Types
 import { useAuth } from "@/components/auth/AuthProvider";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import type { Tables } from "@/database.types";
 
 export interface NewScenarioProps {
@@ -632,6 +625,16 @@ function PersonaField({
 }) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioProgress, setAudioProgress] = useState<{
+    current: number;
+    duration: number;
+  }>({
+    current: 0,
+    duration: 0,
+  });
+  const progressUpdateIntervalRef = useRef<number | null>(null);
 
   // Sync internal state with parent when selectedParameterId changes
   useEffect(() => {
@@ -640,50 +643,272 @@ function PersonaField({
     }
   }, [selectedParameterId, selectedPersonaId]);
 
-  if (isLoading) return <Spinner size="2" />;
+  const colors = [
+    "var(--green-2)",
+    "var(--blue-2)",
+    "var(--purple-2)",
+    "var(--orange-2)",
+    "var(--red-2)",
+    "var(--gold-2)",
+  ];
+
+  const borderColors = [
+    "var(--green-7)",
+    "var(--blue-7)",
+    "var(--purple-7)",
+    "var(--orange-7)",
+    "var(--red-7)",
+    "var(--gold-7)",
+  ];
+
+  const dotColors = [
+    "var(--green-9)",
+    "var(--blue-9)",
+    "var(--purple-9)",
+    "var(--orange-9)",
+    "var(--red-9)",
+    "var(--gold-9)",
+  ];
 
   const handlePersonaSelect = (parameterId: string) => {
     setSelectedPersonaId(parameterId);
     onChange(parameterId, parameterId);
   };
 
+  const handlePlayAudio = async (audioId: string) => {
+    const cleanupAudio = () => {
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+        } catch {}
+        audioRef.current.src = "";
+        audioRef.current = null;
+      }
+      if (progressUpdateIntervalRef.current) {
+        clearInterval(progressUpdateIntervalRef.current);
+        progressUpdateIntervalRef.current = null;
+      }
+      setAudioProgress({ current: 0, duration: 0 });
+    };
+
+    try {
+      if (playingAudioId === audioId) {
+        cleanupAudio();
+        setPlayingAudioId(null);
+        return;
+      }
+
+      // Stop any currently playing audio
+      cleanupAudio();
+
+      const audio = new Audio(`/api/v1/audio/${audioId}`);
+      audioRef.current = audio;
+      setPlayingAudioId(audioId);
+
+      const handleLoaded = () => {
+        const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+        setAudioProgress({ current: 0, duration });
+
+        // Start smooth progress updates
+        if (progressUpdateIntervalRef.current) {
+          clearInterval(progressUpdateIntervalRef.current);
+        }
+        progressUpdateIntervalRef.current = window.setInterval(() => {
+          if (audioRef.current && !audioRef.current.paused) {
+            const current = audioRef.current.currentTime || 0;
+            const duration = Number.isFinite(audioRef.current.duration)
+              ? audioRef.current.duration
+              : 0;
+            setAudioProgress({ current, duration });
+          }
+        }, 50); // Update every 50ms for smooth animation
+      };
+      const handleTimeUpdate = () => {
+        // Keep this as backup, but the interval will handle smooth updates
+        const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+        setAudioProgress({ current: audio.currentTime || 0, duration });
+      };
+      const handleEnded = () => {
+        setPlayingAudioId(null);
+        cleanupAudio();
+      };
+      const handleError = () => {
+        console.error("Error playing audio");
+        setPlayingAudioId(null);
+        cleanupAudio();
+      };
+
+      audio.addEventListener("loadedmetadata", handleLoaded);
+      audio.addEventListener("timeupdate", handleTimeUpdate);
+      audio.addEventListener("ended", handleEnded);
+      audio.addEventListener("error", handleError as EventListener);
+
+      await audio.play();
+    } catch (error) {
+      console.error("Error playing audio:", error);
+      setPlayingAudioId(null);
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+        } catch {}
+        audioRef.current = null;
+      }
+      setAudioProgress({ current: 0, duration: 0 });
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+        } catch {}
+        audioRef.current = null;
+      }
+      if (progressUpdateIntervalRef.current) {
+        clearInterval(progressUpdateIntervalRef.current);
+        progressUpdateIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  if (isLoading) return <Spinner size="2" />;
+
   return (
     <Flex direction="column" gap="3">
-      <Select value={selectedPersonaId} onValueChange={handlePersonaSelect}>
-        <SelectTrigger className="w-full">
-          <SelectValue placeholder="Choose a personality..." />
-        </SelectTrigger>
-        <SelectContent>
-          {parameters?.map((parameter) => {
-            // Remove "Employee" from the end of the parameter name for display
-            const displayName = (parameter.name || "Unnamed Parameter").replace(
-              /\s+Employee$/i,
-              ""
-            );
-            return (
-              <SelectItem key={parameter.id || ""} value={parameter.id || ""}>
-                {displayName}
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
-      {selectedPersonaId && (
-        <Box
-          mt="2"
-          p="3"
-          style={{
-            background: "var(--gray-2)",
-            borderRadius: "8px",
-            border: "1px solid var(--gray-5)",
-          }}
-        >
-          <Text size="2" color="gray">
-            {parameters?.find((p) => p.id === selectedPersonaId)?.description ||
-              "No description available"}
-          </Text>
-        </Box>
-      )}
+      {parameters
+        ?.sort((a, b) => a.updated_at?.localeCompare(b.updated_at || "") || 0)
+        .map((parameter, index) => {
+          const isSelected = selectedPersonaId === parameter.id;
+          const colorIndex = index % colors.length;
+          // Remove "Employee" from the end of the parameter name for display
+          const displayName = (parameter.name || "Unnamed Parameter").replace(
+            /\s+Employee$/i,
+            ""
+          );
+
+          return (
+            <Card
+              key={parameter.id!}
+              style={{
+                background: isSelected ? colors[colorIndex] : "var(--gray-1)",
+                border: `2px solid ${
+                  isSelected ? borderColors[colorIndex] : "var(--gray-6)"
+                }`,
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+              onClick={() => handlePersonaSelect(parameter.id!)}
+            >
+              <Box p="4">
+                <Flex direction="column" gap="3">
+                  <Flex align="center" gap="3">
+                    <Box
+                      style={{
+                        width: "20px",
+                        height: "20px",
+                        borderRadius: "50%",
+                        border: `2px solid ${
+                          isSelected ? dotColors[colorIndex] : "var(--gray-6)"
+                        }`,
+                        background: isSelected
+                          ? dotColors[colorIndex]
+                          : "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {isSelected && (
+                        <CheckIcon width="12" height="12" color="white" />
+                      )}
+                    </Box>
+                    <Box style={{ flex: 1 }}>
+                      <Text size="3" weight="bold">
+                        {displayName}:
+                      </Text>
+                      {parameter.description && (
+                        <Text size="2" color="gray">
+                          {` ${parameter.description}`}
+                        </Text>
+                      )}
+                    </Box>
+                    <Button
+                      size="1"
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePlayAudio(parameter.value!);
+                      }}
+                      style={{
+                        padding: "6px",
+                        borderRadius: "6px",
+                        background:
+                          playingAudioId === parameter.value
+                            ? "var(--red-3)"
+                            : "var(--gray-3)",
+                        color:
+                          playingAudioId === parameter.value
+                            ? "var(--red-9)"
+                            : "var(--gray-9)",
+                        border: "none",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {(() => {
+                        const isPlaying = playingAudioId === parameter.value;
+                        if (!isPlaying)
+                          return <PlayIcon width="12" height="12" />;
+                        const radius = 16;
+                        const circumference = 2 * Math.PI * radius;
+                        const progress =
+                          audioProgress.duration > 0
+                            ? Math.min(
+                                1,
+                                audioProgress.current / audioProgress.duration
+                              )
+                            : 0;
+                        const dashOffset = circumference * (1 - progress);
+                        return (
+                          <div
+                            style={{
+                              position: "relative",
+                              width: 18,
+                              height: 18,
+                            }}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 36 36">
+                              <circle
+                                cx="18"
+                                cy="18"
+                                r="16"
+                                stroke="var(--gray-7)"
+                                strokeWidth="4"
+                                fill="none"
+                              />
+                              <circle
+                                cx="18"
+                                cy="18"
+                                r="16"
+                                stroke="var(--blue-9)"
+                                strokeWidth="4"
+                                fill="none"
+                                strokeDasharray={`${circumference}`}
+                                strokeDashoffset={`${dashOffset}`}
+                                transform="rotate(-90 18 18)"
+                              />
+                            </svg>
+                          </div>
+                        );
+                      })()}
+                    </Button>
+                  </Flex>
+                </Flex>
+              </Box>
+            </Card>
+          );
+        })}
     </Flex>
   );
 }
@@ -1451,7 +1676,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                       <Flex direction="column" gap="3">
                         <Box>
                           <Text size="2" weight="bold" mb="2">
-                            Problem statement
+                            Problem Statement
                           </Text>
                           <textarea
                             value={draftProblem}

@@ -315,6 +315,9 @@ class Chats(_Base, table=True):
     completed: bool = Field(sa_column=Column('completed', Boolean, default=False))
     voice: str = Field(sa_column=Column('voice', Text, default=r'alloy', comment='for openAI'))
     persona_ids: List[uuid.UUID] = Field(sa_column=Column('persona_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
+    persona_mapping: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('persona_mapping', JSONB))
+    prompts: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompts', JSONB))
+    max_turns: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('max_turns', JSONB))
     completed_at: Optional[datetime] = Field(default=None, sa_column=Column('completed_at', DateTime(True)))
     trace_id: Optional[str] = Field(default=None, sa_column=Column('trace_id', Text, comment='for openAI traces'))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
@@ -323,6 +326,7 @@ class Chats(_Base, table=True):
     parameter_ids: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('parameter_ids', ARRAY(Uuid(as_uuid=True))))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text, comment='description of chat, i.e, scenario'))
     scenario_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('scenario_id', Uuid(as_uuid=True)))
+    idle_timeout: Optional[int] = Field(default=None, sa_column=Column('idle_timeout', Integer, default=30))
 
     attempt: Optional['Attempts'] = Relationship(back_populates='chats')
     profile: Optional['Profiles'] = Relationship(back_populates='chats')
