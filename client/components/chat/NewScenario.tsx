@@ -404,6 +404,7 @@ function CategoricalField({
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
+                        flexShrink: 0,
                       }}
                     >
                       {isSelected && (
@@ -846,6 +847,7 @@ function PersonaField({
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
+                        flexShrink: 0,
                       }}
                     >
                       {isSelected && (
@@ -985,6 +987,7 @@ function PersonaField({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
+                  flexShrink: 0,
                 }}
               >
                 {isCustomPersonaSelected && (
@@ -993,9 +996,9 @@ function PersonaField({
               </Box>
               <Box style={{ flex: 1 }}>
                 <Text size="3" weight="bold">
-                  Create Custom Persona:
+                  Custom:
                 </Text>
-                <Text size="2" color="gray">
+                <Text size="2" color="gray" style={{ paddingLeft: "4px" }}>
                   Design your own persona with custom personality and voice
                 </Text>
               </Box>
@@ -1008,13 +1011,31 @@ function PersonaField({
                 onClick={(e) => e.stopPropagation()}
               >
                 <Flex direction="column" gap="3">
-                  {/* Three fields in a row */}
+                  {/* Top row - Persona Name (full width) */}
+                  <Box>
+                    <input
+                      type="text"
+                      placeholder="Enter persona name..."
+                      value={customPersonaName}
+                      onChange={(e) => setCustomPersonaName(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "12px 16px",
+                        borderRadius: "8px",
+                        border: `1px solid ${
+                          customPersonaName ? "var(--green-7)" : "var(--gray-6)"
+                        }`,
+                        fontSize: "16px",
+                        outline: "none",
+                        background: "white",
+                      }}
+                    />
+                  </Box>
+                  {/* Bottom row - Personality Type and Voice Type */}
+
                   <Flex gap="3" align="end">
                     {/* Personality Type Dropdown */}
                     <Box style={{ flex: 1 }}>
-                      <Text size="2" weight="bold" mb="2">
-                        Personality Type
-                      </Text>
                       <select
                         value={customPersonalityType}
                         onChange={(e) =>
@@ -1043,37 +1064,8 @@ function PersonaField({
                       </select>
                     </Box>
 
-                    {/* Persona Name Input */}
-                    <Box style={{ flex: 1 }}>
-                      <Text size="2" weight="bold" mb="2">
-                        Persona Name
-                      </Text>
-                      <input
-                        type="text"
-                        placeholder="Enter persona name..."
-                        value={customPersonaName}
-                        onChange={(e) => setCustomPersonaName(e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "12px 16px",
-                          borderRadius: "8px",
-                          border: `1px solid ${
-                            customPersonaName
-                              ? "var(--green-7)"
-                              : "var(--gray-6)"
-                          }`,
-                          fontSize: "16px",
-                          outline: "none",
-                          background: "white",
-                        }}
-                      />
-                    </Box>
-
                     {/* Voice Type Dropdown */}
                     <Box style={{ flex: 1 }}>
-                      <Text size="2" weight="bold" mb="2">
-                        Voice Type
-                      </Text>
                       <select
                         value={customVoiceType}
                         onChange={(e) => setCustomVoiceType(e.target.value)}
@@ -1097,8 +1089,7 @@ function PersonaField({
                           const firstName = persona?.name?.split(" ")[0];
                           return (
                             <option key={param.id} value={param.name}>
-                              {param.name?.replace(/\s+Employee$/i, "")} (
-                              {firstName || "Unknown"})
+                              {firstName || "Unknown"}&apos;s Voice
                             </option>
                           );
                         })}
