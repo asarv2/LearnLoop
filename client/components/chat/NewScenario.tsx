@@ -39,7 +39,7 @@ import {
   useParameters,
   useParametersByField,
 } from "@/lib/api/hooks/useParameters";
-import { usePersonas } from "@/lib/api/hooks/usePersonas";
+import { useCreatePersona, usePersonas } from "@/lib/api/hooks/usePersonas";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
 import { useTraining } from "@/lib/api/hooks/useTrainings";
 
@@ -619,10 +619,22 @@ function PersonaField({
   field,
   onChange,
   selectedParameterId,
+  customPersonalityType,
+  setCustomPersonalityType,
+  customPersonaName,
+  setCustomPersonaName,
+  customVoiceType,
+  setCustomVoiceType,
 }: {
   field: NonNullable<Tables<"fields">>;
   onChange: (value: string, parameterId?: string) => void;
   selectedParameterId?: string;
+  customPersonalityType: string;
+  setCustomPersonalityType: (value: string) => void;
+  customPersonaName: string;
+  setCustomPersonaName: (value: string) => void;
+  customVoiceType: string;
+  setCustomVoiceType: (value: string) => void;
 }) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
   const { data: personas } = usePersonas();
@@ -637,6 +649,9 @@ function PersonaField({
     duration: 0,
   });
   const progressUpdateIntervalRef = useRef<number | null>(null);
+
+  // Custom persona state
+  const [isCustomPersonaSelected, setIsCustomPersonaSelected] = useState(false);
 
   // Sync internal state with parent when selectedParameterId changes
   useEffect(() => {
@@ -673,8 +688,15 @@ function PersonaField({
   ];
 
   const handlePersonaSelect = (parameterId: string) => {
-    setSelectedPersonaId(parameterId);
-    onChange(parameterId, parameterId);
+    if (parameterId === "custom") {
+      setIsCustomPersonaSelected(true);
+      setSelectedPersonaId("");
+      onChange("Custom", undefined);
+    } else {
+      setIsCustomPersonaSelected(false);
+      setSelectedPersonaId(parameterId);
+      onChange(parameterId, parameterId);
+    }
   };
 
   const handlePlayAudio = async (audioId: string) => {
@@ -776,9 +798,14 @@ function PersonaField({
 
   if (isLoading) return <Spinner size="2" />;
 
+  // Filter out custom persona parameters (one-time use)
+  const displayedParameters = parameters?.filter(
+    (p) => (p.description || "").toLowerCase() !== "custom persona"
+  );
+
   return (
     <Flex direction="column" gap="3">
-      {parameters
+      {displayedParameters
         ?.sort((a, b) => a.updated_at?.localeCompare(b.updated_at || "") || 0)
         .map((parameter, index) => {
           const isSelected = selectedPersonaId === parameter.id;
@@ -924,6 +951,166 @@ function PersonaField({
             </Card>
           );
         })}
+
+      {/* Custom Persona Option - Similar to Categorical Custom */}
+      <Card
+        style={{
+          background: isCustomPersonaSelected
+            ? "var(--violet-2)"
+            : "var(--gray-1)",
+          border: `2px solid ${
+            isCustomPersonaSelected ? "var(--violet-7)" : "var(--gray-6)"
+          }`,
+          cursor: "pointer",
+          transition: "all 0.2s ease",
+        }}
+        onClick={() => handlePersonaSelect("custom")}
+      >
+        <Box p="4">
+          <Flex direction="column" gap="3">
+            <Flex align="center" gap="3">
+              <Box
+                style={{
+                  width: "20px",
+                  height: "20px",
+                  borderRadius: "50%",
+                  border: `2px solid ${
+                    isCustomPersonaSelected
+                      ? "var(--violet-9)"
+                      : "var(--gray-6)"
+                  }`,
+                  background: isCustomPersonaSelected
+                    ? "var(--violet-9)"
+                    : "transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {isCustomPersonaSelected && (
+                  <CheckIcon width="12" height="12" color="white" />
+                )}
+              </Box>
+              <Box style={{ flex: 1 }}>
+                <Text size="3" weight="bold">
+                  Create Custom Persona:
+                </Text>
+                <Text size="2" color="gray">
+                  Design your own persona with custom personality and voice
+                </Text>
+              </Box>
+            </Flex>
+
+            {/* Custom Persona Form - Only show when selected */}
+            {isCustomPersonaSelected && (
+              <Box
+                style={{ marginLeft: "44px" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Flex direction="column" gap="3">
+                  {/* Three fields in a row */}
+                  <Flex gap="3" align="end">
+                    {/* Personality Type Dropdown */}
+                    <Box style={{ flex: 1 }}>
+                      <Text size="2" weight="bold" mb="2">
+                        Personality Type
+                      </Text>
+                      <select
+                        value={customPersonalityType}
+                        onChange={(e) =>
+                          setCustomPersonalityType(e.target.value)
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "12px 16px",
+                          borderRadius: "8px",
+                          border: `1px solid ${
+                            customPersonalityType
+                              ? "var(--green-7)"
+                              : "var(--gray-6)"
+                          }`,
+                          fontSize: "16px",
+                          outline: "none",
+                          background: "white",
+                        }}
+                      >
+                        <option value="">Select personality...</option>
+                        {displayedParameters?.map((param) => (
+                          <option key={param.id} value={param.name}>
+                            {param.name?.replace(/\s+Employee$/i, "")}
+                          </option>
+                        ))}
+                      </select>
+                    </Box>
+
+                    {/* Persona Name Input */}
+                    <Box style={{ flex: 1 }}>
+                      <Text size="2" weight="bold" mb="2">
+                        Persona Name
+                      </Text>
+                      <input
+                        type="text"
+                        placeholder="Enter persona name..."
+                        value={customPersonaName}
+                        onChange={(e) => setCustomPersonaName(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "12px 16px",
+                          borderRadius: "8px",
+                          border: `1px solid ${
+                            customPersonaName
+                              ? "var(--green-7)"
+                              : "var(--gray-6)"
+                          }`,
+                          fontSize: "16px",
+                          outline: "none",
+                          background: "white",
+                        }}
+                      />
+                    </Box>
+
+                    {/* Voice Type Dropdown */}
+                    <Box style={{ flex: 1 }}>
+                      <Text size="2" weight="bold" mb="2">
+                        Voice Type
+                      </Text>
+                      <select
+                        value={customVoiceType}
+                        onChange={(e) => setCustomVoiceType(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "12px 16px",
+                          borderRadius: "8px",
+                          border: `1px solid ${
+                            customVoiceType ? "var(--green-7)" : "var(--gray-6)"
+                          }`,
+                          fontSize: "16px",
+                          outline: "none",
+                          background: "white",
+                        }}
+                      >
+                        <option value="">Select voice...</option>
+                        {displayedParameters?.map((param) => {
+                          const persona = personas?.find(
+                            (p) => p.id === param.value
+                          );
+                          const firstName = persona?.name?.split(" ")[0];
+                          return (
+                            <option key={param.id} value={param.name}>
+                              {param.name?.replace(/\s+Employee$/i, "")} (
+                              {firstName || "Unknown"})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </Box>
+                  </Flex>
+                </Flex>
+              </Box>
+            )}
+          </Flex>
+        </Box>
+      </Card>
     </Flex>
   );
 }
@@ -951,6 +1138,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     scenario?.training_id || "",
     Boolean(scenario?.training_id)
   );
+  const { data: personas } = usePersonas();
+  const createPersona = useCreatePersona();
 
   // Hooks for mutations
   const {
@@ -965,6 +1154,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [draftProblem, setDraftProblem] = useState<string>("");
   const [draftObjectives, setDraftObjectives] = useState<string[]>([]);
   const [savedScenarioId, setSavedScenarioId] = useState<string | null>(null);
+
+  // Custom persona state for global access
+  const [customPersonalityType, setCustomPersonalityType] =
+    useState<string>("");
+  const [customPersonaName, setCustomPersonaName] = useState<string>("");
+  const [customVoiceType, setCustomVoiceType] = useState<string>("");
 
   // Initialize field values when scenario and training load
   useEffect(() => {
@@ -1380,6 +1575,65 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             }
           }
 
+          if (
+            field.field_type === "persona" &&
+            fv.value === "Custom" &&
+            !fv.parameterId
+          ) {
+            // Handle custom persona creation
+            try {
+              // Find the base persona to duplicate from
+              const basePersona = personas?.find(
+                (p) => p.name === customPersonalityType
+              );
+
+              if (!basePersona) {
+                console.error("Could not find base persona for custom persona");
+                return fv;
+              }
+
+              // Find the voice persona to get voice settings
+              const voicePersona = personas?.find(
+                (p) => p.name === customVoiceType
+              );
+
+              // Create the custom persona
+              const newPersona = await createPersona.mutateAsync({
+                name: customPersonaName,
+                description:
+                  basePersona.description ||
+                  `Custom persona based on ${customPersonalityType}`,
+                profile_id: basePersona.profile_id,
+                system_prompt: basePersona.system_prompt,
+                realtime_prompt:
+                  basePersona.realtime_prompt?.replace(
+                    /\.name/g,
+                    customPersonaName
+                  ) || basePersona.realtime_prompt,
+                temperature: basePersona.temperature,
+                voice: voicePersona?.voice || basePersona.voice,
+              });
+
+              // Create a parameter that references this new persona
+              const newParameter = await createParameterGlobal.mutateAsync({
+                field_id: field.id,
+                name: `${customPersonaName} (Custom)`,
+                description: "Custom Persona",
+                value: newPersona.id,
+              });
+
+              if (newParameter?.id) {
+                return {
+                  ...fv,
+                  parameterId: newParameter.id,
+                  value: newParameter.id,
+                };
+              }
+            } catch (e) {
+              console.error("Failed to create custom persona during start", e);
+            }
+          }
+
           return fv;
         })
       );
@@ -1612,6 +1866,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 }
                 isLast={index === visibleArray.length - 1}
                 selectedParameterId={fieldValue.parameterId}
+                customPersonalityType={customPersonalityType}
+                setCustomPersonalityType={setCustomPersonalityType}
+                customPersonaName={customPersonaName}
+                setCustomPersonaName={setCustomPersonaName}
+                customVoiceType={customVoiceType}
+                setCustomVoiceType={setCustomVoiceType}
               />
             ))}
 
@@ -2125,6 +2385,12 @@ function FieldCard({
   onChange,
   isLast,
   selectedParameterId,
+  customPersonalityType,
+  setCustomPersonalityType,
+  customPersonaName,
+  setCustomPersonaName,
+  customVoiceType,
+  setCustomVoiceType,
 }: {
   fieldId: string;
   index: number;
@@ -2133,6 +2399,12 @@ function FieldCard({
   onChange: (value: string, parameterId?: string, file?: File) => void;
   isLast: boolean;
   selectedParameterId?: string;
+  customPersonalityType: string;
+  setCustomPersonalityType: (value: string) => void;
+  customPersonaName: string;
+  setCustomPersonaName: (value: string) => void;
+  customVoiceType: string;
+  setCustomVoiceType: (value: string) => void;
 }) {
   const { data: field, isLoading } = useField(fieldId);
 
@@ -2209,6 +2481,12 @@ function FieldCard({
             field={safeField}
             onChange={handleChange}
             selectedParameterId={selectedParameterId}
+            customPersonalityType={customPersonalityType}
+            setCustomPersonalityType={setCustomPersonalityType}
+            customPersonaName={customPersonaName}
+            setCustomPersonaName={setCustomPersonaName}
+            customVoiceType={customVoiceType}
+            setCustomVoiceType={setCustomVoiceType}
           />
         );
       default:
