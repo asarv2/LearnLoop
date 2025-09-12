@@ -39,6 +39,7 @@ import {
   useParameters,
   useParametersByField,
 } from "@/lib/api/hooks/useParameters";
+import { usePersonas } from "@/lib/api/hooks/usePersonas";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
 import { useTraining } from "@/lib/api/hooks/useTrainings";
 
@@ -624,6 +625,7 @@ function PersonaField({
   selectedParameterId?: string;
 }) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
+  const { data: personas } = usePersonas();
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -825,7 +827,20 @@ function PersonaField({
                     </Box>
                     <Box style={{ flex: 1 }}>
                       <Text size="3" weight="bold">
-                        {displayName}:
+                        {(() => {
+                          // Find the persona that matches this parameter's value
+                          const persona = personas?.find(
+                            (p) => p.id === parameter.value
+                          );
+                          const personaName = persona?.name;
+                          // just do first name for now
+                          const firstName = personaName?.split(" ")[0];
+
+                          if (personaName) {
+                            return `${displayName} (${firstName}):`;
+                          }
+                          return `${displayName}:`;
+                        })()}
                       </Text>
                       {parameter.description && (
                         <Text size="2" color="gray">
