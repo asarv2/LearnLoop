@@ -468,6 +468,7 @@ export type Database = {
       }
       personas: {
         Row: {
+          active: boolean
           created_at: string | null
           description: string | null
           id: string
@@ -480,6 +481,7 @@ export type Database = {
           voice: string | null
         }
         Insert: {
+          active?: boolean
           created_at?: string | null
           description?: string | null
           id?: string
@@ -492,6 +494,7 @@ export type Database = {
           voice?: string | null
         }
         Update: {
+          active?: boolean
           created_at?: string | null
           description?: string | null
           id?: string

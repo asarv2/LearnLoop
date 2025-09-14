@@ -70,7 +70,6 @@ interface WebSocketContextType {
   emitStartTraining: (data: {
     scenario_id: string;
     profile_id?: string;
-    assistant_persona_id?: string;
   }) => void;
   emitGenerateScenario: (data: {
     scenario_id: string;
@@ -81,7 +80,6 @@ interface WebSocketContextType {
       file?: File;
     }>;
     additional_prompt?: string;
-    assistant_persona_id?: string;
   }) => void;
   emitUpdateScenarioParameters: (data: {
     scenario_id: string;
@@ -988,11 +986,7 @@ export function WebSocketProvider({
 
   // Training event emitters (unchanged)
   const emitStartTraining = useCallback(
-    (data: {
-      scenario_id: string;
-      profile_id?: string;
-      assistant_persona_id?: string;
-    }) => {
+    (data: { scenario_id: string; profile_id?: string }) => {
       if (!socketRef.current?.connected) {
         logError("Cannot start training - WebSocket not connected");
         toast.error("WebSocket not connected. Please refresh the page.");
@@ -1014,7 +1008,6 @@ export function WebSocketProvider({
         file?: File;
       }>;
       additional_prompt?: string;
-      assistant_persona_id?: string;
     }) => {
       if (!socketRef.current?.connected) {
         logError("Cannot generate scenario - WebSocket not connected");

@@ -15,6 +15,7 @@ export const PersonaCreateSchema = z.object({
   description: z.string().optional(),
   avatar_url: z.string().optional(),
   metadata: z.any().optional(), // Json type
+  active: z.boolean().optional(),
 });
 
 export const PersonaUpdateSchema = z.object({
@@ -23,6 +24,7 @@ export const PersonaUpdateSchema = z.object({
   description: z.string().optional(),
   avatar_url: z.string().optional(),
   metadata: z.any().optional(), // Json type
+  active: z.boolean().optional(),
 });
 
 async function getSupabase() {
