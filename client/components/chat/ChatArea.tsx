@@ -315,14 +315,11 @@ export default function ChatArea({
   // Voice Mode toggle handler
   const onToggleVoiceMode = useCallback(() => {
     if (!chat?.id) return;
-    if (!voiceMode) {
-      // turning ON: establish RTC once and leave it until refresh
+    // If voice mode is off OR RTC is not connected, (re)enable voice mode.
+    if (!voiceMode || !isRTCConnected) {
       enableVoiceMode(chat.id);
-    } else {
-      // turning OFF: do NOT disconnect; just stop using RTC for text
-      // (Audio/mic stays as last set)
     }
-  }, [chat?.id, voiceMode, enableVoiceMode]);
+  }, [chat?.id, voiceMode, isRTCConnected, enableVoiceMode]);
 
   // Automatically join room and enable voice mode when chat becomes available (id changes)
   useEffect(() => {
@@ -983,7 +980,7 @@ export default function ChatArea({
                 {/* Text Input with Voice Mode/Mic Controls and Hints */}
                 <Flex align="center" gap="3">
                   {/* Voice Mode Button or Mic Controls - Left */}
-                  {voiceMode ? (
+                  {isRTCConnected ? (
                     <Tooltip.Provider>
                       <Tooltip.Root>
                         <Tooltip.Trigger asChild>

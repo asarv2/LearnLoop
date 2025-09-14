@@ -15,9 +15,9 @@ import remarkGfm from "remark-gfm";
 import RemarkMathPlugin from "remark-math";
 // remarkDirective might not be needed if no custom directives are used in the barebones version
 // import remarkDirective from 'remark-directive';
+import MarkdownImage from "@/components/common/MarkdownImage";
 import "highlight.js/styles/github.css"; // Keep highlight.js CSS for code blocks
 import rehypeHighlight from "rehype-highlight";
-import MarkdownImage from "@/components/common/MarkdownImage";
 // Removed Avatar, Badge, Flex, Text from '@mantine/core' as they are not used
 // Removed imports related to data fetching and specific types like Document, CONTENT_COLORS
 // Removed IconChevronRight

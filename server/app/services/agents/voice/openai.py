@@ -603,7 +603,7 @@ class OpenAIAgent(Agent):
             },
             "voice": realtime_voice,
             "input_audio_transcription": {
-                "model": "whisper-1"
+                "model": "gpt-4o-mini-transcribe"
             }
         }
 
