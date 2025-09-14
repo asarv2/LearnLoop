@@ -803,8 +803,14 @@ function PersonaField({
 
   // Filter out custom persona parameters (one-time use) and only include active personas
   const displayedParameters = parameters
-    ?.filter((p) => (p.description || "").toLowerCase() !== "custom persona")
     ?.filter((p) => {
+      // Always include the currently selected parameter
+      if (selectedParameterId && p.id === selectedParameterId) return true;
+      return (p.description || "").toLowerCase() !== "custom persona";
+    })
+    ?.filter((p) => {
+      // Always include the currently selected parameter
+      if (selectedParameterId && p.id === selectedParameterId) return true;
       const persona = personas?.find((pp) => pp.id === p.value);
       return persona?.active === true;
     });
@@ -1614,18 +1620,56 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 (p) => p.id === customVoiceType
               );
 
+              // Build fields based on requested behavior:
+              // - Use selected Voice's description and voice
+              // - Use selected Personality's realtime_prompt, but replace its first name with the custom name
+              const descriptionFromVoice =
+                voicePersona?.description ||
+                basePersona.description ||
+                `Custom persona based on ${basePersona.name}`;
+
+              const baseFirstName =
+                (basePersona.name || "").split(" ")[0] || "";
+              const escapeRegExp = (s: string) =>
+                s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              const makeRealtimePrompt = (
+                prompt: string | null | undefined
+              ) => {
+                const text = prompt || "";
+                const baseFullName = (basePersona.name || "").trim();
+                const chosenFullName = (customPersonaName || "").trim();
+                const chosenFirstName = chosenFullName.split(/\s+/)[0] || "";
+                const baseOnlyFirstName = baseFirstName;
+                if (!baseOnlyFirstName || !chosenFirstName) return text;
+
+                let result = text;
+                // 1) Replace full name occurrences with full custom name
+                if (baseFullName && chosenFullName) {
+                  const fullPattern = new RegExp(
+                    `\\b${escapeRegExp(baseFullName)}\\b`,
+                    "g"
+                  );
+                  result = result.replace(fullPattern, chosenFullName);
+                }
+                // 2) Replace first-name-only occurrences with custom first name
+                const firstPattern = new RegExp(
+                  `\\b${escapeRegExp(baseOnlyFirstName)}\\b`,
+                  "g"
+                );
+                result = result.replace(firstPattern, chosenFirstName);
+
+                return result;
+              };
+              const realtimePromptFromPersonality = makeRealtimePrompt(
+                basePersona.realtime_prompt
+              );
+
               const newPersona = await createPersona.mutateAsync({
                 name: customPersonaName,
-                description:
-                  basePersona.description ||
-                  `Custom persona based on ${basePersona.name}`,
+                description: descriptionFromVoice,
                 profile_id: (user?.id || basePersona.profile_id) as string,
                 system_prompt: basePersona.system_prompt,
-                realtime_prompt:
-                  basePersona.realtime_prompt?.replace(
-                    /\.name/g,
-                    customPersonaName
-                  ) || basePersona.realtime_prompt,
+                realtime_prompt: realtimePromptFromPersonality,
                 temperature: basePersona.temperature,
                 voice: voicePersona?.voice || basePersona.voice,
                 active: false, // so it does not show up in the persona dropdown
@@ -1635,10 +1679,14 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
               // Create a parameter for this persona field referencing the new persona
               try {
+                // Find the base parameter used for the selected personality so we can mirror its label/description
+                const baseParameter = (allParameters || []).find(
+                  (p) => p.field_id === field.id && p.value === basePersona.id
+                );
                 const createdParam = await createParameterGlobal.mutateAsync({
                   field_id: field.id,
-                  name: customPersonaName || "Custom Persona",
-                  description: "Custom Persona",
+                  name: baseParameter?.name || "Custom Persona",
+                  description: baseParameter?.description,
                   value: newPersona.id,
                 });
                 if (createdParam?.id) {
