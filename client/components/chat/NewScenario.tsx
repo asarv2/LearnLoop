@@ -298,11 +298,14 @@ function CategoricalField({
   };
 
   // Hide custom-created parameters and those with empty/null descriptions
-  const displayedParameters = parameters?.filter(
-    (p) =>
+  const displayedParameters = parameters?.filter((p) => {
+    // Always include the currently selected parameter so it stays visible
+    if (selectedParameterId && p.id === selectedParameterId) return true;
+    return (
       (p.description || "").toLowerCase() !== "custom scenario" &&
       (p.description || "").trim() !== ""
-  );
+    );
+  });
 
   // Suggestions for custom entries (only parameters with description "Custom Scenario")
   const customSuggestions = (() => {
@@ -1166,6 +1169,36 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     string | null
   >(null);
 
+  // Track the parameters used in the last generation to detect changes
+  const [lastGeneratedSignature, setLastGeneratedSignature] = useState<
+    string | null
+  >(null);
+
+  // Create a stable signature string from payload values for comparison
+  const makeSignatureFromPayload = (
+    items: { fieldId: string; value: string; parameterId?: string }[]
+  ): string => {
+    const parts = items
+      .map((i) => `${i.fieldId}:${i.parameterId || ""}:${i.value || ""}`)
+      .sort();
+    return parts.join("|");
+  };
+
+  // Compute current signature from the visible fieldValues
+  const currentSignature = (() => {
+    const items = fieldValues.map((fv) => ({
+      fieldId: fv.fieldId,
+      value: fv.value,
+      parameterId: fv.parameterId,
+    }));
+    return makeSignatureFromPayload(items);
+  })();
+
+  // Whether selections changed since last generation in this session
+  const hasParamChangesSinceGenerate =
+    lastGeneratedSignature !== null &&
+    lastGeneratedSignature !== currentSignature;
+
   // Initialize field values when scenario and training load
   useEffect(() => {
     if (scenario?.field_ids && fields) {
@@ -1846,6 +1879,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         parameterId: fv.parameterId,
       }));
 
+      // Record this generation's parameters for change detection
+      setLastGeneratedSignature(makeSignatureFromPayload(payloadFieldValues));
+
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
         field_values: payloadFieldValues,
@@ -2066,19 +2102,197 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
           {/* Scenario Content - Generate Scenario Step */}
           {((draftProblem && draftProblem.trim().length > 0) ||
-            Boolean((scenario?.problem_statement || "").trim())) && (
-            <Box mb="4">
+            Boolean((scenario?.problem_statement || "").trim())) &&
+            !hasParamChangesSinceGenerate && (
+              <Box mb="4">
+                <Card
+                  style={{
+                    background: "white",
+                    border: `1px solid ${
+                      scenarioReady ? "var(--green-8)" : "var(--gray-6)"
+                    }`,
+                    borderRadius: "12px",
+                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                    transition: "all 0.2s ease",
+                    position: "relative",
+                    overflow: "visible",
+                  }}
+                >
+                  <Box p="6">
+                    <Flex align="center" gap="4">
+                      <Box
+                        style={{
+                          width: "32px",
+                          height: "32px",
+                          borderRadius: "50%",
+                          background: scenarioReady
+                            ? "var(--green-9)"
+                            : "var(--gray-7)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {scenarioReady ? (
+                          <CheckIcon color="white" width="16" height="16" />
+                        ) : (
+                          <Text
+                            size="2"
+                            weight="bold"
+                            style={{ color: "white" }}
+                          >
+                            {fieldValues.filter((fv) => {
+                              const field = fields?.find(
+                                (f) => f.id === fv.fieldId
+                              );
+                              return field ? !field.hidden : true;
+                            }).length + 1}
+                          </Text>
+                        )}
+                      </Box>
+                      <Box style={{ flex: 1 }}>
+                        <Flex align="center" gap="2" mb="3">
+                          <Text size="4" weight="bold">
+                            Generate Scenario
+                          </Text>
+                          {scenarioReady && (
+                            <Badge size="1" variant="soft" color="green">
+                              Complete
+                            </Badge>
+                          )}
+                        </Flex>
+                        <Flex direction="column" gap="3">
+                          <Box>
+                            <Text size="2" weight="bold" mb="2">
+                              Problem Statement
+                            </Text>
+                            <textarea
+                              value={draftProblem}
+                              onChange={(e) => setDraftProblem(e.target.value)}
+                              rows={5}
+                              style={{
+                                width: "100%",
+                                padding: "10px 12px",
+                                borderRadius: "8px",
+                                border: "1px solid var(--gray-6)",
+                                outline: "none",
+                                resize: "vertical",
+                              }}
+                            />
+                          </Box>
+                          <Box>
+                            <Flex align="center" justify="between" mb="2">
+                              <Text size="2" weight="bold">
+                                Objectives
+                              </Text>
+                              <Button
+                                size="1"
+                                variant="soft"
+                                onClick={() =>
+                                  setDraftObjectives([
+                                    ...(draftObjectives || []),
+                                    "",
+                                  ])
+                                }
+                              >
+                                Add Objective
+                              </Button>
+                            </Flex>
+                            <Flex direction="column" gap="2">
+                              {(draftObjectives || []).map((obj, idx) => (
+                                <Flex key={idx} align="center" gap="2">
+                                  <input
+                                    type="text"
+                                    value={obj}
+                                    onChange={(e) => {
+                                      const next = [...(draftObjectives || [])];
+                                      next[idx] = e.target.value;
+                                      setDraftObjectives(next);
+                                    }}
+                                    style={{
+                                      flex: 1,
+                                      padding: "8px 10px",
+                                      borderRadius: "8px",
+                                      border: "1px solid var(--gray-6)",
+                                      outline: "none",
+                                    }}
+                                  />
+                                  <Button
+                                    size="1"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      const next = [...(draftObjectives || [])];
+                                      next.splice(idx, 1);
+                                      setDraftObjectives(next);
+                                    }}
+                                  >
+                                    ✕
+                                  </Button>
+                                </Flex>
+                              ))}
+                            </Flex>
+                          </Box>
+                          <Flex gap="3" justify="end">
+                            <Button
+                              size="2"
+                              variant="solid"
+                              onClick={() => setShowGenerateModal(true)}
+                              style={{
+                                background: "var(--violet-9)",
+                                color: "white",
+                              }}
+                            >
+                              {hasParamChangesSinceGenerate
+                                ? "Regenerate Scenario"
+                                : "Update Scenario"}
+                            </Button>
+                          </Flex>
+                          {renderGenerateProgress()}
+                        </Flex>
+                      </Box>
+                    </Flex>
+                  </Box>
+                </Card>
+              </Box>
+            )}
+
+          {/* Progress Bar after Generate Scenario step */}
+          {((draftProblem && draftProblem.trim().length > 0) ||
+            Boolean((scenario?.problem_statement || "").trim())) &&
+            !hasParamChangesSinceGenerate && (
+              <Flex justify="center" mb="4">
+                <Box
+                  style={{
+                    width: "2px",
+                    height: "24px",
+                    background: scenarioReady
+                      ? "var(--green-8)"
+                      : "var(--gray-6)",
+                    borderRadius: "2px",
+                  }}
+                />
+              </Flex>
+            )}
+
+          {/* Generate Scenario Card - only show when problem statement is empty and no objectives */}
+          {((!(
+            (draftProblem && draftProblem.trim().length > 0) ||
+            Boolean((scenario?.problem_statement || "").trim())
+          ) &&
+            !(
+              (draftObjectives && draftObjectives.length > 0) ||
+              (scenario?.objectives && scenario.objectives.length > 0)
+            )) ||
+            hasParamChangesSinceGenerate) && (
+            <Box>
               <Card
                 style={{
                   background: "white",
-                  border: `1px solid ${
-                    scenarioReady ? "var(--green-8)" : "var(--gray-6)"
-                  }`,
+                  border: "1px solid var(--violet-7)",
                   borderRadius: "12px",
-                  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                  boxShadow: "0 4px 12px rgba(139, 69, 19, 0.15)",
                   transition: "all 0.2s ease",
-                  position: "relative",
-                  overflow: "visible",
                 }}
               >
                 <Box p="6">
@@ -2088,125 +2302,52 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                         width: "32px",
                         height: "32px",
                         borderRadius: "50%",
-                        background: scenarioReady
-                          ? "var(--green-9)"
-                          : "var(--gray-7)",
+                        background: "var(--violet-9)",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                         flexShrink: 0,
                       }}
                     >
-                      {scenarioReady ? (
-                        <CheckIcon color="white" width="16" height="16" />
-                      ) : (
-                        <Text size="2" weight="bold" style={{ color: "white" }}>
-                          {fieldValues.filter((fv) => {
-                            const field = fields?.find(
-                              (f) => f.id === fv.fieldId
-                            );
-                            return field ? !field.hidden : true;
-                          }).length + 1}
-                        </Text>
-                      )}
+                      <FileTextIcon color="white" width="16" height="16" />
                     </Box>
                     <Box style={{ flex: 1 }}>
                       <Flex align="center" gap="2" mb="3">
                         <Text size="4" weight="bold">
                           Generate Scenario
                         </Text>
-                        {scenarioReady && (
-                          <Badge size="1" variant="soft" color="green">
-                            Complete
+                        {allStepsComplete && (
+                          <Badge size="1" variant="soft" color="violet">
+                            Ready to generate
                           </Badge>
                         )}
                       </Flex>
-                      <Flex direction="column" gap="3">
-                        <Box>
-                          <Text size="2" weight="bold" mb="2">
-                            Problem Statement
-                          </Text>
-                          <textarea
-                            value={draftProblem}
-                            onChange={(e) => setDraftProblem(e.target.value)}
-                            rows={5}
-                            style={{
-                              width: "100%",
-                              padding: "10px 12px",
-                              borderRadius: "8px",
-                              border: "1px solid var(--gray-6)",
-                              outline: "none",
-                              resize: "vertical",
-                            }}
-                          />
-                        </Box>
-                        <Box>
-                          <Flex align="center" justify="between" mb="2">
-                            <Text size="2" weight="bold">
-                              Objectives
-                            </Text>
-                            <Button
-                              size="1"
-                              variant="soft"
-                              onClick={() =>
-                                setDraftObjectives([
-                                  ...(draftObjectives || []),
-                                  "",
-                                ])
-                              }
-                            >
-                              Add Objective
-                            </Button>
+
+                      <Button
+                        size="3"
+                        disabled={!allStepsComplete || isGenerating}
+                        onClick={() => handleGenerateScenario()}
+                        style={{
+                          width: "100%",
+                          background: !allStepsComplete
+                            ? "var(--gray-7)"
+                            : "var(--violet-9)",
+                          color: !allStepsComplete ? "var(--gray-11)" : "white",
+                        }}
+                      >
+                        {isGenerating ? (
+                          <Flex align="center" gap="2">
+                            <Spinner size="2" />
+                            <Text>Generating...</Text>
                           </Flex>
-                          <Flex direction="column" gap="2">
-                            {(draftObjectives || []).map((obj, idx) => (
-                              <Flex key={idx} align="center" gap="2">
-                                <input
-                                  type="text"
-                                  value={obj}
-                                  onChange={(e) => {
-                                    const next = [...(draftObjectives || [])];
-                                    next[idx] = e.target.value;
-                                    setDraftObjectives(next);
-                                  }}
-                                  style={{
-                                    flex: 1,
-                                    padding: "8px 10px",
-                                    borderRadius: "8px",
-                                    border: "1px solid var(--gray-6)",
-                                    outline: "none",
-                                  }}
-                                />
-                                <Button
-                                  size="1"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    const next = [...(draftObjectives || [])];
-                                    next.splice(idx, 1);
-                                    setDraftObjectives(next);
-                                  }}
-                                >
-                                  ✕
-                                </Button>
-                              </Flex>
-                            ))}
+                        ) : (
+                          <Flex align="center" gap="2">
+                            <FileTextIcon />
+                            <Text>Generate Scenario</Text>
                           </Flex>
-                        </Box>
-                        <Flex gap="3" justify="end">
-                          <Button
-                            size="2"
-                            variant="solid"
-                            onClick={() => setShowGenerateModal(true)}
-                            style={{
-                              background: "var(--violet-9)",
-                              color: "white",
-                            }}
-                          >
-                            Update Scenario
-                          </Button>
-                        </Flex>
-                        {renderGenerateProgress()}
-                      </Flex>
+                        )}
+                      </Button>
+                      {renderGenerateProgress()}
                     </Box>
                   </Flex>
                 </Box>
@@ -2214,39 +2355,27 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             </Box>
           )}
 
-          {/* Progress Bar after Generate Scenario step */}
-          {((draftProblem && draftProblem.trim().length > 0) ||
-            Boolean((scenario?.problem_statement || "").trim())) && (
-            <Flex justify="center" mb="4">
-              <Box
-                style={{
-                  width: "2px",
-                  height: "24px",
-                  background: scenarioReady
-                    ? "var(--green-8)"
-                    : "var(--gray-6)",
-                  borderRadius: "2px",
-                }}
-              />
-            </Flex>
-          )}
-
-          {/* Generate Scenario Card - only show when problem statement is empty and no objectives */}
-          {!(
-            (draftProblem && draftProblem.trim().length > 0) ||
-            Boolean((scenario?.problem_statement || "").trim())
-          ) &&
-            !(
-              (draftObjectives && draftObjectives.length > 0) ||
-              (scenario?.objectives && scenario.objectives.length > 0)
-            ) && (
+          {/* Start Button: show only when problem statement exists */}
+          {allStepsComplete &&
+            scenarioReady &&
+            !hasParamChangesSinceGenerate && (
               <Box>
                 <Card
                   style={{
-                    background: "white",
-                    border: "1px solid var(--violet-7)",
+                    background:
+                      allStepsComplete && scenarioReady
+                        ? "white"
+                        : "var(--gray-2)",
+                    border: `1px solid ${
+                      allStepsComplete && scenarioReady
+                        ? "var(--blue-7)"
+                        : "var(--gray-6)"
+                    }`,
                     borderRadius: "12px",
-                    boxShadow: "0 4px 12px rgba(139, 69, 19, 0.15)",
+                    boxShadow:
+                      allStepsComplete && scenarioReady
+                        ? "0 4px 12px rgba(0, 100, 200, 0.15)"
+                        : "0 1px 3px rgba(0, 0, 0, 0.1)",
                     transition: "all 0.2s ease",
                   }}
                 >
@@ -2257,140 +2386,56 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                           width: "32px",
                           height: "32px",
                           borderRadius: "50%",
-                          background: "var(--violet-9)",
+                          background: allStepsComplete
+                            ? "var(--blue-9)"
+                            : "var(--gray-7)",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                           flexShrink: 0,
                         }}
                       >
-                        <FileTextIcon color="white" width="16" height="16" />
+                        <PlayIcon color="white" width="16" height="16" />
                       </Box>
                       <Box style={{ flex: 1 }}>
                         <Flex align="center" gap="2" mb="3">
                           <Text size="4" weight="bold">
-                            Generate Scenario
+                            Start Scenario
                           </Text>
                           {allStepsComplete && (
-                            <Badge size="1" variant="soft" color="violet">
-                              Ready to generate
+                            <Badge size="1" variant="soft" color="blue">
+                              Ready to start
                             </Badge>
                           )}
                         </Flex>
 
                         <Button
                           size="3"
-                          disabled={!allStepsComplete || isGenerating}
-                          onClick={() => handleGenerateScenario()}
+                          onClick={startScenario}
+                          disabled={isLoading}
                           style={{
                             width: "100%",
-                            background: !allStepsComplete
-                              ? "var(--gray-7)"
-                              : "var(--violet-9)",
-                            color: !allStepsComplete
-                              ? "var(--gray-11)"
-                              : "white",
+                            background: "var(--blue-9)",
                           }}
                         >
-                          {isGenerating ? (
+                          {isLoading ? (
                             <Flex align="center" gap="2">
                               <Spinner size="2" />
-                              <Text>Generating...</Text>
+                              <Text>Starting Scenario...</Text>
                             </Flex>
                           ) : (
                             <Flex align="center" gap="2">
-                              <FileTextIcon />
-                              <Text>Generate Scenario</Text>
+                              <PlayIcon />
+                              <Text>Start Scenario</Text>
                             </Flex>
                           )}
                         </Button>
-                        {renderGenerateProgress()}
                       </Box>
                     </Flex>
                   </Box>
                 </Card>
               </Box>
             )}
-
-          {/* Start Button: show only when problem statement exists */}
-          {allStepsComplete && scenarioReady && (
-            <Box>
-              <Card
-                style={{
-                  background:
-                    allStepsComplete && scenarioReady
-                      ? "white"
-                      : "var(--gray-2)",
-                  border: `1px solid ${
-                    allStepsComplete && scenarioReady
-                      ? "var(--blue-7)"
-                      : "var(--gray-6)"
-                  }`,
-                  borderRadius: "12px",
-                  boxShadow:
-                    allStepsComplete && scenarioReady
-                      ? "0 4px 12px rgba(0, 100, 200, 0.15)"
-                      : "0 1px 3px rgba(0, 0, 0, 0.1)",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                <Box p="6">
-                  <Flex align="center" gap="4">
-                    <Box
-                      style={{
-                        width: "32px",
-                        height: "32px",
-                        borderRadius: "50%",
-                        background: allStepsComplete
-                          ? "var(--blue-9)"
-                          : "var(--gray-7)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <PlayIcon color="white" width="16" height="16" />
-                    </Box>
-                    <Box style={{ flex: 1 }}>
-                      <Flex align="center" gap="2" mb="3">
-                        <Text size="4" weight="bold">
-                          Start Scenario
-                        </Text>
-                        {allStepsComplete && (
-                          <Badge size="1" variant="soft" color="blue">
-                            Ready to start
-                          </Badge>
-                        )}
-                      </Flex>
-
-                      <Button
-                        size="3"
-                        onClick={startScenario}
-                        disabled={isLoading}
-                        style={{
-                          width: "100%",
-                          background: "var(--blue-9)",
-                        }}
-                      >
-                        {isLoading ? (
-                          <Flex align="center" gap="2">
-                            <Spinner size="2" />
-                            <Text>Starting Scenario...</Text>
-                          </Flex>
-                        ) : (
-                          <Flex align="center" gap="2">
-                            <PlayIcon />
-                            <Text>Start Scenario</Text>
-                          </Flex>
-                        )}
-                      </Button>
-                    </Box>
-                  </Flex>
-                </Box>
-              </Card>
-            </Box>
-          )}
         </Box>
       </Container>
 
