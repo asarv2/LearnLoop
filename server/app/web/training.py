@@ -134,30 +134,38 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
             # Document uploads are handled on the frontend before this call
             logger.info("Document uploads completed on frontend")
 
-            # Populate chat.persona_ids from scenario.parameter_ids (persona parameters only)
+            # Populate chat.persona_ids
             try:
-                # Fetch scenario.parameter_ids via raw SQL (column exists in DB but not in ORM)
-                conn = db_session.connection()
-                row = conn.execute(
-                    text("SELECT parameter_ids FROM scenarios WHERE id = :id"),
-                    {"id": str(scenario.id)},
-                ).fetchone()
-                scenario_parameter_ids: list[str] = list(row[0]) if row and row[0] else []
-
-                # Find persona ids from parameters
                 persona_ids: list[str] = []
-                for pid in scenario_parameter_ids:
-                    param = db_session.exec(select(Parameters).where(Parameters.id == pid)).one_or_none()
-                    if not param or not param.field_id:
-                        continue
-                    fld = db_session.exec(select(Fields).where(Fields.id == param.field_id)).one_or_none()
-                    if fld and getattr(fld, "field_type", None) == "persona" and param.value:
-                        try:
-                            # Ensure a valid UUID string
-                            _ = uuid.UUID(str(param.value))
-                            persona_ids.append(str(param.value))
-                        except Exception:
-                            logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
+
+                # If client provided assistant_persona_id, use it
+                assistant_persona_id = (data or {}).get("assistant_persona_id")
+                if assistant_persona_id:
+                    try:
+                        _ = uuid.UUID(str(assistant_persona_id))
+                        persona_ids.append(str(assistant_persona_id))
+                    except Exception:
+                        logger.warning("Invalid assistant_persona_id provided")
+                else:
+                    # Fallback: derive from scenario.parameter_ids (persona parameters only)
+                    conn = db_session.connection()
+                    row = conn.execute(
+                        text("SELECT parameter_ids FROM scenarios WHERE id = :id"),
+                        {"id": str(scenario.id)},
+                    ).fetchone()
+                    scenario_parameter_ids: list[str] = list(row[0]) if row and row[0] else []
+
+                    for pid in scenario_parameter_ids:
+                        param = db_session.exec(select(Parameters).where(Parameters.id == pid)).one_or_none()
+                        if not param or not param.field_id:
+                            continue
+                        fld = db_session.exec(select(Fields).where(Fields.id == param.field_id)).one_or_none()
+                        if fld and getattr(fld, "field_type", None) == "persona" and param.value:
+                            try:
+                                _ = uuid.UUID(str(param.value))
+                                persona_ids.append(str(param.value))
+                            except Exception:
+                                logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
 
                 # Update chats.persona_ids via raw SQL
                 try:
@@ -1009,6 +1017,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
             parent_id = data.get("scenario_id")
             field_values = data.get("field_values", [])
             additional_prompt = (data.get("additional_prompt") or "").strip()
+            assistant_persona_id = (data or {}).get("assistant_persona_id")
 
             if not parent_id:
                 await emit_error(sid, "Missing scenario_id")
@@ -1104,6 +1113,14 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     db_session.commit()
                 except Exception:
                     logger.exception("Failed to update scenarios.parameter_ids")
+
+                # If assistant_persona_id provided, also set chat persona context for future use
+                if assistant_persona_id:
+                    try:
+                        _ = uuid.UUID(str(assistant_persona_id))
+                        # child scenario has no chat yet; the persona will be applied at start_training
+                    except Exception:
+                        logger.warning("Invalid assistant_persona_id on generate_scenario (ignored)")
 
                 sio = get_sio_instance()
                 await sio.emit(
