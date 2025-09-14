@@ -1619,7 +1619,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 description:
                   basePersona.description ||
                   `Custom persona based on ${basePersona.name}`,
-                profile_id: basePersona.profile_id,
+                profile_id: (user?.id || basePersona.profile_id) as string,
                 system_prompt: basePersona.system_prompt,
                 realtime_prompt:
                   basePersona.realtime_prompt?.replace(
