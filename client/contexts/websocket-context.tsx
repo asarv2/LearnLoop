@@ -901,11 +901,11 @@ export function WebSocketProvider({
         }
       } catch {}
 
-      if (!isRTCConnected) {
+      if (!isRTCConnected || rtcRoomId !== chatId) {
         await connectRTC(chatId);
       }
     },
-    [voiceMode, isRTCConnected, connectRTC, audioPlaybackRef]
+    [voiceMode, isRTCConnected, rtcRoomId, connectRTC, audioPlaybackRef]
   );
 
   // Prefer new single text channel; fallback to legacy per-chat channel or websocket emitter
