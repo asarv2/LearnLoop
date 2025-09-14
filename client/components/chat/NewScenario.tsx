@@ -1700,7 +1700,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               const newPersona = await createPersona.mutateAsync({
                 name: customPersonaName,
                 description: descriptionFromVoice,
-                profile_id: (user?.id || basePersona.profile_id) as string,
+                profile_id: null,
                 system_prompt: basePersona.system_prompt,
                 realtime_prompt: realtimePromptFromPersonality,
                 temperature: basePersona.temperature,
