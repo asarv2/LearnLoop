@@ -684,10 +684,10 @@ class OpenAIAgent(Agent):
                             L2 = (x.size // 2) * 2
                             x = 0.5 * (x[:L2:2] + x[1:L2:2])
 
-                        # optional: small preamp so VAD/ASR have healthy levels
-                        pre_db = float(os.getenv("OPENAI_INPUT_PREAMP_DB", "18"))
-                        if pre_db != 0.0:
-                            x = np.clip(x * (10.0 ** (pre_db / 20.0)), -1.0, 1.0).astype(np.float32)
+                        # # optional: small preamp so VAD/ASR have healthy levels
+                        # pre_db = float(os.getenv("OPENAI_INPUT_PREAMP_DB", "18"))
+                        # if pre_db != 0.0:
+                        #     x = np.clip(x * (10.0 ** (pre_db / 20.0)), -1.0, 1.0).astype(np.float32)
 
                         # ensure exact 20ms frame size at self.input_sr
                         if x.size < OUT_SAMPLES_PER_FRAME:
@@ -698,9 +698,9 @@ class OpenAIAgent(Agent):
                         b = _f32_to_s16le_bytes(x)
                         t_b1 = time.perf_counter()
 
-                        if os.getenv("OPENAI_DEBUG", "0") == "1" and n % 100 == 0:
-                            rms = float(np.sqrt(np.mean(x * x)) + 1e-12)
-                            print(f"[openai][mic-dump] len_f32={x.size} len_bytes={len(b)} rms_post={rms:.6f} preamp_db={pre_db}")
+                        # if os.getenv("OPENAI_DEBUG", "0") == "1" and n % 100 == 0:
+                        #     rms = float(np.sqrt(np.mean(x * x)) + 1e-12)
+                        #     print(f"[openai][mic-dump] len_f32={x.size} len_bytes={len(b)} rms_post={rms:.6f} preamp_db={pre_db}")
 
                 except asyncio.TimeoutError:
                     # No bus chunk before the deadline → send silence
