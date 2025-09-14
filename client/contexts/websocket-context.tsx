@@ -149,6 +149,7 @@ export function WebSocketProvider({
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const textChanRef = useRef<RTCDataChannel | null>(null);
   const audioSenderRef = useRef<RTCRtpSender | null>(null);
+  const audioSenderPcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
   // message queue if data channel connecting
@@ -673,6 +674,8 @@ export function WebSocketProvider({
       textChanRef.current?.close();
     } catch {}
     textChanRef.current = null;
+    audioSenderRef.current = null;
+    audioSenderPcRef.current = null;
     webRTCDataChannels.current.forEach((c) => {
       try {
         c.close();
@@ -711,11 +714,15 @@ export function WebSocketProvider({
     const pc = pcRef.current;
     if (!pc) return null;
 
-    if (audioSenderRef.current) return audioSenderRef.current;
+    // Reuse only if the sender belongs to the current PC instance
+    if (audioSenderRef.current && audioSenderPcRef.current === pc) {
+      return audioSenderRef.current;
+    }
 
     // ensure we have a bidirectional audio m-line
     const tx = pc.addTransceiver("audio", { direction: "sendrecv" });
     audioSenderRef.current = tx.sender;
+    audioSenderPcRef.current = pc;
     return audioSenderRef.current;
   };
 
@@ -804,10 +811,28 @@ export function WebSocketProvider({
       // 3) Wire signaling: answer + send offer with room_id
       const socket = socketRef.current;
       const onAnswer = async (msg: { sdp: string }) => {
-        await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp });
-        setIsRTCConnected(true);
-        logInfo("RTC connected (answer set)");
+        try {
+          // Ignore if PC changed or is already closed
+          if (!pcRef.current || pcRef.current !== pc) return;
+          if (pc.signalingState === "closed") {
+            logInfo("Ignoring answer: PC already closed");
+            return;
+          }
+          await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp });
+          setIsRTCConnected(true);
+          logInfo("RTC connected (answer set)");
+        } catch (err) {
+          logError("Failed to set remote description", err as Error);
+        } finally {
+          try {
+            socket.off("answer", onAnswer);
+          } catch {}
+        }
       };
+      // Remove any stale listeners before attaching a new handler
+      try {
+        socket.off("answer");
+      } catch {}
       socket.on("answer", onAnswer);
 
       // if socket already connected, issue offer now; otherwise on connect
@@ -845,7 +870,7 @@ export function WebSocketProvider({
 
   const toggleMic = useCallback(async () => {
     const pc = pcRef.current;
-    if (!pc) return; // not connected yet
+    if (!pc || pc.signalingState === "closed") return; // not connected or closed
 
     // Try to unlock audio on first user interaction
     try {
@@ -866,12 +891,25 @@ export function WebSocketProvider({
       // turn ON
       const stream = await getMic();
       const track = stream.getAudioTracks()[0];
-      await sender.replaceTrack(track);
+      try {
+        if (pcRef.current && pcRef.current.signalingState !== "closed") {
+          await sender.replaceTrack(track);
+        }
+      } catch (e) {
+        logError("replaceTrack failed while turning mic ON", e as Error);
+        return;
+      }
       setMicOn(true);
       logInfo("Mic ON");
     } else {
       // turn OFF
-      await sender.replaceTrack(null);
+      try {
+        if (pcRef.current && pcRef.current.signalingState !== "closed") {
+          await sender.replaceTrack(null);
+        }
+      } catch (e) {
+        logError("replaceTrack failed while turning mic OFF", e as Error);
+      }
       if (localStreamRef.current) {
         for (const t of localStreamRef.current.getTracks()) t.stop();
         localStreamRef.current = null;
