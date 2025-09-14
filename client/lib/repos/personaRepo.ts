@@ -13,6 +13,10 @@ export const PersonaCreateSchema = z.object({
   profile_id: z.string().min(1, "Profile ID is required"),
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
+  system_prompt: z.string().optional(),
+  realtime_prompt: z.string().optional(),
+  temperature: z.number().optional(),
+  voice: z.string().optional(),
   avatar_url: z.string().optional(),
   metadata: z.any().optional(), // Json type
   active: z.boolean().optional(),
@@ -22,6 +26,10 @@ export const PersonaUpdateSchema = z.object({
   profile_id: z.string().min(1, "Profile ID is required").optional(),
   name: z.string().min(1, "Name is required").optional(),
   description: z.string().optional(),
+  system_prompt: z.string().optional(),
+  realtime_prompt: z.string().optional(),
+  temperature: z.number().optional(),
+  voice: z.string().optional(),
   avatar_url: z.string().optional(),
   metadata: z.any().optional(), // Json type
   active: z.boolean().optional(),
