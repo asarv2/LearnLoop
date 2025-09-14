@@ -367,36 +367,71 @@ def get_parameter_history_from_field_values(
             
             # Handle different field types
             if field.field_type == 'persona' and parameter_id:
-                # For persona fields, get the persona description
+                # For persona fields, the field_values carry a parameterId that points to Parameters;
+                # resolve the underlying Persona via Parameters.value
+                from app.models import Parameters as _Parameters
                 from app.models import Personas
-                persona = fresh_session.exec(select(Personas).where(Personas.id == parameter_id)).one_or_none()
+                param_row = fresh_session.exec(select(_Parameters).where(_Parameters.id == parameter_id)).one_or_none()
+                persona = None
+                if param_row and param_row.value:
+                    try:
+                        persona = fresh_session.exec(select(Personas).where(Personas.id == param_row.value)).one_or_none()
+                    except Exception:
+                        persona = None
                 if persona:
                     persona_desc = persona.description if persona.description else "No description available"
-                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {persona.name}: {persona_desc}")
+                    # Include parameter description (useful metadata) after the name
+                    param_desc = None
+                    if param_row and getattr(param_row, "description", None):
+                        param_desc = param_row.description  # type: ignore[assignment]
+                    param_desc_part = f" ({param_desc})" if param_desc else ""
+                    param_lines.append(
+                        f"The {field_name} ({field_description}) for this chat is {persona.name}{param_desc_part}: {persona_desc}"
+                    )
                 else:
                     param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
                     
-            elif field.field_type == 'document' and value:
-                # For document fields, get the document content
-                document = fresh_session.exec(select(Documents).where(Documents.id == value)).one_or_none()
-                if document:
-                    doc_content = document.content if document.content else "No content available"
-                    param_lines.append(f"The {field_name} ({field_description}) for this chat is document {str(value)[:8]}: {doc_content}")
-                else:
-                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
+            elif field.field_type == 'document':
+                # For document fields, prefer the explicit value (document id) from field_values;
+                # if missing, fall back to resolving via parameterId → Parameters.value
+                doc_id = value
+                if not doc_id and parameter_id:
+                    from app.models import Parameters as _Parameters
+                    param_row = fresh_session.exec(select(_Parameters).where(_Parameters.id == parameter_id)).one_or_none()
+                    if param_row and param_row.value:
+                        doc_id = param_row.value
+                if doc_id:
+                    document = fresh_session.exec(select(Documents).where(Documents.id == doc_id)).one_or_none()
+                    if document:
+                        doc_content = document.content if document.content else "No content available"
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is document {str(doc_id)[:8]}: {doc_content}")
+                    else:
+                        param_lines.append(f"The {field_name} ({field_description}) for this chat is {doc_id}")
                     
             elif field.field_type == 'categorical' and parameter_id:
                 # For categorical fields, use the parameter name
                 param = fresh_session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
                 if param:
-                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {param.name}")
+                    desc_part = f" ({param.description})" if getattr(param, "description", None) else ""
+                    param_lines.append(
+                        f"The {field_name} ({field_description}) for this chat is {param.name}{desc_part}"
+                    )
                 else:
                     param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
                     
             else:
                 # For text, numerical, or other fields, use the value directly
                 if value:
-                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
+                    # If a backing parameter exists, include its description for extra context
+                    desc_part = ""
+                    if parameter_id:
+                        from app.models import Parameters as _Parameters
+                        maybe_param = fresh_session.exec(select(_Parameters).where(_Parameters.id == parameter_id)).one_or_none()
+                        if maybe_param and getattr(maybe_param, "description", None):
+                            desc_part = f" ({maybe_param.description})"
+                    param_lines.append(
+                        f"The {field_name} ({field_description}) for this chat is {value}{desc_part}"
+                    )
         
         # Return as a single user message with all parameters
         if param_lines:

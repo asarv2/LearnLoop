@@ -13,22 +13,19 @@ Use this information to synthesize a **specific, data-anchored workplace scenari
 ### Instructions
 
 * **Title:** Include the candidate’s name and the topic of the scenario.
-  Example: `"title": "Priya Discusses Sales Decline in Midwest Region"`
+  Example: `"title": "Priya Interviews for Data Analyst Role"`
 
 * **Problem Statement (2–3 sentences):**
-  *Be specific and numeric.* Mention measurable performance (e.g., “conversion rate dropped from 18% to 11%,” “missed 2 of 6 client deliverables,” “team productivity is 25% below target”). Tie the shortfall to a company target or standard where possible.
+  *If a review/feedback/termination scenario:* Be specific and numeric about performance gaps (e.g., missed deadlines, percent decline, error rate, client survey data).
+  *If an interview scenario:* Clearly define what the company is looking for in the role, using measurable expectations where possible (e.g., “manage 5–7 client accounts,” “improve process efficiency by 15%,” “deliver monthly reporting to executives”).
+  ⚠️ *Note:* Some interview personas may be marked as “cheating candidates.” Do **not** reveal or reference this in the problem statement or objectives. It should only be inferred from their behavior/personality.
 
-* **Objectives (2–4):** Write clear, **action-oriented objectives** that connect back to company metrics or values. They should sound like **realistic expectations** a supervisor would set, e.g.:
-
-  * “Develop a plan to raise quarterly conversion rate back to 15%.”
-  * “Commit to submitting weekly reports by Friday 5PM for the next 8 weeks.”
-  * “Align communication style with the company’s ‘collaboration and transparency’ value.”
+* **Objectives (2–4):** Write clear, **action-oriented objectives** that connect back to company metrics or values.
+  *For interviews:* Focus on what the candidate should demonstrate or communicate to show they meet role requirements (without disclosing cheating info).
 
 ---
 
 ### Output Format
-
-Output exactly one JSON object:
 
 ```json
 {
@@ -40,20 +37,38 @@ Output exactly one JSON object:
 
 ---
 
-### Example (Critical Conversation: Yearly Review)
+### Example (Interview Scenario)
+
+```json
+{
+  "title": "Avery Interviews for Business Analyst Role",
+  "problem_statement": "The company is hiring a Business Analyst to support quarterly planning and cross-department reporting. The role requires managing 5–7 projects, delivering executive-ready reports within 48 hours, and contributing to a 10% efficiency improvement by year-end. Avery is interviewing to demonstrate readiness for these expectations.",
+  "objectives": [
+    "Communicate experience managing multiple projects",
+    "Show ability to produce accurate reports under deadlines",
+    "Demonstrate process improvement strategies that support a 10% efficiency gain",
+    "Highlight collaboration skills consistent with the company’s transparency values"
+  ]
+}
+```
+
+---
+
+### Example (Yearly Review)
 
 ```json
 {
   "title": "Taylor’s Year-End Performance Review on Project Delivery",
-  "problem_statement": "Taylor successfully delivered 8 of 12 assigned projects this year, meeting 67% of their delivery target. However, two high-priority projects missed deadlines by more than three weeks, and client satisfaction surveys showed a 15% decline compared to last year. The supervisor has scheduled a performance review to address these issues and set goals for the next year.",
+  "problem_statement": "Taylor delivered 8 of 12 assigned projects this year (67%), but two high-priority projects were delayed over three weeks. Client satisfaction also fell 15% compared to last year. The supervisor has scheduled a review to address performance gaps and set targets for the next year.",
   "objectives": [
-    "Acknowledge the missed deadlines and analyze root causes for delays",
-    "Outline a plan to achieve at least 90% on-time project delivery next year",
-    "Commit to improving client satisfaction scores by 20% by the next annual review",
-    "Align personal goals with the company’s core values of accountability and continuous improvement"
+    "Analyze causes of missed deadlines",
+    "Plan to raise on-time delivery to 90% next year",
+    "Commit to improving client satisfaction scores by 20%",
+    "Align goals with the company’s accountability and continuous improvement values"
   ]
 }
 ```
+
 ---
 
 ### Example (Termination Conversation)
@@ -61,12 +76,12 @@ Output exactly one JSON object:
 ```json
 {
   "title": "Morgan’s Exit Discussion Following Performance Declines",
-  "problem_statement": "Over the past 12 months, Morgan has missed 9 of 15 critical project deadlines and their error rate in deliverables has averaged 18%, more than triple the company’s 5% quality benchmark. Despite two formal performance improvement plans, progress has not been sustained, and client complaints have risen by 25%. The supervisor must now conduct a respectful termination conversation aligned with company policies.",
+  "problem_statement": "Over 12 months, Morgan missed 9 of 15 key deadlines and averaged an 18% error rate, more than triple the 5% benchmark. Two improvement plans failed, and client complaints rose 25%. The supervisor must now conduct a respectful termination conversation aligned with company policy.",
   "objectives": [
-    "Communicate the decision clearly and reference documented performance data",
-    "Acknowledge Morgan’s contributions while upholding company accountability standards",
-    "Provide information on severance, benefits, and transition resources",
-    "Maintain professionalism and compassion consistent with the company’s values of integrity and respect"
+    "Clearly explain the decision with documented performance data",
+    "Recognize Morgan’s contributions while upholding accountability standards",
+    "Provide details on severance, benefits, and transition support",
+    "Maintain professionalism consistent with the company’s integrity and respect values"
   ]
 }
 ```
@@ -78,12 +93,12 @@ Output exactly one JSON object:
 ```json
 {
   "title": "Riley Receives Feedback on Presentation Skills in Quarterly Review",
-  "problem_statement": "Riley’s presentations to clients this quarter averaged a satisfaction score of 3.2 out of 5, compared to the team average of 4.4. Feedback highlighted frequent overuse of technical jargon and insufficient engagement with client questions, which has contributed to two lost renewal opportunities. The supervisor has scheduled a feedback session to help Riley strengthen communication and client impact.",
+  "problem_statement": "This quarter, Riley’s presentations averaged a 3.2/5 satisfaction score, below the team’s 4.4 average. Client feedback noted jargon-heavy explanations and limited engagement, contributing to two lost renewals. The supervisor has arranged a session to address communication effectiveness.",
   "objectives": [
-    "Review client survey data and identify specific areas for improvement",
-    "Commit to incorporating client-friendly language in all Q3 presentations",
-    "Set a measurable goal of achieving an average satisfaction score of 4.5 by year-end",
-    "Demonstrate alignment with the company’s value of customer-centric communication"
+    "Review and discuss client survey feedback",
+    "Adopt client-friendly language in all Q3 presentations",
+    "Set a target to raise satisfaction scores to 4.5 by year-end",
+    "Strengthen communication in line with the company’s customer-first values"
   ]
 }
 ```

@@ -361,7 +361,7 @@ function CategoricalField({
   return (
     <Flex direction="column" gap="3">
       {displayedParameters
-        ?.sort((a, b) => a.updated_at?.localeCompare(b.updated_at || "") || 0)
+        ?.sort((a, b) => b.updated_at?.localeCompare(a.updated_at || "") || 0)
         .map((parameter, index) => {
           // Custom sentinel is determined by value === null
           const isCustom = parameter.value === null;
@@ -658,6 +658,8 @@ function PersonaField({
   useEffect(() => {
     if (selectedParameterId && selectedParameterId !== selectedPersonaId) {
       setSelectedPersonaId(selectedParameterId);
+      // If an explicit persona is selected via props, ensure Custom is unselected
+      setIsCustomPersonaSelected(false);
     }
   }, [selectedParameterId, selectedPersonaId]);
 
@@ -799,15 +801,18 @@ function PersonaField({
 
   if (isLoading) return <Spinner size="2" />;
 
-  // Filter out custom persona parameters (one-time use)
-  const displayedParameters = parameters?.filter(
-    (p) => (p.description || "").toLowerCase() !== "custom persona"
-  );
+  // Filter out custom persona parameters (one-time use) and only include active personas
+  const displayedParameters = parameters
+    ?.filter((p) => (p.description || "").toLowerCase() !== "custom persona")
+    ?.filter((p) => {
+      const persona = personas?.find((pp) => pp.id === p.value);
+      return persona?.active === true;
+    });
 
   return (
     <Flex direction="column" gap="3">
       {displayedParameters
-        ?.sort((a, b) => a.updated_at?.localeCompare(b.updated_at || "") || 0)
+        ?.sort((a, b) => b.updated_at?.localeCompare(a.updated_at || "") || 0)
         .map((parameter, index) => {
           const isSelected = selectedPersonaId === parameter.id;
           const colorIndex = index % colors.length;
@@ -1327,13 +1332,23 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         }
 
         if (field.field_type === "persona") {
-          // Exclude custom persona parameters from autofill to avoid hidden/one-off picks
-          const candidates = paramsForField.filter(
-            (p) => (p.description || "").toLowerCase() !== "custom persona"
-          );
+          // Exclude custom persona parameters and inactive personas from autofill
+          const candidates = paramsForField
+            .filter(
+              (p) => (p.description || "").toLowerCase() !== "custom persona"
+            )
+            .filter((p) => {
+              const persona = personas?.find((pp) => pp.id === p.value);
+              return persona?.active === true;
+            });
           if (candidates.length > 0) {
             const choice = pickRandom(candidates)!;
-            return { ...fv, value: choice.name || "", parameterId: choice.id };
+            // If auto-fill chooses a concrete persona, ensure custom selections are cleared
+            return {
+              ...fv,
+              value: choice.name || "",
+              parameterId: choice.id,
+            };
           }
           return fv;
         }
@@ -1353,6 +1368,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         return fv;
       })
     );
+
+    // If auto-fill set a concrete persona, clear any "Custom" selection flags
+    // by resetting the custom persona-related global state.
+    setCustomPersonalityType("");
+    setCustomPersonaName("");
+    setCustomVoiceType("");
   };
 
   const isStepComplete = (fieldId: string) => {
@@ -1363,17 +1384,14 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     if (!field) return false;
 
     if (field.field_type === "persona") {
-      // Complete if a parameter is chosen, or if custom persona fields are filled
-      if (fieldValue.parameterId && fieldValue.parameterId.trim() !== "") {
-        return true;
-      }
+      // Optional unless "Custom" selected; then require custom fields
       if (fieldValue.value === "Custom") {
         const nameOk = (customPersonaName || "").trim().length > 0;
         const personalityOk = (customPersonalityType || "").trim().length > 0;
         const voiceOk = (customVoiceType || "").trim().length > 0;
         return nameOk && personalityOk && voiceOk;
       }
-      return false;
+      return true;
     }
 
     if (field.field_type === "categorical") {
@@ -1483,57 +1501,54 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     );
   };
 
-  const startScenario = async () => {
-    if (!allStepsComplete || !scenario || !scenarioReady) {
-      alert("Please complete all fields and scenario details before starting");
+  const handleGenerateScenario = async (opts?: {
+    additionalPrompt?: string;
+  }) => {
+    if (!allStepsComplete || !scenario) {
+      alert("Please complete all fields before generating the scenario");
       return;
     }
 
-    setIsLoading(true);
-
     try {
-      // Process field values and handle document uploads
-      const processedFieldValuesUpload = await Promise.all(
+      setIsGenerating(true);
+      beginGenerateProgress();
+
+      const scenarioToUse = savedScenarioId || scenarioId;
+
+      // 1) Upload any document files first
+      const uploadedFieldValues = await Promise.all(
         fieldValues.map(async (fieldValue) => {
-          // If this is a document field with a file, upload it first
           if (fieldValue.file) {
             try {
-              // Create document record
               const document = await createDocument.mutateAsync({
-                content: "", // will be populated when uploading the file
+                content: "",
                 profile_id: user?.id || null,
               });
-
-              // Upload the file
               const formData = new FormData();
               formData.append("file", fieldValue.file);
               await uploadDocument(document.id!, formData);
-
-              // Treat as part of preparing inputs; keep UI generic
-
-              // Return field value with document ID as the value
               return {
                 ...fieldValue,
-                value: document.id!, // Use document ID as the value
-                file: undefined, // Remove file reference
-              };
+                value: document.id!,
+                file: undefined,
+              } as FieldValue;
             } catch (error) {
               console.error("Error processing document:", error);
               throw new Error(`Failed to process document: ${error}`);
             }
           }
-
-          // For non-document fields, return as is
           return fieldValue;
         })
       );
 
-      // Map text/custom values to existing parameter IDs to avoid duplicates
-      const processedFieldValues = await Promise.all(
-        processedFieldValuesUpload.map(async (fv) => {
+      // 2) Normalize values to parameterIds (text/categorical) and create custom persona if needed
+      let nextAssistantPersonaId: string | null = customAssistantPersonaId;
+      const normalizedFieldValues = await Promise.all(
+        uploadedFieldValues.map(async (fv) => {
           const field = fields?.find((f) => f.id === fv.fieldId);
           if (!field) return fv;
 
+          // Map text values to existing parameter to avoid duplicates
           if (field.field_type === "text" && fv.value) {
             const existing = (allParameters || []).find(
               (p) => p.field_id === field.id && (p.value || "") === fv.value
@@ -1543,6 +1558,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             }
           }
 
+          // Handle categorical: find existing custom or create one
           if (
             field.field_type === "categorical" &&
             !fv.parameterId &&
@@ -1557,7 +1573,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             if (existingCustom) {
               return { ...fv, parameterId: existingCustom.id };
             }
-            // Create custom parameter on start if it doesn't exist yet
             try {
               const created = await createParameterGlobal.mutateAsync({
                 field_id: field.id,
@@ -1575,20 +1590,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               }
             } catch (e) {
               console.error(
-                "Failed to create custom parameter during start",
+                "Failed to create custom parameter during generate",
                 e
               );
             }
           }
 
+          // Handle persona: create custom persona and corresponding parameter
           if (
             field.field_type === "persona" &&
             fv.value === "Custom" &&
             !fv.parameterId
           ) {
-            // Create custom persona but do NOT create a parameter; keep the ID to pass at start/generate
             try {
-              // Base persona and voice persona now resolved by ID from dropdowns
               const basePersona = personas?.find(
                 (p) => p.id === customPersonalityType
               );
@@ -1596,7 +1610,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 console.error("Could not find base persona for custom persona");
                 return fv;
               }
-
               const voicePersona = personas?.find(
                 (p) => p.id === customVoiceType
               );
@@ -1615,12 +1628,32 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   ) || basePersona.realtime_prompt,
                 temperature: basePersona.temperature,
                 voice: voicePersona?.voice || basePersona.voice,
+                active: false, // so it does not show up in the persona dropdown
               });
 
-              setCustomAssistantPersonaId(newPersona.id || null);
+              nextAssistantPersonaId = newPersona.id || null;
+
+              // Create a parameter for this persona field referencing the new persona
+              try {
+                const createdParam = await createParameterGlobal.mutateAsync({
+                  field_id: field.id,
+                  name: customPersonaName || "Custom Persona",
+                  description: "Custom Persona",
+                  value: newPersona.id,
+                });
+                if (createdParam?.id) {
+                  return { ...fv, parameterId: createdParam.id };
+                }
+              } catch (e) {
+                console.error("Failed to create custom persona parameter", e);
+              }
+
               return fv;
             } catch (e) {
-              console.error("Failed to create custom persona during start", e);
+              console.error(
+                "Failed to create custom persona during generate",
+                e
+              );
             }
           }
 
@@ -1628,19 +1661,17 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         })
       );
 
-      // Ensure hidden fields have a randomized value if not already set
-      const finalFieldValues = processedFieldValues.map((fv) => {
+      // 3) Ensure hidden fields have values
+      const withHiddenCompleted = normalizedFieldValues.map((fv) => {
         const field = fields?.find((f) => f.id === fv.fieldId);
         if (!field || !field.hidden) return fv;
 
         const paramsForField = (allParameters || []).filter(
           (p) => p.field_id === field.id
         );
-
         const pickRandom = <T,>(arr: T[]): T | undefined =>
           arr[Math.floor(Math.random() * arr.length)];
 
-        // If already provided, keep existing
         if (
           (fv.parameterId && fv.parameterId.trim() !== "") ||
           (fv.value && fv.value.trim() !== "" && fv.value !== "Custom")
@@ -1659,7 +1690,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 ...fv,
                 value: choice.value || "",
                 parameterId: choice.id,
-              };
+              } as FieldValue;
             }
             return fv;
           }
@@ -1669,7 +1700,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             );
             const choice = pickRandom(candidates);
             if (choice) {
-              return { ...fv, value: choice.value || "" };
+              return { ...fv, value: choice.value || "" } as FieldValue;
             }
             return fv;
           }
@@ -1683,7 +1714,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 (p.description || "").toLowerCase() !== "custom scenario" &&
                 (p.description || "").trim() !== ""
             );
-            const allChoices = [
+            const pickables = [
               ...normalCandidates.map((p) => ({
                 value: p.name || "",
                 parameterId: p.id,
@@ -1693,28 +1724,32 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 parameterId: undefined as string | undefined,
               })),
             ];
-            const choice = pickRandom(allChoices);
+            const choice = pickRandom(pickables);
             if (choice) {
               return {
                 ...fv,
                 value: choice.value,
                 parameterId: choice.parameterId,
-              };
+              } as FieldValue;
             }
             return fv;
           }
           case "persona": {
-            // Exclude custom persona parameters for hidden fields as well
-            const nonCustom = paramsForField.filter(
-              (p) => (p.description || "").toLowerCase() !== "custom persona"
-            );
+            const nonCustom = paramsForField
+              .filter(
+                (p) => (p.description || "").toLowerCase() !== "custom persona"
+              )
+              .filter((p) => {
+                const persona = personas?.find((pp) => pp.id === p.value);
+                return persona?.active === true;
+              });
             const choice = pickRandom(nonCustom);
             if (choice) {
               return {
                 ...fv,
                 value: choice.name || "",
                 parameterId: choice.id,
-              };
+              } as FieldValue;
             }
             return fv;
           }
@@ -1723,27 +1758,106 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         }
       });
 
+      // 4) Auto-pick an active persona if none selected (and not Custom)
+      const personaCompletedFieldValues = withHiddenCompleted.map((fv) => {
+        const f = fields?.find((ff) => ff.id === fv.fieldId);
+        if (!f) return fv;
+        if (
+          f.field_type === "persona" &&
+          (!fv.parameterId || fv.parameterId.trim() === "") &&
+          fv.value !== "Custom"
+        ) {
+          const candidates = (allParameters || [])
+            .filter((p) => p.field_id === f.id)
+            .filter(
+              (p) => (p.description || "").toLowerCase() !== "custom persona"
+            )
+            .filter((p) => {
+              const persona = personas?.find((pp) => pp.id === p.value);
+              return persona?.active === true;
+            });
+          if (candidates.length > 0) {
+            const choice =
+              candidates[Math.floor(Math.random() * candidates.length)];
+            return { ...fv, value: choice.name || "", parameterId: choice.id };
+          }
+        }
+        return fv;
+      });
+
+      // Persist computed values locally for Start flow
+      setFieldValues(personaCompletedFieldValues);
+      if (nextAssistantPersonaId !== customAssistantPersonaId) {
+        setCustomAssistantPersonaId(nextAssistantPersonaId);
+      }
+
+      // 5) Update scenario parameters on server
+      const payloadFieldValues = personaCompletedFieldValues.map((fv) => ({
+        fieldId: fv.fieldId,
+        value: fv.value,
+        parameterId: fv.parameterId,
+      }));
+
+      emitUpdateScenarioParameters({
+        scenario_id: scenarioToUse,
+        field_values: payloadFieldValues,
+      });
+
+      // 6) Trigger generation
+      emitGenerateScenario({
+        scenario_id: scenarioToUse,
+        field_values: payloadFieldValues,
+        additional_prompt: opts?.additionalPrompt || undefined,
+      });
+    } catch (error) {
+      console.error("Error generating scenario:", error);
+      alert("Failed to generate scenario. Please try again.");
+      setIsGenerating(false);
+    }
+  };
+
+  const startScenario = async () => {
+    if (!allStepsComplete || !scenario || !scenarioReady) {
+      alert("Please complete all fields and scenario details before starting");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
       // Update active scenario's parameter ids before starting
       const scenarioToUse = savedScenarioId || scenarioId;
-      // Exclude custom persona from update payload to avoid server creating a parameter
-      const updateFieldValues = finalFieldValues
-        .filter((fv) => {
-          const f = fields?.find((ff) => ff.id === fv.fieldId);
-          if (!f) return true;
-          if (
-            f.field_type === "persona" &&
-            fv.value === "Custom" &&
-            !fv.parameterId
-          ) {
-            return false;
+      // Auto-pick an active persona if none selected (and not Custom) before updating
+      const personaCompletedFieldValues = fieldValues.map((fv) => {
+        const f = fields?.find((ff) => ff.id === fv.fieldId);
+        if (!f) return fv;
+        if (
+          f.field_type === "persona" &&
+          (!fv.parameterId || fv.parameterId.trim() === "") &&
+          fv.value !== "Custom"
+        ) {
+          const candidates = (allParameters || [])
+            .filter((p) => p.field_id === f.id)
+            .filter(
+              (p) => (p.description || "").toLowerCase() !== "custom persona"
+            )
+            .filter((p) => {
+              const persona = personas?.find((pp) => pp.id === p.value);
+              return persona?.active === true;
+            });
+          if (candidates.length > 0) {
+            const choice =
+              candidates[Math.floor(Math.random() * candidates.length)];
+            return { ...fv, value: choice.name || "", parameterId: choice.id };
           }
-          return true;
-        })
-        .map((fv) => ({
-          fieldId: fv.fieldId,
-          value: fv.value,
-          parameterId: fv.parameterId,
-        }));
+        }
+        return fv;
+      });
+      const updateFieldValues = personaCompletedFieldValues.map((fv) => ({
+        fieldId: fv.fieldId,
+        value: fv.value,
+        parameterId: fv.parameterId,
+      }));
 
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
@@ -1754,7 +1868,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       emitStartTraining({
         scenario_id: scenarioToUse,
         profile_id: user?.id || undefined,
-        assistant_persona_id: customAssistantPersonaId || undefined,
       });
 
       // Note: "Creating scenario" will complete when WebSocket responds
@@ -1968,7 +2081,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                           <textarea
                             value={draftProblem}
                             onChange={(e) => setDraftProblem(e.target.value)}
-                            rows={3}
+                            rows={5}
                             style={{
                               width: "100%",
                               padding: "10px 12px",
@@ -2041,7 +2154,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                               color: "white",
                             }}
                           >
-                            Regenerate
+                            Update Scenario
                           </Button>
                         </Flex>
                         {renderGenerateProgress()}
@@ -2120,39 +2233,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                         <Button
                           size="3"
                           disabled={!allStepsComplete || isGenerating}
-                          onClick={() => {
-                            if (!allStepsComplete) return;
-                            // First-time generate: no prompt
-                            setIsGenerating(true);
-                            beginGenerateProgress();
-                            const payloadFieldValues = fieldValues
-                              .filter((fv) => {
-                                const f = fields?.find(
-                                  (ff) => ff.id === fv.fieldId
-                                );
-                                if (!f) return true;
-                                // Exclude custom persona (no parameterId) to avoid creating a parameter server-side
-                                if (
-                                  f.field_type === "persona" &&
-                                  fv.value === "Custom" &&
-                                  !fv.parameterId
-                                ) {
-                                  return false;
-                                }
-                                return true;
-                              })
-                              .map((fv) => ({
-                                fieldId: fv.fieldId,
-                                value: fv.value,
-                                parameterId: fv.parameterId,
-                              }));
-                            emitGenerateScenario({
-                              scenario_id: savedScenarioId || scenarioId,
-                              field_values: payloadFieldValues,
-                              assistant_persona_id:
-                                customAssistantPersonaId || undefined,
-                            });
-                          }}
+                          onClick={() => handleGenerateScenario()}
                           style={{
                             width: "100%",
                             background: !allStepsComplete
@@ -2292,10 +2373,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               onClick={(e) => e.stopPropagation()}
             >
               <Heading size="5" style={{ marginBottom: 8 }}>
-                Add optional instructions
+                Update Scenario Details
               </Heading>
               <Text size="2" color="gray">
-                You can guide the AI with extra details.
+                Specify what you would like to add/remove from the scenario.
               </Text>
               <textarea
                 value={additionalPrompt}
@@ -2345,41 +2426,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   variant="solid"
                   size="2"
                   disabled={isGenerating}
-                  onClick={() => {
-                    if (!allStepsComplete || !scenario) {
-                      alert(
-                        "Please complete all fields before generating the scenario"
-                      );
-                      return;
-                    }
-                    setIsGenerating(true);
-                    beginGenerateProgress();
-                    const payloadFieldValues = fieldValues
-                      .filter((fv) => {
-                        const f = fields?.find((ff) => ff.id === fv.fieldId);
-                        if (!f) return true;
-                        if (
-                          f.field_type === "persona" &&
-                          fv.value === "Custom" &&
-                          !fv.parameterId
-                        ) {
-                          return false;
-                        }
-                        return true;
-                      })
-                      .map((fv) => ({
-                        fieldId: fv.fieldId,
-                        value: fv.value,
-                        parameterId: fv.parameterId,
-                      }));
-                    emitGenerateScenario({
-                      scenario_id: savedScenarioId || scenarioId,
-                      field_values: payloadFieldValues,
-                      additional_prompt: additionalPrompt.trim() || undefined,
-                      assistant_persona_id:
-                        customAssistantPersonaId || undefined,
-                    });
-                  }}
+                  onClick={() =>
+                    handleGenerateScenario({
+                      additionalPrompt: additionalPrompt.trim() || undefined,
+                    })
+                  }
                   style={{
                     padding: "8px 16px",
                     borderRadius: "6px",
@@ -2407,7 +2458,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                       <Text>Generating...</Text>
                     </Flex>
                   ) : (
-                    "Generate"
+                    "Update"
                   )}
                 </Button>
               </div>
@@ -2537,6 +2588,9 @@ function FieldCard({
     }
   };
 
+  const isOptionalField =
+    field.field_type === "persona" || field.field_type === "document";
+
   return (
     <>
       <Box mb="4">
@@ -2580,6 +2634,11 @@ function FieldCard({
                   <Text size="4" weight="bold">
                     {field.name}
                   </Text>
+                  {isOptionalField && (
+                    <Text size="2" color="gray">
+                      (Optional)
+                    </Text>
+                  )}
                   {isComplete && (
                     <Badge size="1" variant="soft" color="green">
                       Complete
