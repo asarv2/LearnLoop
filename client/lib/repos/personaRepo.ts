@@ -10,7 +10,7 @@ export type PersonaUpdate = Database["public"]["Tables"]["personas"]["Update"];
 
 // Runtime validators for API requests
 export const PersonaCreateSchema = z.object({
-  profile_id: z.string().min(1, "Profile ID is required"),
+  profile_id: z.string().min(1, "Profile ID is required").nullable().optional(),
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
   system_prompt: z.string().optional(),
@@ -23,7 +23,7 @@ export const PersonaCreateSchema = z.object({
 });
 
 export const PersonaUpdateSchema = z.object({
-  profile_id: z.string().min(1, "Profile ID is required").optional(),
+  profile_id: z.string().min(1, "Profile ID is required").nullable().optional(),
   name: z.string().min(1, "Name is required").optional(),
   description: z.string().optional(),
   system_prompt: z.string().optional(),
@@ -52,11 +52,11 @@ export const personaRepo = {
     return data;
   },
 
-  async list(profileId?: string) {
+  async list(profileId?: string | null) {
     const supabase = await getSupabase();
     let query = supabase.from("personas").select("*");
 
-    if (profileId) {
+    if (profileId !== undefined && profileId !== null) {
       query = query.eq("profile_id", profileId);
     }
 

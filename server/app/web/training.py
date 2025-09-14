@@ -1062,25 +1062,8 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     result = await Runner.run(agent.agent(), input=combined)
                     sr = result.final_output_as(ScenarioResponse)
 
-                # Handle objectives with outer join logic
-                new_objectives = sr.objectives or []
-                current_objectives = current_draft_objectives or []
-                
-                # Create outer join (union) of objectives, removing duplicates
-                # If new objectives are more than current, replace all
-                if len(new_objectives) > len(current_objectives):
-                    # Replace all objectives with new ones
-                    final_objectives = new_objectives
-                else:
-                    # Outer join: combine both sets, removing duplicates
-                    combined_objectives = list(current_objectives) + list(new_objectives)
-                    # Remove duplicates while preserving order
-                    seen = set()
-                    final_objectives = []
-                    for obj in combined_objectives:
-                        if obj not in seen:
-                            seen.add(obj)
-                            final_objectives.append(obj)
+                # Simple approach: always use the newest AI-generated objectives
+                final_objectives = sr.objectives or []
 
                 # Create the child scenario row
                 child = Scenarios(
