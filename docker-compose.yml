@@ -86,16 +86,16 @@ services:
     volumes:
       - model_cache:/app/model_cache
       - model_audio:/app/audio
-    deploy:
-      resources:
-        limits:
-          memory: 24GB
-        reservations:
-          memory: 16GB
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
-              device_ids: ["0"]
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 24GB
+    #     reservations:
+    #       memory: 16GB
+    #       devices:
+    #         - driver: nvidia
+    #           capabilities: [gpu]
+    #           device_ids: ["0"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
