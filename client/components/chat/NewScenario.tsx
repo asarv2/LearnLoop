@@ -1892,6 +1892,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         scenario_id: scenarioToUse,
         field_values: payloadFieldValues,
         additional_prompt: opts?.additionalPrompt || undefined,
+        current_draft_objectives: draftObjectives || [],
       });
     } catch (error) {
       console.error("Error generating scenario:", error);
@@ -2152,15 +2153,30 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                         )}
                       </Box>
                       <Box style={{ flex: 1 }}>
-                        <Flex align="center" gap="2" mb="3">
-                          <Text size="4" weight="bold">
-                            Generate Scenario
-                          </Text>
-                          {scenarioReady && (
-                            <Badge size="1" variant="soft" color="green">
-                              Complete
-                            </Badge>
-                          )}
+                        <Flex align="center" justify="between" mb="3">
+                          <Flex align="center" gap="2">
+                            <Text size="4" weight="bold">
+                              Generate Scenario
+                            </Text>
+                            {scenarioReady && (
+                              <Badge size="1" variant="soft" color="green">
+                                Complete
+                              </Badge>
+                            )}
+                          </Flex>
+                          <Button
+                            size="2"
+                            variant="solid"
+                            onClick={() => setShowGenerateModal(true)}
+                            style={{
+                              background: "var(--violet-9)",
+                              color: "white",
+                            }}
+                          >
+                            {hasParamChangesSinceGenerate
+                              ? "Regenerate Scenario"
+                              : "Update Scenario"}
+                          </Button>
                         </Flex>
                         <Flex direction="column" gap="3">
                           <Box>
@@ -2233,21 +2249,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                               ))}
                             </Flex>
                           </Box>
-                          <Flex gap="3" justify="end">
-                            <Button
-                              size="2"
-                              variant="solid"
-                              onClick={() => setShowGenerateModal(true)}
-                              style={{
-                                background: "var(--violet-9)",
-                                color: "white",
-                              }}
-                            >
-                              {hasParamChangesSinceGenerate
-                                ? "Regenerate Scenario"
-                                : "Update Scenario"}
-                            </Button>
-                          </Flex>
                           {renderGenerateProgress()}
                         </Flex>
                       </Box>

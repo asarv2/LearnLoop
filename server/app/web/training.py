@@ -1018,6 +1018,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
             field_values = data.get("field_values", [])
             additional_prompt = (data.get("additional_prompt") or "").strip()
             assistant_persona_id = (data or {}).get("assistant_persona_id")
+            current_draft_objectives = data.get("current_draft_objectives", [])
 
             if not parent_id:
                 await emit_error(sid, "Missing scenario_id")
@@ -1061,6 +1062,26 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     result = await Runner.run(agent.agent(), input=combined)
                     sr = result.final_output_as(ScenarioResponse)
 
+                # Handle objectives with outer join logic
+                new_objectives = sr.objectives or []
+                current_objectives = current_draft_objectives or []
+                
+                # Create outer join (union) of objectives, removing duplicates
+                # If new objectives are more than current, replace all
+                if len(new_objectives) > len(current_objectives):
+                    # Replace all objectives with new ones
+                    final_objectives = new_objectives
+                else:
+                    # Outer join: combine both sets, removing duplicates
+                    combined_objectives = list(current_objectives) + list(new_objectives)
+                    # Remove duplicates while preserving order
+                    seen = set()
+                    final_objectives = []
+                    for obj in combined_objectives:
+                        if obj not in seen:
+                            seen.add(obj)
+                            final_objectives.append(obj)
+
                 # Create the child scenario row
                 child = Scenarios(
                     title=sr.title,
@@ -1069,7 +1090,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     rubric_id=parent.rubric_id,
                     field_ids=parent.field_ids,
                     problem_statement=sr.problem_statement,
-                    objectives=sr.objectives or [],
+                    objectives=final_objectives,
                     parent_id=parent.id,
                 )
                 db_session.add(child)
@@ -1130,7 +1151,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                         "scenario_id": str(child.id),
                         "title": sr.title,
                         "problem_statement": sr.problem_statement,
-                        "objectives": sr.objectives or [],
+                        "objectives": final_objectives,
                     },
                     room=sid,
                 )

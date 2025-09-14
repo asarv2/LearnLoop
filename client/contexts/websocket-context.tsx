@@ -80,6 +80,7 @@ interface WebSocketContextType {
       file?: File;
     }>;
     additional_prompt?: string;
+    current_draft_objectives?: string[];
   }) => void;
   emitUpdateScenarioParameters: (data: {
     scenario_id: string;
