@@ -606,19 +606,19 @@ const LandingPage = () => {
   const benefits = [
     {
       icon: <Shield className="w-5 h-5" />,
-      text: "Safe environment to practice sensitive conversations",
+      text: "Practice-based learning, not passive content — employees learn by doing, not just watching",
     },
     {
       icon: <Clock className="w-5 h-5" />,
-      text: "Practice anytime, anywhere at your own pace",
+      text: "Safe, judgment-free environment — perfect for sensitive topics like feedback, conflict, or leadership",
     },
     {
       icon: <TrendingUp className="w-5 h-5" />,
-      text: "Measurable improvement in confidence and communication",
+      text: "Built to scale with your needs — from tough conversations today to onboarding, leadership, and DEI tomorrow",
     },
     {
       icon: <CheckCircle2 className="w-5 h-5" />,
-      text: "Built for real workplace scenarios",
+      text: "Technology utilized by over 200 users across leading organizations, delivering measurable skill improvements and lasting behavior change",
     },
   ];
 
@@ -666,17 +666,15 @@ const LandingPage = () => {
             <div className="space-y-8">
               <div className="space-y-6">
                 <h1 className="text-5xl lg:text-6xl font-bold text-gray-900 leading-tight">
-                  Master Critical
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">
-                    {" "}
-                    Workplace{" "}
-                  </span>
-                  Conversations
+                  Your People Deserve Better Training — Not Just Another Slide
+                  Deck
                 </h1>
 
                 <p className="text-xl text-gray-600 leading-relaxed">
-                  Practice critical employee-to-employee conversations in a safe
-                  space before they happen in real life.
+                  Traditional training doesn&apos;t stick. LearnLoop transforms
+                  how employees build skills — through safe, interactive,
+                  AI-powered practice that turns theory into lasting behavior
+                  change.
                 </p>
               </div>
             </div>
@@ -709,6 +707,15 @@ const LandingPage = () => {
                   </span>
                 </div>
               ))}
+            </div>
+
+            {/* Pilot Program Notice */}
+            <div className="text-center mt-8 pt-6 border-t border-gray-100">
+              <p className="text-sm text-gray-500">
+                Currently piloting with teams that want to master critical
+                workplace conversations — ask us about joining the pilot
+                program.
+              </p>
             </div>
           </div>
         </div>
