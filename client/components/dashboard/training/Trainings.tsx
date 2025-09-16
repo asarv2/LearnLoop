@@ -244,7 +244,11 @@ export default function Trainings() {
       {/* Training Cards Grid */}
       <Row gutter={[24, 24]}>
         {trainings
-          ?.sort((a, b) => {
+          ?.filter((training) => {
+            // Hide Interview Training module
+            return !training.title.toLowerCase().includes("interview");
+          })
+          .sort((a, b) => {
             // Sort "Offboarding Practice" first, then other trainings
             if (a.title.toLowerCase().includes("difficult conversations"))
               return -1;
