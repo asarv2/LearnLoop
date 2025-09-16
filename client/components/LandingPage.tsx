@@ -610,7 +610,7 @@ const LandingPage = () => {
     },
     {
       icon: <Clock className="w-5 h-5" />,
-      text: "Safe, judgment-free environment — perfect for sensitive topics like feedback, conflict, or leadership",
+      text: "50k+ minutes practiced — real conversations with measurable skill development and confidence building",
     },
     {
       icon: <TrendingUp className="w-5 h-5" />,
@@ -666,8 +666,7 @@ const LandingPage = () => {
             <div className="space-y-8">
               <div className="space-y-6">
                 <h1 className="text-5xl lg:text-6xl font-bold text-gray-900 leading-tight">
-                  Your People Deserve Better Training — Not Just Another Slide
-                  Deck
+                  Your People Deserve Better Training — Not Another Slide Deck
                 </h1>
 
                 <p className="text-xl text-gray-600 leading-relaxed">
