@@ -8,6 +8,7 @@
 
 import { useAttempts } from "@/lib/api/hooks/useAttempts";
 import { useChats } from "@/lib/api/hooks/useChats";
+import { useRubricGradesByChat } from "@/lib/api/hooks/useRubricGrades";
 import { useTrainings } from "@/lib/api/hooks/useTrainings";
 import { Attempt, Training } from "@/types";
 import {
@@ -33,9 +34,43 @@ import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import type { Dayjs } from "dayjs";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import TrainingDetailsModal from "./TrainingDetailsModal";
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
+
+// Helper component to display score for a chat
+function ChatScore({
+  chatId,
+  isCompleted,
+}: {
+  chatId: string;
+  isCompleted: boolean;
+}) {
+  const { data: grades, isLoading } = useRubricGradesByChat(
+    chatId,
+    isCompleted
+  );
+
+  if (!isCompleted) {
+    return <Text>Incomplete</Text>;
+  }
+
+  if (isLoading) {
+    return <Text>Loading...</Text>;
+  }
+
+  if (!grades || grades.length === 0) {
+    return <Text>No score</Text>;
+  }
+
+  // Calculate average score from all rubric grades
+  const totalScore = grades.reduce((sum, grade) => sum + (grade.score || 0), 0);
+  const averageScore =
+    grades.length > 0 ? Math.round(totalScore / grades.length) : 0;
+
+  return <Text>{averageScore}%</Text>;
+}
 
 // Extended attempt type with compiled chat information
 interface AttemptWithChatInfo extends Attempt {
@@ -50,21 +85,36 @@ interface AttemptWithChatInfo extends Attempt {
     completedChats: number;
   };
   chatType?: string | null;
-  score?: number | null;
+  latestChatId?: string | null;
 }
 
 export default function History() {
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [trainingFilter, setTrainingFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<
     [Dayjs | null, Dayjs | null] | null
   >(null);
+  const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(
+    null
+  );
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const { data: attempts, isLoading: attemptsLoading } = useAttempts();
   const { data: chats, isLoading: chatsLoading } = useChats();
   const { data: trainings, isLoading: trainingsLoading } = useTrainings();
 
   const isLoading = attemptsLoading || chatsLoading || trainingsLoading;
+
+  const handleViewAttempt = (attemptId: string) => {
+    setSelectedAttemptId(attemptId);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedAttemptId(null);
+  };
 
   // Compile attempt data with chat information
   const attemptsWithChatInfo = useMemo(() => {
@@ -108,14 +158,14 @@ export default function History() {
 
       // Determine chat type and score (if any)
       const chatType = latestChat?.title || null;
-      const score: number | null = null;
+      const latestChatId = latestChat?.id || null;
 
       return {
         ...attempt,
         training,
         chatInfo,
         chatType,
-        score,
+        latestChatId,
       } as AttemptWithChatInfo;
     });
   }, [attempts, chats, trainings]);
@@ -156,6 +206,10 @@ export default function History() {
         (statusFilter === "completed" && attempt.chatInfo?.isCompleted) ||
         (statusFilter === "in-progress" && !attempt.chatInfo?.isCompleted);
 
+      // Training filter
+      const matchesTraining =
+        trainingFilter === "all" || attempt.training?.title === trainingFilter;
+
       // Date range filter
       const matchesDate =
         !dateRange ||
@@ -166,9 +220,9 @@ export default function History() {
           attempt.created_at &&
           new Date(attempt.created_at) <= dateRange[1].toDate());
 
-      return matchesSearch && matchesStatus && matchesDate;
+      return matchesSearch && matchesStatus && matchesTraining && matchesDate;
     });
-  }, [sortedAttempts, searchText, statusFilter, dateRange]);
+  }, [sortedAttempts, searchText, statusFilter, trainingFilter, dateRange]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -180,7 +234,7 @@ export default function History() {
     });
   };
 
-  const columns: ColumnsType<AttemptWithChatInfo> = [ 
+  const columns: ColumnsType<AttemptWithChatInfo> = [
     {
       title: "Scenario",
       dataIndex: "chatInfo",
@@ -198,16 +252,21 @@ export default function History() {
       dataIndex: "training",
       key: "training",
       render: (training: Training | null) => (
-        <Text style={{ textTransform: "capitalize" }}>{training?.title || "-"}</Text>
+        <Text style={{ textTransform: "capitalize" }}>
+          {training?.title || "-"}
+        </Text>
       ),
       width: 140,
     },
     {
       title: "Score",
-      dataIndex: "score",
+      dataIndex: "latestChatId",
       key: "score",
-      render: (score: number | null) => (
-        <Text>{typeof score === "number" ? score : "Incomplete"}</Text>
+      render: (chatId: string | null, record: AttemptWithChatInfo) => (
+        <ChatScore
+          chatId={chatId || ""}
+          isCompleted={record.chatInfo?.isCompleted || false}
+        />
       ),
       width: 140,
     },
@@ -230,15 +289,14 @@ export default function History() {
       key: "actions",
       render: (_, record: AttemptWithChatInfo) => (
         <Space>
-          <Link
-            href={`/dashboard/trainings/t/${record.training?.id || ""}/a/${
-              record.id
-            }`}
+          <Button
+            type="primary"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => handleViewAttempt(record.id)}
           >
-            <Button type="primary" size="small" icon={<EyeOutlined />}>
-              View
-            </Button>
-          </Link>
+            View
+          </Button>
         </Space>
       ),
       width: 100,
@@ -257,9 +315,13 @@ export default function History() {
   return (
     <div>
       <div style={{ marginBottom: "24px" }}>
-        <Title level={2}>Training Session History</Title>
-        <Text type="secondary" style={{ fontSize: "16px" }}>
-          Review and analyze your past simulation training sessions
+        <Title level={2}>Training Performance History</Title>
+        <Text
+          type="secondary"
+          style={{ fontSize: "16px", marginTop: "8px", display: "block" }}
+        >
+          Track your progress, review completed sessions, and analyze
+          performance trends across all training modules
         </Text>
       </div>
 
@@ -268,7 +330,7 @@ export default function History() {
       {/* Filters */}
       <Card style={{ marginBottom: "24px" }}>
         <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} md={8}>
+          <Col xs={24} md={6}>
             <Input
               placeholder="Search attempts..."
               prefix={<SearchOutlined />}
@@ -277,7 +339,7 @@ export default function History() {
               allowClear
             />
           </Col>
-          <Col xs={12} md={4}>
+          <Col xs={12} md={3}>
             <Select
               style={{ width: "100%" }}
               placeholder="Status"
@@ -289,7 +351,22 @@ export default function History() {
               <Select.Option value="in-progress">In Progress</Select.Option>
             </Select>
           </Col>
-          <Col xs={24} md={12}>
+          <Col xs={12} md={4}>
+            <Select
+              style={{ width: "100%" }}
+              placeholder="Training"
+              value={trainingFilter}
+              onChange={setTrainingFilter}
+            >
+              <Select.Option value="all">All Trainings</Select.Option>
+              <Select.Option value="Interview">Interview</Select.Option>
+              <Select.Option value="Critical Conversations">
+                Critical Conversations
+              </Select.Option>
+              <Select.Option value="Leadership">Leadership</Select.Option>
+            </Select>
+          </Col>
+          <Col xs={24} md={11}>
             <RangePicker
               style={{ width: "100%" }}
               placeholder={["Start Date", "End Date"]}
@@ -332,6 +409,15 @@ export default function History() {
           />
         )}
       </Card>
+
+      {/* Training Details Modal */}
+      {selectedAttemptId && (
+        <TrainingDetailsModal
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          attemptId={selectedAttemptId}
+        />
+      )}
     </div>
   );
 }

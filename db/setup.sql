@@ -4,13 +4,16 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- POSTGRESQL DATABASE
 
+CREATE TYPE user_role AS ENUM ('employee', 'admin', 'superadmin');
+
 CREATE TABLE IF NOT EXISTS profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), -- this will line up with user id if exists, otherwise it is an AI guy
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     name TEXT NOT NULL,
     active BOOLEAN DEFAULT FALSE,
-    last_active TIMESTAMPTZ NULL
+    last_active TIMESTAMPTZ NULL,
+    role user_role DEFAULT 'employee'
 );
 
 CREATE TABLE IF NOT EXISTS personas (

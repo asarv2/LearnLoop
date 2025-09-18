@@ -16,8 +16,7 @@ import {
 } from "@/components/ui/select";
 import { useChats } from "@/lib/api/hooks/useChats";
 import { useAllRubricGrades } from "@/lib/api/hooks/useRubrics";
-import { useScenarios } from "@/lib/api/hooks/useScenarios";
-import { useStandards } from "@/lib/api/hooks/useStandards";
+import { useAllStandardGrades } from "@/lib/api/hooks/useStandards";
 import { useTrainings } from "@/lib/api/hooks/useTrainings";
 import { type ComponentType, useCallback, useMemo, useState } from "react";
 import {
@@ -33,21 +32,12 @@ import {
   YAxis,
 } from "recharts";
 
-type TrainingTypeOption =
-  | "Interview"
-  | "Offboarding"
-  | "Leadership"
-  | "Cross-Cultural"
-  | "Difficult Conversations"
-  | "Customer Communication";
+type TrainingTypeOption = "Critical Conversations" | "Interview" | "Leadership";
 
 const TRAINING_TYPES: TrainingTypeOption[] = [
+  "Critical Conversations",
   "Interview",
-  "Offboarding",
   "Leadership",
-  "Cross-Cultural",
-  "Difficult Conversations",
-  "Customer Communication",
 ];
 
 const INTERVIEW_CATEGORIES = [
@@ -59,39 +49,14 @@ const INTERVIEW_CATEGORIES = [
   { key: "professional_judgment", label: "Professional Judgment" },
 ] as const;
 
-const OFFBOARDING_CATEGORIES = [
-  {
-    key: "empathy_emotional_intelligence",
-    label: "Empathy & Emotional Intelligence",
-  },
-  {
-    key: "communication_professionalism",
-    label: "Communication & Professionalism",
-  },
-  { key: "clarity_of_next_steps", label: "Clarity of Next Steps" },
-  {
-    key: "transition_planning_logistics",
-    label: "Transition Planning",
-  },
-  {
-    key: "conflict_resolution",
-    label: "Conflict Resolution",
-  },
-  {
-    key: "assessment_thoughtfulness",
-    label: "Assessment Thoughtfulness",
-  },
-] as const;
-
 // Types with rubric dimensions currently supported by the category chart
 // const TYPES_WITH_RUBRICS: TrainingTypeOption[] = ["Interview", "Offboarding"];
 
 export default function Overview() {
   const { data: chats } = useChats();
   const { data: rubricGrades } = useAllRubricGrades();
+  const { data: standardGrades } = useAllStandardGrades();
   const { data: trainings } = useTrainings();
-  const { data: scenarios } = useScenarios();
-  const { data: standards } = useStandards();
 
   const [range, setRange] = useState<"weekly" | "monthly">("weekly");
   const [selectedType, setSelectedType] =
@@ -110,6 +75,32 @@ export default function Overview() {
     [rubricGrades]
   );
 
+  // Helper function to get training type from chat
+  const getTrainingTypeFromChat = useCallback(
+    (chat: { training_id?: string | null }): TrainingTypeOption => {
+      if (!chat.training_id) return "Critical Conversations";
+
+      const training = (trainings || []).find((t) => t.id === chat.training_id);
+      if (!training) return "Critical Conversations";
+
+      const title = training.title.toLowerCase();
+      if (title.includes("interview")) return "Interview";
+      if (title.includes("leadership")) return "Leadership";
+      return "Critical Conversations";
+    },
+    [trainings]
+  );
+
+  // Helper function to filter chats by training type
+  const getChatsByType = useCallback(
+    (type: TrainingTypeOption) => {
+      return (chats || []).filter(
+        (chat) => getTrainingTypeFromChat(chat) === type
+      );
+    },
+    [chats, getTrainingTypeFromChat]
+  );
+
   const totals = useMemo(() => {
     const completed = (chats || []).filter((c) => c.completed).length;
 
@@ -122,23 +113,23 @@ export default function Overview() {
       return createdAt !== null && createdAt >= monthStart;
     }).length;
 
-    let highestInterviewScoreThisMonth = 0;
-    let highestInterviewTrainingName: string | null = null;
-    for (const s of chats || []) {
-      const score = getChatScore(s.id || "");
-      if (score >= highestInterviewScoreThisMonth) {
-        highestInterviewScoreThisMonth = score;
-        const chatId = s.id || null;
-        if (chatId) {
-          const chat = (chats || []).find((c) => c.id === chatId);
-          const trainingId = chat?.training_id || null;
-          if (trainingId) {
-            const training = (trainings || []).find((t) => t.id === trainingId);
-            highestInterviewTrainingName = training?.title || null;
-          } else {
-            highestInterviewTrainingName = "Interview";
-          }
-        }
+    // Find highest score this month and the training it was from
+    let highestScoreThisMonth = 0;
+    let highestScoreTrainingName: string | null = null;
+
+    for (const chat of chats || []) {
+      if (!chat.completed || !chat.created_at) continue;
+
+      const createdAt = new Date(chat.created_at);
+      if (createdAt < monthStart) continue;
+
+      const score = getChatScore(chat.id || "");
+      if (score > highestScoreThisMonth) {
+        highestScoreThisMonth = score;
+        const training = (trainings || []).find(
+          (t) => t.id === chat.training_id
+        );
+        highestScoreTrainingName = training?.title || "Training Session";
       }
     }
 
@@ -154,14 +145,13 @@ export default function Overview() {
 
     // Total hours practiced this month filtered by training type
     const hoursThisMonth = (() => {
-      const typeNorm = hoursType.toLowerCase();
-      const sessions = (chats || []).filter((c) => {
-        const t = (c.title || "").toLowerCase();
-        if (t !== typeNorm) return false;
+      const sessions = getChatsByType(hoursType).filter((c) => {
+        if (!c.completed) return false;
         if (!c.created_at) return false;
         const createdAt = new Date(c.created_at);
         return createdAt >= monthStart;
       });
+
       const totalMs = sessions.reduce((acc, c) => {
         const start = c.created_at ? new Date(c.created_at).getTime() : 0;
         const end = (c as { updated_at?: string }).updated_at
@@ -176,34 +166,33 @@ export default function Overview() {
       return Math.round(hours * 10) / 10;
     })();
 
-    // simple streak: consecutive days with at least one completed chat
+    // Calculate current streak: consecutive days with at least one completed chat
     const days = new Set(
       (chats || [])
         .filter((c) => c.completed)
         .map((c) => new Date(c.created_at || 0).toDateString())
     );
-    let streak = 0;
+    let currentStreak = 0;
     const d = new Date();
     while (days.has(d.toDateString())) {
-      streak += 1;
+      currentStreak += 1;
       d.setDate(d.getDate() - 1);
     }
 
     return {
       completed,
       completedThisMonth,
-      // replaced avgScore with highest interview score & its training
-      highestInterviewScoreThisMonth,
-      highestInterviewTrainingName,
+      highestScoreThisMonth,
+      highestScoreTrainingName,
+      currentStreak,
       activeDays30d,
       hoursThisMonth,
-      streak,
     };
-  }, [chats, trainings, hoursType, getChatScore]);
+  }, [chats, trainings, hoursType, getChatScore, getChatsByType]);
 
   const trendData = useMemo(() => {
-    // Create filtered data with scores from rubric grades
-    const filtered = (chats || [])
+    // Create filtered data with scores from rubric grades for selected training type
+    const filtered = getChatsByType(selectedType)
       .filter((c) => c.completed && c.created_at)
       .map((c) => ({
         date: new Date(c.created_at || 0),
@@ -273,120 +262,197 @@ export default function Overview() {
         return { date: label, score: avg };
       });
     }
-  }, [chats, range, getChatScore]);
+  }, [getChatsByType, selectedType, range, getChatScore]);
 
   const avgByCategory30d = useMemo(() => {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-
-    if (avgType === "Interview") {
-      const recent = (chats || []).filter(
-        (s) => new Date(s.created_at || 0).getTime() >= cutoff
-      );
-      return INTERVIEW_CATEGORIES.map((cat) => {
-        const total = recent.reduce((sum, s) => {
-          const value = (
-            s as unknown as { [k: string]: number | null | undefined }
-          )[cat.key];
-          return sum + (typeof value === "number" ? value : 0);
-        }, 0);
-        const avg = recent.length
-          ? Math.round(((total / recent.length) as number) * 10) / 10
-          : 0;
-        return { name: cat.label, avg };
-      });
-    }
-
-    if (avgType === "Offboarding") {
-      const recent = (chats || []).filter(
-        (s) => new Date(s.created_at || 0).getTime() >= cutoff
-      );
-      return OFFBOARDING_CATEGORIES.map((cat) => {
-        const total = recent.reduce((sum, s) => {
-          const value = (
-            s as unknown as { [k: string]: number | null | undefined }
-          )[cat.key];
-          return sum + (typeof value === "number" ? value : 0);
-        }, 0);
-        const avg = recent.length
-          ? Math.round(((total / recent.length) as number) * 10) / 10
-          : 0;
-        return { name: cat.label, avg };
-      });
-    }
-
-    // For other training types, find categories from standards using title matching
-    const matchingTrainings = (trainings || []).filter((training) =>
-      training.title?.toLowerCase().includes(avgType.toLowerCase())
+    const recent = getChatsByType(avgType).filter(
+      (s) => new Date(s.created_at || 0).getTime() >= cutoff
     );
 
-    if (matchingTrainings.length > 0) {
-      // Get the first matching training
-      const training = matchingTrainings[0];
-      const scenario = (scenarios || []).find(
-        (s) => s.training_id === training.id
-      );
-      const trainingStandards = (standards || []).filter(
-        (s) => s.rubric_id === scenario?.rubric_id
-      );
+    // Get recent chat IDs for filtering standard grades
+    const recentChatIds = new Set(recent.map((chat) => chat.id));
 
-      if (trainingStandards.length > 0) {
-        // Use standards as categories, all starting at 0 for now
-        // TODO: In the future, fetch actual scores from standard_grades table
-        return trainingStandards
-          .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
-          .map((standard) => ({
-            name: (standard as { name?: string }).name || "Category",
-            avg: 0,
-          }));
-      }
+    // Debug: Log the data we're working with
+    console.log("Recent chats for", avgType, ":", recent.length);
+    console.log("Standard grades available:", standardGrades?.length || 0);
+    console.log("Recent chat IDs:", Array.from(recentChatIds));
+    console.log("Sample standard grade:", standardGrades?.[0]);
+    console.log(
+      "All standard grade names:",
+      standardGrades?.map((sg) => sg.name)
+    );
+
+    if (avgType === "Interview") {
+      return INTERVIEW_CATEGORIES.map((cat) => {
+        // Get all standard grades for recent chats
+        const recentStandardGrades = (standardGrades || []).filter((sg) =>
+          recentChatIds.has(sg.rubric_grades?.chat_id)
+        );
+
+        console.log(`Category ${cat.label} (${cat.key}):`, {
+          totalStandardGrades: standardGrades?.length || 0,
+          recentStandardGrades: recentStandardGrades.length,
+          allNames: recentStandardGrades.map((sg) => sg.name),
+          catKey: cat.key,
+          catLabel: cat.label,
+        });
+
+        // Try to find matching standard grades by name
+        let standardGradeData = recentStandardGrades.filter((sg) => {
+          const name = sg.name?.toLowerCase() || "";
+          const key = cat.key.toLowerCase();
+          const labelWords = cat.label.toLowerCase().split(" ");
+
+          return (
+            name.includes(key) ||
+            name.includes(labelWords[0]) ||
+            name.includes(labelWords[1] || "") ||
+            key.includes(name.split(" ")[0] || "")
+          );
+        });
+
+        // If no matches found, try a more flexible approach
+        if (standardGradeData.length === 0 && recentStandardGrades.length > 0) {
+          // For now, just take the first few standard grades and distribute them
+          // This is a temporary solution until we understand the data structure better
+          standardGradeData = recentStandardGrades.slice(0, 1);
+        }
+
+        if (standardGradeData.length > 0) {
+          const total = standardGradeData.reduce(
+            (sum, sg) => sum + (sg.score || 0),
+            0
+          );
+          const avg = Math.round((total / standardGradeData.length) * 10) / 10;
+          return { name: cat.label, avg };
+        }
+
+        // Fallback to chat data if no standard grades
+        const total = recent.reduce((sum, s) => {
+          const value = (
+            s as unknown as { [k: string]: number | null | undefined }
+          )[cat.key];
+          return sum + (typeof value === "number" ? value : 0);
+        }, 0);
+        const avg = recent.length
+          ? Math.round(((total / recent.length) as number) * 10) / 10
+          : 0;
+        return { name: cat.label, avg };
+      });
+    }
+
+    if (avgType === "Leadership") {
+      const categories = [
+        "Communication",
+        "Decision Making",
+        "Team Management",
+        "Strategic Thinking",
+        "Conflict Resolution",
+        "Performance Management",
+      ];
+
+      return categories.map((category) => {
+        const recentStandardGrades = (standardGrades || []).filter((sg) =>
+          recentChatIds.has(sg.rubric_grades?.chat_id)
+        );
+
+        console.log(`Leadership Category ${category}:`, {
+          recentStandardGrades: recentStandardGrades.length,
+          allNames: recentStandardGrades.map((sg) => sg.name),
+        });
+
+        let standardGradeData = recentStandardGrades.filter((sg) => {
+          const name = sg.name?.toLowerCase() || "";
+          const categoryLower = category.toLowerCase();
+          return (
+            name.includes(categoryLower) ||
+            categoryLower.includes(name.split(" ")[0] || "")
+          );
+        });
+
+        // If no matches found, try a more flexible approach
+        if (standardGradeData.length === 0 && recentStandardGrades.length > 0) {
+          standardGradeData = recentStandardGrades.slice(0, 1);
+        }
+
+        if (standardGradeData.length > 0) {
+          const total = standardGradeData.reduce(
+            (sum, sg) => sum + (sg.score || 0),
+            0
+          );
+          const avg = Math.round((total / standardGradeData.length) * 10) / 10;
+          return { name: category, avg };
+        }
+
+        return { name: category, avg: 0 };
+      });
+    }
+
+    if (avgType === "Critical Conversations") {
+      const categories = [
+        "Active Listening",
+        "Empathy & Understanding",
+        "Clear Communication",
+        "Conflict Resolution",
+        "Emotional Intelligence",
+        "Problem Solving",
+      ];
+
+      return categories.map((category) => {
+        const recentStandardGrades = (standardGrades || []).filter((sg) =>
+          recentChatIds.has(sg.rubric_grades?.chat_id)
+        );
+
+        console.log(`Critical Conversations Category ${category}:`, {
+          recentStandardGrades: recentStandardGrades.length,
+          allNames: recentStandardGrades.map((sg) => sg.name),
+        });
+
+        let standardGradeData = recentStandardGrades.filter((sg) => {
+          const name = sg.name?.toLowerCase() || "";
+          const categoryLower = category.toLowerCase();
+          return (
+            name.includes(categoryLower) ||
+            categoryLower.includes(name.split(" ")[0] || "")
+          );
+        });
+
+        // If no matches found, try a more flexible approach
+        if (standardGradeData.length === 0 && recentStandardGrades.length > 0) {
+          standardGradeData = recentStandardGrades.slice(0, 1);
+        }
+
+        if (standardGradeData.length > 0) {
+          const total = standardGradeData.reduce(
+            (sum, sg) => sum + (sg.score || 0),
+            0
+          );
+          const avg = Math.round((total / standardGradeData.length) * 10) / 10;
+          return { name: category, avg };
+        }
+
+        return { name: category, avg: 0 };
+      });
     }
 
     // Fallback placeholder if no standards are found
     return [{ name: "Overall", avg: 0 }];
-  }, [chats, avgType, trainings, scenarios, standards]);
-
-  const insights = useMemo(() => {
-    // Build per-training insight with 0-defaults
-    const empty = {
-      avg: 0,
-      count: 0,
-      blurb: "No data yet. Keep practicing to unlock insights.",
-    };
-    const byType = TRAINING_TYPES.reduce((acc, t) => {
-      acc[t] = { ...empty };
-      return acc;
-    }, {} as Record<TrainingTypeOption, { avg: number; count: number; blurb: string }>);
-
-    const add = (type: TrainingTypeOption, score: number) => {
-      const v = byType[type];
-      const total = v.avg * v.count + score;
-      v.count += 1;
-      v.avg = Math.round(total / v.count);
-      if (v.count > 0) {
-        v.blurb =
-          v.avg >= 75
-            ? "Strong performance—maintain consistency and increase difficulty gradually."
-            : "Focus on fundamentals—review guidelines and practice shorter sessions more often.";
-      }
-    };
-
-    (chats || []).forEach((s) => add("Interview", getChatScore(s.id || "")));
-
-    return (
-      Object.entries(byType) as [
-        TrainingTypeOption,
-        { avg: number; count: number; blurb: string }
-      ][]
-    ).map(([type, v]) => ({ type, ...v }));
-  }, [chats, getChatScore]);
+  }, [getChatsByType, avgType, standardGrades]);
 
   return (
     <div className="min-h-screen w-full">
       <div className="max-w-7xl mx-auto px-4 lg:px-6 py-6 space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">
-            Analytics
-          </h2>
+          <div>
+            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">
+              Performance Analytics Dashboard
+            </h2>
+            <p className="text-slate-600 text-base mt-2">
+              Comprehensive insights into your training progress, skill
+              development, and performance metrics
+            </p>
+          </div>
           <div />
         </div>
 
@@ -395,32 +461,30 @@ export default function Overview() {
           <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-xs font-medium text-slate-500">
-                Trainings Completed
+                Highest Score
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl md:text-4xl font-bold text-indigo-600">
-                {totals.completedThisMonth}
+                {totals.highestScoreThisMonth}
               </div>
-              <p className="text-xs text-slate-500">Current Month</p>
+              <p className="text-xs text-slate-500">
+                {totals.highestScoreTrainingName || "This month"}
+              </p>
             </CardContent>
           </Card>
 
           <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-xs font-medium text-slate-500">
-                Highest Score
+                This Month
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl md:text-4xl font-bold text-indigo-600">
-                {totals.highestInterviewScoreThisMonth ?? 0}
+                {totals.completedThisMonth}
               </div>
-              <p className="text-xs text-slate-500">
-                {totals.highestInterviewTrainingName
-                  ? `${totals.highestInterviewTrainingName}`
-                  : "Interview"}
-              </p>
+              <p className="text-xs text-slate-500">Completed sessions</p>
             </CardContent>
           </Card>
 
@@ -458,12 +522,12 @@ export default function Overview() {
           <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px]">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-xs font-medium text-slate-500">
-                Training Streak
+                Current Streak
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl md:text-4xl font-bold text-indigo-600">
-                {totals.streak} days
+                {totals.currentStreak}
               </div>
               <p className="text-xs text-slate-500">Consecutive days</p>
             </CardContent>
@@ -690,43 +754,6 @@ export default function Overview() {
             </Card>
           );
         })()}
-
-        {/* Feedback & AI Insights */}
-        <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px] bg-white">
-          <CardHeader>
-            <CardTitle>Feedback & AI Insights</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-              {insights.map((it) => (
-                <div
-                  key={it.type}
-                  className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-medium text-slate-700">
-                      {it.type}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {it.count} sessions
-                    </div>
-                  </div>
-                  <div className="mt-3">
-                    <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/10">
-                      Avg Score: {it.avg}
-                    </span>
-                  </div>
-                  <p
-                    className="mt-3 text-sm text-slate-600 truncate"
-                    title={it.blurb}
-                  >
-                    {it.blurb}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

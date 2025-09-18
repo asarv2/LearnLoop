@@ -1,6 +1,7 @@
 "use client";
 
 import LandingPage from "@/components/LandingPage";
+import { useRole } from "@/contexts/role-context";
 import useSupabaseBrowser from "@/utils/supabase/supabase-browser";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -8,8 +9,9 @@ import { useEffect } from "react";
 
 export default function Home() {
   const supabase = useSupabaseBrowser();
+  const { userRole, loading: roleLoading, currentView } = useRole();
 
-  const { data: session, isLoading: loading } = useQuery({
+  const { data: session, isLoading: sessionLoading } = useQuery({
     queryKey: ["session"],
     queryFn: async () => {
       const {
@@ -22,14 +24,21 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    // If user is authenticated, redirect to dashboard
-    if (user && !loading) {
-      router.push("/dashboard/trainings");
+    // If user is authenticated and role is loaded, redirect based on role and view
+    if (user && !sessionLoading && !roleLoading) {
+      if (
+        userRole === "admin" ||
+        (userRole === "superadmin" && currentView === "admin")
+      ) {
+        router.push("/admin/analytics");
+      } else {
+        router.push("/dashboard/trainings");
+      }
     }
-  }, [user, loading, router]);
+  }, [user, sessionLoading, roleLoading, userRole, currentView, router]);
 
   // Show loading while checking auth status
-  if (loading) {
+  if (sessionLoading || roleLoading) {
     return (
       <div
         style={{

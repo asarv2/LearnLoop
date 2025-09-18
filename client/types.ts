@@ -57,6 +57,7 @@ export type LogLevel = "info" | "error" | "warn" | "debug";
 export type MessageRole = "user" | "assistant";
 export type QuestionType = "mcq" | "frq";
 export type TrainingType = "interview" | "offboarding";
+export type UserRole = "employee" | "admin" | "superadmin";
 
 // =============================================
 // ============= UTILITY TYPES =============
