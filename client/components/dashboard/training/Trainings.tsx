@@ -24,7 +24,7 @@ import {
 import { Badge, Button, Card, Col, Row, Spin, Typography } from "antd";
 import Link from "next/link";
 
-const { Title, Paragraph } = Typography;
+const { Title, Paragraph, Text } = Typography;
 
 // Array of colors and icons for training modules
 const trainingColors = [
@@ -52,6 +52,35 @@ const trainingIcons = [
   <HeartOutlined key="heart" />,
   <RocketOutlined key="rocket" />,
 ];
+
+// Helper function to get comprehensive description based on training type
+function getTrainingDescription(training: {
+  title: string;
+  description?: string | null;
+}) {
+  const title = training.title.toLowerCase();
+
+  if (
+    title.includes("difficult conversations") ||
+    title.includes("critical conversations")
+  ) {
+    return "Master the art of navigating challenging workplace discussions with confidence. Practice delivering difficult feedback, addressing performance issues, and managing conflict resolution through realistic AI-powered scenarios that mirror real corporate situations.";
+  }
+
+  if (title.includes("interview")) {
+    return "Develop advanced interviewing skills through comprehensive practice sessions. Learn to ask probing questions, assess candidates effectively, and conduct professional interviews that identify top talent while maintaining a positive candidate experience.";
+  }
+
+  if (title.includes("leadership")) {
+    return "Build essential leadership capabilities through immersive training experiences. Practice decision-making, team management, strategic thinking, and employee development in scenarios designed to prepare you for senior management roles.";
+  }
+
+  // Fallback to database description or default
+  return (
+    training.description ||
+    "Comprehensive professional development training designed to enhance your workplace skills and career advancement potential."
+  );
+}
 
 // Helper component to handle training card with scenario routing
 function TrainingCard({
@@ -165,13 +194,13 @@ function TrainingCard({
             style={{
               margin: 0,
               lineHeight: 1.5,
-              minHeight: "60px",
+              minHeight: "80px",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            {training.description || "No description available"}
+            {getTrainingDescription(training)}
           </Paragraph>
         </div>
 
@@ -232,40 +261,62 @@ export default function Trainings() {
     <div>
       {/* Header Section */}
       <div style={{ marginBottom: "32px" }}>
-        <Title level={2}>Professional Training Modules</Title>
-        <Paragraph type="secondary" style={{ fontSize: "16px" }}>
-          Enhance your leadership and management capabilities through immersive,
-          AI-powered training experiences designed for today&apos;s corporate
-          environment. Each scenario features focused AI personas for realistic
-          practice.
-        </Paragraph>
+        <Title level={2}>Professional Development Modules</Title>
+        <Text
+          type="secondary"
+          style={{ fontSize: "16px", marginTop: "8px", display: "block" }}
+        >
+          Master essential workplace skills through AI-powered simulations
+          designed for corporate environments
+        </Text>
       </div>
 
       {/* Training Cards Grid */}
       <Row gutter={[24, 24]}>
         {trainings
           ?.filter((training) => {
-            // Hide Interview Training module
-            return !training.title.toLowerCase().includes("interview");
+            // Show only Critical Conversations, Interview, and Leadership Development
+            const title = training.title.toLowerCase();
+            return (
+              (title.includes("difficult conversations") ||
+                title.includes("critical conversations") ||
+                title.includes("interview") ||
+                title.includes("leadership development") ||
+                title.includes("leadership")) &&
+              // Filter out unwanted trainings
+              !title.includes("offboarding") &&
+              !title.includes("customer communication") &&
+              !title.includes("cross-cultural") &&
+              !title.includes("cross cultural")
+            );
           })
           .sort((a, b) => {
-            // Sort "Offboarding Practice" first, then other trainings
-            if (a.title.toLowerCase().includes("difficult conversations"))
+            // Sort Critical Conversations first, then Interview, then Leadership Development
+            const aTitle = a.title.toLowerCase();
+            const bTitle = b.title.toLowerCase();
+
+            if (
+              aTitle.includes("difficult conversations") ||
+              aTitle.includes("critical conversations")
+            )
               return -1;
-            if (b.title.toLowerCase().includes("difficult conversations"))
+            if (
+              bTitle.includes("difficult conversations") ||
+              bTitle.includes("critical conversations")
+            )
               return 1;
+
+            if (aTitle.includes("interview")) return -1;
+            if (bTitle.includes("interview")) return 1;
+
+            if (aTitle.includes("leadership")) return -1;
+            if (bTitle.includes("leadership")) return 1;
+
             return 0;
           })
-          .map(
-            (training, index) =>
-              training.active !== null && (
-                <TrainingCard
-                  key={training.id}
-                  training={training}
-                  index={index}
-                />
-              )
-          )}
+          .map((training, index) => (
+            <TrainingCard key={training.id} training={training} index={index} />
+          ))}
         {/* Static card: Create your own trainings */}
         <Col xs={24} sm={12} lg={8}>
           <Badge.Ribbon text="Coming Soon" color="orange">
@@ -299,14 +350,17 @@ export default function Trainings() {
                   style={{
                     margin: 0,
                     lineHeight: 1.5,
-                    minHeight: "60px",
+                    minHeight: "80px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                   }}
                 >
-                  Build custom scenarios tailored to your team&apos;s workflows
-                  and standards.
+                  Design and deploy custom training scenarios that align with
+                  your organization&apos;s specific needs, industry standards,
+                  and corporate culture. Create targeted learning experiences
+                  that address unique challenges and accelerate team
+                  development.
                 </Paragraph>
               </div>
 

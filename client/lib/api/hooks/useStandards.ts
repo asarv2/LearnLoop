@@ -1,19 +1,19 @@
 // lib/api/hooks/useStandards.ts
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { standardKeys } from '../keys';
 import type {
   StandardCreate,
-  StandardUpdate,
   StandardGrade,
-} from '@/lib/repos/standardRepo';
-import { api } from '../fetcher';
+  StandardUpdate,
+} from "@/lib/repos/standardRepo";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "../fetcher";
+import { standardKeys } from "../keys";
 
 // ---------- Queries ----------
 export function useStandards() {
   return useQuery({
     queryKey: standardKeys.list(),
-    queryFn: () => api<StandardCreate[]>('/api/v1/standards'),
-    staleTime: 5 * 60_000,      // 5 minutes
+    queryFn: () => api<StandardCreate[]>("/api/v1/standards"),
+    staleTime: 5 * 60_000, // 5 minutes
   });
 }
 
@@ -27,9 +27,18 @@ export function useStandard(id: string, enabled = true) {
 
 export function useStandardGrades(standardId: string, enabled = true) {
   return useQuery({
-    queryKey: [...standardKeys.detail(standardId), 'grades'],
-    queryFn: () => api<StandardGrade[]>(`/api/v1/standards/${standardId}/grades`),
+    queryKey: [...standardKeys.detail(standardId), "grades"],
+    queryFn: () =>
+      api<StandardGrade[]>(`/api/v1/standards/${standardId}/grades`),
     enabled,
+  });
+}
+
+export function useAllStandardGrades() {
+  return useQuery({
+    queryKey: ["standard_grades", "all"],
+    queryFn: () => api<any[]>("/api/v1/standards/grades"),
+    staleTime: 5 * 60_000, // 5 minutes
   });
 }
 
@@ -38,8 +47,8 @@ export function useCreateStandard() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: StandardCreate) =>
-      api<StandardCreate>('/api/v1/standards', {
-        method: 'POST',
+      api<StandardCreate>("/api/v1/standards", {
+        method: "POST",
         body: JSON.stringify(payload),
       }),
     onSuccess() {
@@ -53,7 +62,7 @@ export function useUpdateStandard(id: string) {
   return useMutation({
     mutationFn: (patch: StandardUpdate) =>
       api<StandardCreate>(`/api/v1/standards/${id}`, {
-        method: 'PATCH',
+        method: "PATCH",
         body: JSON.stringify(patch),
       }),
     onSuccess() {
@@ -66,10 +75,10 @@ export function useDeleteStandard(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      api<void>(`/api/v1/standards/${id}`, { method: 'DELETE' }),
+      api<void>(`/api/v1/standards/${id}`, { method: "DELETE" }),
     onSuccess() {
       // remove both list & detail caches
       qc.invalidateQueries({ queryKey: standardKeys.all });
     },
   });
-} 
+}

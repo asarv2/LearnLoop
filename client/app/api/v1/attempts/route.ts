@@ -1,6 +1,8 @@
 import { AttemptCreateSchema, attemptRepo } from "@/lib/repos/attemptRepo";
 import { handleHttpError } from "@/utils/HttpError";
 import { logError, logWarn } from "@/utils/logger";
+import supabaseServer from "@/utils/supabase/supabase-server";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 // POST /api/attempts  – create
@@ -31,7 +33,25 @@ export async function POST(req: Request) {
 // GET /api/attempts  – list
 export async function GET() {
   try {
-    const rows = await attemptRepo.list();
+    // Get current user from Supabase
+    const supabase = await supabaseServer(cookies());
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get user's profile ID
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("user_id", user.id)
+      .single();
+
+    const profileId = profile?.id;
+    const rows = await attemptRepo.list(profileId);
     return NextResponse.json(rows);
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);

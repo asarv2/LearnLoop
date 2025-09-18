@@ -3,6 +3,7 @@
 
 import { AuthProvider, useAuth } from "@/components/auth/AuthProvider";
 import { Toaster } from "@/components/ui/toaster";
+import { RoleProvider } from "@/contexts/role-context";
 import { WebSocketProvider } from "@/contexts/websocket-context";
 import { createQueryClient } from "@/utils/react-query/queryClient";
 import { Theme } from "@radix-ui/themes";
@@ -28,20 +29,22 @@ export const Providers = ({ children }: { children: React.ReactNode }) => {
   return (
     <ReactQueryClientProvider>
       <AuthProvider>
-        <WebSocketProviderWrapper>
-          <Theme>
-            <ConfigProvider
-              theme={{
-                token: {
-                  colorPrimary: "#1890ff",
-                },
-              }}
-            >
-              {children}
-              <Toaster />
-            </ConfigProvider>
-          </Theme>
-        </WebSocketProviderWrapper>
+        <RoleProvider>
+          <WebSocketProviderWrapper>
+            <Theme>
+              <ConfigProvider
+                theme={{
+                  token: {
+                    colorPrimary: "#1890ff",
+                  },
+                }}
+              >
+                {children}
+                <Toaster />
+              </ConfigProvider>
+            </Theme>
+          </WebSocketProviderWrapper>
+        </RoleProvider>
       </AuthProvider>
     </ReactQueryClientProvider>
   );

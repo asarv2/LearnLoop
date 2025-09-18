@@ -523,6 +523,7 @@ export type Database = {
           id: string
           last_active: string | null
           name: string
+          role: Database["public"]["Enums"]["user_role"] | null
           updated_at: string | null
         }
         Insert: {
@@ -531,6 +532,7 @@ export type Database = {
           id?: string
           last_active?: string | null
           name: string
+          role?: Database["public"]["Enums"]["user_role"] | null
           updated_at?: string | null
         }
         Update: {
@@ -539,6 +541,7 @@ export type Database = {
           id?: string
           last_active?: string | null
           name?: string
+          role?: Database["public"]["Enums"]["user_role"] | null
           updated_at?: string | null
         }
         Relationships: []
@@ -886,6 +889,7 @@ export type Database = {
       message_role: "user" | "assistant"
       question_type: "mcq" | "frq"
       training_type: "interview" | "offboarding"
+      user_role: "employee" | "admin" | "superadmin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1019,6 +1023,7 @@ export const Constants = {
       message_role: ["user", "assistant"],
       question_type: ["mcq", "frq"],
       training_type: ["interview", "offboarding"],
+      user_role: ["employee", "admin", "superadmin"],
     },
   },
 } as const

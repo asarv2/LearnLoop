@@ -109,4 +109,23 @@ export const standardRepo = {
     if (error) throw new HttpError(500, error.message);
     return data;
   },
+
+  async getAllGrades(): Promise<any[]> {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("standard_grades")
+      .select(
+        `
+        *,
+        rubric_grades(
+          chat_id,
+          name
+        )
+      `
+      )
+      .order("created_at", { ascending: false });
+
+    if (error) throw new HttpError(500, error.message);
+    return data;
+  },
 };

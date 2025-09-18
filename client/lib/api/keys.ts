@@ -83,6 +83,14 @@ export const rubricKeys = {
   detail: (id: string) => [...rubricKeys.all, id] as const,
 };
 
+export const rubricGradeKeys = {
+  all: ["rubric-grades"] as const,
+  list: (filters?: unknown) => [...rubricGradeKeys.all, { filters }] as const,
+  listByChat: (chatId: string) =>
+    [...rubricGradeKeys.all, "by-chat", chatId] as const,
+  detail: (id: string) => [...rubricGradeKeys.all, id] as const,
+};
+
 export const standardKeys = {
   all: ["standards"] as const,
   list: (filters?: unknown) => [...standardKeys.all, { filters }] as const,

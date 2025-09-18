@@ -5,7 +5,6 @@
  * 08-02-2025
  */
 
-import WorkInProgressModal from "@/components/common/WorkInProgressModal";
 import Overview from "@/components/dashboard/overview/Overview";
 
 import { Metadata } from "next";
@@ -16,13 +15,5 @@ export const metadata: Metadata = {
 };
 
 export default function OverviewPage() {
-  return (
-    <>
-      <Overview />
-      <WorkInProgressModal
-        title="Dashboard Overview"
-        description="The dashboard overview feature is currently being developed. This will provide you with comprehensive insights into your training progress, performance metrics, and key statistics to help you track your learning journey."
-      />
-    </>
-  );
+  return <Overview />;
 }

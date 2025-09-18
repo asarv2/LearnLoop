@@ -15,7 +15,7 @@ import {
 } from "@radix-ui/react-icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
-import { Mic, MicOff } from "lucide-react";
+// Removed mic icons in favor of a consistent "Voice Mode" label
 import React, { useCallback, useEffect, useState } from "react";
 import IntroMessageModal from "./IntroMessageModal";
 
@@ -992,10 +992,12 @@ export default function ChatArea({
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
-                              padding: 0,
+                              padding: "12px 16px",
                               borderRadius: "12px",
-                              width: "48px",
+                              width: "auto",
                               height: "48px",
+                              fontSize: "14px",
+                              fontWeight: 600,
                               background: micOn ? "#ef4444" : "white",
                               color: micOn ? "white" : "var(--gray-12)",
                               border: "1px solid var(--gray-6)",
@@ -1008,7 +1010,7 @@ export default function ChatArea({
                               flexShrink: 0,
                             }}
                           >
-                            {micOn ? <MicOff size={16} /> : <Mic size={16} />}
+                            Voice Mode
                           </Button>
                         </Tooltip.Trigger>
                         <Tooltip.Portal>
