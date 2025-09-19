@@ -1,9 +1,6 @@
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}/server/.venv/bin/python",
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "python.terminal.activateEnvironment": true,
-  "python.testing.pytestArgs": [
-    "server/tests"
-  ],
   "terminal.integrated.profiles.osx": {
     "zsh (with env)": {
       "path": "/bin/zsh",
@@ -24,9 +21,6 @@
     }
   },
   "mypy.runUsingActiveInterpreter": true,
-  "mypy.targets": [
-    "server/app"
-  ],
   "mypy.enabled": true,
   "eslint.workingDirectories": [
     "client"

@@ -1,4 +1,4 @@
-.PHONY: help install install-dev dev format lint typecheck run prod test test-cov clean generate-models generate-tests stop venv venv-clean test-fast test-slow test-unit test-integration typecheck-strict redis-install redis-start redis-stop check-brew
+.PHONY: help setup install clean format lint typecheck run prod test test-cov cleanup generate-models generate-tests stop test-fast test-slow test-unit test-integration typecheck-strict start-redis start-client start-server start-model start-documents stop-all
 
 # Default Python interpreter
 PYTHON := python3.11
@@ -6,6 +6,20 @@ VENV := .venv
 VENV_BIN := $(VENV)/bin
 VENV_PYTHON := $(VENV_BIN)/python
 VENV_PIP := $(VENV_BIN)/pip
+
+# Service ports
+SERVER_PORT := 8000
+MODEL_PORT := 8001
+DOCUMENTS_PORT := 8002
+CLIENT_PORT := 3000
+REDIS_PORT := 6379
+
+# PID files for service management
+SERVER_PID := .server.pid
+MODEL_PID := .model.pid
+DOCUMENTS_PID := .documents.pid
+CLIENT_PID := .client.pid
+REDIS_PID := .redis.pid
 
 # Check if Python 3.11 is available
 PY311 := $(shell which python3.11 || true)
@@ -20,46 +34,23 @@ check-python:
 		exit 1; \
 	fi
 
-# --- Homebrew Redis Management ---
-# Check if Homebrew is installed
-check-brew:
-	@if ! command -v brew &> /dev/null; then \
-		echo "❌ Homebrew is not installed. Please install it to continue: https://brew.sh/"; \
-		exit 1; \
-	fi
-
-# Install Redis using Homebrew if not already installed
-redis-install: check-brew
-	@if ! brew ls --versions redis > /dev/null; then \
-		echo "🍺 Installing Redis via Homebrew..."; \
-		brew install redis; \
-		echo "✅ Redis installed."; \
-	else \
-		echo "🍺 Redis is already installed."; \
-	fi
-
-# Start Redis as a background service
-redis-start: redis-install
-	@echo "🍺 Starting Redis service via Homebrew...";
-	@brew services start redis
-	@echo "✅ Redis service started."
-
-# Stop the Redis service
-redis-stop: check-brew
-	@echo "🍺 Stopping Redis service...";
-	@brew services stop redis
-	@echo "✅ Redis service stopped."
-# --- End Homebrew Redis Management ---
 
 # Create virtual environment
-venv: check-python
+setup: check-python
 	@echo "Creating virtual environment at $(VENV)..."
 	@$(PYTHON) -m venv $(VENV)
 	@echo "✅ Virtual environment created at $(VENV)"
 	@echo "To activate: source $(VENV_BIN)/activate"
 
+# Install all dependencies
+install: check-venv
+	@echo "Installing all dependencies..."
+	@$(VENV_PIP) install --upgrade pip
+	@$(VENV_PIP) install -e .
+	@echo "✅ All dependencies installed"
+
 # Clean virtual environment
-venv-clean:
+clean:
 	@echo "Removing virtual environment..."
 	@rm -rf $(VENV)
 	@echo "✅ Virtual environment removed"
@@ -68,28 +59,9 @@ venv-clean:
 check-venv:
 	@if [ ! -d "$(VENV)" ]; then \
 		echo "❌ Virtual environment not found at $(VENV)"; \
-		echo "Run 'make venv' to create it"; \
+		echo "Run 'make setup' to create it"; \
 		exit 1; \
 	fi
-
-# Install production dependencies
-install: check-venv
-	@echo "Installing production dependencies..."
-	@$(VENV_PIP) install --upgrade pip
-	@$(VENV_PIP) install -e .
-	@echo "✅ Production dependencies installed"
-
-# Install development dependencies
-install-dev: check-venv
-	@echo "Installing development dependencies..."
-	@$(VENV_PIP) install --upgrade pip
-	@$(VENV_PIP) install -e ".[dev]"
-	@echo "✅ Development dependencies installed"
-
-# Install all dependencies (production + development)
-dev: venv install-dev redis-start
-	@echo "✅ Development environment ready!"
-	@echo "To activate: source $(VENV_BIN)/activate"
 
 # Format code with Ruff
 format: check-venv
@@ -144,15 +116,60 @@ test-cov: check-venv
 	@$(VENV_PYTHON) -m pytest tests/ --cov=app --cov-report=term-missing --cov-report=html
 	@echo "✅ Coverage report generated"
 
-# Run the development server
-run: check-venv redis-start generate-models
-	@echo "⇢ starting API server on :8000"
-	@$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Start individual services
+start-redis:
+	@echo "⇢ starting Redis on :$(REDIS_PORT)"
+	@redis-server --port $(REDIS_PORT) --daemonize yes --pidfile $(REDIS_PID)
+	@echo "✅ Redis started on port $(REDIS_PORT)"
+
+start-server: check-venv start-redis
+	@echo "⇢ starting server on :$(SERVER_PORT)"
+	@cd server && $(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(SERVER_PORT) > ../$(SERVER_PID) 2>&1 &
+	@echo $$! > $(SERVER_PID)
+	@echo "✅ Server started on port $(SERVER_PORT) (PID: $$!)"
+
+start-model: check-venv
+	@echo "⇢ starting model service on :$(MODEL_PORT)"
+	@cd model && $(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(MODEL_PORT) > ../$(MODEL_PID) 2>&1 &
+	@echo $$! > $(MODEL_PID)
+	@echo "✅ Model service started on port $(MODEL_PORT) (PID: $$!)"
+
+start-documents: check-venv
+	@echo "⇢ starting documents service on :$(DOCUMENTS_PORT)"
+	@cd documents && $(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(DOCUMENTS_PORT) > ../$(DOCUMENTS_PID) 2>&1 &
+	@echo $$! > $(DOCUMENTS_PID)
+	@echo "✅ Documents service started on port $(DOCUMENTS_PORT) (PID: $$!)"
+
+start-client:
+	@echo "⇢ starting client on :$(CLIENT_PORT)"
+	@cd client && npm run dev > ../$(CLIENT_PID) 2>&1 &
+	@echo $$! > $(CLIENT_PID)
+	@echo "✅ Client started on port $(CLIENT_PORT) (PID: $$!)"
+
+# Start all services
+run: start-server start-model start-documents start-client
+	@echo "✅ All services started!"
+	@echo "  Redis:    localhost:$(REDIS_PORT)"
+	@echo "  Server:   http://localhost:$(SERVER_PORT)"
+	@echo "  Model:    http://localhost:$(MODEL_PORT)"
+	@echo "  Documents: http://localhost:$(DOCUMENTS_PORT)"
+	@echo "  Client:   http://localhost:$(CLIENT_PORT)"
+	@echo ""
+	@echo "Use 'make stop' to stop all services"
+
+# Stop all services
+stop-all:
+	@echo "Stopping all services..."
+	@if [ -f $(SERVER_PID) ]; then kill `cat $(SERVER_PID)` 2>/dev/null || true; rm $(SERVER_PID); echo "✅ Server stopped"; fi
+	@if [ -f $(MODEL_PID) ]; then kill `cat $(MODEL_PID)` 2>/dev/null || true; rm $(MODEL_PID); echo "✅ Model service stopped"; fi
+	@if [ -f $(DOCUMENTS_PID) ]; then kill `cat $(DOCUMENTS_PID)` 2>/dev/null || true; rm $(DOCUMENTS_PID); echo "✅ Documents service stopped"; fi
+	@if [ -f $(CLIENT_PID) ]; then kill `cat $(CLIENT_PID)` 2>/dev/null || true; rm $(CLIENT_PID); echo "✅ Client stopped"; fi
+	@if [ -f $(REDIS_PID) ]; then kill `cat $(REDIS_PID)` 2>/dev/null || true; rm $(REDIS_PID); echo "✅ Redis stopped"; fi
+	@echo "✅ All services stopped"
 
 # Stop any running processes
-stop: redis-stop
-	@if [ -f .model.pid ]; then kill `cat .model.pid` || true; rm .model.pid; fi
-	@echo "✅ Stopped running processes and services"
+stop: stop-all
+	@echo "✅ All services stopped"
 
 # Start FastAPI via Gunicorn+Uvicorn for production
 prod: check-venv
@@ -160,7 +177,7 @@ prod: check-venv
 	@$(VENV_PYTHON) -m gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
 
 # Clean up generated files and cache
-clean:
+cleanup:
 	@echo "Cleaning up..."
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
@@ -171,21 +188,27 @@ clean:
 	@find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name ".coverage" -delete 2>/dev/null || true
-	@find . -type f -name ".model.pid" -delete 2>/dev/null || true
+	@find . -type f -name "*.pid" -delete 2>/dev/null || true
 	@echo "✅ Cleanup complete"
 
 # Show help
 help:
-	@echo "LearnLoop Server - Available commands:"
+	@echo "LearnLoop - Unified Learning Platform"
 	@echo ""
 	@echo "Environment setup:"
-	@echo "  venv         - Create virtual environment at .venv"
-	@echo "  venv-clean   - Remove virtual environment"
-	@echo "  dev          - Set up complete development environment (venv + redis + install-dev)"
+	@echo "  setup        - Create virtual environment at .venv"
+	@echo "  install      - Install all dependencies in venv"
+	@echo "  clean        - Remove virtual environment"
 	@echo ""
-	@echo "Dependencies:"
-	@echo "  install      - Install production dependencies in venv"
-	@echo "  install-dev  - Install development dependencies in venv"
+	@echo "Services:"
+	@echo "  run          - Start all services (redis, server, model, documents, client)"
+	@echo "  start-redis  - Start Redis on port $(REDIS_PORT)"
+	@echo "  start-server - Start server on port $(SERVER_PORT)"
+	@echo "  start-model  - Start model service on port $(MODEL_PORT)"
+	@echo "  start-documents - Start documents service on port $(DOCUMENTS_PORT)"
+	@echo "  start-client - Start client on port $(CLIENT_PORT)"
+	@echo "  stop         - Stop all services"
+	@echo "  stop-all     - Stop all services"
 	@echo ""
 	@echo "Code quality:"
 	@echo "  format       - Format code with Ruff"
@@ -196,25 +219,21 @@ help:
 	@echo "Testing:"
 	@echo "  test         - Run all tests"
 	@echo "  test-cov     - Run tests with coverage"
-	@echo "  test-fast    - Run fast tests only"
-	@echo "  test-slow    - Run slow tests only"
-	@echo "  test-unit    - Run unit tests only"
-	@echo "  test-integration - Run integration tests only"
 	@echo ""
-	@echo "Development:"
-	@echo "  run          - Start development server and Redis"
+	@echo "Production:"
 	@echo "  prod         - Start production server"
-	@echo "  stop         - Stop running processes and Redis"
-	@echo "  clean        - Clean up generated files and cache"
-	@echo ""
-	@echo "Services (Homebrew):"
-	@echo "  redis-install - Install Redis via Homebrew"
-	@echo "  redis-start   - Start the Redis service"
-	@echo "  redis-stop    - Stop the Redis service"
+	@echo "  cleanup      - Clean up generated files and cache"
 	@echo ""
 	@echo "Code generation:"
 	@echo "  generate-models - Generate SQLModel classes from database schema"
 	@echo "  generate-tests  - Generate pytest tests"
+	@echo ""
+	@echo "Service URLs:"
+	@echo "  Redis:     localhost:$(REDIS_PORT)"
+	@echo "  Server:    http://localhost:$(SERVER_PORT)"
+	@echo "  Model:     http://localhost:$(MODEL_PORT)"
+	@echo "  Documents: http://localhost:$(DOCUMENTS_PORT)"
+	@echo "  Client:    http://localhost:$(CLIENT_PORT)"
 	@echo ""
 	@echo "Virtual environment location: $(VENV)"
 	@echo "To activate manually: source $(VENV_BIN)/activate"
