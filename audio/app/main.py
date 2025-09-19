@@ -27,6 +27,7 @@ class RoomState:
 
 
 ROOMS: Dict[str, RoomState] = {}
+CONTROL_SOCKETS: Dict[str, WebSocket] = {}
 
 
 def get_room(room_id: str) -> RoomState:
@@ -54,6 +55,13 @@ async def delete_room(room_id: str) -> JSONResponse:
     r = ROOMS.pop(room_id, None)
     if r:
         await r.bus.stop()
+    # close and remove control socket if present
+    ws = CONTROL_SOCKETS.pop(room_id, None)
+    if ws is not None:
+        try:
+            await ws.close(code=1001)
+        except Exception:
+            pass
     return JSONResponse(status_code=204, content=None)
 
 
@@ -104,6 +112,8 @@ async def ws_control(ws: WebSocket) -> None:
                 await ws.send_text(json.dumps({"ok": False, "error": "missing_room_id"}))
                 continue
             room = get_room(room_id)
+            # Register this control socket for push events
+            CONTROL_SOCKETS[room_id] = ws
 
             if typ == "set_ignore":
                 sub_id = msg.get("subscriber_id")
@@ -121,6 +131,21 @@ async def ws_control(ws: WebSocket) -> None:
                     beep = BeepAgent(id="agent:beep", bus=room.bus)
                     beep.start()
                     room.agents["agent:beep"] = beep
+                # Example event push back to server
+                try:
+                    await ws.send_text(json.dumps({
+                        "type": "text_chunk",
+                        "room_id": room_id,
+                        "source_id": "agent:beep",
+                        "role": "agent",
+                        "text": "(beep agent started)",
+                        "message_id": None,
+                        "chunk_idx": 0,
+                        "is_final": True,
+                        "persona_id": None,
+                    }))
+                except Exception:
+                    pass
                 await ws.send_text(json.dumps({"ok": True}))
                 continue
 
@@ -137,6 +162,14 @@ async def ws_control(ws: WebSocket) -> None:
 
             await ws.send_text(json.dumps({"ok": False, "error": "unknown_type"}))
     except WebSocketDisconnect:
+        # Cleanup any bound room mapping
+        # Find and remove this websocket from CONTROL_SOCKETS
+        try:
+            to_del = [rid for rid, s in CONTROL_SOCKETS.items() if s == ws]
+            for rid in to_del:
+                CONTROL_SOCKETS.pop(rid, None)
+        except Exception:
+            pass
         return
     except Exception:
         try:
