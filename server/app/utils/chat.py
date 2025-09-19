@@ -183,7 +183,6 @@ def get_parameter_history_from_field_values(
                         persona = None
                 if persona:
                     persona_desc = persona.description if persona.description else "No description available"
-                    # Do not include parameter description in parenthesis
                     param_lines.append(
                         f"The {field_name} for this chat is {persona.name}: {persona_desc}"
                     )
@@ -208,22 +207,21 @@ def get_parameter_history_from_field_values(
                         param_lines.append(f"The {field_name} for this chat is {doc_id}")
                     
             elif field.field_type == 'categorical' and parameter_id:
-                # For categorical fields, use the parameter name
+                # For categorical fields, use the parameter name and append the description after a colon
                 param = fresh_session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
                 if param:
-                    # Do not include description in parenthesis
+                    param_desc = param.description if param.description else "No description available"
                     param_lines.append(
-                        f"The {field_name} for this chat is {param.name}"
+                        f"The {field_name} for this chat is {param.name}: {param_desc}"
                     )
                 else:
                     param_lines.append(f"The {field_name} for this chat is {value}")
                     
             else:
-                # For text, numerical, or other fields, use the value directly
+                # For text, numerical, or other fields, use the value directly and append the description after a colon
                 if value:
-                    # Do not include description in parenthesis
                     param_lines.append(
-                        f"The {field_name} for this chat is {value}"
+                        f"The {field_name} for this chat is {value}: {field_description if field_description else 'No description available'}"
                     )
         
         # Return as a single user message with all parameters
