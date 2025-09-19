@@ -101,7 +101,7 @@ from typing import Tuple as _Tuple
 def _check_secret_from_data(data: _Optional[dict]) -> bool:
     try:
         import os
-        secret = os.getenv("AUDIO_MULTI_SECRET", "")
+        secret = os.getenv("AUDIO_SECRET", "")
         if not secret:
             return True
         token = None

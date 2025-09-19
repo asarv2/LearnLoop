@@ -34,7 +34,7 @@ class MixedAudioSubscriber:
 class AudioBridge:
     def __init__(self, server_sio: socketio.AsyncServer):
         self.server_sio = server_sio
-        self.url = os.getenv("AUDIO_URL", "http://localhost:8000")
+        self.url = os.getenv("AUDIO_SERVICE_URL", "")
         self.secret = os.getenv("AUDIO_SECRET", "")
         self._client = socketio.AsyncClient(transports=["websocket"])  # prefer websocket
         self._connected = asyncio.Event()

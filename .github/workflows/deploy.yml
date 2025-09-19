@@ -8,6 +8,7 @@ on:
       - 'server/**'
       - 'model/**'
       - 'documents/**'
+      - 'audio/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
@@ -27,6 +28,7 @@ jobs:
       server-changed: ${{ steps.changes.outputs.server }}
       model-changed: ${{ steps.changes.outputs.model }}
       documents-changed: ${{ steps.changes.outputs.documents }}
+      audio-changed: ${{ steps.changes.outputs.audio }}
       any-changes: ${{ steps.changes.outputs.any }}
     steps:
       - name: Checkout code
@@ -53,8 +55,9 @@ jobs:
           set_flag "server" "server"
           set_flag "model"  "model"
           set_flag "documents" "documents"
+          set_flag "audio" "audio"
 
-          if echo "$CHANGED_FILES" | grep -qE "^client/|^server/|^model/|^documents/|^\.github/workflows/deploy\.yml"; then
+          if echo "$CHANGED_FILES" | grep -qE "^client/|^server/|^model/|^documents/|^audio/|^\.github/workflows/deploy\.yml"; then
             echo "any=true" >> $GITHUB_OUTPUT
           else
             echo "any=false" >> $GITHUB_OUTPUT
@@ -205,9 +208,44 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  build-audio:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.audio-changed == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with: { clean: true }
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Meta (audio)
+        id: meta-audio
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/ashokhomepc/learnloop-audio
+          tags: |
+            type=raw,value=${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+            type=sha,prefix=${{ github.ref_name }}-
+
+      - name: Build & push (audio)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./audio
+          push: true
+          tags: ${{ steps.meta-audio.outputs.tags }}
+          labels: ${{ steps.meta-audio.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   deploy:
     runs-on: self-hosted
-    needs: [detect-changes, build-client, build-server, build-model, build-documents]
+    needs: [detect-changes, build-client, build-server, build-model, build-documents, build-audio]
     if: |
       always() &&
       (needs.detect-changes.outputs.any-changes == 'true' || github.event_name == 'workflow_dispatch')
@@ -231,7 +269,7 @@ jobs:
           DEST="/srv/deploy/learnloop/${{ env.CHANNEL }}"
           mkdir -p "$DEST"
           rsync -a --delete \
-            docker-compose.yml web/ server/ client/ model/ documents/ turn/ \
+            docker-compose.yml web/ server/ client/ model/ documents/ audio/ turn/ \
             "$DEST"/
           # optional: include web/templates, nginx templates, etc.
           if [ -d web/templates ]; then rsync -a web/templates "$DEST"/web/; fi
@@ -247,6 +285,7 @@ jobs:
           LEARNLOOP_SERVER_IMAGE: ghcr.io/ashokhomepc/learnloop-server:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
           LEARNLOOP_MODEL_IMAGE:  ghcr.io/ashokhomepc/learnloop-model:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
           LEARNLOOP_DOCUMENTS_IMAGE: ghcr.io/ashokhomepc/learnloop-documents:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+          LEARNLOOP_AUDIO_IMAGE: ghcr.io/ashokhomepc/learnloop-audio:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
 
           # Common env (client)
           SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
@@ -257,6 +296,9 @@ jobs:
           # Common env (server)
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+          AUDIO_SECRET: ${{ secrets.AUDIO_SECRET }}
+          OPENAI_REALTIME_MODEL: ${{ secrets.OPENAI_REALTIME_MODEL }}
 
           # DB env
           DB_HOST: ${{ secrets.DB_HOST }}
