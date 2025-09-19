@@ -19,6 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates tini gosu \
  && rm -rf /var/lib/apt/lists/*
 
+# Make files dir for output
+RUN mkdir -p /app/files
+
 # Copy reqs early for caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
