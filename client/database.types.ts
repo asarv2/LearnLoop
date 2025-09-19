@@ -301,6 +301,7 @@ export type Database = {
         Row: {
           contents: string[] | null
           created_at: string | null
+          difficulty: string
           id: string
           message_id: string | null
           updated_at: string | null
@@ -308,6 +309,7 @@ export type Database = {
         Insert: {
           contents?: string[] | null
           created_at?: string | null
+          difficulty?: string
           id?: string
           message_id?: string | null
           updated_at?: string | null
@@ -315,6 +317,7 @@ export type Database = {
         Update: {
           contents?: string[] | null
           created_at?: string | null
+          difficulty?: string
           id?: string
           message_id?: string | null
           updated_at?: string | null
@@ -665,12 +668,14 @@ export type Database = {
         Row: {
           created_at: string | null
           description: string | null
+          document_ids: string[]
           field_ids: string[] | null
           id: string
           objectives: string[]
           parameter_ids: string[]
           parent_id: string | null
           problem_statement: string | null
+          prompts: Json
           rubric_id: string | null
           title: string
           training_id: string | null
@@ -679,12 +684,14 @@ export type Database = {
         Insert: {
           created_at?: string | null
           description?: string | null
+          document_ids?: string[]
           field_ids?: string[] | null
           id?: string
           objectives?: string[]
           parameter_ids?: string[]
           parent_id?: string | null
           problem_statement?: string | null
+          prompts?: Json
           rubric_id?: string | null
           title: string
           training_id?: string | null
@@ -693,12 +700,14 @@ export type Database = {
         Update: {
           created_at?: string | null
           description?: string | null
+          document_ids?: string[]
           field_ids?: string[] | null
           id?: string
           objectives?: string[]
           parameter_ids?: string[]
           parent_id?: string | null
           problem_statement?: string | null
+          prompts?: Json
           rubric_id?: string | null
           title?: string
           training_id?: string | null

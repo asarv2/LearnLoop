@@ -20,7 +20,7 @@ from app.models import (Attempts, Chats, Documents,  # ✨ Import Personas
 from app.services.agents.generic import GenericAgent, run_generic_agent
 from app.services.agents.grade import run_grading_agent
 from app.services.agents.hint import run_hint_agent
-from app.services.agents.scenario import ScenarioResponse, get_scenario_prompt
+from app.services.agents.scenario import run_scenario_agent
 from app.utils.chat import (get_conversation_history, get_parameter_history,
                             get_parameter_history_from_field_values,
                             get_parameter_history_simple, get_preamble)
@@ -129,53 +129,78 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
             # Document uploads are handled on the frontend before this call
             logger.info("Document uploads completed on frontend")
 
-            # Populate chat.persona_ids
+            # Populate chat.persona_ids, prompts, and max_turns from scenario
             try:
                 persona_ids: list[str] = []
+                max_turns: dict[str, Optional[int]] = {}
 
-                # If client provided assistant_persona_id, use it
-                assistant_persona_id = (data or {}).get("assistant_persona_id")
-                if assistant_persona_id:
-                    try:
-                        _ = uuid.UUID(str(assistant_persona_id))
-                        persona_ids.append(str(assistant_persona_id))
-                    except Exception:
-                        logger.warning("Invalid assistant_persona_id provided")
-                else:
-                    # Fallback: derive from scenario.parameter_ids (persona parameters only)
-                    conn = db_session.connection()
-                    row = conn.execute(
-                        text("SELECT parameter_ids FROM scenarios WHERE id = :id"),
-                        {"id": str(scenario.id)},
-                    ).fetchone()
-                    scenario_parameter_ids: list[str] = list(row[0]) if row and row[0] else []
+                # Get scenario parameter_ids to find persona fields
+                conn = db_session.connection()
+                row = conn.execute(
+                    text("SELECT parameter_ids FROM scenarios WHERE id = :id"),
+                    {"id": str(scenario.id)},
+                ).fetchone()
+                scenario_parameter_ids: list[str] = list(row[0]) if row and row[0] else []
 
-                    for pid in scenario_parameter_ids:
-                        param = db_session.exec(select(Parameters).where(Parameters.id == pid)).one_or_none()
-                        if not param or not param.field_id:
-                            continue
-                        fld = db_session.exec(select(Fields).where(Fields.id == param.field_id)).one_or_none()
-                        if fld and getattr(fld, "field_type", None) == "persona" and param.value:
-                            try:
-                                _ = uuid.UUID(str(param.value))
-                                persona_ids.append(str(param.value))
-                            except Exception:
-                                logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
+                # Extract persona_ids from scenario parameters
+                for pid in scenario_parameter_ids:
+                    param = db_session.exec(select(Parameters).where(Parameters.id == pid)).one_or_none()
+                    if not param or not param.field_id:
+                        continue
+                    fld = db_session.exec(select(Fields).where(Fields.id == param.field_id)).one_or_none()
+                    if fld and getattr(fld, "field_type", None) == "persona" and param.value:
+                        try:
+                            persona_id = str(param.value)
+                            _ = uuid.UUID(persona_id)  # Validate UUID format
+                            persona_ids.append(persona_id)
+                            
+                            # Get persona to check if it's a user (has profile_id)
+                            persona = db_session.exec(select(Personas).where(Personas.id == param.value)).one_or_none()
+                            if persona and persona.profile_id:
+                                # User persona - infinite turns
+                                max_turns[persona_id] = None
+                            else:
+                                # Assistant persona - 1 turn
+                                max_turns[persona_id] = 1
+                                
+                        except Exception:
+                            logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
 
-                # Update chats.persona_ids via raw SQL
+                # Update chat fields via raw SQL
                 try:
+                    # Set persona_ids
                     if persona_ids:
                         array_sql = "ARRAY[" + ", ".join([f"'{p}'" for p in persona_ids]) + "]::uuid[]"
                     else:
                         array_sql = "NULL"
-                    conn = db_session.connection()
+                    
+                    # Set prompts from scenario.prompts
+                    prompts_json = "NULL"
+                    if hasattr(scenario, 'prompts') and scenario.prompts:
+                        import json
+                        prompts_json = f"'{json.dumps(scenario.prompts)}'::jsonb"
+                    
+                    # Set max_turns
+                    max_turns_json = "NULL"
+                    if max_turns:
+                        import json
+                        max_turns_json = f"'{json.dumps(max_turns)}'::jsonb"
+                    
                     conn.execute(
-                        text(f"UPDATE chats SET persona_ids = {array_sql} WHERE id = :id"),
+                        text(f"""
+                            UPDATE chats 
+                            SET persona_ids = {array_sql},
+                                prompts = {prompts_json},
+                                max_turns = {max_turns_json}
+                            WHERE id = :id
+                        """),
                         {"id": str(chat.id)},
                     )
                     db_session.commit()
+                    logger.info(f"Updated chat {chat.id} with {len(persona_ids)} personas and max_turns: {max_turns}")
+                    
                 except Exception:
-                    logger.exception("Failed to update chat.persona_ids")
+                    logger.exception("Failed to update chat fields")
             except Exception:
                 logger.exception("Failed to derive persona_ids from scenario parameters")
 
@@ -838,8 +863,6 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
             parent_id = data.get("scenario_id")
             field_values = data.get("field_values", [])
             additional_prompt = (data.get("additional_prompt") or "").strip()
-            assistant_persona_id = (data or {}).get("assistant_persona_id")
-            current_draft_objectives = data.get("current_draft_objectives", [])
 
             if not parent_id:
                 await emit_error(sid, "Missing scenario_id")
@@ -851,55 +874,6 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 if not parent:
                     await emit_error(sid, "Scenario not found")
                     return
-
-                # Build parameter history from provided field values
-                parameter_history = get_parameter_history_from_field_values(field_values, db_session)
-
-                preamble = [
-                    f"TRAINING: {parent.title}",
-                    f"Parent Problem Statement: {(parent.description or '').strip()}",
-                ]
-
-                system_prompt = await get_scenario_prompt()
-                agent = GenericAgent(
-                    agent_name="Scenario Generator",
-                    system_prompt=system_prompt,
-                    temperature=0.2,
-                    output_type=ScenarioResponse,
-                )
-
-                # Use a single string input to satisfy strict typing
-                param_content = ""
-                if parameter_history:
-                    param_content = str(parameter_history[0].get("content", ""))
-
-                combined = "\n".join([
-                    "\n".join(preamble),
-                    param_content,
-                    additional_prompt or "",
-                ]).strip()
-
-                with trace("Scenario"):
-                    result = await Runner.run(agent.agent(), input=combined)
-                    sr = result.final_output_as(ScenarioResponse)
-
-                # Simple approach: always use the newest AI-generated objectives
-                final_objectives = sr.objectives or []
-
-                # Create the child scenario row
-                child = Scenarios(
-                    title=sr.title,
-                    description=getattr(parent, "description", None),
-                    training_id=parent.training_id,
-                    rubric_id=parent.rubric_id,
-                    field_ids=parent.field_ids,
-                    problem_statement=sr.problem_statement,
-                    objectives=final_objectives,
-                    parent_id=parent.id,
-                )
-                db_session.add(child)
-                db_session.commit()
-                db_session.refresh(child)
 
                 # Build/collect parameter_ids: reuse provided parameterId, else create
                 parameter_ids: list[str] = []
@@ -924,7 +898,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                         except Exception:
                             logger.exception("Failed to create parameter from field value")
 
-                # Persist scenarios.parameter_ids via raw SQL
+                # Update the parent scenario with the new parameter_ids
                 try:
                     if parameter_ids:
                         array_sql = "ARRAY[" + ", ".join([f"'{p}'" for p in parameter_ids]) + "]::uuid[]"
@@ -933,19 +907,62 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     conn = db_session.connection()
                     conn.execute(
                         text(f"UPDATE scenarios SET parameter_ids = {array_sql} WHERE id = :id"),
-                        {"id": str(child.id)},
+                        {"id": str(parent_id)},
                     )
                     db_session.commit()
                 except Exception:
                     logger.exception("Failed to update scenarios.parameter_ids")
 
-                # If assistant_persona_id provided, also set chat persona context for future use
-                if assistant_persona_id:
-                    try:
-                        _ = uuid.UUID(str(assistant_persona_id))
-                        # child scenario has no chat yet; the persona will be applied at start_training
-                    except Exception:
-                        logger.warning("Invalid assistant_persona_id on generate_scenario (ignored)")
+                # Extract persona_ids from field_values
+                persona_ids_from_fields = []
+                for fv in field_values:
+                    field_id = fv.get("fieldId")
+                    parameter_id = fv.get("parameterId")
+                    if field_id and parameter_id:
+                        # Check if this field is a persona field
+                        field = db_session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
+                        if field and getattr(field, "field_type", None) == "persona":
+                            try:
+                                persona_ids_from_fields.append(uuid.UUID(str(parameter_id)))
+                            except Exception:
+                                logger.warning(f"Invalid persona UUID in field_value: {parameter_id}")
+
+                # Use the centralized scenario agent with scenario_id, field_values, and persona_ids
+                result = await run_scenario_agent(
+                    scenario_id=uuid.UUID(parent_id),
+                    field_values=field_values,
+                    persona_ids=persona_ids_from_fields,
+                    additional_context=additional_prompt,
+                    session=db_session
+                )
+
+                if not result.get("success", False):
+                    await emit_error(sid, result.get("message", "Failed to generate scenario"))
+                    return
+
+                # Extract results from the scenario agent
+                title = result.get("title", "")
+                problem_statement = result.get("problem_statement", "")
+                objectives = result.get("objectives", [])
+                prompts = result.get("prompts", {})
+
+                # Create the child scenario row
+                child = Scenarios(
+                    title=title,
+                    description=getattr(parent, "description", None),
+                    training_id=parent.training_id,
+                    rubric_id=parent.rubric_id,
+                    field_ids=parent.field_ids,
+                    problem_statement=problem_statement,
+                    objectives=objectives,
+                    parent_id=parent.id,
+                    parameter_ids=parameter_ids,  # Set parameter_ids directly
+                    prompts=prompts,  # Set prompts JSONB field
+                )
+                db_session.add(child)
+                db_session.commit()
+                db_session.refresh(child)
+
 
                 sio = get_sio_instance()
                 await sio.emit(
@@ -953,9 +970,9 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     {
                         "success": True,
                         "scenario_id": str(child.id),
-                        "title": sr.title,
-                        "problem_statement": sr.problem_statement,
-                        "objectives": final_objectives,
+                        "title": title,
+                        "problem_statement": problem_statement,
+                        "objectives": objectives,
                     },
                     room=sid,
                 )
