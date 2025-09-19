@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 import tempfile
 from pathlib import Path
@@ -52,8 +53,20 @@ class HealthResponse(BaseModel):
     models_loaded: dict[str, bool]
 
 
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "alloy"
+    sample_rate: int = 48000
+
+
+class TTSResponse(BaseModel):
+    audio_b64: str
+    sample_rate: int
+    duration_ms: int
+
+
 @app.on_event("startup")
-async def startup_event():
+async def startup_event() -> None:
     """Warm up models on startup."""
     logger.info("Starting up model service...")
     extensions.warm_all_models()
@@ -61,18 +74,20 @@ async def startup_event():
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health_check():
+async def health_check() -> HealthResponse:
     """Health check endpoint."""
     try:
         # Check if models are loaded
         wav2vec2_processor, wav2vec2_model = extensions.get_wav2vec2_ctc()
         whisper_model = extensions.get_whisper_tiny("auto")
+        kokoro_model = extensions.get_kokoro_pipeline("a")
         
         return HealthResponse(
             status="healthy",
             models_loaded={
                 "wav2vec2": wav2vec2_processor is not None and wav2vec2_model is not None,
                 "whisper": whisper_model is not None,
+                "kokoro": kokoro_model is not None,
             }
         )
     except Exception as e:
@@ -84,7 +99,7 @@ async def health_check():
 async def transcribe_audio(
     audio_file: UploadFile = File(..., description="Audio file to transcribe"),
     reference_text: Optional[str] = Form(None, description="Reference text for CTC alignment (optional)")
-):
+) -> TranscriptResponse:
     """
     Transcribe audio file and optionally align with reference text using CTC.
     
@@ -147,7 +162,7 @@ async def transcribe_audio(
 async def align_audio_with_text(
     audio_file: UploadFile = File(..., description="Audio file to align"),
     reference_text: str = Form(..., description="Reference text for alignment")
-):
+) -> TranscriptResponse:
     """
     Align audio with reference text using CTC segmentation.
     
@@ -215,8 +230,46 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
         raise HTTPException(status_code=500, detail=f"alignment failed: {str(e)}")
 
 
+@app.post("/synthesize", response_model=TTSResponse)
+async def synthesize_speech(req: TTSRequest) -> TTSResponse:
+    """
+    Synthesize speech from text using Kokoro TTS.
+    
+    - **text**: Text to synthesize
+    - **voice**: Voice name (default: "alloy")
+    - **sample_rate**: Target sample rate (default: 48000)
+    """
+    try:
+        if not req.text.strip():
+            raise HTTPException(status_code=400, detail="Text cannot be empty")
+        
+        # Synthesize audio
+        audio_data, sample_rate = extensions.synthesize_kokoro(
+            text=req.text,
+            voice=req.voice,
+            sr=req.sample_rate
+        )
+        
+        # Convert to base64
+        audio_bytes = audio_data.astype(np.float32).tobytes()
+        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+        
+        # Calculate duration
+        duration_ms = int((len(audio_data) / sample_rate) * 1000)
+        
+        return TTSResponse(
+            audio_b64=audio_b64,
+            sample_rate=sample_rate,
+            duration_ms=duration_ms
+        )
+        
+    except Exception as e:
+        logger.error(f"TTS synthesis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"TTS synthesis failed: {str(e)}")
+
+
 @app.get("/")
-async def root():
+async def root() -> dict[str, str | dict[str, str]]:
     """Root endpoint with API information."""
     return {
         "message": "LearnLoop Model Service",
@@ -225,6 +278,7 @@ async def root():
             "health": "/health",
             "transcribe": "/transcribe",
             "align": "/align",
+            "synthesize": "/synthesize",
             "docs": "/docs"
         }
     }
