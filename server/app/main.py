@@ -73,6 +73,7 @@ register_training_events(sio)
 # ── Import new WebRTC primitives (from your NEWMAIN extraction) ───────────────
 from app.rtc import WebRTCSession, sessions
 from app.store import get_room
+from app.utils.chat import get_audio_config
 
 
 # ── Loop lag watchdog ─────────────────────────────────────────────────────────
@@ -266,17 +267,8 @@ async def offer(sid: str, data: Dict[str, Any]) -> None:
     # Start a corresponding room in audio-multi (id == chat_id) and register this human
     try:
         bridge = get_bridge(sio)
-        # Minimal dynamic config; replace with real scenario data from DB if desired
-        config = {
-            "require_users": True,
-            "enable_word_timestamps": True,
-            "name": None,
-            "problem_statement": None,
-            "objectives": [],
-            "agents": [
-                {"id": "agent:Assistant", "voice": "alloy", "instructions": "Be helpful."}
-            ],
-        }
+        # Get dynamic config based on chat_id/room_id
+        config = get_audio_config(room_id)
         await bridge.start_room(room_id=room_id, config=config)
         human_id = f"user:{room_user_profile_id}" if room_user_profile_id else f"user:{sid[-6:]}"
         await bridge.register_human(room_id=room_id, human_id=human_id)

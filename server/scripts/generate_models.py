@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env
 load_dotenv()
 
-def generate_sqlmodel_from_sql():
+def generate_sqlmodel_from_sql() -> None:
     """Generate SQLModel classes from SQL schema using sqlacodegen"""
     python_executable = sys.executable
     
