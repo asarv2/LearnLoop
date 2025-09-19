@@ -9,6 +9,9 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
+from .agents.base import Agent
+from .agents.beep import BeepAgent
+from .agents.logger import LoggerAgent
 from .bus import PCM_SR, SAMPLES_PER_CHUNK, AudioBus, AudioChunk
 
 app = FastAPI(title="Learnloop Audio Service", version="0.1.0")
@@ -20,6 +23,7 @@ class RoomState:
         self.id = room_id
         self.bus = AudioBus()
         self.bus.start(period_ms=20)
+        self.agents: dict[str, Agent] = {}
 
 
 ROOMS: Dict[str, RoomState] = {}
@@ -62,6 +66,83 @@ async def set_ignore(room_id: str, payload: dict) -> dict:
     r = get_room(room_id)
     r.bus.set_ignore(sub_id, sources)
     return {"ok": True}
+
+
+# ---- Agent control (OpenAI) -------------------------------------------------
+
+@app.post("/rooms/{room_id}/agents/openai/start")
+async def start_openai_agent(room_id: str) -> dict:
+    # Placeholder: in a later step, wire real agent process/thread here
+    _ = get_room(room_id)
+    return {"ok": True}
+
+
+@app.post("/rooms/{room_id}/agents/openai/stop")
+async def stop_openai_agent(room_id: str) -> dict:
+    # Placeholder for stopping agent
+    _ = get_room(room_id)
+    return {"ok": True}
+
+
+# ---- Control channel (WebSocket) -------------------------------------------
+
+@app.websocket("/ws/control")
+async def ws_control(ws: WebSocket) -> None:
+    await ws.accept()
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                await ws.send_text(json.dumps({"ok": False, "error": "invalid_json"}))
+                continue
+
+            typ = str(msg.get("type") or "").lower()
+            room_id = str(msg.get("room_id") or "")
+            if not room_id:
+                await ws.send_text(json.dumps({"ok": False, "error": "missing_room_id"}))
+                continue
+            room = get_room(room_id)
+
+            if typ == "set_ignore":
+                sub_id = msg.get("subscriber_id")
+                sources = set(msg.get("sources", []) or [])
+                if not sub_id:
+                    await ws.send_text(json.dumps({"ok": False, "error": "missing_subscriber_id"}))
+                    continue
+                room.bus.set_ignore(str(sub_id), set(str(s) for s in sources))
+                await ws.send_text(json.dumps({"ok": True}))
+                continue
+
+            if typ == "agent_start":
+                # For now, start a simple BeepAgent as a placeholder
+                if "agent:beep" not in room.agents:
+                    beep = BeepAgent(id="agent:beep", bus=room.bus)
+                    beep.start()
+                    room.agents["agent:beep"] = beep
+                await ws.send_text(json.dumps({"ok": True}))
+                continue
+
+            if typ == "agent_stop":
+                # Stop placeholder agent if present
+                ag = room.agents.pop("agent:beep", None)
+                if ag is not None:
+                    try:
+                        await ag.stop()
+                    except Exception:
+                        pass
+                await ws.send_text(json.dumps({"ok": True}))
+                continue
+
+            await ws.send_text(json.dumps({"ok": False, "error": "unknown_type"}))
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        try:
+            await ws.close(code=1011)
+        except Exception:
+            pass
 
 
 @app.websocket("/ws/ingest")
