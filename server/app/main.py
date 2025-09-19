@@ -35,12 +35,21 @@ redis_url = os.getenv("REDIS_URL")
 if redis_url and socketio.AsyncRedisManager:
     logger.info(f"Socket.IO clustering via Redis -> {redis_url}")
     manager = socketio.AsyncRedisManager(redis_url)
-    sio = socketio.AsyncServer(async_mode="asgi", client_manager=manager,
-                               cors_allowed_origins=allowed_origins, transports=["websocket", "polling"])
+    sio = socketio.AsyncServer(
+        async_mode="asgi", 
+        client_manager=manager,
+        cors_allowed_origins=allowed_origins,
+        transports=["websocket", "polling"],
+        logger=True  # Keep useful Socket.IO logging
+    )
 else:
     logger.info("Socket.IO using in-memory manager")
-    sio = socketio.AsyncServer(async_mode="asgi",
-                               cors_allowed_origins=allowed_origins, transports=["websocket", "polling"])
+    sio = socketio.AsyncServer(
+        async_mode="asgi",
+        cors_allowed_origins=allowed_origins,
+        transports=["websocket", "polling"],
+        logger=True  # Keep useful Socket.IO logging
+    )
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
 fastapi_app = FastAPI(title="GLOW API")
@@ -240,8 +249,9 @@ async def offer(sid: str, data: Dict[str, Any]) -> None:
     """
     room_id = data.get("room_id")
     if not room_id:
-        # if omitted, fall back to a default room but we expect chat_id
-        room_id = "default-room"
+        # if omitted, fall back to a default room using the store's get_room function
+        room = get_room("default-room")
+        room_id = room.id
 
     await sio.enter_room(sid, room_id)
 

@@ -177,9 +177,9 @@ export function WebSocketProvider({
     const socket = io(getApiBase(), {
       path: "/socket.io",
       autoConnect: true,
-      transports: ["websocket"],
-      upgrade: false,
-      query: { profileId, timestamp: Date.now(), EIO: "4" },
+      // Allow normal Socket.IO transport negotiation and upgrade
+      transports: ["websocket"], // Start with polling, upgrade to websocket
+      query: { profileId, timestamp: Date.now() },
     });
     socketRef.current = socket;
 
