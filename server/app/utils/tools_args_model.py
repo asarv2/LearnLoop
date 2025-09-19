@@ -1,16 +1,14 @@
-from __future__ import annotations
-
-from typing import Any, Dict, List, Optional, Tuple, Type, get_args, get_origin
-from uuid import UUID
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from pydantic import BaseModel, Field, create_model
+from pydantic.config import ConfigDict
 
 _TYPE_MAP = {
     "str": (str, ""),
     "int": (int, 0),
     "float": (float, 0.0),
     "bool": (bool, False),
-    "list": (List[Any], list),         # we'll refine if we see "List[str]"
+    "list": (List[Any], list),
     "List[str]": (List[str], list),
     "List[int]": (List[int], list),
     "List[float]": (List[float], list),
@@ -18,50 +16,51 @@ _TYPE_MAP = {
 }
 
 def _resolve_type(type_str: str) -> Tuple[type, Any]:
-    # best-effort: prefer specific "List[str]", fall back to generic list
     if type_str in _TYPE_MAP:
         return _TYPE_MAP[type_str]
-    # tiny convenience: Optional[T] -> T | None
     if type_str.startswith("Optional[") and type_str.endswith("]"):
         inner = type_str[len("Optional["):-1]
-        t, default = _resolve_type(inner)
+        t, _ = _resolve_type(inner)
         return Optional[t], None  # type: ignore
-    # unknowns default to string
     return str, ""
 
-def build_args_model_from_spec(
-    *, model_name: str, spec_fields: Dict[str, Dict[str, Any]]
-) -> Any:
+def build_args_model_from_spec(*, model_name: str, spec_fields: Dict[str, Dict[str, Any]]) -> Type[BaseModel]:
     """
-    spec_fields: like
+    spec_fields:
       {
         "title":  {"type":"str","required":False,"default":"Shopping List","description":"..."},
         "items":  {"type":"List[str]","required":False,"default":[],"description":"..."},
-        "author": {"type":"str","required":False,"default":None,"description":"..."},
         ...
       }
     """
-    # For now, let's use a simple approach that should work
-    # Create a simple BaseModel subclass with the fields
-    class SimpleArgsModel(BaseModel):
-        class Config:
-            extra = "forbid"
-    
-    # Add fields dynamically using setattr
+    fields_def: Dict[str, Tuple[type, Any]] = {}
     for name, meta in spec_fields.items():
-        py_type, default = _resolve_type(str(meta.get("type", "str")))
+        py_type, default_fallback = _resolve_type(str(meta.get("type", "str")))
         desc = meta.get("description")
         required = bool(meta.get("required", False))
         has_default = "default" in meta
 
         if required and not has_default:
-            field_def = Field(description=desc)
+            # (annotation, Field(...)) means REQUIRED
+            fields_def[name] = (py_type, Field(description=desc))
         else:
-            # if default is explicitly provided (can be None), use it; else fallback mapping default
-            val = meta["default"] if "default" in meta else default
-            field_def = Field(default=val, description=desc)
+            default_val = meta["default"] if has_default else default_fallback
+            fields_def[name] = (py_type, Field(default=default_val, description=desc))
+
+    # Pydantic v2: set extra='forbid' via model_config
+    try:
+        ArgsModel = create_model(  # type: ignore
+            model_name,
+            **fields_def,
+        )
+    except Exception:
+        # Fallback approach
+        class ArgsModel(BaseModel):  # type: ignore
+            model_config = ConfigDict(extra="forbid")
         
-        # Set the field on the class
-        setattr(SimpleArgsModel, name, (py_type, field_def))
+        # Add fields dynamically
+        for name, (py_type, field_def) in fields_def.items():
+            setattr(ArgsModel, name, field_def)
     
-    return SimpleArgsModel
+    ArgsModel.model_config = ConfigDict(extra="forbid")
+    return ArgsModel  # type: ignore

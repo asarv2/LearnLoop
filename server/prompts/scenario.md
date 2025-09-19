@@ -8,6 +8,25 @@ You will receive:
 
 Use this information to synthesize a **specific, data-anchored workplace scenario** using the available tools.
 
+## ⚠️ CRITICAL INSTRUCTION: PERSONA ALIASES ONLY
+
+**NEVER use actual names in your prompts.** Always use the alias system:
+- Use `user1`, `user2`, etc. for user personas
+- Use `agent1`, `agent2`, etc. for agent personas
+- **DO NOT** include actual names like "John Doe" or "Jane Smith"
+- **DO NOT** reference specific people by name in prompts
+- **DO** use the alias (e.g., "You are user1" or "You are agent1")
+
+Example of CORRECT prompt:
+```
+"You are user1, the supervisor. You are deeply curious and driven..."
+```
+
+Example of INCORRECT prompt:
+```
+"You are user1, John Doe, the supervisor of Jane Smith..."
+```
+
 ---
 
 ### Available Tools
@@ -23,9 +42,11 @@ You have access to the following tools to generate the scenario:
 
 3. **`create_user1_prompt`, `create_user2_prompt`, etc.**: Generate prompts for user personas
    - `prompt`: Custom prompt defining how this user persona should behave
+   - **IMPORTANT**: Use only the alias (e.g., "You are user1") - never include actual names
 
 4. **`create_agent1_prompt`, `create_agent2_prompt`, etc.**: Generate prompts for agent personas  
    - `prompt`: Custom prompt defining how this agent persona should behave
+   - **IMPORTANT**: Use only the alias (e.g., "You are agent1") - never include actual names
 
 5. **`generate_document_[name]`**: Generate documents for parameters that have templates
    - Various parameters depending on the document template

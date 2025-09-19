@@ -136,38 +136,38 @@ def get_parameter_history_from_field_values(
     Get parameter history directly from field_values (like in generate_scenario).
     This is a simpler approach that builds parameter lines directly from the field values
     rather than going through the complex parameter/field lookup process.
-    
+
     Args:
         field_values: List of field value dictionaries with fieldId, value, parameterId
         session: Database session for lookups
-        
+
     Returns:
         List of parameter messages formatted for agent consumption
     """
     if not field_values:
         return []
-    
+
     # Use a fresh session for this operation to avoid prepared statement conflicts
     fresh_session = next(get_session())
     try:
         param_lines: list[str] = []
-        
+
         for fv in field_values:
             field_id = fv.get("fieldId")
             value = fv.get("value", "").strip()
             parameter_id = fv.get("parameterId")
-            
+
             if not field_id:
                 continue
-                
+
             # Get the field to understand its type and name
             field = fresh_session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
             if not field:
                 continue
-                
+
             field_name = field.name or "parameter"
             field_description = field.description or ""
-            
+
             # Handle different field types
             if field.field_type == 'persona' and parameter_id:
                 # For persona fields, the field_values carry a parameterId that points to Parameters;
@@ -184,11 +184,11 @@ def get_parameter_history_from_field_values(
                 if persona:
                     persona_desc = persona.description if persona.description else "No description available"
                     param_lines.append(
-                        f"The {field_name} for this chat is {persona.name}: {persona_desc}"
+                        f"- **{field_name}**: {persona.name}\n  - {persona_desc}"
                     )
                 else:
-                    param_lines.append(f"The {field_name} for this chat is {value}")
-                    
+                    param_lines.append(f"- **{field_name}**: {value}")
+
             elif field.field_type == 'document':
                 # For document fields, prefer the explicit value (document id) from field_values;
                 # if missing, fall back to resolving via parameterId → Parameters.value
@@ -202,38 +202,39 @@ def get_parameter_history_from_field_values(
                     document = fresh_session.exec(select(Documents).where(Documents.id == doc_id)).one_or_none()
                     if document:
                         doc_content = document.content if document.content else "No content available"
-                        param_lines.append(f"The {field_name} for this chat is document {str(doc_id)[:8]}: {doc_content}")
+                        param_lines.append(f"- **{field_name}**: document `{str(doc_id)[:8]}`\n  - {doc_content}")
                     else:
-                        param_lines.append(f"The {field_name} for this chat is {doc_id}")
-                    
+                        param_lines.append(f"- **{field_name}**: {doc_id}")
+
             elif field.field_type == 'categorical' and parameter_id:
                 # For categorical fields, use the parameter name and append the description after a colon
                 param = fresh_session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
                 if param:
                     param_desc = param.description if param.description else "No description available"
                     param_lines.append(
-                        f"The {field_name} for this chat is {param.name}: {param_desc}"
+                        f"- **{field_name}**: {param.name}\n  - {param_desc}"
                     )
                 else:
-                    param_lines.append(f"The {field_name} for this chat is {value}")
-                    
+                    param_lines.append(f"- **{field_name}**: {value}")
+
             else:
                 # For text, numerical, or other fields, use the value directly and append the description after a colon
                 if value:
+                    desc = field_description if field_description else "No description available"
                     param_lines.append(
-                        f"The {field_name} for this chat is {value}: {field_description if field_description else 'No description available'}"
+                        f"- **{field_name}**: {value}\n  - {desc}"
                     )
-        
-        # Return as a single user message with all parameters
+
+        # Return as a single user message with all parameters, formatted in markdown
         if param_lines:
             content = "\n".join(param_lines)
             return [{
                 "role": "developer",
-                "content": f"The following are the parameters for this training session:\n{content}"
+                "content": f"The following are the parameters for this training session:\n\n{content}"
             }]
-        
+
         return []
-        
+
     except Exception as e:
         logger.error(f"Error building parameter history from field values: {e}")
         return []
