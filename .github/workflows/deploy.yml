@@ -222,6 +222,7 @@ jobs:
         
         # API and Socket.IO environment variables
         ORIGIN: ${{ secrets.ORIGIN }}
+        CLIENT_PORT: 5007
         
         # WebRTC environment variables
         TURN_URI: ${{ secrets.TURN_URI_PUBLIC }}
