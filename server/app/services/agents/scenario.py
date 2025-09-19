@@ -259,15 +259,20 @@ async def create_document_generation_tool(
     return function_tool(generate_document)
 
 
-async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], session: Session) -> List[Any]:
-    """Create document generation tools for each parameter that has a corresponding template."""
+async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], session: Session) -> tuple[List[Any], List[Dict[str, str]]]:
+    """Create document generation tools for each parameter that has a corresponding template.
+    
+    Returns:
+        tuple: (tools_list, tool_metadata_list) where tool_metadata_list contains dicts with 'name' and 'description' keys
+    """
     tools: List[Any] = []
+    tool_metadata: List[Dict[str, str]] = []
     
     # Get documents service URL
     documents_service_url = os.getenv("DOCUMENTS_SERVICE_URL")
     if not documents_service_url:
         logger.warning("DOCUMENTS_SERVICE_URL not set, skipping document tools creation")
-        return tools
+        return tools, tool_metadata
     
     try:
         # Get available template IDs from documents service
@@ -287,6 +292,20 @@ async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], s
                 parameter = session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
                 if parameter:
                     parameter_name = parameter.name or f"parameter_{str(parameter_id)[:8]}"
+                    
+                    # Get template spec for metadata
+                    async with httpx.AsyncClient() as client:
+                        r = await client.get(f"{documents_service_url}/templates/{parameter_id}/spec", timeout=10.0)
+                        r.raise_for_status()
+                        spec = r.json()
+                    
+                    # Extract metadata
+                    default_filename = spec.get("default_filename")
+                    template_desc = spec.get("template_description")
+                    tool_title = default_filename or parameter_name or f"Template {str(parameter_id)[:8]}"
+                    tool_name = f"{tool_title.lower().replace(' ', '_').replace('-', '_')}_doc"
+                    description = template_desc or f"Generate document using {_humanize(tool_title)} template."
+                    
                     tool = await create_document_generation_tool(
                         parameter_id=parameter_id,
                         template_id=parameter_id,  # one-to-one mapping you're using
@@ -294,6 +313,10 @@ async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], s
                         documents_service_url=documents_service_url,
                     )
                     tools.append(tool)
+                    tool_metadata.append({
+                        'name': tool_name,
+                        'description': description
+                    })
                     logger.info(f"Created document tool for parameter {parameter_name} ({parameter_id})")
                 else:
                     logger.warning(f"Parameter {parameter_id} not found in database")
@@ -304,11 +327,15 @@ async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], s
         logger.error(f"Failed to get available templates: {str(e)}")
         # Continue without tools rather than failing completely
     
-    return tools
+    return tools, tool_metadata
 
 
-async def create_scenario_tools(parameter_ids: List[uuid.UUID], persona_ids: List[uuid.UUID], session: Session) -> List[Any]:
-    """Create all scenario function tools including scenario, objectives, persona prompts, and document generation."""
+async def create_scenario_tools(parameter_ids: List[uuid.UUID], persona_ids: List[uuid.UUID], session: Session) -> tuple[List[Any], List[Dict[str, str]]]:
+    """Create all scenario function tools including scenario, objectives, persona prompts, and document generation.
+    
+    Returns:
+        tuple: (tools_list, document_tool_metadata_list) where document_tool_metadata_list contains dicts with 'name' and 'description' keys for document tools only
+    """
     tools: List[Any] = []
     
     # Add core scenario tools
@@ -341,10 +368,10 @@ async def create_scenario_tools(parameter_ids: List[uuid.UUID], persona_ids: Lis
             # Continue without this persona rather than failing completely
     
     # Add document generation tools for parameters
-    document_tools = await create_document_tools_for_parameters(parameter_ids, session)
+    document_tools, document_tool_metadata = await create_document_tools_for_parameters(parameter_ids, session)
     tools.extend(document_tools)
     
-    return tools
+    return tools, document_tool_metadata
 
 
 async def get_scenario_prompt() -> str:
@@ -477,25 +504,9 @@ async def run_scenario_agent(
         system_prompt = await get_scenario_prompt()
         
         # Create all scenario tools (scenario, objectives, persona prompts, and document generation)
-        scenario_tools = await create_scenario_tools(scenario.parameter_ids, persona_ids, session)
+        scenario_tools, document_tool_metadata = await create_scenario_tools(scenario.parameter_ids, persona_ids, session)
         logger.info(f"Created {len(scenario_tools)} scenario tools")
         
-        # Add tools information for the model to understand what's available
-        tools_info_lines = []
-        for tool in scenario_tools:
-            # Extract tool name and description from the function
-            tool_name = getattr(tool, '__name__', 'unknown_tool')
-            tool_desc = getattr(tool, '__doc__', 'No description available')
-            # Clean up the description (remove extra whitespace)
-            tool_desc = ' '.join(tool_desc.split()) if tool_desc else 'No description available'
-            tools_info_lines.append(f"- {tool_name}: {tool_desc}")
-        
-        if tools_info_lines:
-            tools_info_content = "Available tools for this scenario generation:\n" + "\n".join(tools_info_lines)
-            context_items.append({
-                "role": "developer",
-                "content": tools_info_content
-            })
         
         # Update history with tools information
         history = context_items + parameter_history
@@ -520,7 +531,7 @@ async def run_scenario_agent(
             agent_name="Scenario Generator",
             system_prompt=system_prompt,
             temperature=0.0,
-            tools=scenario_tools,
+            tools=scenario_tools,  # scenario_tools is already just the tools list from the tuple
             parallel_tool_calls=True,
             tool_use_behavior=tool_use_behavior,
         )

@@ -124,6 +124,7 @@ services:
       - HOST=0.0.0.0
     volumes:
       - ./templates:/app/templates
+      - ../files:/app/files
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s

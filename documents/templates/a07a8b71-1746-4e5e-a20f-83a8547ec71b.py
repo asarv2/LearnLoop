@@ -9,12 +9,17 @@ Optional:
 - DEFAULT_FILENAME: str
 """
 
+from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
 # PyLaTeX
 from pylatex import Command, Document, NoEscape, Package  # type: ignore
 from pylatex.utils import bold  # type: ignore
+
+# Define the files directory path
+FILES_DIR = Path(__file__).parent.parent / "files"
+FILES_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_FILENAME = "perf_review"
 TEMPLATE_DESCRIPTION = "A professional performance review template for employee evaluations. Includes employee information, strengths and improvement areas, goal tracking, and reviewer details. Suitable for annual or quarterly performance assessments."
@@ -162,13 +167,44 @@ def render(args: Args) -> bytes:
 """)
     doc.append(goals_section)
 
-    # Compile with latexmk + XeLaTeX; return bytes
-    pdf, _ = doc.generate_pdf(  # type: ignore
-        filepath=None,
-        clean=True,
-        clean_tex=True,
-        compiler="xelatex",
-        latexmk=True,
-        silent=True,
-    )
-    return pdf  # type: ignore
+    # Generate PDF using FILES_DIR
+    import os
+    import time
+    
+    try:
+        # Generate filename with template name and timestamp
+        timestamp = int(time.time())
+        pdf_filename = f"perf_review_{timestamp}"  # No .pdf extension - PyLaTeX adds it
+        pdf_path = FILES_DIR / pdf_filename
+        
+        # Generate PDF to FILES_DIR
+        doc.generate_pdf(
+            filepath=str(pdf_path),
+            clean=True,
+            clean_tex=True,
+            compiler="xelatex",
+            silent=True,
+        )
+        
+        # Check if file was created and has content (PyLaTeX adds .pdf extension)
+        pdf_file_path = pdf_path.with_suffix('.pdf')
+        if not pdf_file_path.exists():
+            raise Exception(f"PDF file was not created at {pdf_file_path}")
+        
+        file_size = pdf_file_path.stat().st_size
+        if file_size == 0:
+            raise Exception(f"PDF file is empty (0 bytes) at {pdf_file_path}")
+        
+        # Read the generated PDF bytes
+        with open(pdf_file_path, 'rb') as f:
+            pdf_bytes = f.read()
+        
+        # Keep the file for later retrieval
+        # pdf_path.unlink()  # Commented out to persist the file
+        
+        return pdf_bytes
+    except Exception as e:
+        # Clean up the generated file if it exists
+        if 'pdf_path' in locals() and pdf_path.exists():
+            pdf_path.unlink()
+        raise Exception(f"PDF generation failed: {e}")
