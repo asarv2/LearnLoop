@@ -1,3 +1,5 @@
-from __future__ import annotations
-
-# Package marker for the audio service.
+# server2 app package
+__all__ = [
+    "bus",
+    "room",
+]

@@ -27,8 +27,7 @@ from app.services.agents.hint import run_hint_agent
 from app.services.agents.scenario import ScenarioResponse, get_scenario_prompt
 from app.utils.chat import (get_conversation_history, get_parameter_history,
                             get_parameter_history_from_field_values,
-                            get_parameter_history_simple,
-                            get_persona_id_from_chat, get_preamble)
+                            get_parameter_history_simple, get_preamble)
 from sqlalchemy import Column, text
 from sqlmodel import select
 
@@ -41,7 +40,7 @@ active_training_runs: Dict[str, Any] = {}
 async def _schedule_hints_for_message(chat_id: str, message_id: str) -> None:
     """Background hint generation keyed to a specific assistant message."""
     try:
-        def _sync(msg_uuid: uuid.UUID):
+        def _sync(msg_uuid: uuid.UUID) -> Dict[str, Any]:
             import asyncio as _asyncio
             return _asyncio.run(run_hint_agent(msg_uuid))
         result = await asyncio.to_thread(_sync, uuid.UUID(message_id))
@@ -457,10 +456,10 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
                 )
                 
                 # Move heavy operations to background to avoid blocking the event loop
-                async def _bg_assessment_and_grading(rubric_id):
+                async def _bg_assessment_and_grading(rubric_id: str | None) -> None:
                     logger.info(f"⚙️ grading background job started (chat_id={chat_id}, rubric_id={rubric_id})")
                     try:
-                        def _run_assessment_sync(cid: uuid.UUID):
+                        def _run_assessment_sync(cid: uuid.UUID) -> Dict[str, Any]:
                             import asyncio as _asyncio
 
                             return _asyncio.run(run_assessment_agent(cid))
@@ -469,13 +468,15 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
                         logger.exception("Assessment background job failed")
                     try:
                         # Fresh session inside background task
-                        def _run_grading_sync(cid: uuid.UUID, rid):
+                        def _run_grading_sync(cid: uuid.UUID, rid: str | None) -> str | None:
                             import asyncio as _asyncio
 
                             from app.db import get_session as _gs
                             sess = next(_gs())
                             try:
-                                return _asyncio.run(run_grading_agent(cid, rid, sess))
+                                if rid:
+                                    return _asyncio.run(run_grading_agent(cid, uuid.UUID(rid), sess))
+                                return None
                             finally:
                                 sess.close()
                         
@@ -497,7 +498,7 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
                             }, room=chat_id)
                     except Exception:
                         logger.exception("Grading background job failed")
-                asyncio.create_task(_bg_assessment_and_grading(rubric_id))
+                asyncio.create_task(_bg_assessment_and_grading(str(rubric_id) if rubric_id else None))
                     
             else:
                 logger.warning(f"No existing assessment found for chat {chat_id}")
@@ -617,8 +618,8 @@ async def handle_training_message_rtc(sid: str, data: Dict[str, Any]) -> None:
         chat_id = data.get("chat_id")
         message = (data.get("message") or "").strip()
 
-        from app.room import get_room
-        room = get_room(chat_id)
+        from app.store import get_room
+        room = get_room(str(chat_id))
         
         # Ensure sender is in the room to receive room-scoped events (no-op if already joined)
         try:
@@ -664,8 +665,10 @@ async def handle_training_message_rtc(sid: str, data: Dict[str, Any]) -> None:
                 except Exception:
                     pass
 
-        # Use room system with OpenAIAgent
-        await room.append_text_chunk(
+        # Use room system with store function
+        from app.store import upsert_text_chunk
+        await upsert_text_chunk(
+            room_id=str(chat_id),
             source_id=sid,     # or profile id
             role="user",
             text=message,
@@ -689,9 +692,9 @@ async def handle_get_hints(sid: str, data: Dict[str, Any]) -> None:
         return
 
     # Fire a background job in a thread so the main loop stays hot.
-    async def _bg():
+    async def _bg() -> None:
         try:
-            def _sync_wrapper(msg_id: uuid.UUID):
+            def _sync_wrapper(msg_id: uuid.UUID) -> Dict[str, Any]:
                 # Run the async hint routine on a dedicated loop in this worker thread
                 import asyncio as _asyncio
                 return _asyncio.run(run_hint_agent(msg_id))
@@ -978,9 +981,9 @@ async def handle_submit_assessment(sid: str, data: Dict[str, Any]) -> None:
         return
         
     # Fire a background job in a thread so the main loop stays hot.
-    async def _bg():
+    async def _bg() -> None:
         try:
-            def _sync_wrapper(cid: uuid.UUID):
+            def _sync_wrapper(cid: uuid.UUID) -> Dict[str, Any]:
                 import asyncio as _asyncio
                 return _asyncio.run(run_feedback_agent(cid))
             feedback_result = await asyncio.to_thread(_sync_wrapper, uuid.UUID(chat_id))

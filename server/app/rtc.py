@@ -15,19 +15,22 @@ from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
                     RTCDataChannel, RTCIceServer, RTCPeerConnection,
                     RTCSessionDescription)
 
-from .bus import PCM_SR, SAMPLES_PER_CHUNK
-from .room import get_room
+from app.bridge import MixedAudioSubscriber, get_bridge
 from .utils.audio_convert import frame_to_i16_mono_safe
+
+# Audio constants
+PCM_SR = 48_000
+SAMPLES_PER_CHUNK = 960  # 20ms @ 48k mono
 
 # ── Emitter hook for RTC layer ─────────────────────────────────────────────────
 _emit_to_sid: Optional[Callable[[str, str, dict], Awaitable[None]]] = None
 
-def set_emitter(fn: Callable[[str, str, dict], Awaitable[None]]):
+def set_emitter(fn: Callable[[str, str, dict], Awaitable[None]]) -> None:
     global _emit_to_sid
     _emit_to_sid = fn
 
-def build_ice_servers():
-    def parse_csv(env):
+def build_ice_servers() -> list[RTCIceServer]:
+    def parse_csv(env: str) -> list[str]:
         return [u.strip() for u in os.getenv(env, "").split(",") if u.strip()]
 
     stun_uris = parse_csv("STUN_URI")
@@ -46,17 +49,18 @@ def build_ice_servers():
 
 class OutboundTrack(MediaStreamTrack):
     kind = "audio"
-    def __init__(self, sub): super().__init__(); self.sub = sub; self._ts = 0
+
+    def __init__(self, mixed_subscriber: MixedAudioSubscriber):
+        super().__init__()
+        self._sub = mixed_subscriber
+        self._ts = 0
+
     async def recv(self) -> av.AudioFrame:
-        # get exactly the next frame in order
-        chunk = await self.sub.recv()
-
-        pcm_i16 = (np.clip(chunk.data, -1, 1) * 32767).astype(np.int16)
-        if len(pcm_i16) < SAMPLES_PER_CHUNK:
-            pcm_i16 = np.pad(pcm_i16, (0, SAMPLES_PER_CHUNK - len(pcm_i16)))
-        elif len(pcm_i16) > SAMPLES_PER_CHUNK:
+        pcm_i16 = await self._sub.recv_i16()
+        if pcm_i16.size < SAMPLES_PER_CHUNK:
+            pcm_i16 = np.pad(pcm_i16, (0, SAMPLES_PER_CHUNK - pcm_i16.size))
+        elif pcm_i16.size > SAMPLES_PER_CHUNK:
             pcm_i16 = pcm_i16[:SAMPLES_PER_CHUNK]
-
         frame = av.AudioFrame(format="s16", layout="mono", samples=SAMPLES_PER_CHUNK)
         frame.planes[0].update(pcm_i16.tobytes())
         frame.sample_rate = PCM_SR
@@ -66,18 +70,13 @@ class OutboundTrack(MediaStreamTrack):
         return frame
 
 class WebRTCSession:
-    def __init__(self, sid: str, room_id: str):
+    def __init__(self, sid: str, room_id: str, human_id: str):
         self.sid = sid
+        self.room_id = room_id
+        self.human_id = human_id
         self.pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=build_ice_servers()))
-        self.room = get_room(room_id)
-        self.room.register_agent(self.sid, "human")
-        # Mark human presence (lazy start OpenAI if first human)
-        try:
-            asyncio.create_task(self.room.human_join(self.sid))
-        except Exception:
-            pass
-        self.subscriber = self.room.bus.subscribe(self.sid)
-        self.out_track = OutboundTrack(self.subscriber)
+        self._mixed_sub: Optional[MixedAudioSubscriber] = None
+        self.out_track: Optional[OutboundTrack] = None
 
         self._consumer_task: Optional[asyncio.Task] = None
         self._text_task: Optional[asyncio.Task] = None
@@ -85,18 +84,11 @@ class WebRTCSession:
         self._pending_ice: list[dict|None] = []
 
         @self.pc.on("track")
-        async def on_track(track: MediaStreamTrack):
+        async def on_track(track: MediaStreamTrack) -> None:
             logger.debug(f"[RTC] got track kind={track.kind}")
             if track.kind != "audio": return
 
-            # tell client "audio bridge ready" (your UI uses this)
-            if _emit_to_sid:
-                # lazy import to avoid circular
-                from app.main import get_profile_id_for_sid
-                pid = get_profile_id_for_sid(self.sid)
-                await _emit_to_sid(self.sid, "webrtc_audio_ready", {"profile_id": pid})
-
-            async def consume():
+            async def consume() -> None:
                 buf = np.empty(0, dtype=np.int16)
                 frames = 0
                 while True:
@@ -108,18 +100,24 @@ class WebRTCSession:
                     buf = np.concatenate([buf, pcm_i16])
                     while len(buf) >= SAMPLES_PER_CHUNK:
                         chunk = buf[:SAMPLES_PER_CHUNK]; buf = buf[SAMPLES_PER_CHUNK:]
-                        await self.room.bus.ingest_i16(self.sid, chunk, PCM_SR)  # prints [BUS] ingest ...
+                        # Send to audio-multi
+                        try:
+                            from app.main import get_socketio_instance
+                            bridge = get_bridge(get_socketio_instance())
+                            await bridge.ingest_frame(room_id=self.room_id, source_id=self.human_id, pcm_i16=chunk, sr=PCM_SR)
+                        except Exception:
+                            logger.exception("audio-multi ingest failed")
             self._consumer_task = asyncio.create_task(consume())
 
         @self.pc.on("datachannel")
-        def on_datachannel(ch: RTCDataChannel):
+        def on_datachannel(ch: RTCDataChannel) -> None:
             logger.debug(f"[RTC] datachannel label={ch.label}")
             if ch.label != "text": 
                 return
             self._text_channel = ch
 
             @ch.on("message")
-            async def on_msg(raw):
+            async def on_msg(raw: str | bytes) -> None:
                 try:
                     obj = json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
                 except Exception:
@@ -137,7 +135,7 @@ class WebRTCSession:
 
                     profile_id = get_profile_id_for_sid(self.sid)
                     # Fire-and-forget the training handler
-                    async def _bg():
+                    async def _bg() -> None:
                         try:
                             await handle_send_training_message(
                                 sid=self.sid,
@@ -149,18 +147,22 @@ class WebRTCSession:
                     asyncio.create_task(_bg())
                     return
 
-                # fallback: if no chat_id or not final, keep existing room append (optional)
-                await self.room.append_text_chunk(
-                    source_id=self.sid, role="user",
-                    text=text,
-                    message_id=obj.get("message_id"),
-                    chunk_idx=int(obj.get("chunk_idx", 0)),
-                    is_final=is_final,
-                    persona_id=None,  # No persona for fallback cases
-                )
+                # fallback: no-op or optionally forward as s2s_user_text
+                if text and is_final:
+                    try:
+                        from app.main import get_socketio_instance
+                        bridge = get_bridge(get_socketio_instance())
+                        await bridge._client.emit("s2s_user_text", bridge._with_auth({
+                            "room_id": self.room_id,
+                            "human_id": self.human_id,
+                            "text": text,
+                        }))
+                    except Exception:
+                        logger.exception("audio-multi user_text failed")
 
-    async def handle_offer(self, offer: Dict[str, Any]):
-        self.pc.addTrack(self.out_track)
+    async def handle_offer(self, offer: Dict[str, Any]) -> Dict[str, str]:
+        if self.out_track is not None:
+            self.pc.addTrack(self.out_track)
         await self.pc.setRemoteDescription(RTCSessionDescription(sdp=offer["sdp"], type=offer["type"]))
         for cand in self._pending_ice: await self._add_ice_internal(cand)
         self._pending_ice.clear()
@@ -168,11 +170,11 @@ class WebRTCSession:
         while self.pc.iceGatheringState != "complete": await asyncio.sleep(0.02)
         return {"type": "answer", "sdp": self.pc.localDescription.sdp}
 
-    async def add_ice(self, candidate: Optional[Dict[str, Any]]):
+    async def add_ice(self, candidate: Optional[Dict[str, Any]]) -> None:
         if self.pc.remoteDescription is None: self._pending_ice.append(candidate)
         else: await self._add_ice_internal(candidate)
 
-    async def _add_ice_internal(self, cand: Optional[Dict[str, Any]]):
+    async def _add_ice_internal(self, cand: Optional[Dict[str, Any]]) -> None:
         if not cand: return
         from aiortc.sdp import candidate_from_sdp  # type: ignore
         c = candidate_from_sdp(cand.get("candidate",""))
@@ -181,18 +183,30 @@ class WebRTCSession:
         if c.sdpMid is None and c.sdpMLineIndex is None: c.sdpMLineIndex = 0
         await self.pc.addIceCandidate(c)
 
-    async def close(self):
+    async def close(self) -> None:
         try:
             if self._consumer_task: self._consumer_task.cancel()
             if self._text_task: self._text_task.cancel()
             await self.pc.close()
         finally:
-            self.room.bus.unsubscribe(self.sid)
-            # On RTC disconnect, update human presence and possibly stop OpenAI
+            # Unsubscribe mixed audio
             try:
-                await self.room.human_leave(self.sid)
+                if self._mixed_sub is not None:
+                    from app.main import get_socketio_instance
+                    bridge = get_bridge(get_socketio_instance())
+                    await bridge.unsubscribe_mix(room_id=self.room_id, subscriber_id=self.sid)
             except Exception:
                 pass
+
+    async def init_mixed_audio(self) -> None:
+        try:
+            from app.main import get_socketio_instance
+            bridge = get_bridge(get_socketio_instance())
+            sub = await bridge.subscribe_mix(room_id=self.room_id, subscriber_id=self.sid)
+            self._mixed_sub = sub
+            self.out_track = OutboundTrack(sub)
+        except Exception:
+            logger.exception("failed to subscribe mixed audio")
 
 # Global session storage
 sessions: Dict[str, WebRTCSession] = {}

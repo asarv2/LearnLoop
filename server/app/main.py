@@ -1,11 +1,12 @@
 # server/app/main.py (REFRESHED, slim)
 import asyncio
+import contextlib
 import logging
 import os
 import sys
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, AsyncIterator, Dict, Optional
 
 # Use uvloop for better performance
 try:
@@ -61,8 +62,8 @@ from app.web.training import \
 register_training_events(sio)
 
 # ── Import new WebRTC primitives (from your NEWMAIN extraction) ───────────────
-from app.rtc import (WebRTCSession, get_room,  # get_room from your new code
-                     sessions)
+from app.rtc import WebRTCSession, sessions
+from app.store import get_room
 
 
 # ── Loop lag watchdog ─────────────────────────────────────────────────────────
@@ -113,6 +114,7 @@ import uuid
 
 # ── Wire RTC emitter ──────────────────────────────────────────────────────────
 from app import rtc
+from app.bridge import get_bridge
 from app.db import session_scope
 from app.models import Profiles
 from app.store import set_emitter
@@ -128,7 +130,7 @@ set_emitter(emit_to_room)
 
 # ── Socket lifecycle (very light) ─────────────────────────────────────────────
 @sio.event
-async def connect(sid, environ, auth):
+async def connect(sid: str, environ: dict, auth: dict) -> bool:
     # Start the loop lag watchdog on first connection (only once)
     if not hasattr(connect, '_watchdog_started'):
         _maybe_start_watchdog()
@@ -180,10 +182,10 @@ async def connect(sid, environ, auth):
     return True
 
 @sio.event
-async def disconnect(sid):
+async def disconnect(sid: str) -> None:
     s = sessions.pop(sid, None)
     if s:
-        await sio.leave_room(sid, s.room.id)
+        await sio.leave_room(sid, s.room_id)
         await s.close()
     # clean sid/profile maps
     pid = SID_TO_PROFILE.pop(sid, None)
@@ -215,7 +217,7 @@ async def _force_close_sid(old_sid: str) -> None:
         old = sessions.pop(old_sid, None)
         if old:
             try:
-                await sio.leave_room(old_sid, old.room.id)
+                await sio.leave_room(old_sid, old.room_id)
             except Exception:
                 pass
             try:
@@ -231,18 +233,17 @@ async def _force_close_sid(old_sid: str) -> None:
 
 # ── WebRTC events (thin shim) ─────────────────────────────────────────────────
 @sio.event
-async def offer(sid, data: Dict[str, Any]):
+async def offer(sid: str, data: Dict[str, Any]) -> None:
     """
     Client sends SDP offer with { room_id: chat_id }.
     We join that room, spin a WebRTCSession, produce an answer.
     """
     room_id = data.get("room_id")
     if not room_id:
-        # if omitted, fall back to a default room (get_room()) but we expect chat_id
-        room_id = get_room().id
+        # if omitted, fall back to a default room but we expect chat_id
+        room_id = "default-room"
 
     await sio.enter_room(sid, room_id)
-    room = get_room(room_id)
 
     # remember who this socket/user is for this room
     try:
@@ -250,53 +251,51 @@ async def offer(sid, data: Dict[str, Any]):
     except Exception:
         sess = None
     pid_from_session = (sess or {}).get("profile_id") if isinstance(sess, dict) else None
-    room.user_profile_id = pid_from_session or get_profile_id_for_sid(sid)
+    room_user_profile_id = pid_from_session or get_profile_id_for_sid(sid)
 
-    # hook up text broadcast once (idempotent)
-    if room.on_text_chunk is None:
-        async def _broadcast(payload):
-            await sio.emit("text_chunk", payload, room=room.id)
-        room.on_text_chunk = _broadcast
+    # Start a corresponding room in audio-multi (id == chat_id) and register this human
+    try:
+        bridge = get_bridge(sio)
+        # Minimal dynamic config; replace with real scenario data from DB if desired
+        config = {
+            "require_users": True,
+            "enable_word_timestamps": True,
+            "name": None,
+            "problem_statement": None,
+            "objectives": [],
+            "agents": [
+                {"id": "agent:Assistant", "voice": "alloy", "instructions": "Be helpful."}
+            ],
+        }
+        await bridge.start_room(room_id=room_id, config=config)
+        human_id = f"user:{room_user_profile_id}" if room_user_profile_id else f"user:{sid[-6:]}"
+        await bridge.register_human(room_id=room_id, human_id=human_id)
+    except Exception:
+        logger.exception("failed to start/register room in audio")
 
-    # Wire transcript broadcasters if not set
-    if room.on_transcript is None:
-        async def _broadcast_tx(payload):
-            try:
-                print(f"[ctc][emit] transcript words={len(payload.get('words', []))} msg={payload.get('message_id')} room={payload.get('room_id')}")
-            except Exception:
-                pass
-            await sio.emit("transcript", payload, room=room.id)
-        room.on_transcript = _broadcast_tx
+    # On offer, ensure the mixed audio subscription is active for this sid
+    try:
+        s = sessions.get(sid)
+        if s is None:
+            # Use profile id (if available) for human_id identity
+            human_id = f"user:{room_user_profile_id}" if room_user_profile_id else f"user:{sid[-6:]}"
+            s = WebRTCSession(sid, room_id, human_id)
+            sessions[sid] = s
+        await s.init_mixed_audio()
+    except Exception:
+        logger.exception("failed to init mixed audio for sid=%s", sid)
 
-    if room.on_transcript_stop is None:
-        async def _broadcast_tx_stop(payload):
-            try:
-                print(f"[ctc][emit] transcript_stop msg={payload.get('message_id')} stop_ts={payload.get('stop_ts_ms')} room={payload.get('room_id')}")
-            except Exception:
-                pass
-            await sio.emit("transcript_stop", payload, room=room.id)
-        room.on_transcript_stop = _broadcast_tx_stop
-
-    if sid not in sessions:
-        sessions[sid] = WebRTCSession(sid, room_id)
-    else:
-        # If an old session exists for this sid, close it and recreate to avoid audio deadlocks
-        try:
-            old = sessions.pop(sid)
-            await old.close()
-        except Exception:
-            pass
-        sessions[sid] = WebRTCSession(sid, room_id)
+    # sessions[sid] is created above with proper human_id
 
     ans = await sessions[sid].handle_offer(data)
     await sio.emit("answer", ans, room=sid)
 
     # ✅ tell the client the server's out track is ready to play
-    pid = pid_from_session or get_profile_id_for_sid(sid)
+    pid = room_user_profile_id
     await sio.emit("webrtc_audio_ready", {"profile_id": pid}, room=sid)
 
 @sio.event
-async def ice_candidate(sid, data: Dict[str, Any]):
+async def ice_candidate(sid: str, data: Dict[str, Any]) -> None:
     if sid in sessions:
         await sessions[sid].add_ice(data.get("candidate"))
 
@@ -309,3 +308,25 @@ async def root_info() -> JSONResponse:
 @fastapi_app.get("/health")
 async def health_check() -> JSONResponse:
     return JSONResponse(content={"status": "ok"})
+
+
+# ── Lifespan management ───────────────────────────────────────────────────
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
+    # Startup: connect to audio-multi bridge
+    bridge = get_bridge(sio)
+    bridge_task = asyncio.create_task(bridge.start())
+    
+    yield
+    
+    # Shutdown: cleanup bridge connection
+    try:
+        bridge_task.cancel()
+        await bridge_task
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.exception("Error during bridge shutdown")
+
+# Apply lifespan to FastAPI app
+fastapi_app.router.lifespan_context = lifespan

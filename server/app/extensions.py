@@ -3,13 +3,13 @@ import os
 from pathlib import Path
 from typing import Optional
 
-import redis.asyncio as redis 
+import redis.asyncio as redis
 from dotenv import load_dotenv
 
 load_dotenv()
 
 BASE = Path(__file__).resolve().parents[2]
-AUDIO_DIR = BASE / "audio"
+AUDIO_DIR = BASE / "server" /"audio"
 
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -96,7 +96,7 @@ async def find_profile_by_socket(socket_id: str) -> Optional[str]:
         async for key in redis_client.scan_iter(match="socket_owner:*"):
             owner_sid = await redis_client.get(key)
             if owner_sid and owner_sid.decode('utf-8') == socket_id:
-                return key.decode('utf-8').replace('socket_owner:', '')
+                return str(key.decode('utf-8').replace('socket_owner:', ''))
         return None
     except Exception as e:
         logger.error(f"Redis error finding profile by socket {socket_id}: {e}")
