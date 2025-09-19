@@ -1,4 +1,4 @@
-.PHONY: help setup install clean format lint typecheck run prod test test-cov cleanup generate-models generate-tests stop test-fast test-slow test-unit test-integration typecheck-strict
+.PHONY: help setup install clean format lint typecheck run prod test test-cov cleanup generate-tests stop test-fast test-slow test-unit test-integration typecheck-strict
 
 # Default Python interpreter
 PYTHON := python3.11
@@ -87,11 +87,6 @@ typecheck-strict: check-venv
 	@$(VENV_PYTHON) -m mypy app --strict
 	@echo "✅ Strict type checking complete"
 
-# Generate SQLModel classes from database schema
-generate-models: check-venv
-	@echo "Generating SQLModel classes from database schema..."
-	@$(VENV_PYTHON) scripts/generate_models.py
-	@echo "✅ Models generated"
 
 # Generate pytest tests for routes and services
 generate-tests: check-venv
@@ -130,7 +125,7 @@ run: check-venv
 	@trap 'echo ""; echo "🛑 Stopping all services..."; pkill -f "redis-server.*$(REDIS_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(SERVER_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(MODEL_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(DOCUMENTS_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(AUDIO_PORT)" 2>/dev/null || true; pkill -f "next dev" 2>/dev/null || true; echo "✅ All services stopped"; exit 0' INT; \
 	exec 2>/dev/null; \
 	(redis-server --port $(REDIS_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;31m[REDIS]\033[0m %s' "$$line")"; done) & \
-	(cd server && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(SERVER_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;32m[SERVER]\033[0m %s' "$$line")"; done) & \
+	(cd server && (echo "Generating SQLModel classes from database schema..." && $(PWD)/$(VENV_PYTHON) scripts/generate_models.py && echo "✅ Models generated" && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(SERVER_PORT)) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;32m[SERVER]\033[0m %s' "$$line")"; done) & \
 	(cd model && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(MODEL_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;33m[MODEL]\033[0m %s' "$$line")"; done) & \
 	(cd documents && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(DOCUMENTS_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;34m[DOCS]\033[0m %s' "$$line")"; done) & \
 	(cd audio && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(AUDIO_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;36m[AUDIO]\033[0m %s' "$$line")"; done) & \
@@ -195,7 +190,6 @@ help:
 	@echo "  cleanup      - Clean up generated files and cache"
 	@echo ""
 	@echo "Code generation:"
-	@echo "  generate-models - Generate SQLModel classes from database schema"
 	@echo "  generate-tests  - Generate pytest tests"
 	@echo ""
 	@echo "Service URLs:"

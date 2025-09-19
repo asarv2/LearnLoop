@@ -206,39 +206,6 @@ def get_parameter_history(
         logger.error(f"Error fetching parameter history for chat {chat.id}: {e}")
         return []
 
-def get_text_formatted_instructions(
-    instructions: List[TResponseInputItem],
-    history_format: bool = True,
-) -> str:
-    """
-    Get the conversation history formatted as text with YOU/USER labels,
-    or just concatenate content if history_format is False.
-
-    Args:
-        instructions: List of Messages objects from the database
-        history_format: Whether to include role labels
-
-    Returns:
-        Text-formatted conversation history
-    """
-    formatted_lines = []
-
-    for message in instructions:
-        content = message.get("content", None)
-        if not content:
-            continue
-        if history_format:
-            role = message.get("role", None)
-            if role == 'user':
-                formatted_lines.append(f"USER: {content}")
-            elif role == 'assistant':
-                formatted_lines.append(f"YOU: {content}")
-        else:
-            formatted_lines.append(str(content))
-
-    return "\n\n".join(formatted_lines)
-
-
 
 def get_assessment_history(
     assessment: Assessments,
@@ -597,3 +564,107 @@ def get_parameter_history_from_scenario(
     except Exception as e:
         logger.error(f"Error building parameter history from scenario {scenario.id}: {e}")
         return []
+
+
+def get_audio_config(chat_id: str) -> dict:
+    """
+    Generate audio bridge configuration for a given chat_id.
+    
+    Args:
+        chat_id: The UUID string of the chat
+        
+    Returns:
+        Dictionary containing the audio bridge configuration
+    """
+    try:
+        # Use a fresh session for this operation
+        fresh_session = next(get_session())
+        try:
+            # Get the chat object
+            chat = fresh_session.exec(select(Chats).where(Chats.id == chat_id)).one_or_none()
+            if not chat:
+                logger.warning(f"Chat {chat_id} not found, using default config")
+                return _get_default_audio_config()
+            
+            # Get the scenario object
+            scenario = None
+            if chat.scenario_id:
+                scenario = fresh_session.exec(select(Scenarios).where(Scenarios.id == chat.scenario_id)).one_or_none()
+            
+            # Build the base configuration from chat object
+            config = {
+                "idle_timeout": chat.idle_timeout or 30,
+                "require_users": getattr(chat, 'require_users', True),  # Use chat attribute, default to True
+                "max_turns": chat.max_turns or {},
+                "prompts": chat.prompts or {},
+                "persona_mappings": chat.persona_mapping or {},
+                "persona_ids": [str(pid) for pid in (chat.persona_ids or [])],
+            }
+            
+            # Add scenario data if available
+            if scenario:
+                config.update({
+                    "name": scenario.title,
+                    "problem_statement": scenario.problem_statement,
+                    "objectives": scenario.objectives or [],
+                })
+            else:
+                config.update({
+                    "name": None,
+                    "problem_statement": None,
+                    "objectives": [],
+                })
+            
+            # Build agents from persona_ids
+            agents = []
+            if chat.persona_ids:
+                for persona_id in chat.persona_ids:
+                    persona = fresh_session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+                    if persona:
+                        # Determine if this is a user or agent based on profile_id
+                        is_user = persona.profile_id is not None
+                        prefix = "user" if is_user else "agent"
+                        
+                        agent = {
+                            "id": f"{prefix}:{persona.name}",
+                            "name": persona.name,
+                            "description": persona.description or "",
+                            "voice": persona.voice,
+                            "profile_id": str(persona.profile_id) if persona.profile_id else None,
+                            "user": is_user,
+                        }
+                        agents.append(agent)
+            
+            config["agents"] = agents
+            
+            # Add enable_word_timestamps (default to True as per current implementation)
+            config["enable_word_timestamps"] = True
+            
+            logger.info(f"Generated audio config for chat {chat_id} with {len(agents)} agents")
+            return config
+            
+        finally:
+            fresh_session.close()
+            
+    except Exception as e:
+        logger.error(f"Error generating audio config for chat {chat_id}: {e}")
+        return _get_default_audio_config()
+
+
+def _get_default_audio_config() -> dict:
+    """
+    Return the default audio configuration as fallback.
+    """
+    return {
+        "require_users": True,
+        "enable_word_timestamps": True,
+        "name": None,
+        "problem_statement": None,
+        "objectives": [],
+        "idle_timeout": 30,
+        "max_turns": {},
+        "prompts": {},
+        "persona_mappings": {},
+        "persona_ids": [],
+        "agents": [],
+    }

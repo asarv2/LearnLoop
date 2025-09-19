@@ -118,6 +118,7 @@ class Trainings(_Base, table=True):
     active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
     what_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_to_do', ARRAY(Text())))
     what_not_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_not_to_do', ARRAY(Text())))
+    profile_ids: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('profile_ids', ARRAY(Uuid(as_uuid=True))))
 
     logs: List['Logs'] = Relationship(back_populates='training')
     scenarios: List['Scenarios'] = Relationship(back_populates='training')
@@ -320,6 +321,7 @@ class Chats(_Base, table=True):
     persona_mapping: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('persona_mapping', JSONB))
     prompts: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompts', JSONB))
     max_turns: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('max_turns', JSONB))
+    require_users: bool = Field(sa_column=Column('require_users', Boolean, default=True))
     completed_at: Optional[datetime] = Field(default=None, sa_column=Column('completed_at', DateTime(True)))
     trace_id: Optional[str] = Field(default=None, sa_column=Column('trace_id', Text, comment='for openAI traces'))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))

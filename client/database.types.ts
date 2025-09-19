@@ -107,6 +107,7 @@ export type Database = {
           persona_mapping: Json
           profile_id: string | null
           prompts: Json
+          require_users: boolean
           scenario_id: string | null
           title: string
           trace_id: string | null
@@ -127,6 +128,7 @@ export type Database = {
           persona_mapping?: Json
           profile_id?: string | null
           prompts?: Json
+          require_users?: boolean
           scenario_id?: string | null
           title: string
           trace_id?: string | null
@@ -147,6 +149,7 @@ export type Database = {
           persona_mapping?: Json
           profile_id?: string | null
           prompts?: Json
+          require_users?: boolean
           scenario_id?: string | null
           title?: string
           trace_id?: string | null
