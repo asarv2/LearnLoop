@@ -90,6 +90,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [additionalPrompt, setAdditionalPrompt] = useState("");
   const [draftProblem, setDraftProblem] = useState<string>("");
   const [draftObjectives, setDraftObjectives] = useState<string[]>([]);
+  const [draftDocumentIds, setDraftDocumentIds] = useState<string[]>([]);
   const [savedScenarioId, setSavedScenarioId] = useState<string | null>(null);
 
   // Custom persona state for global access
@@ -209,6 +210,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       }
       setDraftProblem(d.problem_statement || "");
       setDraftObjectives(Array.isArray(d.objectives) ? d.objectives : []);
+      setDraftDocumentIds(Array.isArray(d.document_ids) ? d.document_ids : []);
       setShowGenerateModal(false);
       setIsGenerating(false);
       // Hide the progress shortly after completion
@@ -1189,31 +1191,35 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                           </Box>
 
                           {/* Specifics Section - Document Previews */}
-                          {scenario?.document_ids &&
-                            scenario.document_ids.length > 0 && (
-                              <Box>
-                                <Text size="2" weight="bold" mb="3">
-                                  Specifics
-                                </Text>
-                                <Flex
-                                  wrap="wrap"
-                                  gap="3"
-                                  style={{
-                                    maxWidth: "600px", // 5 cards * 120px + 4 gaps * 12px = 648px, so 600px fits nicely
-                                  }}
-                                >
-                                  {scenario.document_ids.map((docId) => (
-                                    <DocumentPreviewCard
-                                      key={docId}
-                                      documentId={docId}
-                                      onClick={() =>
-                                        setSelectedDocument({ id: docId })
-                                      }
-                                    />
-                                  ))}
-                                </Flex>
-                              </Box>
-                            )}
+                          {((draftDocumentIds && draftDocumentIds.length > 0) ||
+                            (scenario?.document_ids &&
+                              scenario.document_ids.length > 0)) && (
+                            <Box>
+                              <Text size="2" weight="bold" mb="3">
+                                Specifics
+                              </Text>
+                              <Flex
+                                wrap="wrap"
+                                gap="3"
+                                style={{
+                                  maxWidth: "600px", // 5 cards * 120px + 4 gaps * 12px = 648px, so 600px fits nicely
+                                }}
+                              >
+                                {(draftDocumentIds.length > 0
+                                  ? draftDocumentIds
+                                  : scenario?.document_ids || []
+                                ).map((docId) => (
+                                  <DocumentPreviewCard
+                                    key={docId}
+                                    documentId={docId}
+                                    onClick={() =>
+                                      setSelectedDocument({ id: docId })
+                                    }
+                                  />
+                                ))}
+                              </Flex>
+                            </Box>
+                          )}
 
                           {renderGenerateProgress()}
                         </Flex>
