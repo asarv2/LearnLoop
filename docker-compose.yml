@@ -55,7 +55,7 @@ services:
       - ORIGIN=${ORIGIN}
       - REDIS_URL=redis://learnloop-redis:6379
       - MODEL_SERVICE_URL=http://learnloop-model:8000
-      - DOCUMENTS_SERVICE_URL=http://learnloop-documents:8002
+      - DOCUMENTS_SERVICE_URL=http://learnloop-documents:8000
 
       # webrtc
       - STUN_URI=stun:learnloop-webrtc:3479
@@ -109,10 +109,10 @@ services:
     networks:
       - web
     environment:
-      - PORT=8002
+      - PORT=8000
       - HOST=0.0.0.0
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 3
