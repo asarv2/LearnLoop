@@ -1,5 +1,4 @@
 .env
-/audio/
 .mypy_cache/
 .ruff_cache/
 .coverage
