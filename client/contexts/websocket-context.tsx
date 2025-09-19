@@ -270,6 +270,7 @@ export function WebSocketProvider({
         title: string;
         problem_statement: string;
         objectives: string[];
+        document_ids: string[];
       }) => {
         logInfo("Scenario generated", data);
         if (data.success) {

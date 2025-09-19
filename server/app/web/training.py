@@ -982,6 +982,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 title = result.get("title", "")
                 problem_statement = result.get("problem_statement", "")
                 objectives = result.get("objectives", [])
+                document_ids = result.get("document_ids", [])
                 child_scenario_id = result.get("child_scenario_id")
 
 
@@ -994,6 +995,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                         "title": title,
                         "problem_statement": problem_statement,
                         "objectives": objectives,
+                        "document_ids": document_ids,
                     },
                     room=sid,
                 )
