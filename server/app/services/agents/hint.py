@@ -1,10 +1,10 @@
 import logging
 import uuid
-from pathlib import Path
 from typing import Any, List, Optional
 
 from agents import Runner, TResponseInputItem, trace
 from app.db import get_session
+from app.extensions import load_prompt
 from app.models import Chats, Hints, Messages
 from app.services.agents.generic import GenericAgent
 from app.utils.chat import get_conversation_history
@@ -20,25 +20,7 @@ class HintResponse(BaseModel):
 
 async def get_hint_prompt() -> str:
     """Read the hint prompt from the markdown file."""
-    # Try multiple possible paths for different environments
-    possible_paths = [
-        Path(__file__).parent.parent.parent / "lib" / "prompts" / "hint.md",  # Local development
-        Path("/app/app/lib/prompts/hint.md"),  # Docker container
-        Path("/app/lib/prompts/hint.md"),  # Alternative Docker path
-    ]
-    
-    for prompt_path in possible_paths:
-        if prompt_path.exists():
-            try:
-                with open(prompt_path, "r", encoding="utf-8") as f:
-                    return f.read().strip()
-            except Exception as e:
-                logger.error(f"Error reading hint prompt from {prompt_path}: {str(e)}")
-                continue
-    
-    # If none of the paths work, log all attempted paths and raise error
-    logger.error(f"Hint prompt file not found. Tried paths: {[str(p) for p in possible_paths]}")
-    raise FileNotFoundError(f"Hint prompt file not found. Tried paths: {[str(p) for p in possible_paths]}")
+    return await load_prompt("hint")
 
 
 async def run_hint_agent(

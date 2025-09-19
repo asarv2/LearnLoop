@@ -122,6 +122,23 @@ async def root() -> Dict[str, str]:
 async def health_check() -> HealthResponse:
     return HealthResponse(status="healthy", service="documents", version="0.3.0")
 
+@app.get("/templates")
+async def list_templates() -> JSONResponse:
+    """
+    List all available template IDs by scanning the templates directory.
+    """
+    template_ids = []
+    for template_file in TEMPLATES_DIR.glob("*.py"):
+        if template_file.name != "__init__.py":
+            try:
+                template_id = UUID(template_file.stem)
+                template_ids.append(str(template_id))
+            except ValueError:
+                # Skip files that don't have valid UUID names
+                continue
+    
+    return JSONResponse(content={"template_ids": template_ids})
+
 @app.get("/templates/{template_id}/spec")
 async def get_template_spec(template_id: UUID) -> JSONResponse:
     """
