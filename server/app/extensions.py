@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE = Path(__file__).resolve().parents[2]
-PROMPTS_DIR = BASE / "server" /"prompts"
+BASE = Path(__file__).resolve().parents[1]
+PROMPTS_DIR = BASE / "prompts"
 
 PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -112,3 +112,34 @@ async def cleanup_redis_client() -> None:
     if redis_client:
         await redis_client.close()
         logger.info("Redis client closed")
+
+
+# ---------- prompt loading utilities ----------
+
+async def load_prompt(prompt_name: str) -> str:
+    """
+    Load a prompt from the PROMPTS_DIR.
+    
+    Args:
+        prompt_name: Name of the prompt file (e.g., "grade", "hint", "scenario")
+        
+    Returns:
+        Content of the prompt file
+        
+    Raises:
+        FileNotFoundError: If the prompt file is not found
+    """
+    prompt_file = PROMPTS_DIR / f"{prompt_name}.md"
+    
+    if not prompt_file.exists():
+        logger.error(f"Prompt file not found: {prompt_file}")
+        raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
+    
+    try:
+        with open(prompt_file, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+        logger.info(f"Successfully loaded prompt: {prompt_name}")
+        return content
+    except Exception as e:
+        logger.error(f"Error reading prompt file {prompt_file}: {str(e)}")
+        raise

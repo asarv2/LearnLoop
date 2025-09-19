@@ -2,16 +2,16 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any, List
+from typing import Any, Dict, List
 
-from agents import Runner, trace
-from anyio import Path
+from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
 from app.db import get_session
+from app.extensions import load_prompt
 from app.models import (Assessments, Chats, Messages, RubricGrades, Rubrics,
                         StandardGrades, Standards)
 from app.services.agents.generic import GenericAgent
 from app.utils.chat import get_conversation_history, get_dynamic_rubric
-from pydantic import BaseModel, Field, create_model
+from pydantic import Field
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -32,63 +32,108 @@ def create_safe_field_name(standard_name: str) -> str:
     return safe_name
 
 
-def create_dynamic_rubric_model(standards: List[Standards]) -> type[BaseModel]:
-    """
-    Create a dynamic Pydantic model based on the rubric's standards.
+# Global storage for grading results
+grading_results: Dict[str, Any] = {}
+grading_progress: Dict[str, bool] = {}
 
-    Args:
-        standards: List of standards for this rubric
 
-    Returns:
-        Dynamic Pydantic model class
-    """
-    fields: dict[str, Any] = {}
+def create_grading_function(standard: Standards) -> Any:
+    """Create a function tool for a specific standard."""
+    safe_name = create_safe_field_name(standard.name)
+    
+    async def grade_standard(
+        score: int = Field(ge=1, le=5, description=f"Score for {standard.name} (1-5)"),
+        feedback: str = Field(default="", description=f"Feedback for {standard.name}")
+    ) -> str:
+        f"""Grade the conversation on the standard: {standard.name}
+        
+        This function evaluates the conversation against the standard: {standard.name}
+        
+        Args:
+            score: Integer score from 1-5 based on the rubric criteria
+            feedback: Brief feedback explaining the score
+            
+        Returns:
+            Confirmation message of the grading
+        """
+        grading_results[safe_name] = {
+            'score': score,
+            'feedback': feedback
+        }
+        grading_progress[safe_name] = True
+        logger.info(f"✓ Graded {standard.name}: {score}/5 - {feedback[:50]}...")
+        return f"Graded {standard.name} with score {score}"
+    
+    # Set the function name dynamically
+    grade_standard.__name__ = f"grade_{safe_name}"
+    
+    # Apply the function_tool decorator
+    return function_tool(grade_standard)
 
+
+def create_strengths_function() -> Any:
+    """Create a function tool for identifying strengths."""
+    
+    async def identify_strengths(
+        strengths: str = Field(description="Key strengths observed in the conversation")
+    ) -> str:
+        """Identify the main strengths demonstrated in the conversation.
+        
+        Args:
+            strengths: List of key strengths with specific examples
+            
+        Returns:
+            Confirmation message
+        """
+        grading_results['strengths'] = strengths
+        grading_progress['strengths'] = True
+        logger.info(f"✓ Identified strengths: {strengths[:50]}...")
+        return f"Identified strengths: {strengths}"
+    
+    return function_tool(identify_strengths)
+
+
+def create_improvements_function() -> Any:
+    """Create a function tool for identifying areas for improvement."""
+    
+    async def identify_improvements(
+        improvements: str = Field(description="Areas for improvement in the conversation")
+    ) -> str:
+        """Identify areas where the conversation could be improved.
+        
+        Args:
+            improvements: List of specific areas for improvement with suggestions
+            
+        Returns:
+            Confirmation message
+        """
+        grading_results['improvements'] = improvements
+        grading_progress['improvements'] = True
+        logger.info(f"✓ Identified improvements: {improvements[:50]}...")
+        return f"Identified improvements: {improvements}"
+    
+    return function_tool(identify_improvements)
+
+
+def create_grading_tools(standards: List[Standards]) -> List[Any]:
+    """Create all grading function tools for the standards plus strengths/improvements."""
+    tools = []
+    
+    # Create tools for each standard
     for standard in standards:
-        # Create safe field names by removing special characters and spaces
-        safe_name = create_safe_field_name(standard.name)
-
-        # Create field for the score (1-5)
-        score_field_name = f"{safe_name}_score"
-        fields[score_field_name] = (
-            int,
-            Field(ge=1, le=5, description=f"Score for {standard.name} (1-5)"),
-        )
-
-        # Create field for the feedback
-        feedback_field_name = f"{safe_name}_feedback"
-        fields[feedback_field_name] = (
-            str,
-            Field(description=f"Feedback for {standard.name}"),
-        )
-
-    # Add overall fields
-    fields["summary"] = (str, Field(description="Overall summary of the grading"))
-
-    return create_model("DynamicRubricGrade", **fields)  # type: ignore
+        tool = create_grading_function(standard)
+        tools.append(tool)
+    
+    # Add strengths and improvements tools
+    tools.append(create_strengths_function())
+    tools.append(create_improvements_function())
+    
+    return tools
 
 
 async def get_grade_prompt() -> str:
     """Read the grade prompt from the markdown file."""
-    # Try multiple possible paths for different environments
-    possible_paths = [
-        Path(__file__).parent.parent.parent / "lib" / "prompts" / "grade.md",  # Local development
-        Path("/app/app/lib/prompts/grade.md"),  # Docker container
-        Path("/app/lib/prompts/grade.md"),  # Alternative Docker path
-    ]
-    
-    for prompt_path in possible_paths:
-        if prompt_path.exists():
-            try:
-                with open(prompt_path, "r", encoding="utf-8") as f:
-                    return f.read().strip()
-            except Exception as e:
-                logger.error(f"Error reading grade prompt from {prompt_path}: {str(e)}")
-                continue
-    
-    # If none of the paths work, log all attempted paths and raise error
-    logger.error(f"Grade prompt file not found. Tried paths: {[str(p) for p in possible_paths]}")
-    raise FileNotFoundError(f"Grade prompt file not found. Tried paths: {[str(p) for p in possible_paths]}")
+    return await load_prompt("grade")
 
 
 async def run_grading_agent(
@@ -108,6 +153,11 @@ async def run_grading_agent(
         A string of the rubric_grade id.
     """
     try:
+        # Clear previous results
+        global grading_results, grading_progress
+        grading_results.clear()
+        grading_progress.clear()
+        
         # Get the chat from the chat_id
         chat = session.exec(select(Chats).where(Chats.id == chat_id)).one()
         if not chat:
@@ -144,31 +194,34 @@ async def run_grading_agent(
             raise ValueError(f"No standards found for rubric {rubric_id}")
 
         logger.info(
-            f"Starting grading for chat {chat_id} with rubric {rubric.name}"
+            f"Starting parallel grading for chat {chat_id} with rubric {rubric.name}"
         )
         logger.info(f"Found {len(standards)} standards")
 
-        # Build dynamic rubric using utility function
+        # Build rubric input using utility function
         rubric_input = get_dynamic_rubric(rubric, list(standards))
 
-        # Create dynamic Pydantic model for the rubric
-        DynamicRubric = create_dynamic_rubric_model(list(standards))
-
-        # Log the expected field names for debugging
-        expected_fields = []
-        for standard in standards:
-            safe_name = create_safe_field_name(standard.name)
-            expected_fields.extend([f"{safe_name}_score", f"{safe_name}_feedback"])
-        logger.info(f"Expected model fields: {expected_fields}")
+        # Create grading tools
+        grading_tools = create_grading_tools(list(standards))
+        
+        # Create tool use behavior to wait for all tools to be called
+        def tool_use_behavior(context: Any, tool_results: list[Any]) -> ToolsToFinalOutputResult:
+            expected_tool_count = len(standards) + 2  # standards + strengths + improvements
+            return ToolsToFinalOutputResult(
+                is_final_output=len(tool_results) >= expected_tool_count
+            )
 
         system_prompt = await get_grade_prompt()
 
-        # Create a simple grading agent
+        # Create grading agent with parallel tool calls
         grading_agent = GenericAgent(
-            agent_name="Grading Agent",
+            agent_name="Parallel Grading Agent",
             system_prompt=system_prompt,
             temperature=0.0,
-            output_type=DynamicRubric,
+            tools=grading_tools,
+            parallel_tool_calls=True,
+            reasoning_effort="low",
+            tool_use_behavior=tool_use_behavior,
         )
 
         agent_instance = grading_agent.agent()
@@ -176,13 +229,24 @@ async def run_grading_agent(
         # Prepare input with rubric and conversation history
         input_items = [rubric_input] + conversation_history
 
-        # Run the grading
-        logger.info("Running grading agent...")
+        # Run the grading with parallel tool calls
+        logger.info("Running parallel grading agent...")
         with trace(chat.title, trace_id=chat.trace_id, group_id=str(assessment.id)):
             result = await Runner.run(agent_instance, input=input_items)
 
-        grading_result = result.final_output_as(DynamicRubric)
-        logger.info("Grading agent completed successfully")
+        logger.info("Parallel grading agent completed successfully")
+        
+        # Check if all tools were called
+        expected_tools = len(standards) + 2  # standards + strengths + improvements
+        completed_tools = len(grading_progress)
+        logger.info(f"Grading completed: {completed_tools}/{expected_tools} tools called")
+        
+        if completed_tools < expected_tools:
+            missing_tools = [name for name, completed in grading_progress.items() if not completed]
+            logger.warning(f"Missing tool calls for: {missing_tools}")
+        
+        # Extract results from the global storage
+        grading_result = grading_results
 
         # Calculate time taken - ensure both times are in UTC
         current_time = datetime.now(timezone.utc)
@@ -201,8 +265,17 @@ async def run_grading_agent(
             f"Time calculation: current={current_time}, created={chat_created_at}, taken={time_taken}s"
         )
 
-        # get overall summary
-        summary = getattr(grading_result, "summary", "")
+        # Get strengths and improvements from the results
+        strengths = grading_result.get('strengths', '')
+        improvements = grading_result.get('improvements', '')
+        
+        # Create overall summary combining strengths and improvements
+        summary_parts = []
+        if strengths:
+            summary_parts.append(f"Strengths: {strengths}")
+        if improvements:
+            summary_parts.append(f"Areas for Improvement: {improvements}")
+        summary = "\n\n".join(summary_parts) if summary_parts else "Grading completed"
 
         # Create standard grade records for each standard and calculate total score
         standard_grade_count = 0
@@ -213,13 +286,11 @@ async def run_grading_agent(
             # Create safe field names (same logic as in model creation)
             safe_name = create_safe_field_name(standard.name)
 
-            # Get the score and feedback for this standard
-            score_field = f"{safe_name}_score"
-            feedback_field = f"{safe_name}_feedback"
-
             try:
-                standard_score = getattr(grading_result, score_field, 0)
-                standard_feedback = getattr(grading_result, feedback_field, "")
+                # Get the score and feedback from the grading results
+                standard_data = grading_result.get(safe_name, {})
+                standard_score = standard_data.get('score', 0)
+                standard_feedback = standard_data.get('feedback', '')
 
                 # Ensure standard_score is a valid integer
                 if not isinstance(standard_score, (int, float)):
@@ -241,7 +312,7 @@ async def run_grading_agent(
                 })
                 standard_grade_count += 1
                 score += standard_score
-            except AttributeError as e:
+            except Exception as e:
                 logger.error(
                     f"Failed to get grading data for standard {standard.name}: {e}"
                 )

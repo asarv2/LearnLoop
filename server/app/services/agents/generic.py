@@ -1,8 +1,9 @@
 import os
 import uuid
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator, Callable, Dict, Optional
 
-from agents import Agent, ModelSettings, Runner, Tool, trace
+from agents import (Agent, ModelSettings, Runner, Tool,
+                    ToolsToFinalOutputResult, trace)
 from agents.items import TResponseInputItem
 from agents.models.openai_responses import OpenAIResponsesModel
 from app.db import get_session
@@ -10,6 +11,7 @@ from app.models import Personas
 from dotenv import load_dotenv
 from fastapi import Depends
 from openai import AsyncOpenAI
+from openai.types import Reasoning
 from openai.types.responses import ResponseTextDeltaEvent
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -63,27 +65,52 @@ class GenericAgent:
         temperature: float,
         model: str = "gpt-4.1",
         tools: list[Tool] = [],
-        output_type: type[BaseModel] | None = None
+        output_type: type[BaseModel] | None = None,
+        parallel_tool_calls: bool = False,
+        reasoning_effort: str | None = None,
+        tool_use_behavior: Optional[Callable] = None,
+        include_usage: bool = True
     ):
         self.agent_name = agent_name
         self.system_prompt = system_prompt
         self.temperature = temperature
-        self.output_type = output_type
         self.model = model
         self.tools = tools
+        self.output_type = output_type
+        self.parallel_tool_calls = parallel_tool_calls
+        self.reasoning_effort = reasoning_effort
+        self.tool_use_behavior = tool_use_behavior
+        self.include_usage = include_usage
 
     def agent(self) -> Agent:
-        return Agent(
+        # Create model settings with proper typing
+        model_settings = ModelSettings(
+            temperature=self.temperature,
+            include_usage=self.include_usage,
+        )
+        
+        # Add parallel tool calls and reasoning if enabled
+        if self.parallel_tool_calls:
+            model_settings.parallel_tool_calls = True
+            model_settings.reasoning = Reasoning(effort=self.reasoning_effort)  # type: ignore
+        
+        # Create agent with proper typing
+        agent = Agent(
             name=f"{self.agent_name}",
             instructions=self.system_prompt,
             model=OpenAIResponsesModel(
                 model=self.model,
                 openai_client=AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")),
             ),
-            model_settings=ModelSettings(
-                temperature=self.temperature,
-                include_usage=True,
-            ),
-            output_type=self.output_type,
+            model_settings=model_settings,
             tools=self.tools,
         )
+        
+        # Add optional parameters
+        if self.output_type:
+            agent.output_type = self.output_type
+            
+        if self.tool_use_behavior:
+            agent.tool_use_behavior = self.tool_use_behavior
+        
+        return agent
