@@ -9,9 +9,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE = Path(__file__).resolve().parents[2]
-AUDIO_DIR = BASE / "server" /"audio"
+PROMPTS_DIR = BASE / "server" /"prompts"
 
-AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 

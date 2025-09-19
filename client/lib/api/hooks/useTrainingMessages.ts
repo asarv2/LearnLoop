@@ -417,20 +417,3 @@ export function useEndTraining() {
     onError: (error) => logError("Error ending training:", error),
   });
 }
-
-export function useSubmitAssessment() {
-  const { emitSubmitAssessment } = useWebSocket();
-  return useMutation({
-    mutationFn: async ({
-      chatId,
-      responses,
-    }: {
-      chatId: string;
-      responses: Record<string, unknown>;
-    }) => {
-      emitSubmitAssessment({ chat_id: chatId, responses });
-      return { success: true };
-    },
-    onError: (error) => logError("Error submitting assessment:", error),
-  });
-}

@@ -17,7 +17,6 @@ import { Box, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
-import AssessmentWizard from "./AssessmentWizard";
 import ChatArea from "./ChatArea";
 import ChatHeader from "./ChatHeader";
 import FeedbackModal from "./FeedbackModal";
@@ -36,18 +35,13 @@ function TrainingAttemptContent() {
     messages,
     isSendingMessage,
     isEndingTraining,
-    isSubmittingAssessment,
-    isWaitingForAssessment, // ✅ NEW: Loading state while waiting for assessment
     isWaitingForFeedback, // ✅ NEW: Loading state while waiting for feedback
     isTrainingActive,
     currentMessage,
     setCurrentMessage,
-    showAssessment,
-    setShowAssessment,
     showFeedback,
     setShowFeedback,
     endTraining,
-    submitAssessment,
   } = useTraining();
 
   // Get scenario data from the chat's scenario_id (the authoritative source)
@@ -66,22 +60,6 @@ function TrainingAttemptContent() {
       objectives: scenarioData.objectives || [],
     };
   }, [scenarioData]);
-
-  // Helper function to get assessment ID
-  const getAssessmentId = () => {
-    if (!chat) return "";
-    const chatWithIncludes = chat as ChatWithAllIncludes;
-    return chatWithIncludes.assessments?.[0]?.id || "";
-  };
-
-  // Helper function to check if assessment exists for this chat
-  const hasAssessment = () => {
-    if (!chat) return false;
-    const chatWithIncludes = chat as ChatWithAllIncludes;
-    return (
-      chatWithIncludes.assessments && chatWithIncludes.assessments.length > 0
-    );
-  };
 
   // Helper function to check if feedback exists for this chat
   const hasFeedback = () => {
@@ -109,21 +87,6 @@ function TrainingAttemptContent() {
         error instanceof Error ? error.message : "Unknown error occurred";
       alert(
         `Failed to end interview: ${errorMessage}. Please check the console for more details.`
-      );
-    }
-  };
-
-  const handleAssessmentComplete = async (responses: unknown) => {
-    try {
-      await submitAssessment(responses as Record<string, unknown>);
-      // Modal state management is now handled by WebSocket events in the training context
-      // No need to manually set showFeedback here
-    } catch (error) {
-      logError("Error processing assessment:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error occurred";
-      alert(
-        `Failed to process assessment: ${errorMessage}. Please check the console for more details.`
       );
     }
   };
@@ -198,14 +161,12 @@ function TrainingAttemptContent() {
           <ChatHeader
             onEndInterview={endInterview}
             isInterviewActive={isTrainingActive}
-            isEndingInterview={isEndingTraining || isWaitingForAssessment} // ✅ NEW: Show loading while waiting for assessment
+            isEndingInterview={isEndingTraining || isWaitingForFeedback} // ✅ NEW: Show loading while waiting for feedback
             onShowFeedback={() => setShowFeedback(true)}
-            onShowAssessment={() => setShowAssessment(true)}
             onBack={() => router.push("/dashboard/trainings")}
             interviewStartTimeIso={chat?.created_at}
             completedAtIso={chat?.completed_at}
             scenario={scenario}
-            hasAssessment={hasAssessment()}
             hasFeedback={hasFeedback()}
             documentId={documentId}
             documentFieldName={documentFieldName}
@@ -221,18 +182,6 @@ function TrainingAttemptContent() {
             chat={chat}
             messagesEndRef={messagesEndRef}
           />
-
-          {/* Assessment Wizard - only show if assessment exists */}
-          {hasAssessment() && (
-            <AssessmentWizard
-              isOpen={showAssessment}
-              onClose={() => setShowAssessment(false)}
-              onComplete={handleAssessmentComplete}
-              isSubmitting={isSubmittingAssessment || isWaitingForFeedback} // ✅ NEW: Show loading while waiting for feedback
-              assessmentId={getAssessmentId()}
-              chat={chat}
-            />
-          )}
 
           {/* Feedback Modal - only show if feedback exists */}
           {hasFeedback() && (
