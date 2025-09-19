@@ -11,6 +11,8 @@ from app.db import get_session
 from app.extensions import load_prompt
 from app.models import Chats, Documents, Messages, Parameters
 from app.services.agents.generic import GenericAgent
+from app.utils.tools_args_model import (build_args_model_from_spec,
+                                        make_flat_tool_from_args_model)
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from dotenv import load_dotenv
@@ -183,7 +185,6 @@ async def create_document_generation_tool(
     tool_title = default_filename or parameter_name or f"Template {str(template_id)[:8]}"
     tool_name = f"{tool_title.lower().replace(' ', '_').replace('-', '_')}_doc"
     
-    from app.utils.tools_args_model import build_args_model_from_spec
     ArgsModel = build_args_model_from_spec(
         model_name=f"TemplateArgs_{str(template_id)[:8]}",
         spec_fields=spec.get("fields", {}),
@@ -192,8 +193,8 @@ async def create_document_generation_tool(
     # 3) Use the template description as the tool description
     description = template_desc or f"Generate document using {_humanize(tool_title)} template."
 
-    # 4) Define the tool with flattened parameters for better usability
-    async def generate_document(**kwargs: Any) -> str:
+    # 4) Define the implementation function
+    async def _impl(validated_args: BaseModel) -> str:
         """Generate a document using the template and upload to S3. Returns the document ID."""
         try:
             ds_url = documents_service_url
@@ -201,8 +202,13 @@ async def create_document_generation_tool(
                 logger.warning("DOCUMENTS_SERVICE_URL not set")
                 return "Error: documents service not configured"
 
-            # Filter out None values
-            kwargs_data = {k: v for k, v in kwargs.items() if v is not None}
+            # Handle both Pydantic v1 and v2 model serialization
+            try:
+                # Pydantic v2
+                kwargs_data = validated_args.model_dump(exclude_none=True)  # type: ignore
+            except AttributeError:
+                # Pydantic v1
+                kwargs_data = validated_args.dict(exclude_none=True)  # type: ignore
             
             payload = {
                 "template_id": str(template_id),
@@ -240,12 +246,16 @@ async def create_document_generation_tool(
             logger.error(msg, exc_info=True)
             return f"Error: {msg}"
 
-    # 5) Set function identity before wrapping
-    generate_document.__name__ = tool_name
-    generate_document.__doc__ = description  # many wrappers read this
-    
+    # 5) Create the flat tool with explicit typed parameters
+    flat_fn = make_flat_tool_from_args_model(
+        tool_name=tool_name,
+        description=description,
+        ArgsModel=ArgsModel,
+        call_impl=_impl,
+    )
+
     # 6) Return the tool with proper metadata
-    return function_tool(generate_document)
+    return function_tool(flat_fn)
 
 
 async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], session: Session) -> tuple[List[Any], List[Dict[str, str]]]:

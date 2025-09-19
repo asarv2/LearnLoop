@@ -1,5 +1,6 @@
+import inspect
 import re
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Type
 
 from pydantic import BaseModel, Field, create_model
 from pydantic.config import ConfigDict
@@ -119,3 +120,46 @@ def build_args_model_from_spec(*, model_name: str, spec_fields: Dict[str, Dict[s
         logger.error(f"Failed to generate schema for {model_name}: {e}")
     
     return ArgsModel  # type: ignore
+
+
+def make_flat_tool_from_args_model(
+    *,
+    tool_name: str,
+    description: str,
+    ArgsModel: Type[BaseModel],
+    call_impl: Callable[[BaseModel], Awaitable[str]],  # async def call_impl(validated_args: ArgsModel) -> str
+) -> Callable[..., Awaitable[str]]:
+    """
+    Returns a function suitable for function_tool(...) whose parameters are the
+    fields of ArgsModel (keyword-only, typed, with defaults). The function
+    validates inputs via ArgsModel and calls call_impl(validated_args).
+    """
+
+    # Build signature params & annotations from the Pydantic model
+    params = []
+    annotations: Dict[str, Any] = {}
+    for fname, f in ArgsModel.model_fields.items():
+        ann = f.annotation or Any
+        default = (inspect._empty if f.is_required() else f.default)
+        param = inspect.Parameter(
+            fname,
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            default=default,
+            annotation=ann,
+        )
+        params.append(param)
+        annotations[fname] = ann
+
+    sig = inspect.Signature(parameters=params, return_annotation=str)
+
+    async def _fn(**kwargs: Any) -> str:  # wrapper body never leaks **kwargs to schema
+        # Validate & coerce with the strict model (extra='forbid')
+        model_obj = ArgsModel(**kwargs)
+        return await call_impl(model_obj)
+
+    _fn.__name__ = tool_name
+    _fn.__doc__ = description
+    _fn.__signature__ = sig            # type: ignore
+    _fn.__annotations__ = annotations  # type: ignore
+
+    return _fn  # type: ignore
