@@ -11,7 +11,6 @@ from app.db import get_session
 from app.extensions import load_prompt
 from app.models import Chats, Documents, Messages, Parameters
 from app.services.agents.generic import GenericAgent
-from app.utils.chat import get_parameter_history_from_scenario
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from dotenv import load_dotenv
@@ -162,6 +161,7 @@ def create_document_generation_tool(parameter_id: uuid.UUID, template_id: uuid.U
     """Create a document generation tool for a specific parameter/template combination."""
     
     async def generate_document(
+        content: str = Field(description="Content for the document"),
         **kwargs: Any
     ) -> str:
         f"""Generate a document using template {template_id} for parameter {parameter_name}.
@@ -176,7 +176,10 @@ def create_document_generation_tool(parameter_id: uuid.UUID, template_id: uuid.U
         """
         try:
             # Get documents service URL from environment
-            documents_service_url = os.getenv("DOCUMENTS_SERVICE_URL", "http://localhost:8000")
+            documents_service_url = os.getenv("DOCUMENTS_SERVICE_URL")
+            if not documents_service_url:
+                logger.warning("DOCUMENTS_SERVICE_URL not set, skipping document generation")
+                return f"Document generation skipped - service URL not configured"
             
             # Call documents service to create the document
             async with httpx.AsyncClient() as client:
@@ -238,27 +241,24 @@ def create_document_generation_tool(parameter_id: uuid.UUID, template_id: uuid.U
     return function_tool(generate_document)
 
 
-def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], session: Session) -> List[Any]:
+async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], session: Session) -> List[Any]:
     """Create document generation tools for each parameter that has a corresponding template."""
-    tools = []
+    tools: List[Any] = []
     
     # Get documents service URL
-    documents_service_url = os.getenv("DOCUMENTS_SERVICE_URL", "http://localhost:8000")
+    documents_service_url = os.getenv("DOCUMENTS_SERVICE_URL")
+    if not documents_service_url:
+        logger.warning("DOCUMENTS_SERVICE_URL not set, skipping document tools creation")
+        return tools
     
     try:
         # Get available template IDs from documents service
-        import asyncio
-        async def get_available_templates() -> List[str]:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(f"{documents_service_url}/templates", timeout=10.0)
-                response.raise_for_status()
-                data = response.json()
-                template_ids = cast(List[str], data.get("template_ids", []))
-                return template_ids
-        
-        # Run the async function
-        available_templates = asyncio.run(get_available_templates())
-        available_template_ids = {uuid.UUID(tid) for tid in available_templates}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{documents_service_url}/templates", timeout=10.0)
+            response.raise_for_status()
+            data = response.json()
+            template_ids = cast(List[str], data.get("template_ids", []))
+            available_template_ids = {uuid.UUID(tid) for tid in template_ids}
         
         logger.info(f"Available template IDs: {available_template_ids}")
         
@@ -284,9 +284,9 @@ def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], session
     return tools
 
 
-def create_scenario_tools(parameter_ids: List[uuid.UUID], persona_ids: List[uuid.UUID], session: Session) -> List[Any]:
+async def create_scenario_tools(parameter_ids: List[uuid.UUID], persona_ids: List[uuid.UUID], session: Session) -> List[Any]:
     """Create all scenario function tools including scenario, objectives, persona prompts, and document generation."""
-    tools = []
+    tools: List[Any] = []
     
     # Add core scenario tools
     tools.append(create_scenario_tool())
@@ -314,10 +314,11 @@ def create_scenario_tools(parameter_ids: List[uuid.UUID], persona_ids: List[uuid
             tools.append(persona_tool)
             logger.info(f"Created persona prompt tool for {persona_alias} ({persona.name})")
         else:
-            logger.warning(f"Persona {persona_id} not found in database")
+            logger.error(f"Persona {persona_id} not found in database - this will cause scenario generation to fail")
+            # Continue without this persona rather than failing completely
     
     # Add document generation tools for parameters
-    document_tools = create_document_tools_for_parameters(parameter_ids, session)
+    document_tools = await create_document_tools_for_parameters(parameter_ids, session)
     tools.extend(document_tools)
     
     return tools
@@ -425,7 +426,7 @@ async def run_scenario_agent(
         system_prompt = await get_scenario_prompt()
         
         # Create all scenario tools (scenario, objectives, persona prompts, and document generation)
-        scenario_tools = create_scenario_tools(scenario.parameter_ids, persona_ids, session)
+        scenario_tools = await create_scenario_tools(scenario.parameter_ids, persona_ids, session)
         logger.info(f"Created {len(scenario_tools)} scenario tools")
         
         # Create tool use behavior to wait for core tools to be called
@@ -433,13 +434,17 @@ async def run_scenario_agent(
             # We require scenario, objectives, and persona prompt tools to be called
             # Document generation tools are optional
             required_tools = ['scenario', 'objectives']
-            # Add persona prompt tools to required tools
+            # Add persona prompt tools to required tools (only for personas that exist)
+            from app.models import Personas
             for persona_id in persona_ids:
-                required_tools.append(f'persona_prompt_{persona_id}')
+                # Check if persona exists in database before requiring its tool
+                persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+                if persona:
+                    required_tools.append(f'persona_prompt_{persona_id}')
             
             completed_required = all(scenario_progress.get(tool, False) for tool in required_tools)
             return ToolsToFinalOutputResult(is_final_output=completed_required)
-        
+    
         scenario_agent = GenericAgent(
             agent_name="Scenario Generator",
             system_prompt=system_prompt,
@@ -460,9 +465,12 @@ async def run_scenario_agent(
         
         # Check if required tools were called
         required_tools = ['scenario', 'objectives']
-        # Add persona prompt tools to required tools
+        # Add persona prompt tools to required tools (only for personas that exist)
+        from app.models import Personas
         for persona_id in persona_ids:
-            required_tools.append(f'persona_prompt_{persona_id}')
+            persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+            if persona:
+                required_tools.append(f'persona_prompt_{persona_id}')
         
         completed_required = [tool for tool in required_tools if scenario_progress.get(tool, False)]
         logger.info(f"Scenario generation completed: {len(completed_required)}/{len(required_tools)} required tools called")
@@ -533,7 +541,7 @@ async def run_scenario_agent(
                 document_ids=document_ids,
                 parameter_ids=parameter_ids,
                 session=session
-            )
+        )
 
         return {
             "success": True,

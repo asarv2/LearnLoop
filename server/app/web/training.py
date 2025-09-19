@@ -21,9 +21,7 @@ from app.services.agents.generic import GenericAgent, run_generic_agent
 from app.services.agents.grade import run_grading_agent
 from app.services.agents.hint import run_hint_agent
 from app.services.agents.scenario import run_scenario_agent
-from app.utils.chat import (get_conversation_history, get_parameter_history,
-                            get_parameter_history_from_field_values,
-                            get_parameter_history_simple, get_preamble)
+from app.utils.chat import get_conversation_history, get_preamble
 from sqlalchemy import Column, text
 from sqlmodel import select
 

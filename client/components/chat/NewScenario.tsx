@@ -44,6 +44,8 @@ import { useTraining } from "@/lib/api/hooks/useTrainings";
 
 // Types
 import { useAuth } from "@/components/auth/AuthProvider";
+import DocumentPreviewCard from "./DocumentPreviewCard";
+import DocumentViewerModal from "./DocumentViewerModal";
 import { FieldCard, type FieldValue } from "./fields";
 
 export interface NewScenarioProps {
@@ -103,6 +105,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [lastGeneratedSignature, setLastGeneratedSignature] = useState<
     string | null
   >(null);
+
+  // Document viewer modal state
+  const [selectedDocument, setSelectedDocument] = useState<{
+    id: string;
+    name?: string;
+  } | null>(null);
 
   // Create a stable signature string from payload values for comparison
   const makeSignatureFromPayload = (
@@ -1179,6 +1187,34 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                               ))}
                             </Flex>
                           </Box>
+
+                          {/* Specifics Section - Document Previews */}
+                          {scenario?.document_ids &&
+                            scenario.document_ids.length > 0 && (
+                              <Box>
+                                <Text size="2" weight="bold" mb="3">
+                                  Specifics
+                                </Text>
+                                <Flex
+                                  wrap="wrap"
+                                  gap="3"
+                                  style={{
+                                    maxWidth: "600px", // 5 cards * 120px + 4 gaps * 12px = 648px, so 600px fits nicely
+                                  }}
+                                >
+                                  {scenario.document_ids.map((docId) => (
+                                    <DocumentPreviewCard
+                                      key={docId}
+                                      documentId={docId}
+                                      onClick={() =>
+                                        setSelectedDocument({ id: docId })
+                                      }
+                                    />
+                                  ))}
+                                </Flex>
+                              </Box>
+                            )}
+
                           {renderGenerateProgress()}
                         </Flex>
                       </Box>
@@ -1490,6 +1526,13 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           </div>,
           document.body
         )}
+
+      {/* Document Viewer Modal */}
+      <DocumentViewerModal
+        isOpen={selectedDocument !== null}
+        onClose={() => setSelectedDocument(null)}
+        documentId={selectedDocument?.id || ""}
+      />
     </Box>
   );
 }
