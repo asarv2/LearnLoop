@@ -17,6 +17,7 @@ from pylatex import Command, Document, NoEscape, Package  # type: ignore
 from pylatex.utils import bold  # type: ignore
 
 DEFAULT_FILENAME = "incident-report"
+TEMPLATE_DESCRIPTION = "A comprehensive incident report template for documenting workplace incidents, accidents, or safety issues. Includes employee information, incident details, witness information, root cause analysis, and follow-up actions with signature fields."
 
 class Args(BaseModel):
     # Employee Information

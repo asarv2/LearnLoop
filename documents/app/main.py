@@ -63,13 +63,14 @@ def _import_template_module(template_id: UUID) -> Any:
         raise HTTPException(status_code=500, detail=f"Template import error: {e}")
     return mod
 
-def _get_template_contract(mod: Any) -> Tuple[Type[BaseModel], Callable[[BaseModel], bytes], Optional[str]]:
+def _get_template_contract(mod: Any) -> Tuple[Type[BaseModel], Callable[[BaseModel], bytes], Optional[str], Optional[str]]:
     """
     Each template module must define:
       - Args: pydantic BaseModel (argument schema)
       - render(args: Args) -> bytes  (PDF bytes)
     Optional:
       - DEFAULT_FILENAME: str (without .pdf)
+      - TEMPLATE_DESCRIPTION: str (description of the template)
     """
     if not hasattr(mod, "Args"):
         raise HTTPException(status_code=500, detail="Template missing Args model.")
@@ -78,13 +79,14 @@ def _get_template_contract(mod: Any) -> Tuple[Type[BaseModel], Callable[[BaseMod
     ArgsModel = getattr(mod, "Args")
     render_fn = getattr(mod, "render")
     default_filename = getattr(mod, "DEFAULT_FILENAME", None)
+    template_description = getattr(mod, "TEMPLATE_DESCRIPTION", None)
     if not issubclass(ArgsModel, BaseModel):
         raise HTTPException(status_code=500, detail="Template Args must subclass pydantic.BaseModel.")
     if not callable(render_fn):
         raise HTTPException(status_code=500, detail="Template render is not callable.")
-    return ArgsModel, render_fn, default_filename
+    return ArgsModel, render_fn, default_filename, template_description
 
-def _model_spec(ArgsModel: Type[BaseModel]) -> Dict[str, Any]:
+def _model_spec(ArgsModel: Type[BaseModel], template_description: Optional[str] = None) -> Dict[str, Any]:
     """
     Produce a JSON-serializable description of fields, types, defaults, and required flags.
     """
@@ -99,12 +101,15 @@ def _model_spec(ArgsModel: Type[BaseModel]) -> Dict[str, Any]:
             "default": None if field.is_required() else field.default,
             "description": field.description,
         }
-    return {
+    spec = {
         "title": ArgsModel.__name__,
         "fields": fields,
         "json_schema": model_schema,
         "return_type": "application/pdf (bytes)",
     }
+    if template_description:
+        spec["template_description"] = template_description
+    return spec
 
 def _safe_filename(name: Optional[str]) -> str:
     if not name:
@@ -145,8 +150,8 @@ async def get_template_spec(template_id: UUID) -> JSONResponse:
     Return the template's Args schema (fields, types, defaults) and declared return type.
     """
     mod = _import_template_module(template_id)
-    ArgsModel, _, default_filename = _get_template_contract(mod)
-    spec = _model_spec(ArgsModel)
+    ArgsModel, _, default_filename, template_description = _get_template_contract(mod)
+    spec = _model_spec(ArgsModel, template_description)
     if default_filename:
         spec["default_filename"] = default_filename
     return JSONResponse(content=spec)
@@ -157,7 +162,7 @@ async def create_document(req: CreateRequest) -> StreamingResponse:
     Single endpoint: pick template by UUID, validate kwargs against template's Args, then compile PDF.
     """
     mod = _import_template_module(req.template_id)
-    ArgsModel, render_fn, default_filename = _get_template_contract(mod)
+    ArgsModel, render_fn, default_filename, _ = _get_template_contract(mod)
 
     try:
         args_obj = ArgsModel(**req.kwargs)

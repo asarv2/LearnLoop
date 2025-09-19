@@ -17,6 +17,7 @@ from pylatex import Command, Document, NoEscape, Package  # type: ignore
 from pylatex.utils import bold  # type: ignore
 
 DEFAULT_FILENAME = "shopping-list"
+TEMPLATE_DESCRIPTION = "A simple shopping list template with customizable title, author, and bullet-point items. Perfect for grocery lists, to-do lists, or any simple itemized document."
 
 class Args(BaseModel):
     title: str = Field(default="Shopping List", description="Document title")

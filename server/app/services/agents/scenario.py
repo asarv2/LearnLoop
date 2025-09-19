@@ -2,7 +2,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Type, cast
 
 import boto3
 import httpx
@@ -15,7 +15,7 @@ from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from dotenv import load_dotenv
 from fastapi import Depends
-from pydantic import Field
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 load_dotenv()
@@ -157,87 +157,92 @@ def create_persona_prompt_tool(persona_id: uuid.UUID, persona_alias: str, person
     return function_tool(generate_persona_prompt)
 
 
-def create_document_generation_tool(parameter_id: uuid.UUID, template_id: uuid.UUID, parameter_name: str) -> Any:
-    """Create a document generation tool for a specific parameter/template combination."""
-    
+def create_document_generation_tool(
+    *,
+    parameter_id: uuid.UUID,
+    template_id: uuid.UUID,
+    parameter_name: str,
+    documents_service_url: str,
+) -> Any:
+    """Create a document generation tool for a specific parameter/template combination with typed Args parameter."""
+
+    # 1) Pull the template spec and build a strict Args model
+    async def _fetch_and_build_model() -> Any:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{documents_service_url}/templates/{template_id}/spec", timeout=10.0)
+            r.raise_for_status()
+            spec = r.json()  # has "fields" and "json_schema"
+        
+        from app.utils.tools_args_model import build_args_model_from_spec
+        ArgsModel = build_args_model_from_spec(
+            model_name=f"TemplateArgs_{str(template_id)[:8]}",
+            spec_fields=spec.get("fields", {}),
+        )
+        return ArgsModel  # type: ignore
+
+    # Build the model synchronously at tool-creation time (caller already async)
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(_fetch_and_build_model())
+
+    # 2) Define the tool with a **typed** args param (no Dict, no Any, no kwargs)
     async def generate_document(
-        content: str = Field(description="Content for the document"),
-        **kwargs: Any
+        args: BaseModel,  # <- THIS is the only flexible parameter, strictly typed
     ) -> str:
-        f"""Generate a document using template {template_id} for parameter {parameter_name}.
-        
-        This function creates a document using the specified template and uploads it to S3 storage.
-        
-        Args:
-            **kwargs: Arguments for the document template (varies by template)
-            
-        Returns:
-            Document ID of the created document
+        """
+        Generate a document using the template and upload to S3. Returns the document ID.
         """
         try:
-            # Get documents service URL from environment
-            documents_service_url = os.getenv("DOCUMENTS_SERVICE_URL")
-            if not documents_service_url:
-                logger.warning("DOCUMENTS_SERVICE_URL not set, skipping document generation")
-                return f"Document generation skipped - service URL not configured"
+            ds_url = documents_service_url
+            if not ds_url:
+                logger.warning("DOCUMENTS_SERVICE_URL not set")
+                return "Error: documents service not configured"
+
+            # Handle both Pydantic v1 and v2 model serialization
+            try:
+                # Pydantic v2
+                kwargs_data = args.model_dump(exclude_none=True)
+            except AttributeError:
+                # Pydantic v1
+                kwargs_data = args.dict(exclude_none=True)
             
-            # Call documents service to create the document
+            payload = {
+                "template_id": str(template_id),
+                "kwargs": kwargs_data,
+            }
+
             async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{documents_service_url}/create",
-                    json={
-                        "template_id": str(template_id),
-                        "kwargs": kwargs
-                    },
-                    timeout=30.0
-                )
-                response.raise_for_status()
-                
-                # Get PDF bytes from response
-                pdf_bytes = response.content
-            
-            # Create document entry in database first
+                resp = await client.post(f"{ds_url}/create", json=payload, timeout=30.0)
+                resp.raise_for_status()
+                pdf_bytes = resp.content
+
             document = Documents(
                 content=f"Generated document from template {template_id} for parameter {parameter_name}",
-                profile_id=None  # Will be set by the calling context if needed
+                profile_id=None
             )
-            
-            # Get database session
+
             session = next(get_session())
             try:
                 session.add(document)
                 session.commit()
                 session.refresh(document)
-                
-                # Upload PDF to S3 using boto3
                 await upload_pdf_to_s3(pdf_bytes, str(document.id))
-                
-                logger.info(f"Successfully created document {document.id} for parameter {parameter_name} and uploaded to S3")
-                
-                # Collect document ID in global results
-                if 'document_ids' not in scenario_results:
-                    scenario_results['document_ids'] = []
-                scenario_results['document_ids'].append(str(document.id))
-                
+                scenario_results.setdefault("document_ids", []).append(str(document.id))
+                logger.info(f"Created document {document.id} for parameter {parameter_name}")
                 return str(document.id)
-                
             finally:
                 session.close()
-                
+
         except httpx.HTTPStatusError as e:
-            error_msg = f"Documents service error: {e.response.status_code} - {e.response.text}"
-            logger.error(error_msg)
-            return f"Error: {error_msg}"
+            msg = f"Documents service error: {e.response.status_code} - {e.response.text}"
+            logger.error(msg)
+            return f"Error: {msg}"
         except Exception as e:
-            error_msg = f"Failed to generate document: {str(e)}"
-            logger.error(error_msg)
-            return f"Error: {error_msg}"
-    
-    # Set the function name dynamically
-    safe_name = parameter_name.lower().replace(" ", "_").replace("-", "_")
-    generate_document.__name__ = f"generate_document_{safe_name}"
-    
-    # Apply the function_tool decorator
+            msg = f"Failed to generate document: {e}"
+            logger.error(msg, exc_info=True)
+            return f"Error: {msg}"
+
+    safe = parameter_name.lower().replace(" ", "_").replace("-", "_")
+    generate_document.__name__ = f"generate_document_{safe}"
     return function_tool(generate_document)
 
 
@@ -269,7 +274,12 @@ async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], s
                 parameter = session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
                 if parameter:
                     parameter_name = parameter.name or f"parameter_{str(parameter_id)[:8]}"
-                    tool = create_document_generation_tool(parameter_id, parameter_id, parameter_name)
+                    tool = create_document_generation_tool(
+                        parameter_id=parameter_id,
+                        template_id=parameter_id,  # one-to-one mapping you're using
+                        parameter_name=parameter_name,
+                        documents_service_url=documents_service_url,
+                    )
                     tools.append(tool)
                     logger.info(f"Created document tool for parameter {parameter_name} ({parameter_id})")
                 else:
