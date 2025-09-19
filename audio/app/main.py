@@ -20,7 +20,7 @@ from .bus import PCM_SR, SAMPLES_PER_CHUNK
 from .extensions import warm_all_models
 from .room import create_room_with_config, get_room
 from .store import list_messages
-from .transcripts import synthesize_kokoro
+from .transcripts import synthesize_via_model_service
 
 load_dotenv()
 
@@ -38,7 +38,7 @@ AUDIO_CH = 1
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
     async with contextlib.AsyncExitStack() as stack:
-        # Startup: warm all models
+        # Startup: warm Kokoro TTS for real-time synthesis
         try:
             warm_all_models()
         except Exception:
@@ -221,7 +221,7 @@ async def s2s_user_text(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
             source_id=human_id, role="user", text="", message_id=None, chunk_idx=0, is_final=False
         )
         await room.recorder_start_message(human_id, label="typed")
-        audio_f32, sr = await asyncio.to_thread(synthesize_kokoro, text, "alloy", PCM_SR)
+        audio_f32, sr = await synthesize_via_model_service(text, "alloy", PCM_SR)
         if audio_f32 is not None and getattr(audio_f32, "size", 0) > 0:
             # Optional: early words via model service
             try:

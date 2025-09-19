@@ -6,6 +6,53 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 
+async def synthesize_via_model_service(
+    text: str,
+    voice: str = "alloy",
+    sr: int = 48000,
+) -> Tuple[np.ndarray, int]:
+    """Call external model service /synthesize for TTS, return audio data and sample rate."""
+    import base64
+    import os
+    try:
+        base = os.getenv("MODEL_SERVICE_URL") or ""
+        if not base.strip():
+            raise RuntimeError("MODEL_SERVICE_URL not set")
+        try:
+            import httpx  # type: ignore
+        except Exception:
+            raise RuntimeError("httpx unavailable")
+        
+        payload = {
+            "text": str(text),
+            "voice": str(voice),
+            "sample_rate": int(sr),
+        }
+        url = base.rstrip("/") + "/synthesize"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.post(url, json=payload)
+            r.raise_for_status()
+            obj = r.json()
+        
+        # Decode audio
+        audio_b64 = obj.get("audio_b64", "")
+        if not audio_b64:
+            raise RuntimeError("No audio data in response")
+        
+        raw = base64.b64decode(audio_b64)
+        audio_data = np.frombuffer(raw, dtype=np.float32)
+        sample_rate = int(obj.get("sample_rate", sr))
+        
+        return audio_data, sample_rate
+    except Exception as e:
+        # Fallback: generate silence with a tone
+        dur_s = max(0.4, min(8.0, len(text.split()) * 0.35))
+        n = int(round(dur_s * sr))
+        t = np.arange(n, dtype=np.float32) / float(sr)
+        y = (0.05 * np.sin(2 * np.pi * 220.0 * t)).astype(np.float32)
+        return y, sr
+
+
 async def align_via_model_service(
     audio_f32: np.ndarray,
     sr: int,
@@ -68,49 +115,5 @@ class Transcript:
     text: str
 
 
-from functools import lru_cache
-
-# Optional: map your abstract voice names to Kokoro voices
-VOICE_MAP = {
-    "alloy": "af_heart",
-}
-
-@lru_cache(maxsize=1)
-def _get_kokoro_pipeline(lang_code: str = "a") -> object:
-    # 🇺🇸 'a' American English, 'b' British, etc.
-    from kokoro import KPipeline  # type: ignore
-    return KPipeline(lang_code=lang_code, repo_id="hexgrad/Kokoro-82M")  # type: ignore
-
-
-def _resample_linear(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
-    if sr_in == sr_out or x.size == 0:
-        return x.astype(np.float32, copy=False)
-    ratio = sr_out / float(sr_in)
-    n_out = max(1, int(round(x.size * ratio)))
-    xi = np.arange(x.size, dtype=np.float32)
-    idx = np.linspace(0, x.size - 1, num=n_out, dtype=np.float32)
-    return np.interp(idx, xi, x).astype(np.float32)
-
-
-def synthesize_kokoro(text: str, voice: str = "alloy", sr: int = 48000) -> Tuple[np.ndarray, int]:
-    """
-    Generate with Kokoro at 24 kHz, then resample to `sr` (bus is 48 kHz).
-    """
-    try:
-        kokoro_voice = VOICE_MAP.get(voice, voice)
-        pipeline = _get_kokoro_pipeline(lang_code="a")  # type: ignore
-        gen = pipeline(text, voice=kokoro_voice, speed=1.0, split_pattern=r"\n+")  # type: ignore
-        chunks = []
-        for _, _, audio24 in gen:
-            chunks.append(np.asarray(audio24, dtype=np.float32))
-        if not chunks:
-            return np.zeros(0, dtype=np.float32), sr
-        y24 = np.concatenate(chunks, axis=0).astype(np.float32)
-        y = _resample_linear(y24, 24000, sr)
-        return y, sr
-    except Exception:
-        dur_s = max(0.4, min(8.0, len(text.split()) * 0.35))
-        n = int(round(dur_s * sr))
-        t = np.arange(n, dtype=np.float32) / float(sr)
-        y = (0.05 * np.sin(2 * np.pi * 220.0 * t)).astype(np.float32)
-        return y, sr
+# Kokoro TTS functionality has been moved to the model service
+# Use synthesize_via_model_service() to call the model service for TTS

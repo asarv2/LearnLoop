@@ -27,7 +27,7 @@ def tone_chunk(freq_hz: float, phase: float, length_samples: int) -> tuple[np.nd
 
 
 class BeepAgent(Agent):
-    async def _run(self):
+    async def _run(self) -> None:
         """
         Continuously emit a low-level 880 Hz tone in 20 ms frames.
         Audibility is controlled via bus ignore sets from the Room.
