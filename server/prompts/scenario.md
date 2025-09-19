@@ -53,7 +53,7 @@ You have access to the following tools to generate the scenario:
    - `incident_report_doc`: Incident report document  
    - `project_status_doc`: Project status update document
 
-**Important**: You must call ALL required tools (scenario, objectives, and persona prompts) to complete the task. Document generation tools are optional but should be used when relevant.
+**Important**: You must call ALL required tools (scenario, objectives, persona prompts, and document generation tools) to complete the task. Document generation tools are REQUIRED when templates are available for the parameters.
 
 ---
 
@@ -76,11 +76,11 @@ You have access to the following tools to generate the scenario:
 * **User Persona Prompts:** Define how user personas (candidates/trainees) should behave in the conversation
 * **Agent Persona Prompts:** Define how agent personas (trainers/coaches/supervisors) should behave in the conversation
 
-**Use document generation tools when relevant:**
+**Use document generation tools when templates are available:**
 * **Performance Review scenarios**: Use `perf_review_doc` to create formal review documentation
 * **Termination scenarios**: Use `incident_report_doc` to document the termination process and reasons
 * **Constructive feedback scenarios**: Use `project_status_doc` to track improvement progress over time
-* **Interview scenarios**: No documents needed - focus on conversation and assessment
+* **Interview scenarios**: Use document generation tools if templates are available for the scenario parameters
 
 ---
 
@@ -100,8 +100,8 @@ You must call these tools to complete the scenario generation:
    - `create_agent1_prompt`, `create_agent2_prompt`, etc. for agent personas
    - `prompt`: Custom behavior definition for each persona
 
-4. **Document generation tools** - Optional
-   - Use when relevant documents are available for the scenario
+4. **Document generation tools** - Required when templates are available
+   - Must use when document templates are available for the scenario parameters
 
 ---
 
@@ -152,18 +152,16 @@ You must call these tools to complete the scenario generation:
    - `prompt`: "You are agent1, user1's supervisor conducting a year-end performance review. Focus on addressing performance gaps constructively, setting clear goals for next year, and maintaining a supportive but firm tone."
 
 5. `perf_review_doc`:
-   - `args`: {
-     "company_name": "TechCorp Solutions",
-     "employee_name": "Taylor Johnson",
-     "position_held": "Senior Project Manager",
-     "department": "Engineering",
-     "reviewer_name": "Sarah Chen",
-     "date_of_review": "December 15, 2024",
-     "greatest_strengths": "Strong technical skills and team collaboration. Successfully delivered 8 projects despite challenges.",
-     "improvement_areas": "Project timeline management and client communication. Need to improve deadline adherence and proactive status updates.",
-     "achieved_goals": "Completed 67% of assigned projects and maintained team morale during challenging periods.",
-     "next_goals": "Achieve 90% on-time delivery rate, improve client satisfaction scores by 20%, and implement better project tracking systems."
-   }
+   - `company_name`: "TechCorp Solutions"
+   - `employee_name`: "Taylor Johnson"
+   - `position_held`: "Senior Project Manager"
+   - `department`: "Engineering"
+   - `reviewer_name`: "Sarah Chen"
+   - `date_of_review`: "December 15, 2024"
+   - `greatest_strengths`: "Strong technical skills and team collaboration. Successfully delivered 8 projects despite challenges."
+   - `improvement_areas`: "Project timeline management and client communication. Need to improve deadline adherence and proactive status updates."
+   - `achieved_goals`: "Completed 67% of assigned projects and maintained team morale during challenging periods."
+   - `next_goals`: "Achieve 90% on-time delivery rate, improve client satisfaction scores by 20%, and implement better project tracking systems."
 
 ---
 
@@ -190,19 +188,17 @@ You must call these tools to complete the scenario generation:
    - `prompt`: "You are agent1, user1's supervisor conducting a termination conversation. Be respectful but firm, provide clear documentation of performance issues, and ensure all company policies are followed."
 
 5. `incident_report_doc`:
-   - `args`: {
-     "employee_name": "Morgan Davis",
-     "job_title": "Senior Developer",
-     "department": "Engineering",
-     "supervisor": "Alex Rodriguez",
-     "incident_date": "December 10, 2024",
-     "incident_time": "2:00 PM",
-     "incident_location": "Conference Room A",
-     "incident_description": "Performance termination discussion following documented performance issues over 12 months including missed deadlines and quality concerns.",
-     "immediate_actions": "Conducted respectful termination conversation, provided severance package details, and arranged for equipment return.",
-     "root_cause": "Consistent performance issues despite multiple improvement plans and support interventions.",
-     "follow_up_actions": "Process final paperwork, arrange for benefits continuation, and ensure smooth transition of work responsibilities."
-   }
+   - `employee_name`: "Morgan Davis"
+   - `job_title`: "Senior Developer"
+   - `department`: "Engineering"
+   - `supervisor`: "Alex Rodriguez"
+   - `incident_date`: "December 10, 2024"
+   - `incident_time`: "2:00 PM"
+   - `incident_location`: "Conference Room A"
+   - `incident_description`: "Performance termination discussion following documented performance issues over 12 months including missed deadlines and quality concerns."
+   - `immediate_actions`: "Conducted respectful termination conversation, provided severance package details, and arranged for equipment return."
+   - `root_cause`: "Consistent performance issues despite multiple improvement plans and support interventions."
+   - `follow_up_actions`: "Process final paperwork, arrange for benefits continuation, and ensure smooth transition of work responsibilities."
 
 ---
 
@@ -229,18 +225,16 @@ You must call these tools to complete the scenario generation:
    - `prompt`: "You are agent1, user1's supervisor providing constructive feedback on presentation skills. Be supportive but specific about areas for improvement, provide actionable suggestions, and set clear expectations for improvement."
 
 5. `project_status_doc`:
-   - `args`: {
-     "project_name": "Riley's Communication Improvement Initiative",
-     "project_manager": "Jordan Kim",
-     "report_date": "December 1, 2024",
-     "overall_status": "At Risk",
-     "thirty_day_summary": "Identified presentation skill gaps through client feedback analysis. Current satisfaction score of 3.2/5 needs improvement to meet team average of 4.4/5.",
-     "thirty_day_challenges": "Technical jargon usage and lack of client engagement during presentations. Two client renewals lost due to communication issues.",
-     "thirty_day_next_steps": "Complete presentation skills training module and practice client-friendly language techniques.",
-     "sixty_day_summary": "Implement new presentation approach with simplified language and interactive elements. Target improvement in client engagement scores.",
-     "sixty_day_challenges": "Breaking old habits of technical terminology and building confidence with new presentation style.",
-     "sixty_day_next_steps": "Conduct practice presentations with team feedback and refine client communication strategies.",
-     "ninety_day_summary": "Achieve target satisfaction score of 4.5/5 through improved presentation skills and client engagement techniques.",
-     "ninety_day_challenges": "Maintaining consistent improvement and adapting to different client communication styles.",
-     "ninety_day_next_steps": "Finalize presentation skills development and establish ongoing feedback mechanisms for continuous improvement."
-   }
+   - `project_name`: "Riley's Communication Improvement Initiative"
+   - `project_manager`: "Jordan Kim"
+   - `report_date`: "December 1, 2024"
+   - `overall_status`: "At Risk"
+   - `thirty_day_summary`: "Identified presentation skill gaps through client feedback analysis. Current satisfaction score of 3.2/5 needs improvement to meet team average of 4.4/5."
+   - `thirty_day_challenges`: "Technical jargon usage and lack of client engagement during presentations. Two client renewals lost due to communication issues."
+   - `thirty_day_next_steps`: "Complete presentation skills training module and practice client-friendly language techniques."
+   - `sixty_day_summary`: "Implement new presentation approach with simplified language and interactive elements. Target improvement in client engagement scores."
+   - `sixty_day_challenges`: "Breaking old habits of technical terminology and building confidence with new presentation style."
+   - `sixty_day_next_steps`: "Conduct practice presentations with team feedback and refine client communication strategies."
+   - `ninety_day_summary`: "Achieve target satisfaction score of 4.5/5 through improved presentation skills and client engagement techniques."
+   - `ninety_day_challenges`: "Maintaining consistent improvement and adapting to different client communication styles."
+   - `ninety_day_next_steps`: "Finalize presentation skills development and establish ongoing feedback mechanisms for continuous improvement."

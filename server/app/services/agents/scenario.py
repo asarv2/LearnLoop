@@ -192,10 +192,8 @@ async def create_document_generation_tool(
     # 3) Use the template description as the tool description
     description = template_desc or f"Generate document using {_humanize(tool_title)} template."
 
-    # 4) Define the tool with a **typed** args param and descriptive docstring
-    async def generate_document(
-        args: Any,  # <- THIS is the only flexible parameter, strictly typed
-    ) -> str:
+    # 4) Define the tool with flattened parameters for better usability
+    async def generate_document(**kwargs: Any) -> str:
         """Generate a document using the template and upload to S3. Returns the document ID."""
         try:
             ds_url = documents_service_url
@@ -203,13 +201,8 @@ async def create_document_generation_tool(
                 logger.warning("DOCUMENTS_SERVICE_URL not set")
                 return "Error: documents service not configured"
 
-            # Handle both Pydantic v1 and v2 model serialization
-            try:
-                # Pydantic v2
-                kwargs_data = args.model_dump(exclude_none=True)  # type: ignore
-            except AttributeError:
-                # Pydantic v1
-                kwargs_data = args.dict(exclude_none=True)  # type: ignore
+            # Filter out None values
+            kwargs_data = {k: v for k, v in kwargs.items() if v is not None}
             
             payload = {
                 "template_id": str(template_id),
@@ -251,10 +244,6 @@ async def create_document_generation_tool(
     generate_document.__name__ = tool_name
     generate_document.__doc__ = description  # many wrappers read this
     
-    # (Paranoia) Some tool wrappers read __annotations__ directly:
-    generate_document.__annotations__ = dict(generate_document.__annotations__)
-    generate_document.__annotations__["args"] = ArgsModel  # type: ignore
-
     # 6) Return the tool with proper metadata
     return function_tool(generate_document)
 
@@ -507,6 +496,22 @@ async def run_scenario_agent(
         scenario_tools, document_tool_metadata = await create_scenario_tools(scenario.parameter_ids, persona_ids, session)
         logger.info(f"Created {len(scenario_tools)} scenario tools")
         
+        # Add tools information for the model to understand what's available
+        # Only show document generation tools, not all tools
+        if document_tool_metadata:
+            tools_info_lines = []
+            for metadata in document_tool_metadata:
+                tool_name = metadata['name']
+                tool_desc = metadata['description']
+                # Clean up the description (remove extra whitespace)
+                tool_desc = ' '.join(tool_desc.split()) if tool_desc else 'No description available'
+                tools_info_lines.append(f"- {tool_name}: {tool_desc}")
+            
+            tools_info_content = "Available document generation tools:\n" + "\n".join(tools_info_lines)
+            context_items.append({
+                "role": "developer",
+                "content": tools_info_content
+            })
         
         # Update history with tools information
         history = context_items + parameter_history

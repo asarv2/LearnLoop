@@ -43,6 +43,30 @@ class Args(BaseModel):
     achieved_goals: str = Field(default="", description="Goals achieved from previous review period")
     next_goals: str = Field(default="", description="Goals and objectives for next review period")
 
+def _escape_latex(text: str) -> str:
+    """Escape special LaTeX characters in text."""
+    if not text:
+        return ""
+    
+    # Replace special LaTeX characters
+    replacements = {
+        '\\': r'\textbackslash{}',
+        '{': r'\{',
+        '}': r'\}',
+        '$': r'\$',
+        '&': r'\&',
+        '%': r'\%',
+        '#': r'\#',
+        '^': r'\textasciicircum{}',
+        '_': r'\_',
+        '~': r'\textasciitilde{}',
+    }
+    
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    
+    return text
+
 def render(args: Args) -> bytes:
     """
     Build a performance review PDF using the provided LaTeX template structure.
@@ -113,11 +137,11 @@ def render(args: Args) -> bytes:
 % Four-column table: labels in shaded cells and corresponding values
 \begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash\hspace{0pt}}p{0.25\textwidth}|>{\raggedright\arraybackslash\hspace{0pt}}X|>{\raggedright\arraybackslash\hspace{0pt}}p{0.25\textwidth}|>{\raggedright\arraybackslash\hspace{0pt}}X|}
   \hline
-  \rowcolor{labelbg}\small Employee Name & """ + args.employee_name + r""" & \rowcolor{labelbg}\small Department & """ + args.department + r""" \\
+  \cellcolor{labelbg}\small Employee Name & """ + _escape_latex(args.employee_name) + r""" & \cellcolor{labelbg}\small Department & """ + _escape_latex(args.department) + r""" \\
   \hline
-  \rowcolor{labelbg}\small Position & """ + args.position_held + r""" & \rowcolor{labelbg}\small Reviewer & """ + args.reviewer_name + r""" \\
+  \cellcolor{labelbg}\small Position & """ + _escape_latex(args.position_held) + r""" & \cellcolor{labelbg}\small Reviewer & """ + _escape_latex(args.reviewer_name) + r""" \\
   \hline
-  \rowcolor{labelbg}\small Review Date & """ + args.date_of_review + r""" & \rowcolor{labelbg}\small & \\
+  \cellcolor{labelbg}\small Review Date & """ + _escape_latex(args.date_of_review) + r""" & \cellcolor{labelbg}\small & \\
   \hline
 \end{tabularx}
 
@@ -133,14 +157,13 @@ def render(args: Args) -> bytes:
 % Table with one column: alternating shaded labels and blank areas of fixed height
 \begin{tabularx}{\textwidth}{|X|}
   \hline
-  \rowcolor{labelbg}\small Detail Employee's Greatest Strengths \\
+  \cellcolor{labelbg}\small Detail Employee's Greatest Strengths \\
   \hline
-  % Leave an empty parbox to create a large blank area for narrative text.
-  \parbox[t][4cm][t]{\hsize}{ """ + args.greatest_strengths + r""" }\\
+  """ + _escape_latex(args.greatest_strengths) + r""" \\
   \hline
-  \rowcolor{labelbg}\small Detail Aspects Requiring Improvement \\
+  \cellcolor{labelbg}\small Detail Aspects Requiring Improvement \\
   \hline
-  \parbox[t][4cm][t]{\hsize}{ """ + args.improvement_areas + r""" }\\
+  """ + _escape_latex(args.improvement_areas) + r""" \\
   \hline
 \end{tabularx}
 
@@ -155,13 +178,13 @@ def render(args: Args) -> bytes:
 
 \begin{tabularx}{\textwidth}{|X|}
   \hline
-  \rowcolor{labelbg}\small Achieved Goals Set In Previous Review? \\
+  \cellcolor{labelbg}\small Achieved Goals Set In Previous Review? \\
   \hline
-  \parbox[t][3cm][t]{\hsize}{ """ + args.achieved_goals + r""" }\\
+  """ + _escape_latex(args.achieved_goals) + r""" \\
   \hline
-  \rowcolor{labelbg}\small Goals For Next Review Period \\
+  \cellcolor{labelbg}\small Goals For Next Review Period \\
   \hline
-  \parbox[t][3cm][t]{\hsize}{ """ + args.next_goals + r""" }\\
+  """ + _escape_latex(args.next_goals) + r""" \\
   \hline
 \end{tabularx}
 """)
