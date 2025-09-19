@@ -58,6 +58,7 @@ dependencies = [
     "faster-whisper>=1.0.0,<2.0.0",
 
     # === DOCUMENTS DEPENDENCIES ===
+    "pylatex>=1.4.2",
     # (Ready for future document processing dependencies)
 
     # === DEVELOPMENT DEPENDENCIES ===

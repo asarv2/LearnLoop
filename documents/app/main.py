@@ -1,31 +1,27 @@
+import importlib.util
+import json
 import logging
-import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple, Type
+from uuid import UUID
 
+from app.extensions import TEMPLATES_DIR  # <-- your templates directory (Path)
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-# PyLaTeX
-from pylatex import Command, Document, NewPage
-from pylatex.package import Package
-from pylatex.utils import NoEscape
-
-from .templates import build_basic_doc
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler()],
 )
 logger = logging.getLogger("documents_service")
 
 app = FastAPI(
     title="LearnLoop Documents Service",
-    description="Document creation (PyLaTeX + XeLaTeX)",
-    version="0.2.0",
+    description="Document creation from parameterized templates (PyLaTeX + XeLaTeX)",
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -43,130 +39,126 @@ class HealthResponse(BaseModel):
     service: str
     version: str
 
-class CreateDocumentRequest(BaseModel):
-    title: str = Field(default="Untitled")
-    author: Optional[str] = Field(default=None)
-    text: str = Field(description="Freeform body text (markdown-ish allowed; minimal LaTeX escapes handled)")
-    main_font: Optional[str] = Field(default="Noto Serif")  # any installed font
-    mono_font: Optional[str] = Field(default="DejaVu Sans Mono")
-    fontsize_pt: int = Field(default=11, ge=8, le=20)
-    paper: str = Field(default="letterpaper", description="letterpaper|a4paper|...")
+class CreateRequest(BaseModel):
+    template_id: UUID = Field(description="UUID of the template module (filename without .py)")
+    kwargs: Dict[str, Any] = Field(default_factory=dict, description="Arguments for the template's Args model")
 
-class RawLatexRequest(BaseModel):
-    preamble: Optional[str] = Field(default=None, description="LaTeX preamble override (optional)")
-    body: str = Field(description="Raw LaTeX body content")
-    engine: str = Field(default="xelatex", description="xelatex|lualatex")
-    paper: str = Field(default="letterpaper")
-    fontsize_pt: int = Field(default=11, ge=8, le=20)
+# ---------- Utilities ----------
+
+def _template_module_path(template_id: UUID) -> Path:
+    return TEMPLATES_DIR / f"{str(template_id)}.py"
+
+def _import_template_module(template_id: UUID) -> Any:
+    path = _template_module_path(template_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Template {template_id} not found.")
+    spec = importlib.util.spec_from_file_location(f"template_{template_id}", path)
+    if spec is None or spec.loader is None:
+        raise HTTPException(status_code=500, detail="Could not load template module spec.")
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+    except Exception as e:
+        logger.exception("Template import failed")
+        raise HTTPException(status_code=500, detail=f"Template import error: {e}")
+    return mod
+
+def _get_template_contract(mod: Any) -> Tuple[Type[BaseModel], Callable[[BaseModel], bytes], Optional[str]]:
+    """
+    Each template module must define:
+      - Args: pydantic BaseModel (argument schema)
+      - render(args: Args) -> bytes  (PDF bytes)
+    Optional:
+      - DEFAULT_FILENAME: str (without .pdf)
+    """
+    if not hasattr(mod, "Args"):
+        raise HTTPException(status_code=500, detail="Template missing Args model.")
+    if not hasattr(mod, "render"):
+        raise HTTPException(status_code=500, detail="Template missing render(args) function.")
+    ArgsModel = getattr(mod, "Args")
+    render_fn = getattr(mod, "render")
+    default_filename = getattr(mod, "DEFAULT_FILENAME", None)
+    if not issubclass(ArgsModel, BaseModel):
+        raise HTTPException(status_code=500, detail="Template Args must subclass pydantic.BaseModel.")
+    if not callable(render_fn):
+        raise HTTPException(status_code=500, detail="Template render is not callable.")
+    return ArgsModel, render_fn, default_filename
+
+def _model_spec(ArgsModel: Type[BaseModel]) -> Dict[str, Any]:
+    """
+    Produce a JSON-serializable description of fields, types, defaults, and required flags.
+    """
+    model_schema = ArgsModel.model_json_schema()
+    # Also return a flat summary of fields for convenience
+    fields = {}
+    for name, field in ArgsModel.model_fields.items():
+        ftype = getattr(field.annotation, "__name__", str(field.annotation))
+        fields[name] = {
+            "type": ftype,
+            "required": field.is_required(),
+            "default": None if field.is_required() else field.default,
+            "description": field.description,
+        }
+    return {
+        "title": ArgsModel.__name__,
+        "fields": fields,
+        "json_schema": model_schema,
+        "return_type": "application/pdf (bytes)",
+    }
+
+def _safe_filename(name: Optional[str]) -> str:
+    if not name:
+        return "document"
+    s = "".join(ch for ch in name if ch.isalnum() or ch in (" ", "-", "_")).rstrip()
+    return s if s else "document"
 
 # ---------- Routes ----------
 
 @app.get("/", response_model=Dict[str, str])
 async def root() -> Dict[str, str]:
-    return {"service": "LearnLoop Documents Service", "version": "0.2.0", "status": "running"}
+    return {"service": "LearnLoop Documents Service", "version": "0.3.0", "status": "running"}
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
-    return HealthResponse(status="healthy", service="documents", version="0.2.0")
+    return HealthResponse(status="healthy", service="documents", version="0.3.0")
+
+@app.get("/templates/{template_id}/spec")
+async def get_template_spec(template_id: UUID) -> JSONResponse:
+    """
+    Return the template's Args schema (fields, types, defaults) and declared return type.
+    """
+    mod = _import_template_module(template_id)
+    ArgsModel, _, default_filename = _get_template_contract(mod)
+    spec = _model_spec(ArgsModel)
+    if default_filename:
+        spec["default_filename"] = default_filename
+    return JSONResponse(content=spec)
 
 @app.post("/create")
-async def create_document(req: CreateDocumentRequest):
+async def create_document(req: CreateRequest) -> StreamingResponse:
     """
-    Build a PDF using PyLaTeX and XeLaTeX with fontspec (Unicode + system fonts).
+    Single endpoint: pick template by UUID, validate kwargs against template's Args, then compile PDF.
     """
-    if not req.text.strip():
-        raise HTTPException(status_code=400, detail="Text is required.")
-    try:
-        pdf_bytes = build_basic_doc(
-            title=req.title,
-            author=req.author,
-            text=req.text,
-            main_font=req.main_font,
-            mono_font=req.mono_font,
-            fontsize_pt=req.fontsize_pt,
-            paper=req.paper,
-        )
-    except Exception as e:
-        logger.exception("LaTeX build failed")
-        raise HTTPException(status_code=500, detail=f"LaTeX build error: {e}")
+    mod = _import_template_module(req.template_id)
+    ArgsModel, render_fn, default_filename = _get_template_contract(mod)
 
+    try:
+        args_obj = ArgsModel(**req.kwargs)
+    except Exception as e:
+        # Pydantic validation errors are JSON-serializable already
+        raise HTTPException(status_code=422, detail=json.loads(str(e).replace("'", '"')))  # best-effort
+
+    try:
+        pdf_bytes = render_fn(args_obj)
+    except Exception as e:
+        logger.exception("Template render failed")
+        raise HTTPException(status_code=500, detail=f"Render error: {e}")
+
+    # pick filename from args if present, else template's default, else generic
+    filename = getattr(args_obj, "title", None) or default_filename or "document"
     return StreamingResponse(
         content=iter([pdf_bytes]),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{safe_filename(req.title)}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="{_safe_filename(filename)}.pdf"'},
     )
 
-@app.post("/create/raw")
-async def create_from_raw(req: RawLatexRequest):
-    """
-    Pass raw LaTeX (preamble optional). Uses XeLaTeX or LuaLaTeX.
-    """
-    try:
-        pdf_bytes = compile_raw_latex(
-            body=req.body,
-            preamble=req.preamble,
-            engine=req.engine,
-            paper=req.paper,
-            fontsize_pt=req.fontsize_pt,
-        )
-    except Exception as e:
-        logger.exception("Raw LaTeX build failed")
-        raise HTTPException(status_code=500, detail=f"LaTeX build error: {e}")
-
-    return StreamingResponse(
-        content=iter([pdf_bytes]),
-        media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="document.pdf"'},
-    )
-
-# ---------- Helpers ----------
-
-def safe_filename(name: str) -> str:
-    s = "".join(ch for ch in name if ch.isalnum() or ch in (" ", "-", "_")).rstrip()
-    return s if s else "document"
-
-def compile_raw_latex(*, body: str, preamble: Optional[str], engine: str, paper: str, fontsize_pt: int) -> bytes:
-    """
-    Compile arbitrary LaTeX. We always inject fontspec + unicode packages when using xelatex/lualatex.
-    """
-    # Create a minimal doc if preamble not provided
-    if preamble is None:
-        preamble = rf"""
-\documentclass[{fontsize_pt}pt,{paper}]{{article}}
-\usepackage{{fontspec}}
-\usepackage{{microtype}}
-\usepackage{{hyperref}}
-\usepackage{{geometry}}
-\geometry{{margin=1in}}
-\setmainfont{{Noto Serif}}
-\setmonofont{{DejaVu Sans Mono}}
-"""
-
-    full_tex = preamble + "\n\\begin{document}\n" + body + "\n\\end{document}\n"
-
-    with tempfile.TemporaryDirectory() as d:
-        tex_path = Path(d) / "doc.tex"
-        tex_path.write_text(full_tex, encoding="utf-8")
-
-        # Use latexmk for robust builds
-        import shlex
-        import subprocess
-        engine_flag = "-xelatex" if engine == "xelatex" else "-lualatex"
-        cmd = f"latexmk {engine_flag} -interaction=nonstopmode -halt-on-error -pdf doc.tex"
-        proc = subprocess.run(
-            shlex.split(cmd),
-            cwd=d,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=60,  # keep tight
-            check=False,
-        )
-        if proc.returncode != 0:
-            log = proc.stdout.decode(errors="ignore")[-4000:]
-            raise RuntimeError(f"latexmk failed (code {proc.returncode}). Tail:\n{log}")
-
-        pdf_path = Path(d) / "doc.pdf"
-        if not pdf_path.exists():
-            raise RuntimeError("PDF not produced.")
-
-        return pdf_path.read_bytes()

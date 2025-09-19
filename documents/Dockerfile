@@ -25,16 +25,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app
 COPY app/ ./app/
+COPY templates/ ./templates/
 
 # Non-root user
 RUN useradd -m -u 10001 appuser
 USER appuser
 
-EXPOSE 8002
+EXPOSE 8000
 
 # Healthcheck (FastAPI health)
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:8002/health || exit 1
+  CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["python", "-m", "app.main"]
