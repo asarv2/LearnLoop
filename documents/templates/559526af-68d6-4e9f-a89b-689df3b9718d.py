@@ -17,6 +17,7 @@ from pylatex import Command, Document, NoEscape, Package  # type: ignore
 from pylatex.utils import bold  # type: ignore
 
 DEFAULT_FILENAME = "project-status-update"
+TEMPLATE_DESCRIPTION = "A comprehensive project status update template covering 30, 60, and 90-day milestones. Includes project information, status summaries, challenges, next steps, and optional metrics graphs for each time period."
 
 class Args(BaseModel):
     # Project Information

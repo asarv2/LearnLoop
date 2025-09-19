@@ -17,6 +17,7 @@ from pylatex import Command, Document, NoEscape, Package  # type: ignore
 from pylatex.utils import bold  # type: ignore
 
 DEFAULT_FILENAME = "performance-review"
+TEMPLATE_DESCRIPTION = "A professional performance review template for employee evaluations. Includes employee information, strengths and improvement areas, goal tracking, and reviewer details. Suitable for annual or quarterly performance assessments."
 
 class Args(BaseModel):
     # Company Information
