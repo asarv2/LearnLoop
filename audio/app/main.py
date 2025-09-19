@@ -14,7 +14,6 @@ import socketio  # type: ignore
 # Removed aiortc imports - WebRTC handled by server
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from .bus import PCM_SR, SAMPLES_PER_CHUNK
 from .extensions import warm_all_models
@@ -24,9 +23,7 @@ from .transcripts import synthesize_via_model_service
 
 load_dotenv()
 
-origin = os.getenv("ORIGIN", "http://localhost:3000")
-alternative_origin = os.getenv("ALTERNATIVE_ORIGIN", "http://localhost:3001")
-allowed_origins = [origin, alternative_origin]
+# Removed CORS configuration - this is server-to-server communication
 
 AUDIO_SR = 48000
 AUDIO_CH = 1
@@ -51,17 +48,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
 
 
 fastapi_app = FastAPI(title="RTC2", lifespan=lifespan)
-fastapi_app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Removed CORS middleware - this is server-to-server communication
 
 
 sio = socketio.AsyncServer(
-    async_mode="asgi", cors_allowed_origins=allowed_origins, transports=["websocket", "polling"]
+    async_mode="asgi", transports=["websocket", "polling"]
 )
 app = socketio.ASGIApp(sio, fastapi_app, socketio_path="socket.io")
 

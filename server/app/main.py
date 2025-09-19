@@ -307,7 +307,15 @@ async def root_info() -> JSONResponse:
 
 @fastapi_app.get("/health")
 async def health_check() -> JSONResponse:
-    return JSONResponse(content={"status": "ok"})
+    # Check audio service connection
+    bridge = get_bridge(sio)
+    audio_healthy = await bridge.health_check()
+    
+    status = "ok" if audio_healthy else "degraded"
+    return JSONResponse(content={
+        "status": status,
+        "audio_service": "connected" if audio_healthy else "disconnected"
+    })
 
 
 # ── Lifespan management ───────────────────────────────────────────────────

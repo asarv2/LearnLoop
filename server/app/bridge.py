@@ -36,7 +36,7 @@ class AudioBridge:
         self.server_sio = server_sio
         self.url = os.getenv("AUDIO_SERVICE_URL", "")
         self.secret = os.getenv("AUDIO_SECRET", "")
-        self._client = socketio.AsyncClient(transports=["websocket"])  # prefer websocket
+        self._client = socketio.AsyncClient()  # Socket.IO client for server-to-server communication
         self._connected = asyncio.Event()
         self._mix_subs: Dict[str, MixedAudioSubscriber] = {}
 
@@ -52,11 +52,17 @@ class AudioBridge:
     async def start(self) -> None:
         if self._client.connected:
             return
+        if not self.url:
+            log.error("AUDIO_SERVICE_URL not configured - cannot connect to audio service")
+            raise Exception("AUDIO_SERVICE_URL not configured")
         try:
+            log.info(f"Connecting to audio service at {self.url}")
             await self._client.connect(self.url, socketio_path="socket.io")
             await self._connected.wait()
-        except Exception:
-            log.exception("failed to connect to audio at %s", self.url)
+            log.info("Successfully connected to audio service")
+        except Exception as e:
+            log.error(f"Failed to connect to audio service at {self.url}: {e}")
+            raise
 
     async def stop(self) -> None:
         try:
@@ -74,29 +80,54 @@ class AudioBridge:
     async def start_room(self, *, room_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
         await self._connected.wait()
         payload = self._with_auth({"room_id": room_id, **config})
-        result = await self._client.call("s2s_start_room", payload, timeout=10.0)
-        return result if isinstance(result, dict) else {}
+        try:
+            result = await self._client.call("s2s_start_room", payload, timeout=10.0)
+            if isinstance(result, dict) and "error" in result:
+                log.error(f"Audio service error starting room {room_id}: {result['error']}")
+                raise Exception(f"Audio service error: {result['error']}")
+            return result if isinstance(result, dict) else {}
+        except Exception as e:
+            log.error(f"Failed to start room {room_id} in audio service: {e}")
+            raise
 
     async def stop_room(self, *, room_id: str) -> Dict[str, Any]:
         await self._connected.wait()
-        result = await self._client.call("s2s_stop_room", self._with_auth({"room_id": room_id}), timeout=10.0)
-        return result if isinstance(result, dict) else {}
+        try:
+            result = await self._client.call("s2s_stop_room", self._with_auth({"room_id": room_id}), timeout=10.0)
+            if isinstance(result, dict) and "error" in result:
+                log.error(f"Audio service error stopping room {room_id}: {result['error']}")
+                raise Exception(f"Audio service error: {result['error']}")
+            return result if isinstance(result, dict) else {}
+        except Exception as e:
+            log.error(f"Failed to stop room {room_id} in audio service: {e}")
+            raise
 
     async def register_human(self, *, room_id: str, human_id: str) -> Dict[str, Any]:
         await self._connected.wait()
-        result = await self._client.call("s2s_register_human", self._with_auth({"room_id": room_id, "human_id": human_id}), timeout=5.0)
-        return result if isinstance(result, dict) else {}
+        try:
+            result = await self._client.call("s2s_register_human", self._with_auth({"room_id": room_id, "human_id": human_id}), timeout=5.0)
+            if isinstance(result, dict) and "error" in result:
+                log.error(f"Audio service error registering human {human_id} in room {room_id}: {result['error']}")
+                raise Exception(f"Audio service error: {result['error']}")
+            return result if isinstance(result, dict) else {}
+        except Exception as e:
+            log.error(f"Failed to register human {human_id} in room {room_id}: {e}")
+            raise
 
     async def ingest_frame(self, *, room_id: str, source_id: str, pcm_i16: np.ndarray, sr: int = 48000) -> None:
         await self._connected.wait()
         b64 = base64.b64encode(pcm_i16.astype(np.int16).tobytes()).decode("ascii")
-        await self._client.emit("s2s_ingest_frame", self._with_auth({
-            "room_id": room_id,
-            "source_id": source_id,
-            "sr": int(sr),
-            "format": "pcm16",
-            "frame_b64": b64,
-        }))
+        try:
+            await self._client.emit("s2s_ingest_frame", self._with_auth({
+                "room_id": room_id,
+                "source_id": source_id,
+                "sr": int(sr),
+                "format": "pcm16",
+                "frame_b64": b64,
+            }))
+        except Exception as e:
+            log.error(f"Failed to ingest frame for {source_id} in room {room_id}: {e}")
+            # Don't raise here as this is called frequently and shouldn't break the flow
 
     async def subscribe_mix(self, *, room_id: str, subscriber_id: str) -> MixedAudioSubscriber:
         await self._connected.wait()
@@ -104,19 +135,44 @@ class AudioBridge:
         if sub is None:
             sub = MixedAudioSubscriber(subscriber_id)
             self._mix_subs[subscriber_id] = sub
-        await self._client.call("s2s_subscribe_mix", self._with_auth({
-            "room_id": room_id,
-            "subscriber_id": subscriber_id,
-        }), timeout=5.0)
+        try:
+            result = await self._client.call("s2s_subscribe_mix", self._with_auth({
+                "room_id": room_id,
+                "subscriber_id": subscriber_id,
+            }), timeout=5.0)
+            if isinstance(result, dict) and "error" in result:
+                log.error(f"Audio service error subscribing to mix for {subscriber_id} in room {room_id}: {result['error']}")
+                raise Exception(f"Audio service error: {result['error']}")
+        except Exception as e:
+            log.error(f"Failed to subscribe to mix for {subscriber_id} in room {room_id}: {e}")
+            raise
         return sub
 
     async def unsubscribe_mix(self, *, room_id: str, subscriber_id: str) -> None:
         await self._connected.wait()
-        await self._client.call("s2s_unsubscribe_mix", self._with_auth({
-            "room_id": room_id,
-            "subscriber_id": subscriber_id,
-        }), timeout=5.0)
-        self._mix_subs.pop(subscriber_id, None)
+        try:
+            result = await self._client.call("s2s_unsubscribe_mix", self._with_auth({
+                "room_id": room_id,
+                "subscriber_id": subscriber_id,
+            }), timeout=5.0)
+            if isinstance(result, dict) and "error" in result:
+                log.error(f"Audio service error unsubscribing from mix for {subscriber_id} in room {room_id}: {result['error']}")
+        except Exception as e:
+            log.error(f"Failed to unsubscribe from mix for {subscriber_id} in room {room_id}: {e}")
+        finally:
+            self._mix_subs.pop(subscriber_id, None)
+
+    # ── health check ─────────────────────────────────────────────────────
+    async def health_check(self) -> bool:
+        """Check if the audio service connection is healthy."""
+        try:
+            if not self._client.connected:
+                return False
+            await self._connected.wait()
+            return True
+        except Exception as e:
+            log.error(f"Audio service health check failed: {e}")
+            return False
 
     # ── downlink handlers (from audio) ──────────────────────────────────
     async def _on_connect(self) -> None:

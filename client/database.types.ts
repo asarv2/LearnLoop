@@ -811,6 +811,7 @@ export type Database = {
           description: string | null
           id: string
           practice: boolean
+          profile_ids: string[] | null
           show_documents: boolean
           title: string
           updated_at: string
@@ -823,6 +824,7 @@ export type Database = {
           description?: string | null
           id?: string
           practice?: boolean
+          profile_ids?: string[] | null
           show_documents?: boolean
           title: string
           updated_at?: string
@@ -835,6 +837,7 @@ export type Database = {
           description?: string | null
           id?: string
           practice?: boolean
+          profile_ids?: string[] | null
           show_documents?: boolean
           title?: string
           updated_at?: string
