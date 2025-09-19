@@ -6,7 +6,7 @@ import time
 import uuid
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, cast
 from uuid import UUID
 
 from app.db import get_session
@@ -17,7 +17,7 @@ from sqlmodel import select
 
 # test comment
 
-def _uuid_or_none(x):
+def _uuid_or_none(x: str | None) -> UUID | None:
     """Safely convert string to UUID, return None if invalid."""
     try: 
         return UUID(x) if x else None
@@ -80,7 +80,7 @@ def list_messages(room_id: str) -> List[Message]:
 
 # ---- event emitter plumbing (set by main) ------------------------------------
 _emit: Optional[Callable[[str, str, dict], Awaitable[None]]] = None
-def set_emitter(emitter):
+def set_emitter(emitter: Callable[[str, str, dict], Awaitable[None]]) -> None:
     """
     emitter: async def (room_or_sid: str, event: str, payload: dict) -> None
     For our use we call with room_id (Socket.IO room).
@@ -90,15 +90,15 @@ def set_emitter(emitter):
 
 # ---- persistence helpers -----------------------------------------------------
 
-def _ensure_chat_exists(db, chat_id: str) -> Optional[Chats]:
+def _ensure_chat_exists(db: Any, chat_id: str) -> Optional[Chats]:
     # Optional safety; if your chat rows always exist, you can skip this lookup
     try:
-        return db.exec(select(Chats).where(Chats.id == chat_id)).one_or_none()
+        return cast(Optional[Chats], db.exec(select(Chats).where(Chats.id == chat_id)).one_or_none())
     except Exception:
         return None
 
 def _upsert_db_message(
-    db, *, chat_id: str, role: str, msg_id: str, text: str,
+    db: Any, *, chat_id: str, role: str, msg_id: str, text: str,
     is_final: bool, persona_id: Optional[str] = None
 ) -> Tuple[DBMessage, str]:
     """
@@ -169,7 +169,7 @@ async def _flush_pending_writes(message_id: str, force: bool = False) -> Optiona
     
     # Persist to DB
     import asyncio
-    def _persist_once():
+    def _persist_once() -> Tuple[DBMessage, str]:
         db = next(get_session())
         try:
             _ensure_chat_exists(db, room_id)
@@ -236,7 +236,7 @@ async def upsert_text_chunk(
             # First chunk -> create DB row quickly for UX
             if chunk_idx == 0:
                 import asyncio
-                def _persist_user():
+                def _persist_user() -> Tuple[DBMessage, str]:
                     db = next(get_session())
                     try:
                         _ensure_chat_exists(db, room_id)
@@ -290,14 +290,25 @@ async def upsert_text_chunk(
                 if not res:
                     # Nothing pending; still need to mark DB row completed
                     import asyncio
-                    def _mark_complete():
+                    def _mark_complete() -> Tuple[DBMessage, str]:
                         db = next(get_session())
                         try:
                             m = db.exec(select(DBMessage).where(DBMessage.id == mid)).one_or_none()
                             if m and not m.completed:
                                 m.completed = True
                                 db.add(m); db.commit(); db.refresh(m)
-                            return m, (m.content or "") if m else ("", "")
+                            if m:
+                                return m, (m.content or "")
+                            else:
+                                # Create a dummy message if none exists
+                                dummy_msg = DBMessage(
+                                    id=UUID(mid),
+                                    chat_id=room_id,
+                                    role="user",
+                                    content="",
+                                    completed=True
+                                )
+                                return dummy_msg, ""
                         except Exception:
                             try: db.rollback()
                             except Exception: pass
@@ -354,9 +365,9 @@ async def upsert_text_chunk(
 
                     # Schedule hint generation for this message
                     import asyncio
-                    async def _schedule_hints():
+                    async def _schedule_hints() -> None:
                         try:
-                            def _sync(msg_uuid: uuid.UUID):
+                            def _sync(msg_uuid: uuid.UUID) -> Dict[str, Any]:
                                 import asyncio as _asyncio
                                 return _asyncio.run(run_hint_agent(msg_uuid))
                             result = await asyncio.to_thread(_sync, uuid.UUID(str(db_msg.id)))

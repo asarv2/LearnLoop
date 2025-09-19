@@ -1,260 +1,344 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
-from typing import Dict, Optional
+import time
+from fractions import Fraction
+from typing import Any, AsyncIterator, Dict, Optional
 
+import av
 import numpy as np
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+import socketio  # type: ignore
+# Removed aiortc imports - WebRTC handled by server
+from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from .agents.base import Agent
-from .agents.beep import BeepAgent
-from .agents.logger import LoggerAgent
-from .bus import PCM_SR, SAMPLES_PER_CHUNK, AudioBus, AudioChunk
+from .bus import PCM_SR, SAMPLES_PER_CHUNK
+from .extensions import warm_all_models
+from .room import create_room_with_config, get_room
+from .store import list_messages
+from .transcripts import synthesize_kokoro
 
-app = FastAPI(title="Learnloop Audio Service", version="0.1.0")
+load_dotenv()
 
+origin = os.getenv("ORIGIN", "http://localhost:3000")
+alternative_origin = os.getenv("ALTERNATIVE_ORIGIN", "http://localhost:3001")
+allowed_origins = [origin, alternative_origin]
 
-# In-memory room registry
-class RoomState:
-    def __init__(self, room_id: str):
-        self.id = room_id
-        self.bus = AudioBus()
-        self.bus.start(period_ms=20)
-        self.agents: dict[str, Agent] = {}
-
-
-ROOMS: Dict[str, RoomState] = {}
-CONTROL_SOCKETS: Dict[str, WebSocket] = {}
+AUDIO_SR = 48000
+AUDIO_CH = 1
 
 
-def get_room(room_id: str) -> RoomState:
-    r = ROOMS.get(room_id)
-    if r is None:
-        r = RoomState(room_id)
-        ROOMS[room_id] = r
-    return r
+# Removed build_ice_servers - WebRTC handled by server
 
 
-@app.get("/health")
-async def health() -> dict:
-    return {"status": "ok"}
-
-
-@app.post("/rooms")
-async def create_room(payload: dict) -> dict:
-    room_id = str(payload.get("room_id") or os.urandom(6).hex())
-    _ = get_room(room_id)
-    return {"room_id": room_id}
-
-
-@app.delete("/rooms/{room_id}")
-async def delete_room(room_id: str) -> JSONResponse:
-    r = ROOMS.pop(room_id, None)
-    if r:
-        await r.bus.stop()
-    # close and remove control socket if present
-    ws = CONTROL_SOCKETS.pop(room_id, None)
-    if ws is not None:
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
+    async with contextlib.AsyncExitStack() as stack:
+        # Startup: warm all models
         try:
-            await ws.close(code=1001)
+            warm_all_models()
         except Exception:
             pass
-    return JSONResponse(status_code=204, content=None)
+        
+        yield
+        
+        # Shutdown: cleanup if needed
+        # Models will be cleaned up automatically when the process exits
 
 
-@app.post("/rooms/{room_id}/ignore")
-async def set_ignore(room_id: str, payload: dict) -> dict:
-    sub_id = payload.get("subscriber_id")
-    sources = set(payload.get("sources", []))
-    if not sub_id:
-        raise HTTPException(status_code=400, detail="missing subscriber_id")
-    r = get_room(room_id)
-    r.bus.set_ignore(sub_id, sources)
-    return {"ok": True}
+fastapi_app = FastAPI(title="RTC2", lifespan=lifespan)
+fastapi_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-# ---- Agent control (OpenAI) -------------------------------------------------
-
-@app.post("/rooms/{room_id}/agents/openai/start")
-async def start_openai_agent(room_id: str) -> dict:
-    # Placeholder: in a later step, wire real agent process/thread here
-    _ = get_room(room_id)
-    return {"ok": True}
+sio = socketio.AsyncServer(
+    async_mode="asgi", cors_allowed_origins=allowed_origins, transports=["websocket", "polling"]
+)
+app = socketio.ASGIApp(sio, fastapi_app, socketio_path="socket.io")
 
 
-@app.post("/rooms/{room_id}/agents/openai/stop")
-async def stop_openai_agent(room_id: str) -> dict:
-    # Placeholder for stopping agent
-    _ = get_room(room_id)
-    return {"ok": True}
+@sio.event
+async def connect(sid: str, environ: Dict[str, Any], auth: Optional[Dict[str, Any]]) -> bool:
+    return True
 
 
-# ---- Control channel (WebSocket) -------------------------------------------
-
-@app.websocket("/ws/control")
-async def ws_control(ws: WebSocket) -> None:
-    await ws.accept()
+@sio.event
+async def disconnect(sid: str) -> None:
+    # stop any S2S mix tasks for this sid
     try:
-        while True:
-            raw = await ws.receive_text()
-            try:
-                msg = json.loads(raw)
-            except Exception:
-                await ws.send_text(json.dumps({"ok": False, "error": "invalid_json"}))
-                continue
-
-            typ = str(msg.get("type") or "").lower()
-            room_id = str(msg.get("room_id") or "")
-            if not room_id:
-                await ws.send_text(json.dumps({"ok": False, "error": "missing_room_id"}))
-                continue
-            room = get_room(room_id)
-            # Register this control socket for push events
-            CONTROL_SOCKETS[room_id] = ws
-
-            if typ == "set_ignore":
-                sub_id = msg.get("subscriber_id")
-                sources = set(msg.get("sources", []) or [])
-                if not sub_id:
-                    await ws.send_text(json.dumps({"ok": False, "error": "missing_subscriber_id"}))
-                    continue
-                room.bus.set_ignore(str(sub_id), set(str(s) for s in sources))
-                await ws.send_text(json.dumps({"ok": True}))
-                continue
-
-            if typ == "agent_start":
-                # For now, start a simple BeepAgent as a placeholder
-                if "agent:beep" not in room.agents:
-                    beep = BeepAgent(id="agent:beep", bus=room.bus)
-                    beep.start()
-                    room.agents["agent:beep"] = beep
-                # Example event push back to server
+        for key, task in list(MIX_TASKS.items()):
+            k_sid, room_id_str, subscriber_id = key
+            if k_sid == sid:
                 try:
-                    await ws.send_text(json.dumps({
-                        "type": "text_chunk",
-                        "room_id": room_id,
-                        "source_id": "agent:beep",
-                        "role": "agent",
-                        "text": "(beep agent started)",
-                        "message_id": None,
-                        "chunk_idx": 0,
-                        "is_final": True,
-                        "persona_id": None,
-                    }))
+                    task.cancel()
                 except Exception:
                     pass
-                await ws.send_text(json.dumps({"ok": True}))
-                continue
-
-            if typ == "agent_stop":
-                # Stop placeholder agent if present
-                ag = room.agents.pop("agent:beep", None)
-                if ag is not None:
-                    try:
-                        await ag.stop()
-                    except Exception:
-                        pass
-                await ws.send_text(json.dumps({"ok": True}))
-                continue
-
-            await ws.send_text(json.dumps({"ok": False, "error": "unknown_type"}))
-    except WebSocketDisconnect:
-        # Cleanup any bound room mapping
-        # Find and remove this websocket from CONTROL_SOCKETS
-        try:
-            to_del = [rid for rid, s in CONTROL_SOCKETS.items() if s == ws]
-            for rid in to_del:
-                CONTROL_SOCKETS.pop(rid, None)
-        except Exception:
-            pass
-        return
+                MIX_TASKS.pop(key, None)
+                try:
+                    get_room(room_id_str).bus.unsubscribe(subscriber_id)
+                except Exception:
+                    pass
     except Exception:
-        try:
-            await ws.close(code=1011)
-        except Exception:
-            pass
+        pass
 
 
-@app.websocket("/ws/ingest")
-async def ws_ingest(ws: WebSocket) -> None:
-    await ws.accept()
+# ── S2S CONTROL + AUDIO INGEST/EGRESS ─────────────────────────────────────────
+
+from typing import Dict as _Dict
+from typing import Optional as _Optional
+from typing import Tuple as _Tuple
+
+
+def _check_secret_from_data(data: _Optional[dict]) -> bool:
     try:
-        # First message must be JSON handshake
-        raw = await ws.receive_text()
-        meta = json.loads(raw)
-        room_id = str(meta.get("room_id"))
-        source_id = str(meta.get("source_id"))
-        sr = int(meta.get("sr", PCM_SR))
-        chunk = int(meta.get("chunk_samples", SAMPLES_PER_CHUNK))
-        if not room_id or not source_id:
-            await ws.close(code=4000)
-            return
-        if sr != PCM_SR or chunk != SAMPLES_PER_CHUNK:
-            # For MVP enforce exact format
-            await ws.close(code=4001)
-            return
-        room = get_room(room_id)
-
-        while True:
-            msg = await ws.receive_bytes()
-            # Expect raw PCM16 little-endian mono of length 2*chunk
-            if len(msg) != 2 * SAMPLES_PER_CHUNK:
-                continue
-            pcm_i16 = np.frombuffer(msg, dtype=np.int16)
-            await room.bus.ingest_i16(source_id, pcm_i16, PCM_SR)
-    except WebSocketDisconnect:
-        return
+        import os
+        secret = os.getenv("AUDIO_MULTI_SECRET", "")
+        if not secret:
+            return True
+        token = None
+        if isinstance(data, dict):
+            token = data.get("authToken") or data.get("token")
+        return bool(token) and (token == secret)
     except Exception:
-        try:
-            await ws.close(code=1011)
-        except Exception:
-            pass
+        return True
 
 
-@app.websocket("/ws/subscribe")
-async def ws_subscribe(ws: WebSocket) -> None:
-    await ws.accept()
-    sub_id: Optional[str] = None
-    room_id_for_cleanup: Optional[str] = None
+@sio.event
+async def s2s_start_room(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    if not _check_secret_from_data(data):
+        return {"error": "unauthorized"}
+    # Expected fields
+    room_id = str(data.get("room_id")) if data.get("room_id") is not None else None
+    require_users = bool(data.get("require_users", True))
+    idle_timeout_ms = data.get("idle_timeout_ms")
     try:
-        raw = await ws.receive_text()
-        meta = json.loads(raw)
-        room_id = str(meta.get("room_id"))
-        sub_id = str(meta.get("subscriber_id"))
-        sr = int(meta.get("sr", PCM_SR))
-        chunk = int(meta.get("chunk_samples", SAMPLES_PER_CHUNK))
-        if not room_id or not sub_id:
-            await ws.close(code=4000)
-            return
-        if sr != PCM_SR or chunk != SAMPLES_PER_CHUNK:
-            await ws.close(code=4001)
-            return
-        room = get_room(room_id)
-        room_id_for_cleanup = room_id
-        sub = room.bus.subscribe(sub_id)
-
-        while True:
-            ch: AudioChunk = await sub.recv()
-            # send as raw PCM16 bytes
-            pcm_i16 = (np.clip(ch.data, -1, 1) * 32767.0).astype(np.int16)
-            await ws.send_bytes(pcm_i16.tobytes())
-    except WebSocketDisconnect:
-        return
+        idle_timeout_ms = int(idle_timeout_ms) if idle_timeout_ms is not None else None
     except Exception:
-        try:
-            await ws.close(code=1011)
-        except Exception:
-            pass
-    finally:
-        if sub_id and room_id_for_cleanup:
+        idle_timeout_ms = None
+    enable_word_timestamps = bool(data.get("enable_word_timestamps", True))
+    name = data.get("name")
+    if not isinstance(name, str):
+        name = None
+    problem_statement = data.get("problem_statement")
+    if not isinstance(problem_statement, str):
+        problem_statement = None
+    objectives_raw = data.get("objectives")
+    objectives = objectives_raw if isinstance(objectives_raw, list) else []
+    objectives = [str(x) for x in objectives]
+    agents_raw = data.get("agents")
+    agents = agents_raw if isinstance(agents_raw, list) else []
+    agents = [a for a in agents if isinstance(a, dict)]
+    room = create_room_with_config(
+        room_id=room_id,
+        require_users=require_users,
+        idle_timeout_ms=idle_timeout_ms,
+        enable_word_timestamps=enable_word_timestamps,
+        name=name,
+        problem_statement=problem_statement,
+        objectives=objectives,
+        agents=agents,
+    )
+    await sio.enter_room(sid, room.id)
+
+    # Wire up broadcasters to this room id if not already
+    if room.on_text_chunk is None:
+        async def _text_broadcast(payload: Dict[str, Any]) -> None:
+            await sio.emit("text_chunk", payload, room=room.id)
+        room.on_text_chunk = _text_broadcast
+    if room.on_transcript is None:
+        async def _tx(payload: Dict[str, Any]) -> None:
+            await sio.emit("transcript", payload, room=room.id)
+        room.on_transcript = _tx
+    if room.on_transcript_stop is None:
+        async def _txs(payload: Dict[str, Any]) -> None:
+            await sio.emit("transcript_stop", payload, room=room.id)
+        room.on_transcript_stop = _txs
+
+    return {"room_id": room.id}
+
+
+@sio.event
+async def s2s_register_human(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    if not _check_secret_from_data(data):
+        return {"error": "unauthorized"}
+    room_id = data.get("room_id")
+    human_id = data.get("human_id") or sid
+    room = get_room(room_id)
+    try:
+        room.register_agent(human_id, "human")
+        # Ensure server connection hears the mixed output but not their own mic
+        room.bus.set_ignore(human_id, {human_id, "agent:beep"})
+        room.start_monitor()
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@sio.event
+async def s2s_ingest_frame(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    if not _check_secret_from_data(data):
+        return {"error": "unauthorized"}
+    import base64
+
+    import numpy as np  # type: ignore
+    try:
+        room_id = data["room_id"]
+        source_id = data["source_id"]
+        sr = int(data.get("sr", AUDIO_SR))
+        raw = base64.b64decode(data["frame_b64"]) if isinstance(data.get("frame_b64"), str) else data.get("frame_b64")
+        if not isinstance(raw, (bytes, bytearray)):
+            return {"error": "bad frame"}
+        x = np.frombuffer(raw, dtype=np.int16)
+        room = get_room(room_id)
+        await room.bus.ingest_i16(source_id, x, sr)
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@sio.event
+async def s2s_user_text(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    if not _check_secret_from_data(data):
+        return {"error": "unauthorized"}
+    # Reuse typed-to-TTS flow by directly synthesizing and injecting
+    try:
+        room_id = data.get("room_id")
+        human_id = data.get("human_id") or sid
+        text = (data.get("text") or "").strip()
+        if not text:
+            return {"error": "empty"}
+        room = get_room(room_id)
+        msg_id = await room.append_text_chunk(
+            source_id=human_id, role="user", text="", message_id=None, chunk_idx=0, is_final=False
+        )
+        await room.recorder_start_message(human_id, label="typed")
+        audio_f32, sr = await asyncio.to_thread(synthesize_kokoro, text, "alloy", PCM_SR)
+        if audio_f32 is not None and getattr(audio_f32, "size", 0) > 0:
+            # Optional: early words via model service
             try:
-                r_opt = ROOMS.get(room_id_for_cleanup)
-                if r_opt is not None:
-                    r_opt.bus.unsubscribe(sub_id)
+                from .transcripts import align_via_model_service
+                tr = await align_via_model_service(audio_f32, sr, text, stage="final")
+                words = [{"start_ms": w.start_ms, "end_ms": w.end_ms, "text": w.text} for w in tr.words]
+                if words and room.on_transcript:
+                    await room.broadcast_transcript(agent_id=human_id, message_id=msg_id, start_ts_ms=int(time.time()*1000), words=words, full_text=text)
             except Exception:
                 pass
+            # Stream into bus
+            for i in range(0, audio_f32.size, SAMPLES_PER_CHUNK):
+                frame = audio_f32[i:i+SAMPLES_PER_CHUNK]
+                if frame.size == 0:
+                    continue
+                i16 = (np.clip(frame, -1.0, 1.0) * 32767.0).astype(np.int16)
+                await room.bus.ingest_i16(human_id, i16, PCM_SR)
+                await asyncio.sleep(SAMPLES_PER_CHUNK / PCM_SR)
+        await room.append_text_chunk(source_id=human_id, role="user", text=text, message_id=msg_id, chunk_idx=0, is_final=True)
+        room.schedule_segment_close_after_tail(human_id)
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
 
 
+@sio.event
+async def s2s_stop_room(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    if not _check_secret_from_data(data):
+        return {"error": "unauthorized"}
+    try:
+        room_id_val = data.get("room_id")
+        if not isinstance(room_id_val, str):
+            return {"error": "room_id required"}
+        from .room import cleanup_room
+        await cleanup_room(room_id_val)
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# Background mixed-audio egress tasks keyed by (sid, room_id, subscriber_id)
+MIX_TASKS: _Dict[_Tuple[str, str, str], asyncio.Task] = {}
+
+
+@sio.event
+async def s2s_subscribe_mix(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    if not _check_secret_from_data(data):
+        return {"error": "unauthorized"}
+    import base64
+    try:
+        room_id = data.get("room_id")
+        subscriber_id = data.get("subscriber_id") or sid
+        room = get_room(room_id)
+        # subscribe with the provided subscriber_id; this controls self-echo suppression
+        sub = room.bus.subscribe(subscriber_id)
+        # default ignore: own id and beep
+        try:
+            base = set([subscriber_id, "agent:beep"])  # ignore own mic and beep by default
+            room.bus.set_ignore(subscriber_id, base)
+        except Exception:
+            pass
+
+        key = (sid, room.id, subscriber_id)
+        if key in MIX_TASKS:
+            try:
+                MIX_TASKS[key].cancel()
+            except Exception:
+                pass
+        async def _pump() -> None:
+            try:
+                while True:
+                    ch = await sub.recv()
+                    i16 = (np.clip(ch.data, -1.0, 1.0) * 32767.0).astype(np.int16)
+                    b64 = base64.b64encode(i16.tobytes()).decode("ascii")
+                    payload = {
+                        "room_id": room.id,
+                        "subscriber_id": subscriber_id,
+                        "sr": PCM_SR,
+                        "format": "pcm16",
+                        "frame_b64": b64,
+                        "meta": ch.meta,
+                    }
+                    await sio.emit("s2s_mixed_frame", payload, room=sid)
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+        t = asyncio.create_task(_pump())
+        MIX_TASKS[key] = t
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@sio.event
+async def s2s_unsubscribe_mix(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    if not _check_secret_from_data(data):
+        return {"error": "unauthorized"}
+    try:
+        room_id = data.get("room_id")
+        subscriber_id = data.get("subscriber_id") or sid
+        key = (sid, room_id, subscriber_id)
+        t = MIX_TASKS.pop(key, None)  # type: ignore
+        if t:
+            try:
+                t.cancel()
+            except Exception:
+                pass
+        try:
+            get_room(room_id).bus.unsubscribe(subscriber_id)
+        except Exception:
+            pass
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@fastapi_app.get("/health")
+async def health() -> Dict[str, str]:
+    return {"status": "ok"}
