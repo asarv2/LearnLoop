@@ -675,6 +675,7 @@ export type Database = {
           parameter_ids: string[]
           parent_id: string | null
           problem_statement: string | null
+          prompt_mapping: Json
           prompts: Json
           rubric_id: string | null
           title: string
@@ -691,6 +692,7 @@ export type Database = {
           parameter_ids?: string[]
           parent_id?: string | null
           problem_statement?: string | null
+          prompt_mapping?: Json
           prompts?: Json
           rubric_id?: string | null
           title: string
@@ -707,6 +709,7 @@ export type Database = {
           parameter_ids?: string[]
           parent_id?: string | null
           problem_statement?: string | null
+          prompt_mapping?: Json
           prompts?: Json
           rubric_id?: string | null
           title?: string
