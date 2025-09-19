@@ -9,6 +9,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol
 
 import numpy as np
 from app.bus import PCM_SR, SAMPLES_PER_CHUNK, AudioBus, AudioChunk
+from app.remote_bus import RemoteAudioBus
 from app.services.agents.voice.beep import BeepAgent
 from app.services.agents.voice.echo import EchoAgent
 from app.services.agents.voice.logger import LoggerAgent
@@ -54,12 +55,12 @@ class Room:
     _openai_started: bool = False
     _idle_shutdown_task: Optional[asyncio.Task] = None
 
-    def register_agent(self, agent_id: str, description: str = ""):
+    def register_agent(self, agent_id: str, description: str = "") -> None:
         # just metadata; can expand later
         pass
 
     # ── Human presence tracking ───────────────────────────────────────────────
-    def _cancel_idle_shutdown(self):
+    def _cancel_idle_shutdown(self) -> None:
         t = self._idle_shutdown_task
         if t and not t.done():
             try:
@@ -68,7 +69,7 @@ class Room:
                 pass
         self._idle_shutdown_task = None
 
-    async def _start_openai(self):
+    async def _start_openai(self) -> None:
         if self._openai_started:
             return
         if self.openai_agent is None:
@@ -79,7 +80,7 @@ class Room:
         except Exception:
             self._openai_started = False
 
-    async def _stop_openai(self):
+    async def _stop_openai(self) -> None:
         if not self._openai_started:
             return
         try:
@@ -90,20 +91,20 @@ class Room:
         finally:
             self._openai_started = False
 
-    async def human_join(self, sid: str):
+    async def human_join(self, sid: str) -> None:
         self.human_sids.add(sid)
         self._cancel_idle_shutdown()
         # Lazy-start OpenAI on first human
         if len(self.human_sids) == 1:
             await self._start_openai()
 
-    async def human_leave(self, sid: str, *, idle_ms: int = 5000):
+    async def human_leave(self, sid: str, *, idle_ms: int = 5000) -> None:
         self.human_sids.discard(sid)
         if len(self.human_sids) > 0:
             return
         # Graceful idle shutdown: stop OpenAI after a short delay to allow fast reconnects
         self._cancel_idle_shutdown()
-        async def _idle():
+        async def _idle() -> None:
             try:
                 await asyncio.sleep(max(0, idle_ms) / 1000.0)
                 if len(self.human_sids) == 0:
@@ -148,7 +149,7 @@ class Room:
             await self.on_full_chat(self.id, list_messages(self.id))
         return msg.id
 
-    async def broadcast_transcript(self, *, agent_id: str, message_id: Optional[str], start_ts_ms: int, words: List[Dict[str, Any]], full_text: str):
+    async def broadcast_transcript(self, *, agent_id: str, message_id: Optional[str], start_ts_ms: int, words: List[Dict[str, Any]], full_text: str) -> None:
         if (not self.word_timestamps_enabled) or self.on_transcript is None:
             return
         payload = {
@@ -166,14 +167,14 @@ class Room:
         await self.on_transcript(payload)
 
     # Toggle transcripts at runtime
-    def set_word_timestamps_enabled(self, enabled: bool):
+    def set_word_timestamps_enabled(self, enabled: bool) -> None:
         self.word_timestamps_enabled = bool(enabled)
 
     # Back-compat alias
-    def set_transcripts_enabled(self, enabled: bool):
+    def set_transcripts_enabled(self, enabled: bool) -> None:
         self.set_word_timestamps_enabled(enabled)
 
-    async def broadcast_transcript_stop(self, *, agent_id: str, message_id: Optional[str], stop_ts_ms: int):
+    async def broadcast_transcript_stop(self, *, agent_id: str, message_id: Optional[str], stop_ts_ms: int) -> None:
         if self.on_transcript_stop is None:
             return
         payload = {
@@ -197,8 +198,15 @@ def get_room(room_id: Optional[str] = None) -> Room:
         rid = room_id
     r = ROOMS.get(rid)
     if r: return r
-    bus = AudioBus()
-    bus.start(period_ms=20)
+    # Choose local or remote audio bus
+    audio_service_url = os.getenv("AUDIO_SERVICE_URL")
+    bus: AudioBus
+    if audio_service_url:
+        bus = RemoteAudioBus(audio_service_url, rid)  # type: ignore[assignment]
+        bus.start(period_ms=20)
+    else:
+        bus = AudioBus()
+        bus.start(period_ms=20)
     r = Room(id=rid, bus=bus)
 
     # # Beep agent: periodic tone + text
@@ -233,7 +241,7 @@ def get_room(room_id: Optional[str] = None) -> Room:
     ROOMS[rid] = r
     return r
 
-async def cleanup_room(room_id: str):
+async def cleanup_room(room_id: str) -> None:
     r = ROOMS.pop(room_id, None)
     if r:
         # stop agents cleanly
