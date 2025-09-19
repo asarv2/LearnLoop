@@ -1,4 +1,4 @@
-.PHONY: help setup install clean format lint typecheck run prod test test-cov cleanup generate-models generate-tests stop test-fast test-slow test-unit test-integration typecheck-strict start-redis start-client start-server start-model start-documents stop-all
+.PHONY: help setup install clean format lint typecheck run prod test test-cov cleanup generate-models generate-tests stop test-fast test-slow test-unit test-integration typecheck-strict
 
 # Default Python interpreter
 PYTHON := python3.11
@@ -13,13 +13,6 @@ MODEL_PORT := 8001
 DOCUMENTS_PORT := 8002
 CLIENT_PORT := 3000
 REDIS_PORT := 6379
-
-# PID files for service management
-SERVER_PID := .server.pid
-MODEL_PID := .model.pid
-DOCUMENTS_PID := .documents.pid
-CLIENT_PID := .client.pid
-REDIS_PID := .redis.pid
 
 # Check if Python 3.11 is available
 PY311 := $(shell which python3.11 || true)
@@ -60,6 +53,11 @@ check-venv:
 	@if [ ! -d "$(VENV)" ]; then \
 		echo "❌ Virtual environment not found at $(VENV)"; \
 		echo "Run 'make setup' to create it"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(VENV_PYTHON)" ]; then \
+		echo "❌ Python not found in virtual environment at $(VENV_PYTHON)"; \
+		echo "Run 'make setup' to recreate the virtual environment"; \
 		exit 1; \
 	fi
 
@@ -116,59 +114,34 @@ test-cov: check-venv
 	@$(VENV_PYTHON) -m pytest tests/ --cov=app --cov-report=term-missing --cov-report=html
 	@echo "✅ Coverage report generated"
 
-# Start individual services
-start-redis:
-	@echo "⇢ starting Redis on :$(REDIS_PORT)"
-	@redis-server --port $(REDIS_PORT) --daemonize yes --pidfile $(REDIS_PID)
-	@echo "✅ Redis started on port $(REDIS_PORT)"
-
-start-server: check-venv start-redis
-	@echo "⇢ starting server on :$(SERVER_PORT)"
-	@cd server && $(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(SERVER_PORT) > ../$(SERVER_PID) 2>&1 &
-	@echo $$! > $(SERVER_PID)
-	@echo "✅ Server started on port $(SERVER_PORT) (PID: $$!)"
-
-start-model: check-venv
-	@echo "⇢ starting model service on :$(MODEL_PORT)"
-	@cd model && $(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(MODEL_PORT) > ../$(MODEL_PID) 2>&1 &
-	@echo $$! > $(MODEL_PID)
-	@echo "✅ Model service started on port $(MODEL_PORT) (PID: $$!)"
-
-start-documents: check-venv
-	@echo "⇢ starting documents service on :$(DOCUMENTS_PORT)"
-	@cd documents && $(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(DOCUMENTS_PORT) > ../$(DOCUMENTS_PID) 2>&1 &
-	@echo $$! > $(DOCUMENTS_PID)
-	@echo "✅ Documents service started on port $(DOCUMENTS_PORT) (PID: $$!)"
-
-start-client:
-	@echo "⇢ starting client on :$(CLIENT_PORT)"
-	@cd client && npm run dev > ../$(CLIENT_PID) 2>&1 &
-	@echo $$! > $(CLIENT_PID)
-	@echo "✅ Client started on port $(CLIENT_PORT) (PID: $$!)"
-
-# Start all services
-run: start-server start-model start-documents start-client
-	@echo "✅ All services started!"
+# Start all services in foreground with combined logs
+run: check-venv
+	@echo "🚀 Starting all LearnLoop services..."
 	@echo "  Redis:    localhost:$(REDIS_PORT)"
 	@echo "  Server:   http://localhost:$(SERVER_PORT)"
 	@echo "  Model:    http://localhost:$(MODEL_PORT)"
 	@echo "  Documents: http://localhost:$(DOCUMENTS_PORT)"
 	@echo "  Client:   http://localhost:$(CLIENT_PORT)"
 	@echo ""
-	@echo "Use 'make stop' to stop all services"
+	@echo "Press Ctrl+C to stop all services"
+	@echo "----------------------------------------"
+	@trap 'echo ""; echo "🛑 Stopping all services..."; pkill -f "redis-server.*$(REDIS_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(SERVER_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(MODEL_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(DOCUMENTS_PORT)" 2>/dev/null || true; pkill -f "next dev" 2>/dev/null || true; echo "✅ All services stopped"; exit 0' INT; \
+	exec 2>/dev/null; \
+	(redis-server --port $(REDIS_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;31m[REDIS]\033[0m %s' "$$line")"; done) & \
+	(cd server && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(SERVER_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;32m[SERVER]\033[0m %s' "$$line")"; done) & \
+	(cd model && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(MODEL_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;33m[MODEL]\033[0m %s' "$$line")"; done) & \
+	(cd documents && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(DOCUMENTS_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;34m[DOCS]\033[0m %s' "$$line")"; done) & \
+	(cd client && npm run dev 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;35m[CLIENT]\033[0m %s' "$$line")"; done) & \
+	wait
 
-# Stop all services
-stop-all:
-	@echo "Stopping all services..."
-	@if [ -f $(SERVER_PID) ]; then kill `cat $(SERVER_PID)` 2>/dev/null || true; rm $(SERVER_PID); echo "✅ Server stopped"; fi
-	@if [ -f $(MODEL_PID) ]; then kill `cat $(MODEL_PID)` 2>/dev/null || true; rm $(MODEL_PID); echo "✅ Model service stopped"; fi
-	@if [ -f $(DOCUMENTS_PID) ]; then kill `cat $(DOCUMENTS_PID)` 2>/dev/null || true; rm $(DOCUMENTS_PID); echo "✅ Documents service stopped"; fi
-	@if [ -f $(CLIENT_PID) ]; then kill `cat $(CLIENT_PID)` 2>/dev/null || true; rm $(CLIENT_PID); echo "✅ Client stopped"; fi
-	@if [ -f $(REDIS_PID) ]; then kill `cat $(REDIS_PID)` 2>/dev/null || true; rm $(REDIS_PID); echo "✅ Redis stopped"; fi
-	@echo "✅ All services stopped"
-
-# Stop any running processes
-stop: stop-all
+# Stop all services (for cleanup)
+stop:
+	@echo "🛑 Stopping all LearnLoop services..."
+	@pkill -f "redis-server.*$(REDIS_PORT)" 2>/dev/null && echo "✅ Redis stopped" || true
+	@pkill -f "uvicorn.*$(SERVER_PORT)" 2>/dev/null && echo "✅ Server stopped" || true
+	@pkill -f "uvicorn.*$(MODEL_PORT)" 2>/dev/null && echo "✅ Model service stopped" || true
+	@pkill -f "uvicorn.*$(DOCUMENTS_PORT)" 2>/dev/null && echo "✅ Documents service stopped" || true
+	@pkill -f "next dev" 2>/dev/null && echo "✅ Client stopped" || true
 	@echo "✅ All services stopped"
 
 # Start FastAPI via Gunicorn+Uvicorn for production
@@ -188,7 +161,6 @@ cleanup:
 	@find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name ".coverage" -delete 2>/dev/null || true
-	@find . -type f -name "*.pid" -delete 2>/dev/null || true
 	@echo "✅ Cleanup complete"
 
 # Show help
@@ -201,14 +173,8 @@ help:
 	@echo "  clean        - Remove virtual environment"
 	@echo ""
 	@echo "Services:"
-	@echo "  run          - Start all services (redis, server, model, documents, client)"
-	@echo "  start-redis  - Start Redis on port $(REDIS_PORT)"
-	@echo "  start-server - Start server on port $(SERVER_PORT)"
-	@echo "  start-model  - Start model service on port $(MODEL_PORT)"
-	@echo "  start-documents - Start documents service on port $(DOCUMENTS_PORT)"
-	@echo "  start-client - Start client on port $(CLIENT_PORT)"
-	@echo "  stop         - Stop all services"
-	@echo "  stop-all     - Stop all services"
+	@echo "  run          - Start all services in foreground (Ctrl+C to stop)"
+	@echo "  stop         - Stop all services (cleanup)"
 	@echo ""
 	@echo "Code quality:"
 	@echo "  format       - Format code with Ruff"
