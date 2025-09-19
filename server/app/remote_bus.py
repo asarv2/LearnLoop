@@ -58,11 +58,16 @@ class RemoteAudioBus(AudioBus):
         self._control_ws: Optional[WebSocketClientProtocol] = None
         self._control_lock: asyncio.Lock = asyncio.Lock()
 
+        # control event listener task (optional)
+        self._control_recv_task: Optional[asyncio.Task] = None
+
         self._closed = False
 
     # ---------------- AudioBus API ----------------
     def start(self, period_ms: int = 20) -> None:  # type: ignore[override]
         # Remote bus runs its own loop; nothing to do.
+        if self._control_recv_task is None or self._control_recv_task.done():
+            self._control_recv_task = asyncio.create_task(self._control_recv_loop())
         return
 
     async def stop(self) -> None:  # type: ignore[override]
@@ -92,6 +97,12 @@ class RemoteAudioBus(AudioBus):
             except Exception:
                 pass
             self._control_ws = None
+        if self._control_recv_task is not None:
+            try:
+                self._control_recv_task.cancel()
+            except Exception:
+                pass
+            self._control_recv_task = None
 
     def subscribe(self, subscriber_id: str) -> Subscriber:  # type: ignore[override]
         # Create local queue and start remote reader
@@ -216,5 +227,30 @@ class RemoteAudioBus(AudioBus):
                 return conn  # type: ignore[return-value]
             except Exception:
                 return None
+
+    async def _control_recv_loop(self) -> None:
+        while not self._closed:
+            ws = await self._ensure_control()
+            if ws is None:
+                await asyncio.sleep(0.5)
+                continue
+            try:
+                raw = await ws.recv()
+                if not isinstance(raw, (str, bytes)):
+                    continue
+                if isinstance(raw, bytes):
+                    # Ignore binary events on control
+                    continue
+                try:
+                    msg = json.loads(raw)
+                except Exception:
+                    continue
+                # Route server-facing events here (e.g., text_chunk/transcript)
+                # TODO: Integrate with server business logic via callbacks if needed.
+                _ = msg
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(0.5)
 
 
