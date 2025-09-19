@@ -7,7 +7,6 @@ services:
   client:
     image: ${LEARNLOOP_CLIENT_IMAGE:-ghcr.io/ashokhomepc/learnloop-client:latest}
     pull_policy: always
-    container_name: learnloop-client
     restart: unless-stopped
     networks:
       - web
@@ -75,7 +74,6 @@ services:
   model:
     image: ${LEARNLOOP_MODEL_IMAGE:-ghcr.io/ashokhomepc/learnloop-model:latest}
     pull_policy: always
-    container_name: learnloop-model
     restart: unless-stopped
     networks:
       - web
@@ -105,29 +103,26 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: learnloop-redis
     restart: unless-stopped
     networks:
       - web
 
   acme-extractor:
     image: ghcr.io/kereis/traefik-certs-dumper:latest
-    container_name: learnloop-acme-extractor
     restart: "no"
     environment:
       - DOMAIN=turn.learn-loop.org          # dump only this cert
       - CERTIFICATE_FILE_NAME=fullchain         # → fullchain.pem
       - PRIVATE_KEY_FILE_NAME=privkey           # → privkey.pem
     volumes:
-      - ../../../../api/acme.json:/traefik/acme.json:ro
-      - ../../../certs:/output:rw
+      - ../../api/acme.json:/traefik/acme.json:ro
+      - ../certs:/output:rw
 
   webrtc:
     build: ./turn
-    container_name: learnloop-webrtc
     restart: unless-stopped
     volumes:
-      - ../../../certs:/etc/coturn/certs:ro
+      - ../certs:/etc/coturn/certs:ro
     environment:
       - TURN_REALM=${TURN_REALM}
       - TURN_USERNAME=${TURN_USERNAME}
@@ -145,7 +140,6 @@ services:
 
   nginx:
     image: nginx:1.25
-    container_name: learnloop-nginx
     restart: unless-stopped
     ports:
       - "${CLIENT_PORT}:80"
@@ -168,7 +162,6 @@ services:
 
   docker-gen:
     image: jwilder/docker-gen:0.7.6
-    container_name: learnloop-docker-gen
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
@@ -176,7 +169,7 @@ services:
       - ./web/templates:/etc/docker-gen/templates:ro
       - ./web/generated:/etc/nginx/conf.d/generated:rw
     command: >
-      -notify-sighup learnloop-nginx
+      -notify-sighup nginx
       -watch
       /etc/docker-gen/templates/api_socketio.upstream.tmpl
       /etc/nginx/conf.d/generated/api_socketio.upstream.conf
