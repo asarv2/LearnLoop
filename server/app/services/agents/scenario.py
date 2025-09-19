@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
 
+import boto3
 import httpx
 from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
 from app.db import get_session
@@ -11,15 +12,63 @@ from app.extensions import load_prompt
 from app.models import Chats, Documents, Messages, Parameters
 from app.services.agents.generic import GenericAgent
 from app.utils.chat import get_parameter_history_from_scenario
+from boto3.s3.transfer import TransferConfig
+from botocore.config import Config
+from dotenv import load_dotenv
 from fastapi import Depends
 from pydantic import Field
 from sqlmodel import Session, select
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 # Global storage for scenario results
 scenario_results: Dict[str, Any] = {}
 scenario_progress: Dict[str, bool] = {}
+
+
+async def upload_pdf_to_s3(pdf_bytes: bytes, doc_id: str) -> None:
+    """Upload PDF bytes to S3 storage using Supabase S3 configuration."""
+    try:
+        # Get S3 configuration from environment variables
+        project_region = os.getenv("PROJECT_REGION")
+        s3_endpoint = os.getenv("S3_ENDPOINT")
+        access_key = os.getenv("ACCESS_KEY")
+        secret_key = os.getenv("SECRET_KEY")
+        bucket_name = "documents"
+        
+        if not all([s3_endpoint, access_key, secret_key]):
+            logger.error("Missing S3 configuration environment variables")
+            raise ValueError("S3 configuration incomplete")
+        
+        # Create S3 client with Supabase configuration
+        s3 = boto3.client(
+            "s3",
+            region_name=project_region,
+            endpoint_url=s3_endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=Config(s3={"addressing_style": "path"}, signature_version="s3v4"),
+        )
+        
+        # Upload PDF bytes to S3
+        # File path is just doc_id.pdf as specified
+        key = f"{doc_id}.pdf"
+        
+        # Use put_object for small files (PDFs are typically small)
+        s3.put_object(
+            Bucket=bucket_name,
+            Key=key,
+            Body=pdf_bytes,
+            ContentType="application/pdf"
+        )
+        
+        logger.info(f"Successfully uploaded PDF {key} to S3 bucket {bucket_name}")
+        
+    except Exception as e:
+        logger.error(f"Failed to upload PDF to S3: {str(e)}")
+        raise
 
 
 def create_scenario_tool() -> Any:
@@ -117,7 +166,7 @@ def create_document_generation_tool(parameter_id: uuid.UUID, template_id: uuid.U
     ) -> str:
         f"""Generate a document using template {template_id} for parameter {parameter_name}.
         
-        This function creates a document using the specified template and uploads it to storage.
+        This function creates a document using the specified template and uploads it to S3 storage.
         
         Args:
             **kwargs: Arguments for the document template (varies by template)
@@ -144,11 +193,9 @@ def create_document_generation_tool(parameter_id: uuid.UUID, template_id: uuid.U
                 # Get PDF bytes from response
                 pdf_bytes = response.content
             
-            # Create document entry in database
-            # For now, we'll store a placeholder content since the actual PDF upload
-            # will be handled by the client via the existing upload endpoint
+            # Create document entry in database first
             document = Documents(
-                content=f"Generated document from template {template_id} for parameter {parameter_name}. PDF ready for upload.",
+                content=f"Generated document from template {template_id} for parameter {parameter_name}",
                 profile_id=None  # Will be set by the calling context if needed
             )
             
@@ -159,11 +206,10 @@ def create_document_generation_tool(parameter_id: uuid.UUID, template_id: uuid.U
                 session.commit()
                 session.refresh(document)
                 
-                # Note: The actual PDF upload to S3/R2 will be handled by the client
-                # using the existing /api/v1/documents/{id}/upload endpoint
-                # The PDF bytes are available in the response from the documents service
+                # Upload PDF to S3 using boto3
+                await upload_pdf_to_s3(pdf_bytes, str(document.id))
                 
-                logger.info(f"Successfully created document {document.id} for parameter {parameter_name}")
+                logger.info(f"Successfully created document {document.id} for parameter {parameter_name} and uploaded to S3")
                 
                 # Collect document ID in global results
                 if 'document_ids' not in scenario_results:
@@ -400,7 +446,6 @@ async def run_scenario_agent(
             temperature=0.0,
             tools=scenario_tools,
             parallel_tool_calls=True,
-            reasoning_effort="low",
             tool_use_behavior=tool_use_behavior,
         )
 

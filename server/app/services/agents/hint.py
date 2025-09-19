@@ -167,7 +167,6 @@ async def run_hint_agent(
             temperature=0.0,
             tools=hint_tools,
             parallel_tool_calls=True,
-            reasoning_effort="low",
             tool_use_behavior=tool_use_behavior,
             model="gpt-4.1-mini",
         )
