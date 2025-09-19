@@ -40,6 +40,30 @@ class Args(BaseModel):
     root_cause: str = Field(default="", description="Root cause analysis of the incident")
     follow_up_actions: str = Field(default="", description="Follow-up actions to be taken")
 
+def _escape_latex(text: str) -> str:
+    """Escape special LaTeX characters in text."""
+    if not text:
+        return ""
+    
+    # Replace special LaTeX characters
+    replacements = {
+        '\\': r'\textbackslash{}',
+        '{': r'\{',
+        '}': r'\}',
+        '$': r'\$',
+        '&': r'\&',
+        '%': r'\%',
+        '#': r'\#',
+        '^': r'\textasciicircum{}',
+        '_': r'\_',
+        '~': r'\textasciitilde{}',
+    }
+    
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    
+    return text
+
 def render(args: Args) -> bytes:
     """
     Build an incident report PDF using the provided LaTeX template structure.
@@ -108,9 +132,9 @@ def render(args: Args) -> bytes:
 
 \begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.25\textwidth}|>{\raggedright\arraybackslash}p{0.25\textwidth}|>{\raggedright\arraybackslash}p{0.25\textwidth}|X|}
   \hline
-  \cellcolor{labelbg}\small Name & """ + args.employee_name + r""" & \cellcolor{labelbg}\small Job Title & """ + args.job_title + r""" \\
+  \cellcolor{labelbg}\small Name & """ + _escape_latex(args.employee_name) + r""" & \cellcolor{labelbg}\small Job Title & """ + _escape_latex(args.job_title) + r""" \\
   \hline
-  \cellcolor{labelbg}\small Department & """ + args.department + r""" & \cellcolor{labelbg}\small Supervisor & """ + args.supervisor + r""" \\
+  \cellcolor{labelbg}\small Department & """ + _escape_latex(args.department) + r""" & \cellcolor{labelbg}\small Supervisor & """ + _escape_latex(args.supervisor) + r""" \\
   \hline
 \end{tabularx}
 
@@ -126,22 +150,22 @@ def render(args: Args) -> bytes:
 % Row for date/time/location (three pairs)
 \begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.20\textwidth}|>{\raggedright\arraybackslash}p{0.20\textwidth}|>{\raggedright\arraybackslash}p{0.20\textwidth}|X|}
   \hline
-  \cellcolor{labelbg}\small Date & """ + args.incident_date + r""" & \cellcolor{labelbg}\small Time & """ + args.incident_time + r""" \\
+  \cellcolor{labelbg}\small Date & """ + _escape_latex(args.incident_date) + r""" & \cellcolor{labelbg}\small Time & """ + _escape_latex(args.incident_time) + r""" \\
   \hline
-  \cellcolor{labelbg}\small Location & """ + args.incident_location + r""" & \cellcolor{labelbg}\small & \\
+  \cellcolor{labelbg}\small Location & """ + _escape_latex(args.incident_location) + r""" & \cellcolor{labelbg}\small & \\
   \hline
 \end{tabularx}
 
 % Additional incident details with longer narratives
 \begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.30\textwidth}|X|}
   \hline
-  \cellcolor{labelbg}\small Description of the incident & \parbox[t][4cm][t]{\hsize}{ """ + args.incident_description + r""" } \\
+  \cellcolor{labelbg}\small Description of the incident & """ + _escape_latex(args.incident_description) + r""" \\
   \hline
-  \cellcolor{labelbg}\small Immediate actions taken & \parbox[t][3cm][t]{\hsize}{ """ + args.immediate_actions + r""" } \\
+  \cellcolor{labelbg}\small Immediate actions taken & """ + _escape_latex(args.immediate_actions) + r""" \\
   \hline
-  \cellcolor{labelbg}\small Root cause of the incident & \parbox[t][3cm][t]{\hsize}{ """ + args.root_cause + r""" } \\
+  \cellcolor{labelbg}\small Root cause of the incident & """ + _escape_latex(args.root_cause) + r""" \\
   \hline
-  \cellcolor{labelbg}\small Follow-up actions & \parbox[t][3cm][t]{\hsize}{ """ + args.follow_up_actions + r""" } \\
+  \cellcolor{labelbg}\small Follow-up actions & """ + _escape_latex(args.follow_up_actions) + r""" \\
   \hline
 \end{tabularx}
 
