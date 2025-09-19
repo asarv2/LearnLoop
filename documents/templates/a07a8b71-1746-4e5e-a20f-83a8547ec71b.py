@@ -16,35 +16,27 @@ from pydantic import BaseModel, Field
 from pylatex import Command, Document, NoEscape, Package  # type: ignore
 from pylatex.utils import bold  # type: ignore
 
-DEFAULT_FILENAME = "performance-review"
+DEFAULT_FILENAME = "perf_review"
 TEMPLATE_DESCRIPTION = "A professional performance review template for employee evaluations. Includes employee information, strengths and improvement areas, goal tracking, and reviewer details. Suitable for annual or quarterly performance assessments."
 
 class Args(BaseModel):
     # Company Information
     company_name: str = Field(default="Your Company Name", description="Company name for header")
-    logo_path: Optional[str] = Field(default=None, description="Path to company logo (optional)")
     
     # Employee Information
     employee_name: str = Field(default="", description="Employee's full name")
-    employee_id: str = Field(default="", description="Employee ID number")
     position_held: str = Field(default="", description="Employee's current position")
-    hire_date: str = Field(default="", description="Employee's hire date")
     department: str = Field(default="", description="Employee's department")
     
     # Review Information
     reviewer_name: str = Field(default="", description="Name of the reviewer")
-    hr_rep: str = Field(default="", description="HR representative name")
     date_of_review: str = Field(default="", description="Date of the performance review")
     
     # Performance Content
-    greatest_strengths: str = Field(default="", description="Employee's greatest strengths")
-    improvement_areas: str = Field(default="", description="Areas requiring improvement")
-    achieved_goals: str = Field(default="", description="Goals achieved from previous review")
-    next_goals: str = Field(default="", description="Goals for next review period")
-    
-    # Document Styling
-    fontsize_pt: int = Field(default=11, ge=8, le=20, description="Font size in points")
-    paper: str = Field(default="letterpaper", description="Paper size (letterpaper|a4paper)")
+    greatest_strengths: str = Field(default="", description="Employee's greatest strengths and achievements")
+    improvement_areas: str = Field(default="", description="Areas requiring improvement and development")
+    achieved_goals: str = Field(default="", description="Goals achieved from previous review period")
+    next_goals: str = Field(default="", description="Goals and objectives for next review period")
 
 def render(args: Args) -> bytes:
     """
@@ -52,7 +44,7 @@ def render(args: Args) -> bytes:
     """
     doc = Document(
         documentclass="article",
-        document_options=[f"{args.fontsize_pt}pt"],
+        document_options=["11pt"],
         page_numbers=True,
         indent=False,
         lmodern=False,
@@ -96,26 +88,12 @@ def render(args: Args) -> bytes:
     # Do not indent paragraphs
     doc.preamble.append(NoEscape(r"\setlength{\parindent}{0pt}"))
 
-    # Header: company logo and name
+    # Header: company name
     header_table = NoEscape(r"""
-\begin{tabularx}{\textwidth}{@{}Xr@{}}
-  % Left cell: optional company logo
-  \ifx\relax\detokenize{\relax""" + (args.logo_path or "") + r"""}\relax
-    \phantom{\rule{1cm}{1cm}}% reserve space if no logo specified
-  \else
-    \includegraphics[height=1.2cm]{""" + (args.logo_path or "") + r""" }
-  \fi
-  &
-  % Right cell: company name
-  {\huge\bfseries """ + args.company_name + r"""}
-\end{tabularx}
-
-% Vertical space below the header
-\vspace{0.6cm}
-
-% Main title
 {\centering
-  {\LARGE\color{primary}\bfseries Introductory Performance Review}\par
+  {\huge\bfseries """ + args.company_name + r"""}\par
+  \vspace{0.3cm}
+  {\LARGE\color{primary}\bfseries Performance Review}\par
 }
 
 \vspace{0.5cm}
@@ -124,19 +102,17 @@ def render(args: Args) -> bytes:
 
     # Employee Info section
     employee_info = NoEscape(r"""
-{\color{primary}\large\bfseries Employee Info}\par
+{\color{primary}\large\bfseries Employee Information}\par
 \vspace{0.2cm}
 
-% Four‑column table: labels in shaded cells and corresponding values
-\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash\hspace{0pt}}p{0.23\textwidth}|>{\raggedright\arraybackslash\hspace{0pt}}X|>{\raggedright\arraybackslash\hspace{0pt}}p{0.23\textwidth}|>{\raggedright\arraybackslash\hspace{0pt}}X|}
+% Four-column table: labels in shaded cells and corresponding values
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash\hspace{0pt}}p{0.25\textwidth}|>{\raggedright\arraybackslash\hspace{0pt}}X|>{\raggedright\arraybackslash\hspace{0pt}}p{0.25\textwidth}|>{\raggedright\arraybackslash\hspace{0pt}}X|}
   \hline
   \rowcolor{labelbg}\small Employee Name & """ + args.employee_name + r""" & \rowcolor{labelbg}\small Department & """ + args.department + r""" \\
   \hline
-  \rowcolor{labelbg}\small Employee ID & """ + args.employee_id + r""" & \rowcolor{labelbg}\small Reviewer Name & """ + args.reviewer_name + r""" \\
+  \rowcolor{labelbg}\small Position & """ + args.position_held + r""" & \rowcolor{labelbg}\small Reviewer & """ + args.reviewer_name + r""" \\
   \hline
-  \rowcolor{labelbg}\small Position Held & """ + args.position_held + r""" & \rowcolor{labelbg}\small HR Rep & """ + args.hr_rep + r""" \\
-  \hline
-  \rowcolor{labelbg}\small Hire Date & """ + args.hire_date + r""" & \rowcolor{labelbg}\small Date of Review & """ + args.date_of_review + r""" \\
+  \rowcolor{labelbg}\small Review Date & """ + args.date_of_review + r""" & \rowcolor{labelbg}\small & \\
   \hline
 \end{tabularx}
 

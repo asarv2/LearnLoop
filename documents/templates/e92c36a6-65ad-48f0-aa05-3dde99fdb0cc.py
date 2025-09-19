@@ -16,42 +16,24 @@ from pydantic import BaseModel, Field
 from pylatex import Command, Document, NoEscape, Package  # type: ignore
 from pylatex.utils import bold  # type: ignore
 
-DEFAULT_FILENAME = "incident-report"
+DEFAULT_FILENAME = "incident_report"
 TEMPLATE_DESCRIPTION = "A comprehensive incident report template for documenting workplace incidents, accidents, or safety issues. Includes employee information, incident details, witness information, root cause analysis, and follow-up actions with signature fields."
 
 class Args(BaseModel):
     # Employee Information
     employee_name: str = Field(default="", description="Employee's full name")
-    employee_id: str = Field(default="", description="Employee ID number")
     job_title: str = Field(default="", description="Employee's job title")
     department: str = Field(default="", description="Employee's department")
     supervisor: str = Field(default="", description="Supervisor's name")
-    employee_date: str = Field(default="", description="Date employee filled out the form")
     
     # Incident Details
     incident_date: str = Field(default="", description="Date of the incident")
     incident_time: str = Field(default="", description="Time of the incident")
     incident_location: str = Field(default="", description="Location where incident occurred")
-    witnesses: str = Field(default="", description="Names of witnesses (if applicable)")
-    incident_description: str = Field(default="", description="Detailed description of the incident")
+    incident_description: str = Field(default="", description="Detailed description of what happened")
     immediate_actions: str = Field(default="", description="Immediate actions taken after the incident")
     root_cause: str = Field(default="", description="Root cause analysis of the incident")
-    
-    # Follow-up Actions
     follow_up_actions: str = Field(default="", description="Follow-up actions to be taken")
-    
-    # Signatures
-    employee_signature: str = Field(default="", description="Employee signature")
-    supervisor_signature: str = Field(default="", description="Supervisor signature")
-    
-    # Received by
-    receiver_name: str = Field(default="", description="Name of person receiving the report")
-    receiver_date: str = Field(default="", description="Date report was received")
-    receiver_signature: str = Field(default="", description="Signature of person receiving the report")
-    
-    # Document Styling
-    fontsize_pt: int = Field(default=11, ge=8, le=20, description="Font size in points")
-    paper: str = Field(default="letterpaper", description="Paper size (letterpaper|a4paper)")
 
 def render(args: Args) -> bytes:
     """
@@ -59,7 +41,7 @@ def render(args: Args) -> bytes:
     """
     doc = Document(
         documentclass="article",
-        document_options=[f"{args.fontsize_pt}pt"],
+        document_options=["11pt"],
         page_numbers=True,
         indent=False,
         lmodern=False,
@@ -107,7 +89,7 @@ def render(args: Args) -> bytes:
 {\centering
   {\color{primary}\bfseries\LARGE Incident Report Form}\par
   \vspace{0.3cm}
-  {\small Employees should use this form to report work‑related incidents to HR.}\par
+  {\small Employees should use this form to report work-related incidents to HR.}\par
 }\par
 
 \vspace{0.5cm}
@@ -119,13 +101,11 @@ def render(args: Args) -> bytes:
 {\color{primary}\large\bfseries Employee Information}\par
 \vspace{0.2cm}
 
-\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.22\textwidth}|>{\raggedright\arraybackslash}p{0.28\textwidth}|>{\raggedright\arraybackslash}p{0.22\textwidth}|X|}
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.25\textwidth}|>{\raggedright\arraybackslash}p{0.25\textwidth}|>{\raggedright\arraybackslash}p{0.25\textwidth}|X|}
   \hline
-  \cellcolor{labelbg}\small Name & """ + args.employee_name + r""" & \cellcolor{labelbg}\small Employee ID & """ + args.employee_id + r""" \\
+  \cellcolor{labelbg}\small Name & """ + args.employee_name + r""" & \cellcolor{labelbg}\small Job Title & """ + args.job_title + r""" \\
   \hline
-  \cellcolor{labelbg}\small Job Title & """ + args.job_title + r""" & \cellcolor{labelbg}\small Department & """ + args.department + r""" \\
-  \hline
-  \cellcolor{labelbg}\small Supervisor & """ + args.supervisor + r""" & \cellcolor{labelbg}\small Date & """ + args.employee_date + r""" \\
+  \cellcolor{labelbg}\small Department & """ + args.department + r""" & \cellcolor{labelbg}\small Supervisor & """ + args.supervisor + r""" \\
   \hline
 \end{tabularx}
 
@@ -139,22 +119,24 @@ def render(args: Args) -> bytes:
 \vspace{0.2cm}
 
 % Row for date/time/location (three pairs)
-\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.15\textwidth}|>{\raggedright\arraybackslash}p{0.17\textwidth}|>{\raggedright\arraybackslash}p{0.15\textwidth}|>{\raggedright\arraybackslash}p{0.17\textwidth}|>{\raggedright\arraybackslash}p{0.15\textwidth}|X|}
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.20\textwidth}|>{\raggedright\arraybackslash}p{0.20\textwidth}|>{\raggedright\arraybackslash}p{0.20\textwidth}|X|}
   \hline
-  \cellcolor{labelbg}\small Date & """ + args.incident_date + r""" & \cellcolor{labelbg}\small Time & """ + args.incident_time + r""" & \cellcolor{labelbg}\small Location & """ + args.incident_location + r""" \\
+  \cellcolor{labelbg}\small Date & """ + args.incident_date + r""" & \cellcolor{labelbg}\small Time & """ + args.incident_time + r""" \\
+  \hline
+  \cellcolor{labelbg}\small Location & """ + args.incident_location + r""" & \cellcolor{labelbg}\small & \\
   \hline
 \end{tabularx}
 
 % Additional incident details with longer narratives
 \begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.30\textwidth}|X|}
   \hline
-  \cellcolor{labelbg}\small Witnesses (if applicable) & """ + args.witnesses + r""" \\
-  \hline
   \cellcolor{labelbg}\small Description of the incident & \parbox[t][4cm][t]{\hsize}{ """ + args.incident_description + r""" } \\
   \hline
-  \cellcolor{labelbg}\small Immediate actions taken & \parbox[t][3.5cm][t]{\hsize}{ """ + args.immediate_actions + r""" } \\
+  \cellcolor{labelbg}\small Immediate actions taken & \parbox[t][3cm][t]{\hsize}{ """ + args.immediate_actions + r""" } \\
   \hline
-  \cellcolor{labelbg}\small Root cause of the incident & \parbox[t][3.5cm][t]{\hsize}{ """ + args.root_cause + r""" } \\
+  \cellcolor{labelbg}\small Root cause of the incident & \parbox[t][3cm][t]{\hsize}{ """ + args.root_cause + r""" } \\
+  \hline
+  \cellcolor{labelbg}\small Follow-up actions & \parbox[t][3cm][t]{\hsize}{ """ + args.follow_up_actions + r""" } \\
   \hline
 \end{tabularx}
 
@@ -162,52 +144,6 @@ def render(args: Args) -> bytes:
 """)
     doc.append(incident_details)
 
-    # Follow-up actions section
-    followup_section = NoEscape(r"""
-{\color{primary}\large\bfseries Follow‑up actions}\par
-\vspace{0.2cm}
-
-\begin{tabularx}{\textwidth}{|X|}
-  \hline
-  \parbox[t][4cm][t]{\hsize}{ """ + args.follow_up_actions + r""" } \\
-  \hline
-\end{tabularx}
-
-\vspace{0.6cm}
-""")
-    doc.append(followup_section)
-
-    # Signatures section
-    signatures_section = NoEscape(r"""
-{\color{primary}\large\bfseries Signatures}\par
-\vspace{0.2cm}
-
-\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.30\textwidth}|>{\raggedright\arraybackslash}p{0.20\textwidth}|>{\raggedright\arraybackslash}p{0.30\textwidth}|X|}
-  \hline
-  \cellcolor{labelbg}\small Employee signature & """ + args.employee_signature + r""" & \cellcolor{labelbg}\small Supervisor signature & """ + args.supervisor_signature + r""" \\
-  \hline
-\end{tabularx}
-
-\vspace{0.6cm}
-""")
-    doc.append(signatures_section)
-
-    # Received by section
-    received_section = NoEscape(r"""
-{\color{primary}\large\bfseries Received by}\par
-\vspace{0.2cm}
-
-\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.22\textwidth}|X|}
-  \hline
-  \cellcolor{labelbg}\small Name & """ + args.receiver_name + r""" \\
-  \hline
-  \cellcolor{labelbg}\small Date & """ + args.receiver_date + r""" \\
-  \hline
-  \cellcolor{labelbg}\small Signature & """ + args.receiver_signature + r""" \\
-  \hline
-\end{tabularx}
-""")
-    doc.append(received_section)
 
     # Compile with latexmk + XeLaTeX; return bytes
     pdf, _ = doc.generate_pdf(  # type: ignore

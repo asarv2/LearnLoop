@@ -157,6 +157,11 @@ def create_persona_prompt_tool(persona_id: uuid.UUID, persona_alias: str, person
     return function_tool(generate_persona_prompt)
 
 
+def _humanize(s: str) -> str:
+    """Convert template names to human-readable format."""
+    # fallbacks: "performance-review" -> "Performance Review"
+    return " ".join(w.capitalize() for w in s.replace("_", " ").replace("-", " ").split())
+
 async def create_document_generation_tool(
     *,
     parameter_id: uuid.UUID,
@@ -170,7 +175,13 @@ async def create_document_generation_tool(
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{documents_service_url}/templates/{template_id}/spec", timeout=10.0)
         r.raise_for_status()
-        spec = r.json()  # has "fields" and "json_schema"
+        spec = r.json()  # has "fields", "json_schema", "default_filename", "template_description"
+    
+    # 2) Extract template metadata for better tool naming and description
+    default_filename = spec.get("default_filename")  # from DEFAULT_FILENAME
+    template_desc = spec.get("template_description")  # from TEMPLATE_DESCRIPTION
+    tool_title = default_filename or parameter_name or f"Template {str(template_id)[:8]}"
+    tool_name = f"{tool_title.lower().replace(' ', '_').replace('-', '_')}_doc"
     
     from app.utils.tools_args_model import build_args_model_from_spec
     ArgsModel = build_args_model_from_spec(
@@ -178,13 +189,14 @@ async def create_document_generation_tool(
         spec_fields=spec.get("fields", {}),
     )
 
-    # 2) Define the tool with a **typed** args param (no Dict, no Any, no kwargs)
+    # 3) Use the template description as the tool description
+    description = template_desc or f"Generate document using {_humanize(tool_title)} template."
+
+    # 4) Define the tool with a **typed** args param and descriptive docstring
     async def generate_document(
         args: Any,  # <- THIS is the only flexible parameter, strictly typed
     ) -> str:
-        """
-        Generate a document using the template and upload to S3. Returns the document ID.
-        """
+        """Generate a document using the template and upload to S3. Returns the document ID."""
         try:
             ds_url = documents_service_url
             if not ds_url:
@@ -235,12 +247,15 @@ async def create_document_generation_tool(
             logger.error(msg, exc_info=True)
             return f"Error: {msg}"
 
+    # 5) Set function identity before wrapping
+    generate_document.__name__ = tool_name
+    generate_document.__doc__ = description  # many wrappers read this
+    
     # (Paranoia) Some tool wrappers read __annotations__ directly:
     generate_document.__annotations__ = dict(generate_document.__annotations__)
     generate_document.__annotations__["args"] = ArgsModel  # type: ignore
 
-    safe = parameter_name.lower().replace(" ", "_").replace("-", "_")
-    generate_document.__name__ = f"generate_document_{safe}"
+    # 6) Return the tool with proper metadata
     return function_tool(generate_document)
 
 
@@ -464,6 +479,26 @@ async def run_scenario_agent(
         # Create all scenario tools (scenario, objectives, persona prompts, and document generation)
         scenario_tools = await create_scenario_tools(scenario.parameter_ids, persona_ids, session)
         logger.info(f"Created {len(scenario_tools)} scenario tools")
+        
+        # Add tools information for the model to understand what's available
+        tools_info_lines = []
+        for tool in scenario_tools:
+            # Extract tool name and description from the function
+            tool_name = getattr(tool, '__name__', 'unknown_tool')
+            tool_desc = getattr(tool, '__doc__', 'No description available')
+            # Clean up the description (remove extra whitespace)
+            tool_desc = ' '.join(tool_desc.split()) if tool_desc else 'No description available'
+            tools_info_lines.append(f"- {tool_name}: {tool_desc}")
+        
+        if tools_info_lines:
+            tools_info_content = "Available tools for this scenario generation:\n" + "\n".join(tools_info_lines)
+            context_items.append({
+                "role": "developer",
+                "content": tools_info_content
+            })
+        
+        # Update history with tools information
+        history = context_items + parameter_history
         
         # Create tool use behavior to wait for core tools to be called
         def tool_use_behavior(context: Any, tool_results: list[Any]) -> ToolsToFinalOutputResult:

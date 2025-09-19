@@ -86,7 +86,7 @@ def _get_template_contract(mod: Any) -> Tuple[Type[BaseModel], Callable[[BaseMod
         raise HTTPException(status_code=500, detail="Template render is not callable.")
     return ArgsModel, render_fn, default_filename, template_description
 
-def _model_spec(ArgsModel: Type[BaseModel], template_description: Optional[str] = None) -> Dict[str, Any]:
+def _model_spec(ArgsModel: Type[BaseModel], template_description: Optional[str] = None, default_filename: Optional[str] = None) -> Dict[str, Any]:
     """
     Produce a JSON-serializable description of fields, types, defaults, and required flags.
     """
@@ -94,11 +94,25 @@ def _model_spec(ArgsModel: Type[BaseModel], template_description: Optional[str] 
     # Also return a flat summary of fields for convenience
     fields = {}
     for name, field in ArgsModel.model_fields.items():
-        ftype = getattr(field.annotation, "__name__", str(field.annotation))
+        # Get the full type annotation string, not just the name
+        ftype = str(field.annotation)
+        # Normalize common typing patterns
+        ftype = ftype.replace("typing.", "")
+        ftype = ftype.replace("NoneType", "None")
+        
+        # Determine if field is required (no default and not Optional)
+        is_required = field.is_required()
+        
+        # Get default value - use None for Optional types even if not explicitly set
+        if is_required:
+            default_val = None
+        else:
+            default_val = field.default
+        
         fields[name] = {
             "type": ftype,
-            "required": field.is_required(),
-            "default": None if field.is_required() else field.default,
+            "required": is_required,
+            "default": default_val,
             "description": field.description,
         }
     spec = {
@@ -109,6 +123,8 @@ def _model_spec(ArgsModel: Type[BaseModel], template_description: Optional[str] 
     }
     if template_description:
         spec["template_description"] = template_description
+    if default_filename:
+        spec["default_filename"] = default_filename
     return spec
 
 def _safe_filename(name: Optional[str]) -> str:
@@ -151,9 +167,7 @@ async def get_template_spec(template_id: UUID) -> JSONResponse:
     """
     mod = _import_template_module(template_id)
     ArgsModel, _, default_filename, template_description = _get_template_contract(mod)
-    spec = _model_spec(ArgsModel, template_description)
-    if default_filename:
-        spec["default_filename"] = default_filename
+    spec = _model_spec(ArgsModel, template_description, default_filename)
     return JSONResponse(content=spec)
 
 @app.post("/create")

@@ -16,42 +16,30 @@ from pydantic import BaseModel, Field
 from pylatex import Command, Document, NoEscape, Package  # type: ignore
 from pylatex.utils import bold  # type: ignore
 
-DEFAULT_FILENAME = "project-status-update"
+DEFAULT_FILENAME = "project_status"
 TEMPLATE_DESCRIPTION = "A comprehensive project status update template covering 30, 60, and 90-day milestones. Includes project information, status summaries, challenges, next steps, and optional metrics graphs for each time period."
 
 class Args(BaseModel):
     # Project Information
     project_name: str = Field(default="", description="Name of the project")
     project_manager: str = Field(default="", description="Project manager's name")
-    department: str = Field(default="", description="Department responsible for the project")
     report_date: str = Field(default="", description="Date of the status report")
-    stakeholders: str = Field(default="", description="Key stakeholders involved")
-    overall_status: str = Field(default="", description="Overall project status")
+    overall_status: str = Field(default="", description="Overall project status (On Track, At Risk, Delayed)")
     
     # 30-Day Status
-    thirty_day_summary: str = Field(default="", description="30-day project summary")
-    thirty_day_graph: Optional[str] = Field(default=None, description="Path to 30-day metrics graph (optional)")
-    thirty_day_challenges: str = Field(default="", description="30-day challenges faced")
-    thirty_day_next_steps: str = Field(default="", description="30-day next steps")
-    thirty_day_notes: str = Field(default="", description="30-day additional notes")
+    thirty_day_summary: str = Field(default="", description="30-day project summary and key achievements")
+    thirty_day_challenges: str = Field(default="", description="30-day challenges and risks")
+    thirty_day_next_steps: str = Field(default="", description="30-day next steps and priorities")
     
     # 60-Day Status
-    sixty_day_summary: str = Field(default="", description="60-day project summary")
-    sixty_day_graph: Optional[str] = Field(default=None, description="Path to 60-day metrics graph (optional)")
-    sixty_day_challenges: str = Field(default="", description="60-day challenges faced")
-    sixty_day_next_steps: str = Field(default="", description="60-day next steps")
-    sixty_day_notes: str = Field(default="", description="60-day additional notes")
+    sixty_day_summary: str = Field(default="", description="60-day project summary and key achievements")
+    sixty_day_challenges: str = Field(default="", description="60-day challenges and risks")
+    sixty_day_next_steps: str = Field(default="", description="60-day next steps and priorities")
     
     # 90-Day Status
-    ninety_day_summary: str = Field(default="", description="90-day project summary")
-    ninety_day_graph: Optional[str] = Field(default=None, description="Path to 90-day metrics graph (optional)")
-    ninety_day_challenges: str = Field(default="", description="90-day challenges faced")
-    ninety_day_next_steps: str = Field(default="", description="90-day next steps")
-    ninety_day_notes: str = Field(default="", description="90-day additional notes")
-    
-    # Document Styling
-    fontsize_pt: int = Field(default=11, ge=8, le=20, description="Font size in points")
-    paper: str = Field(default="letterpaper", description="Paper size (letterpaper|a4paper)")
+    ninety_day_summary: str = Field(default="", description="90-day project summary and key achievements")
+    ninety_day_challenges: str = Field(default="", description="90-day challenges and risks")
+    ninety_day_next_steps: str = Field(default="", description="90-day next steps and priorities")
 
 def render(args: Args) -> bytes:
     """
@@ -59,7 +47,7 @@ def render(args: Args) -> bytes:
     """
     doc = Document(
         documentclass="article",
-        document_options=[f"{args.fontsize_pt}pt"],
+        document_options=["11pt"],
         page_numbers=True,
         indent=False,
         lmodern=False,
@@ -134,9 +122,7 @@ def render(args: Args) -> bytes:
   \hline
   \cellcolor{labelbg}\small Project Name & """ + args.project_name + r""" & \cellcolor{labelbg}\small Project Manager & """ + args.project_manager + r""" \\
   \hline
-  \cellcolor{labelbg}\small Department & """ + args.department + r""" & \cellcolor{labelbg}\small Date & """ + args.report_date + r""" \\
-  \hline
-  \cellcolor{labelbg}\small Stakeholders & """ + args.stakeholders + r""" & \cellcolor{labelbg}\small Overall Status & """ + args.overall_status + r""" \\
+  \cellcolor{labelbg}\small Report Date & """ + args.report_date + r""" & \cellcolor{labelbg}\small Overall Status & """ + args.overall_status + r""" \\
   \hline
 \end{tabularx}
 
@@ -146,21 +132,22 @@ def render(args: Args) -> bytes:
 
     # Helper macro for each time period section
     doc.preamble.append(NoEscape(r"""
-\newcommand{\statussection}[7]{%
+\newcommand{\statussection}[4]{%
   {\color{primary}\large\bfseries #1}\par
   \vspace{0.2cm}
-  % Summary and graph side by side
-  \begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.4\textwidth}|p{0.6\textwidth}|}
+  \begin{tabularx}{\textwidth}{|X|}
     \hline
-    \cellcolor{labelbg}\small Summary & \cellcolor{labelbg}\small Key Metrics Graph \\
+    \cellcolor{labelbg}\small Summary \\
     \hline
-    \parbox[t][3.5cm][t]{\hsize}{ #2 } & \includeprojectgraph[3.5cm]{#3} \\
+    \parbox[t][3cm][t]{\hsize}{ #2 } \\
     \hline
-    \cellcolor{labelbg}\small Challenges & \cellcolor{labelbg}\small Next Steps \\
+    \cellcolor{labelbg}\small Challenges \\
     \hline
-    \parbox[t][2.5cm][t]{\hsize}{ #4 } & \parbox[t][2.5cm][t]{\hsize}{ #5 } \\
+    \parbox[t][2.5cm][t]{\hsize}{ #3 } \\
     \hline
-    \cellcolor{labelbg}\small Additional Notes & \multicolumn{1}{>{\raggedright\arraybackslash}p{0.6\textwidth}|}{ #6 } \\
+    \cellcolor{labelbg}\small Next Steps \\
+    \hline
+    \parbox[t][2.5cm][t]{\hsize}{ #4 } \\
     \hline
   \end{tabularx}
   \vspace{0.6cm}
@@ -169,19 +156,19 @@ def render(args: Args) -> bytes:
 
     # 30-Day Status Section
     thirty_day_section = NoEscape(r"""
-\statussection{30‑Day Status}{ """ + args.thirty_day_summary + r""" }{ """ + (args.thirty_day_graph or "") + r""" }{ """ + args.thirty_day_challenges + r""" }{ """ + args.thirty_day_next_steps + r""" }{ """ + args.thirty_day_notes + r""" }
+\statussection{30-Day Status}{ """ + args.thirty_day_summary + r""" }{ """ + args.thirty_day_challenges + r""" }{ """ + args.thirty_day_next_steps + r""" }
 """)
     doc.append(thirty_day_section)
 
     # 60-Day Status Section
     sixty_day_section = NoEscape(r"""
-\statussection{60‑Day Status}{ """ + args.sixty_day_summary + r""" }{ """ + (args.sixty_day_graph or "") + r""" }{ """ + args.sixty_day_challenges + r""" }{ """ + args.sixty_day_next_steps + r""" }{ """ + args.sixty_day_notes + r""" }
+\statussection{60-Day Status}{ """ + args.sixty_day_summary + r""" }{ """ + args.sixty_day_challenges + r""" }{ """ + args.sixty_day_next_steps + r""" }
 """)
     doc.append(sixty_day_section)
 
     # 90-Day Status Section
     ninety_day_section = NoEscape(r"""
-\statussection{90‑Day Status}{ """ + args.ninety_day_summary + r""" }{ """ + (args.ninety_day_graph or "") + r""" }{ """ + args.ninety_day_challenges + r""" }{ """ + args.ninety_day_next_steps + r""" }{ """ + args.ninety_day_notes + r""" }
+\statussection{90-Day Status}{ """ + args.ninety_day_summary + r""" }{ """ + args.ninety_day_challenges + r""" }{ """ + args.ninety_day_next_steps + r""" }
 """)
     doc.append(ninety_day_section)
 
