@@ -157,7 +157,7 @@ def create_persona_prompt_tool(persona_id: uuid.UUID, persona_alias: str, person
     return function_tool(generate_persona_prompt)
 
 
-def create_document_generation_tool(
+async def create_document_generation_tool(
     *,
     parameter_id: uuid.UUID,
     template_id: uuid.UUID,
@@ -167,22 +167,16 @@ def create_document_generation_tool(
     """Create a document generation tool for a specific parameter/template combination with typed Args parameter."""
 
     # 1) Pull the template spec and build a strict Args model
-    async def _fetch_and_build_model() -> Any:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{documents_service_url}/templates/{template_id}/spec", timeout=10.0)
-            r.raise_for_status()
-            spec = r.json()  # has "fields" and "json_schema"
-        
-        from app.utils.tools_args_model import build_args_model_from_spec
-        ArgsModel = build_args_model_from_spec(
-            model_name=f"TemplateArgs_{str(template_id)[:8]}",
-            spec_fields=spec.get("fields", {}),
-        )
-        return ArgsModel  # type: ignore
-
-    # Build the model synchronously at tool-creation time (caller already async)
-    import asyncio
-    asyncio.get_event_loop().run_until_complete(_fetch_and_build_model())
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{documents_service_url}/templates/{template_id}/spec", timeout=10.0)
+        r.raise_for_status()
+        spec = r.json()  # has "fields" and "json_schema"
+    
+    from app.utils.tools_args_model import build_args_model_from_spec
+    ArgsModel = build_args_model_from_spec(
+        model_name=f"TemplateArgs_{str(template_id)[:8]}",
+        spec_fields=spec.get("fields", {}),
+    )
 
     # 2) Define the tool with a **typed** args param (no Dict, no Any, no kwargs)
     async def generate_document(
@@ -274,7 +268,7 @@ async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], s
                 parameter = session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
                 if parameter:
                     parameter_name = parameter.name or f"parameter_{str(parameter_id)[:8]}"
-                    tool = create_document_generation_tool(
+                    tool = await create_document_generation_tool(
                         parameter_id=parameter_id,
                         template_id=parameter_id,  # one-to-one mapping you're using
                         parameter_name=parameter_name,
@@ -422,10 +416,38 @@ async def run_scenario_agent(
         from agents.items import TResponseInputItem
         context_items: list[TResponseInputItem] = []
         
+        # Add persona information for the model to understand who each persona is
+        from app.models import Personas
+        persona_info_lines = []
+        user_count = 1
+        agent_count = 1
+        
+        for persona_id in persona_ids:
+            persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+            if persona:
+                # Determine if this is a user persona (has profile_id) or agent persona
+                if persona.profile_id:
+                    # User persona
+                    persona_alias = f"user{user_count}"
+                    user_count += 1
+                else:
+                    # Agent persona
+                    persona_alias = f"agent{agent_count}"
+                    agent_count += 1
+                
+                persona_info_lines.append(f"- {persona_alias}: {persona.name} - {persona.description or 'No description available'}")
+        
+        if persona_info_lines:
+            persona_info_content = "Available personas for this scenario:\n" + "\n".join(persona_info_lines)
+            context_items.append({
+                "role": "developer",
+                "content": persona_info_content
+            })
+        
         # Add additional context if provided
         if additional_context:
             context_items.append({
-                "role": "user", 
+                "role": "developer", 
                 "content": f"Additional context: {additional_context}"
             })
 
