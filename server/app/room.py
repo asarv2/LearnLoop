@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol
 
+import httpx  # type: ignore
 import numpy as np
 from app.bus import PCM_SR, SAMPLES_PER_CHUNK, AudioBus, AudioChunk
 from app.remote_bus import RemoteAudioBus
@@ -72,6 +73,17 @@ class Room:
     async def _start_openai(self) -> None:
         if self._openai_started:
             return
+        # If using remote bus, ask audio service to start agent
+        if isinstance(self.bus, RemoteAudioBus):
+            base = os.getenv("AUDIO_SERVICE_URL", "")
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    await client.post(f"{base}/rooms/{self.id}/agents/openai/start", json={})
+                self._openai_started = True
+            except Exception:
+                self._openai_started = False
+            return
+        # Local fallback
         if self.openai_agent is None:
             self.openai_agent = OpenAIAgent(id="agent:openai", bus=self.bus, room=self)
         try:
@@ -83,6 +95,18 @@ class Room:
     async def _stop_openai(self) -> None:
         if not self._openai_started:
             return
+        # If using remote bus, ask audio service to stop agent
+        if isinstance(self.bus, RemoteAudioBus):
+            base = os.getenv("AUDIO_SERVICE_URL", "")
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    await client.post(f"{base}/rooms/{self.id}/agents/openai/stop", json={})
+            except Exception:
+                pass
+            finally:
+                self._openai_started = False
+            return
+        # Local fallback
         try:
             if self.openai_agent is not None:
                 await self.openai_agent.stop()
@@ -209,26 +233,12 @@ def get_room(room_id: Optional[str] = None) -> Room:
         bus.start(period_ms=20)
     r = Room(id=rid, bus=bus)
 
-    # # Beep agent: periodic tone + text
-    # beep = BeepAgent(id="agent:beep", bus=bus, room=r)
-    # beep.start()
-    # r.agents.append(beep)
-
-    # # Echo agent: true echo with simple VAD
-    # echo = EchoAgent(
-    #     id="agent:echo",
-    #     bus=bus,
-    #     room=r,
-    #     vad_thresh_db=-55.0,  # more permissive
-    #     vad_hang_ms=500,
-    #     echo_gain=0.45,
-    # )
-    # echo.start()
-    # r.agents.append(echo)
-
-    # Do not auto-start OpenAI; start lazily on first human join
-    r.openai_agent = OpenAIAgent(id="agent:openai", bus=bus, room=r)
-    r.agents.append(r.openai_agent)
+    # In remote mode, agents are controlled by the audio service.
+    # Keep local agents only for fallback when AUDIO_SERVICE_URL is not set.
+    if not os.getenv("AUDIO_SERVICE_URL"):
+        # Do not auto-start OpenAI; start lazily on first human join
+        r.openai_agent = OpenAIAgent(id="agent:openai", bus=bus, room=r)
+        r.agents.append(r.openai_agent)
 
     # # Logger (optional)
     # logger = LoggerAgent(id="agent:logger", bus=bus, room=r, recorder=None)

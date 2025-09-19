@@ -54,6 +54,10 @@ class RemoteAudioBus(AudioBus):
         self._ingest_ws: Dict[str, WebSocketClientProtocol] = {}
         self._ingest_locks: Dict[str, asyncio.Lock] = {}
 
+        # control channel
+        self._control_ws: Optional[WebSocketClientProtocol] = None
+        self._control_lock: asyncio.Lock = asyncio.Lock()
+
         self._closed = False
 
     # ---------------- AudioBus API ----------------
@@ -81,6 +85,14 @@ class RemoteAudioBus(AudioBus):
         self._ingest_ws.clear()
         self._ingest_locks.clear()
 
+        # Close control websocket
+        if self._control_ws is not None:
+            try:
+                await self._control_ws.close()
+            except Exception:
+                pass
+            self._control_ws = None
+
     def subscribe(self, subscriber_id: str) -> Subscriber:  # type: ignore[override]
         # Create local queue and start remote reader
         if subscriber_id in self._subs:
@@ -102,16 +114,22 @@ class RemoteAudioBus(AudioBus):
         self._subs.pop(subscriber_id, None)
 
     def set_ignore(self, subscriber_id: str, sources: set[str]) -> None:  # type: ignore[override]
-        # Fire-and-forget HTTP call
-        async def _post() -> None:
-            url = f"{self.base_url}/rooms/{self.room_id}/ignore"
-            payload = {"subscriber_id": subscriber_id, "sources": list(sources)}
+        # Send over control websocket
+        async def _send() -> None:
+            ws = await self._ensure_control()
+            if ws is None:
+                return
+            msg = {
+                "type": "set_ignore",
+                "room_id": self.room_id,
+                "subscriber_id": subscriber_id,
+                "sources": list(sources),
+            }
             try:
-                async with httpx.AsyncClient(timeout=3.0) as client:
-                    await client.post(url, json=payload)
+                await ws.send(json.dumps(msg))
             except Exception:
-                logger.debug("remote set_ignore failed", exc_info=False)
-        asyncio.create_task(_post())
+                pass
+        asyncio.create_task(_send())
 
     async def ingest_i16(self, source_id: str, pcm_i16: np.ndarray, sr: int) -> None:  # type: ignore[override]
         if sr != PCM_SR:
@@ -186,5 +204,17 @@ class RemoteAudioBus(AudioBus):
                     await ws.close()
                 except Exception:
                     pass
+
+    async def _ensure_control(self) -> Optional[WebSocketClientProtocol]:
+        async with self._control_lock:
+            ws = self._control_ws
+            if ws is not None and not getattr(ws, "closed", True):
+                return ws
+            try:
+                conn = await websockets.connect(f"{self.ws_base}/ws/control", max_queue=None)  # type: ignore[assignment]
+                self._control_ws = conn  # type: ignore[assignment]
+                return conn  # type: ignore[return-value]
+            except Exception:
+                return None
 
 
