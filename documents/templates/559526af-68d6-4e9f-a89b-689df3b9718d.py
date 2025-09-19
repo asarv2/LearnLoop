@@ -46,6 +46,30 @@ class Args(BaseModel):
     ninety_day_challenges: str = Field(default="", description="90-day challenges and risks")
     ninety_day_next_steps: str = Field(default="", description="90-day next steps and priorities")
 
+def _escape_latex(text: str) -> str:
+    """Escape special LaTeX characters in text."""
+    if not text:
+        return ""
+    
+    # Replace special LaTeX characters
+    replacements = {
+        '\\': r'\textbackslash{}',
+        '{': r'\{',
+        '}': r'\}',
+        '$': r'\$',
+        '&': r'\&',
+        '%': r'\%',
+        '#': r'\#',
+        '^': r'\textasciicircum{}',
+        '_': r'\_',
+        '~': r'\textasciitilde{}',
+    }
+    
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    
+    return text
+
 def render(args: Args) -> bytes:
     """
     Build a project status update PDF using the provided LaTeX template structure.
@@ -125,9 +149,9 @@ def render(args: Args) -> bytes:
 
 \begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.25\textwidth}|>{\raggedright\arraybackslash}p{0.35\textwidth}|>{\raggedright\arraybackslash}p{0.20\textwidth}|X|}
   \hline
-  \cellcolor{labelbg}\small Project Name & """ + args.project_name + r""" & \cellcolor{labelbg}\small Project Manager & """ + args.project_manager + r""" \\
+  \cellcolor{labelbg}\small Project Name & """ + _escape_latex(args.project_name) + r""" & \cellcolor{labelbg}\small Project Manager & """ + _escape_latex(args.project_manager) + r""" \\
   \hline
-  \cellcolor{labelbg}\small Report Date & """ + args.report_date + r""" & \cellcolor{labelbg}\small Overall Status & """ + args.overall_status + r""" \\
+  \cellcolor{labelbg}\small Report Date & """ + _escape_latex(args.report_date) + r""" & \cellcolor{labelbg}\small Overall Status & """ + _escape_latex(args.overall_status) + r""" \\
   \hline
 \end{tabularx}
 
@@ -144,15 +168,15 @@ def render(args: Args) -> bytes:
     \hline
     \cellcolor{labelbg}\small Summary \\
     \hline
-    \parbox[t][3cm][t]{\hsize}{ #2 } \\
+    #2 \\
     \hline
     \cellcolor{labelbg}\small Challenges \\
     \hline
-    \parbox[t][2.5cm][t]{\hsize}{ #3 } \\
+    #3 \\
     \hline
     \cellcolor{labelbg}\small Next Steps \\
     \hline
-    \parbox[t][2.5cm][t]{\hsize}{ #4 } \\
+    #4 \\
     \hline
   \end{tabularx}
   \vspace{0.6cm}
@@ -161,19 +185,19 @@ def render(args: Args) -> bytes:
 
     # 30-Day Status Section
     thirty_day_section = NoEscape(r"""
-\statussection{30-Day Status}{ """ + args.thirty_day_summary + r""" }{ """ + args.thirty_day_challenges + r""" }{ """ + args.thirty_day_next_steps + r""" }
+\statussection{30-Day Status}{ """ + _escape_latex(args.thirty_day_summary) + r""" }{ """ + _escape_latex(args.thirty_day_challenges) + r""" }{ """ + _escape_latex(args.thirty_day_next_steps) + r""" }
 """)
     doc.append(thirty_day_section)
 
     # 60-Day Status Section
     sixty_day_section = NoEscape(r"""
-\statussection{60-Day Status}{ """ + args.sixty_day_summary + r""" }{ """ + args.sixty_day_challenges + r""" }{ """ + args.sixty_day_next_steps + r""" }
+\statussection{60-Day Status}{ """ + _escape_latex(args.sixty_day_summary) + r""" }{ """ + _escape_latex(args.sixty_day_challenges) + r""" }{ """ + _escape_latex(args.sixty_day_next_steps) + r""" }
 """)
     doc.append(sixty_day_section)
 
     # 90-Day Status Section
     ninety_day_section = NoEscape(r"""
-\statussection{90-Day Status}{ """ + args.ninety_day_summary + r""" }{ """ + args.ninety_day_challenges + r""" }{ """ + args.ninety_day_next_steps + r""" }
+\statussection{90-Day Status}{ """ + _escape_latex(args.ninety_day_summary) + r""" }{ """ + _escape_latex(args.ninety_day_challenges) + r""" }{ """ + _escape_latex(args.ninety_day_next_steps) + r""" }
 """)
     doc.append(ninety_day_section)
 
