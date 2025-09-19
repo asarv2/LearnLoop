@@ -183,16 +183,12 @@ def get_parameter_history_from_field_values(
                         persona = None
                 if persona:
                     persona_desc = persona.description if persona.description else "No description available"
-                    # Include parameter description (useful metadata) after the name
-                    param_desc = None
-                    if param_row and getattr(param_row, "description", None):
-                        param_desc = param_row.description  # type: ignore[assignment]
-                    param_desc_part = f" ({param_desc})" if param_desc else ""
+                    # Do not include parameter description in parenthesis
                     param_lines.append(
-                        f"The {field_name} ({field_description}) for this chat is {persona.name}{param_desc_part}: {persona_desc}"
+                        f"The {field_name} for this chat is {persona.name}: {persona_desc}"
                     )
                 else:
-                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
+                    param_lines.append(f"The {field_name} for this chat is {value}")
                     
             elif field.field_type == 'document':
                 # For document fields, prefer the explicit value (document id) from field_values;
@@ -207,33 +203,27 @@ def get_parameter_history_from_field_values(
                     document = fresh_session.exec(select(Documents).where(Documents.id == doc_id)).one_or_none()
                     if document:
                         doc_content = document.content if document.content else "No content available"
-                        param_lines.append(f"The {field_name} ({field_description}) for this chat is document {str(doc_id)[:8]}: {doc_content}")
+                        param_lines.append(f"The {field_name} for this chat is document {str(doc_id)[:8]}: {doc_content}")
                     else:
-                        param_lines.append(f"The {field_name} ({field_description}) for this chat is {doc_id}")
+                        param_lines.append(f"The {field_name} for this chat is {doc_id}")
                     
             elif field.field_type == 'categorical' and parameter_id:
                 # For categorical fields, use the parameter name
                 param = fresh_session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
                 if param:
-                    desc_part = f" ({param.description})" if getattr(param, "description", None) else ""
+                    # Do not include description in parenthesis
                     param_lines.append(
-                        f"The {field_name} ({field_description}) for this chat is {param.name}{desc_part}"
+                        f"The {field_name} for this chat is {param.name}"
                     )
                 else:
-                    param_lines.append(f"The {field_name} ({field_description}) for this chat is {value}")
+                    param_lines.append(f"The {field_name} for this chat is {value}")
                     
             else:
                 # For text, numerical, or other fields, use the value directly
                 if value:
-                    # If a backing parameter exists, include its description for extra context
-                    desc_part = ""
-                    if parameter_id:
-                        from app.models import Parameters as _Parameters
-                        maybe_param = fresh_session.exec(select(_Parameters).where(_Parameters.id == parameter_id)).one_or_none()
-                        if maybe_param and getattr(maybe_param, "description", None):
-                            desc_part = f" ({maybe_param.description})"
+                    # Do not include description in parenthesis
                     param_lines.append(
-                        f"The {field_name} ({field_description}) for this chat is {value}{desc_part}"
+                        f"The {field_name} for this chat is {value}"
                     )
         
         # Return as a single user message with all parameters
