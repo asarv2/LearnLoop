@@ -55,6 +55,7 @@ services:
       - ORIGIN=${ORIGIN}
       - REDIS_URL=redis://learnloop-redis:6379
       - MODEL_SERVICE_URL=http://learnloop-model:8000
+      - DOCUMENTS_SERVICE_URL=http://learnloop-documents:8002
 
       # webrtc
       - STUN_URI=stun:learnloop-webrtc:3479
@@ -100,6 +101,22 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  documents:
+    image: ${LEARNLOOP_DOCUMENTS_IMAGE:-ghcr.io/ashokhomepc/learnloop-documents:latest}
+    pull_policy: always
+    restart: unless-stopped
+    networks:
+      - web
+    environment:
+      - PORT=8002
+      - HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
