@@ -2,7 +2,7 @@ import os
 import uuid
 from typing import AsyncGenerator
 
-from agents import Agent, ModelSettings, Runner, trace
+from agents import Agent, ModelSettings, Runner, Tool, trace
 from agents.items import TResponseInputItem
 from agents.models.openai_responses import OpenAIResponsesModel
 from app.db import get_session
@@ -62,6 +62,7 @@ class GenericAgent:
         system_prompt: str,
         temperature: float,
         model: str = "gpt-4.1",
+        tools: list[Tool] = [],
         output_type: type[BaseModel] | None = None
     ):
         self.agent_name = agent_name
@@ -69,6 +70,7 @@ class GenericAgent:
         self.temperature = temperature
         self.output_type = output_type
         self.model = model
+        self.tools = tools
 
     def agent(self) -> Agent:
         return Agent(
@@ -83,4 +85,5 @@ class GenericAgent:
                 include_usage=True,
             ),
             output_type=self.output_type,
+            tools=self.tools,
         )
