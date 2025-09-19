@@ -272,10 +272,10 @@ jobs:
           CLIENT_PORT: ${{ env.CHANNEL == 'beta' && secrets.BETA_CLIENT_PORT || secrets.CLIENT_PORT }}
 
           # WebRTC
-          TURN_URI: ${{ secrets.TURN_URI_PUBLIC }}
-          STUN_URI: ${{ secrets.STUN_URI_PUBLIC }}
-          TURN_USERNAME: ${{ secrets.TURN_USERNAME }}
-          TURN_PASSWORD: ${{ secrets.TURN_PASSWORD }}
+          TURN_URI: ${{ env.CHANNEL == 'beta' && secrets.BETA_TURN_URI_PUBLIC || secrets.TURN_URI_PUBLIC }}
+          STUN_URI: ${{ env.CHANNEL == 'beta' && secrets.BETA_STUN_URI_PUBLIC || secrets.STUN_URI_PUBLIC }}
+          TURN_USERNAME: ${{ env.CHANNEL == 'beta' && secrets.BETA_TURN_USERNAME || secrets.TURN_USERNAME }}
+          TURN_PASSWORD: ${{ env.CHANNEL == 'beta' && secrets.BETA_TURN_PASSWORD || secrets.TURN_PASSWORD }}
           TURN_REALM: ${{ secrets.TURN_REALM }}
           TURN_PUBLIC_IP: ${{ secrets.TURN_PUBLIC_IP }}
 
@@ -286,7 +286,11 @@ jobs:
 
           # Pull & up
           docker compose pull
-          docker compose up -d --scale server="${SERVER_REPLICAS:-1}"
+          if [ "${{ env.CHANNEL }}" = "prod" ]; then
+            docker compose --profile prod up -d --scale server="${SERVER_REPLICAS:-1}"
+          else
+            docker compose up -d --scale server="${SERVER_REPLICAS:-1}"
+          fi
 
           # Optional cleanup
           docker image prune -f

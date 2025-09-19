@@ -127,6 +127,8 @@ services:
   acme-extractor:
     image: ghcr.io/kereis/traefik-certs-dumper:latest
     restart: "no"
+    profiles:
+      - prod
     environment:
       - DOMAIN=turn.learn-loop.org          # dump only this cert
       - CERTIFICATE_FILE_NAME=fullchain         # → fullchain.pem
@@ -138,6 +140,8 @@ services:
   webrtc:
     build: ./turn
     restart: unless-stopped
+    profiles:
+      - prod
     volumes:
       - ../certs:/etc/coturn/certs:ro
     environment:
