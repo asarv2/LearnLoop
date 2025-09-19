@@ -71,36 +71,40 @@ def create_objectives_tool() -> Any:
     return function_tool(generate_objectives)
 
 
-def create_persona_prompt_tool(persona_id: uuid.UUID, persona_name: str) -> Any:
-    """Create a function tool for generating a prompt for a specific persona."""
+def create_persona_prompt_tool(persona_id: uuid.UUID, persona_alias: str, persona_name: str) -> Any:
+    """Create a function tool for generating a prompt for a specific persona using an alias."""
     
     async def generate_persona_prompt(
-        prompt: str = Field(description=f"Custom prompt for the {persona_name} persona")
+        prompt: str = Field(description=f"Custom prompt for the {persona_alias} persona")
     ) -> str:
-        f"""Generate a custom prompt for the {persona_name} persona.
+        f"""Generate a custom prompt for the {persona_alias} persona.
         
         This function creates a tailored prompt that will be used when this persona
         interacts in the scenario. The prompt should be specific to the persona's
         role and characteristics.
         
         Args:
-            prompt: A detailed prompt that defines how {persona_name} should behave
+            prompt: A detailed prompt that defines how {persona_alias} should behave
             
         Returns:
             Confirmation message of the prompt generation
         """
-        # Initialize prompts dict if it doesn't exist
+        # Initialize prompts and prompt_mapping dicts if they don't exist
         if 'prompts' not in scenario_results:
             scenario_results['prompts'] = {}
+        if 'prompt_mapping' not in scenario_results:
+            scenario_results['prompt_mapping'] = {}
         
-        scenario_results['prompts'][str(persona_id)] = prompt
+        # Store prompt using alias as key
+        scenario_results['prompts'][persona_alias] = prompt
+        # Store mapping from alias to persona_id
+        scenario_results['prompt_mapping'][persona_alias] = str(persona_id)
         scenario_progress[f'persona_prompt_{persona_id}'] = True
-        logger.info(f"✓ Generated prompt for {persona_name}: {prompt[:50]}...")
-        return f"Generated prompt for {persona_name}"
+        logger.info(f"✓ Generated prompt for {persona_alias} ({persona_name}): {prompt[:50]}...")
+        return f"Generated prompt for {persona_alias}"
     
-    # Set the function name dynamically
-    safe_name = persona_name.lower().replace(" ", "_").replace("-", "_")
-    generate_persona_prompt.__name__ = f"create_{safe_name}_prompt"
+    # Set the function name dynamically using alias
+    generate_persona_prompt.__name__ = f"create_{persona_alias}_prompt"
     
     return function_tool(generate_persona_prompt)
 
@@ -160,6 +164,12 @@ def create_document_generation_tool(parameter_id: uuid.UUID, template_id: uuid.U
                 # The PDF bytes are available in the response from the documents service
                 
                 logger.info(f"Successfully created document {document.id} for parameter {parameter_name}")
+                
+                # Collect document ID in global results
+                if 'document_ids' not in scenario_results:
+                    scenario_results['document_ids'] = []
+                scenario_results['document_ids'].append(str(document.id))
+                
                 return str(document.id)
                 
             finally:
@@ -236,14 +246,27 @@ def create_scenario_tools(parameter_ids: List[uuid.UUID], persona_ids: List[uuid
     tools.append(create_scenario_tool())
     tools.append(create_objectives_tool())
     
-    # Add persona prompt tools for each persona
+    # Add persona prompt tools for each persona with aliases
     from app.models import Personas
+    user_count = 1
+    agent_count = 1
+    
     for persona_id in persona_ids:
         persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
         if persona:
-            persona_tool = create_persona_prompt_tool(persona_id, persona.name)
+            # Determine if this is a user persona (has profile_id) or agent persona
+            if persona.profile_id:
+                # User persona
+                persona_alias = f"user{user_count}"
+                user_count += 1
+            else:
+                # Agent persona
+                persona_alias = f"agent{agent_count}"
+                agent_count += 1
+            
+            persona_tool = create_persona_prompt_tool(persona_id, persona_alias, persona.name)
             tools.append(persona_tool)
-            logger.info(f"Created persona prompt tool for {persona.name}")
+            logger.info(f"Created persona prompt tool for {persona_alias} ({persona.name})")
         else:
             logger.warning(f"Persona {persona_id} not found in database")
     
@@ -259,22 +282,61 @@ async def get_scenario_prompt() -> str:
     return await load_prompt("scenario")
 
 
+async def create_child_scenario(
+    parent_scenario: Any,
+    title: str,
+    problem_statement: str,
+    objectives: List[str],
+    prompts: Dict[str, str],
+    prompt_mapping: Dict[str, str],
+    document_ids: List[str],
+    parameter_ids: List[str],
+    session: Session
+) -> Any:
+    """Create a child scenario with all the generated data."""
+    from app.models import Scenarios
+
+    # Create the child scenario row
+    child = Scenarios(
+        title=title,
+        description=getattr(parent_scenario, "description", None),
+        training_id=parent_scenario.training_id,
+        rubric_id=parent_scenario.rubric_id,
+        field_ids=parent_scenario.field_ids,
+        problem_statement=problem_statement,
+        objectives=objectives,
+        parent_id=parent_scenario.id,
+        parameter_ids=parameter_ids,
+        prompts=prompts,
+        prompt_mapping=prompt_mapping,
+        document_ids=document_ids,
+    )
+    session.add(child)
+    session.commit()
+    session.refresh(child)
+    
+    logger.info(f"Created child scenario {child.id} with {len(document_ids)} documents")
+    return child
+
+
 async def run_scenario_agent(
     scenario_id: uuid.UUID,
     field_values: List[dict],
     persona_ids: List[uuid.UUID],
     additional_context: Optional[str] = None,
+    create_child: bool = True,
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """
     This function is used to run the scenario agent.
-    Returns a dictionary with scenario analysis.
+    Returns a dictionary with scenario analysis and optionally creates a child scenario.
 
     Args:
         scenario_id: The ID of the scenario to generate from
         field_values: List of field values from the frontend
         persona_ids: List of persona IDs to use for the scenario
         additional_context: Optional additional context to include
+        create_child: Whether to create a child scenario (default: True)
         session: Database session
 
     Returns:
@@ -373,6 +435,8 @@ async def run_scenario_agent(
         scenario_data = scenario_results.get('scenario', {})
         objectives = scenario_results.get('objectives', [])
         prompts = scenario_results.get('prompts', {})
+        prompt_mapping = scenario_results.get('prompt_mapping', {})
+        document_ids = scenario_results.get('document_ids', [])
         
         title = scenario_data.get('title', '')
         problem_statement = scenario_data.get('problem_statement', '')
@@ -387,6 +451,45 @@ async def run_scenario_agent(
 
         logger.info(f"Successfully generated scenario for scenario {scenario_id}")
 
+        # Create child scenario if requested
+        child_scenario = None
+        if create_child:
+            # Build parameter_ids from field_values
+            parameter_ids = []
+            for fv in field_values:
+                field_id = fv.get("fieldId")
+                value = (fv.get("value") or "").strip()
+                pid = fv.get("parameterId")
+                if pid:
+                    parameter_ids.append(str(pid))
+                elif field_id:
+                    # Create new parameter if needed
+                    from app.models import Parameters
+                    try:
+                        new_param = Parameters(
+                            field_id=field_id,
+                            name=value,
+                            value=value,
+                        )
+                        session.add(new_param)
+                        session.commit()
+                        session.refresh(new_param)
+                        parameter_ids.append(str(new_param.id))
+                    except Exception:
+                        logger.exception("Failed to create parameter from field value")
+
+            child_scenario = await create_child_scenario(
+                parent_scenario=scenario,
+                title=title,
+                problem_statement=problem_statement,
+                objectives=objectives,
+                prompts=prompts,
+                prompt_mapping=prompt_mapping,
+                document_ids=document_ids,
+                parameter_ids=parameter_ids,
+                session=session
+            )
+
         return {
             "success": True,
             "message": f"Successfully generated scenario",
@@ -395,6 +498,9 @@ async def run_scenario_agent(
             "problem_statement": problem_statement,
             "objectives": objectives,
             "prompts": prompts,
+            "prompt_mapping": prompt_mapping,
+            "document_ids": document_ids,
+            "child_scenario_id": str(child_scenario.id) if child_scenario else None,
         }
 
     except Exception as e:

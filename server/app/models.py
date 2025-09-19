@@ -201,6 +201,7 @@ class Scenarios(_Base, table=True):
     parameter_ids: List[uuid.UUID] = Field(sa_column=Column('parameter_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
     document_ids: List[uuid.UUID] = Field(sa_column=Column('document_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
     prompts: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompts', JSONB))
+    prompt_mapping: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompt_mapping', JSONB))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))

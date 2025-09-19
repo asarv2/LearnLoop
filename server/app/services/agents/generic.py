@@ -13,7 +13,6 @@ from fastapi import Depends
 from openai import AsyncOpenAI
 from openai.types import Reasoning
 from openai.types.responses import ResponseTextDeltaEvent
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
 load_dotenv()
@@ -65,8 +64,7 @@ class GenericAgent:
         temperature: float,
         model: str = "gpt-4.1",
         tools: list[Tool] = [],
-        output_type: type[BaseModel] | None = None,
-        parallel_tool_calls: bool = False,
+        parallel_tool_calls: bool = True,
         reasoning_effort: str | None = None,
         tool_use_behavior: Optional[Callable] = None,
         include_usage: bool = True
@@ -76,7 +74,6 @@ class GenericAgent:
         self.temperature = temperature
         self.model = model
         self.tools = tools
-        self.output_type = output_type
         self.parallel_tool_calls = parallel_tool_calls
         self.reasoning_effort = reasoning_effort
         self.tool_use_behavior = tool_use_behavior
@@ -107,9 +104,6 @@ class GenericAgent:
         )
         
         # Add optional parameters
-        if self.output_type:
-            agent.output_type = self.output_type
-            
         if self.tool_use_behavior:
             agent.tool_use_behavior = self.tool_use_behavior
         
