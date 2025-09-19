@@ -220,7 +220,6 @@ async def run_grading_agent(
             temperature=0.0,
             tools=grading_tools,
             parallel_tool_calls=True,
-            reasoning_effort="low",
             tool_use_behavior=tool_use_behavior,
         )
 
