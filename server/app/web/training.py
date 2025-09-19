@@ -165,6 +165,22 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                         except Exception:
                             logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
 
+                # Ensure the user's persona is included if they have one
+                if profile_id:
+                    user_persona = db_session.exec(select(Personas).where(Personas.profile_id == profile_id)).one_or_none()
+                    if user_persona:
+                        user_persona_id_str = str(user_persona.id)
+                        if user_persona_id_str not in persona_ids:
+                            persona_ids.append(user_persona_id_str)
+                            max_turns[user_persona_id_str] = None  # User persona - infinite turns
+                            logger.info(f"Added user persona {user_persona.id} for profile {profile_id}")
+                        else:
+                            logger.info(f"User persona {user_persona.id} already in persona_ids")
+                    else:
+                        logger.warning(f"No persona found for profile_id {profile_id}")
+
+                logger.info(f"Final persona_ids for chat: {persona_ids}")
+
                 # Transform scenario prompts from alias format to persona_id format
                 if hasattr(scenario, 'prompts') and scenario.prompts and hasattr(scenario, 'prompt_mapping') and scenario.prompt_mapping:
                     import json
@@ -892,6 +908,22 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 await emit_error(sid, "Missing scenario_id")
                 return
 
+            # Get profile_id from WebSocket session
+            profile_id = None
+            try:
+                from app.main import (get_profile_id_for_sid,
+                                      get_socketio_instance)
+                sio = get_socketio_instance()
+                try:
+                    sess = await sio.get_session(sid)  # type: ignore
+                except Exception:
+                    sess = None
+                profile_id = (sess or {}).get("profile_id") if isinstance(sess, dict) else None
+                if not profile_id:
+                    profile_id = get_profile_id_for_sid(sid)
+            except Exception:
+                logger.warning("Could not get profile_id from session")
+
             db_session = next(get_session())
             try:
                 parent = db_session.exec(select(Scenarios).where(Scenarios.id == parent_id)).one_or_none()
@@ -908,10 +940,29 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                         # Check if this field is a persona field
                         field = db_session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
                         if field and getattr(field, "field_type", None) == "persona":
-                            try:
-                                persona_ids_from_fields.append(uuid.UUID(str(parameter_id)))
-                            except Exception:
-                                logger.warning(f"Invalid persona UUID in field_value: {parameter_id}")
+                            # For persona fields, parameter_id points to Parameters record, 
+                            # and the actual persona_id is in Parameters.value
+                            param = db_session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
+                            if param and param.value:
+                                try:
+                                    persona_ids_from_fields.append(uuid.UUID(str(param.value)))
+                                    logger.info(f"Added persona_id {param.value} from parameter {parameter_id}")
+                                except Exception:
+                                    logger.warning(f"Invalid persona UUID in parameter {parameter_id}: {param.value}")
+
+                # Add the user's persona if they have one
+                if profile_id:
+                    user_persona = db_session.exec(select(Personas).where(Personas.profile_id == profile_id)).one_or_none()
+                    if user_persona:
+                        if user_persona.id not in persona_ids_from_fields:
+                            persona_ids_from_fields.append(user_persona.id)
+                            logger.info(f"Added user persona {user_persona.id} for profile {profile_id}")
+                        else:
+                            logger.info(f"User persona {user_persona.id} already in persona_ids")
+                    else:
+                        logger.warning(f"No persona found for profile_id {profile_id}")
+
+                logger.info(f"Final persona_ids for scenario generation: {[str(p) for p in persona_ids_from_fields]}")
 
                 # Use the centralized scenario agent - it will handle everything including child scenario creation
                 result = await run_scenario_agent(
