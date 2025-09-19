@@ -1,0 +1,1 @@
+{"detail":"Render error: PDF generation failed: Command '['xelatex', '--interaction=nonstopmode', '/Users/ashoksaravanan/Coding/learnloop/documents/files/perf_review_1758318677.tex']' returned non-zero exit status 1."}
