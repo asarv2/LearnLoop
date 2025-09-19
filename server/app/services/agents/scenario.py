@@ -180,7 +180,7 @@ async def create_document_generation_tool(
 
     # 2) Define the tool with a **typed** args param (no Dict, no Any, no kwargs)
     async def generate_document(
-        args: BaseModel,  # <- THIS is the only flexible parameter, strictly typed
+        args: Any,  # <- THIS is the only flexible parameter, strictly typed
     ) -> str:
         """
         Generate a document using the template and upload to S3. Returns the document ID.
@@ -194,10 +194,10 @@ async def create_document_generation_tool(
             # Handle both Pydantic v1 and v2 model serialization
             try:
                 # Pydantic v2
-                kwargs_data = args.model_dump(exclude_none=True)
+                kwargs_data = args.model_dump(exclude_none=True)  # type: ignore
             except AttributeError:
                 # Pydantic v1
-                kwargs_data = args.dict(exclude_none=True)
+                kwargs_data = args.dict(exclude_none=True)  # type: ignore
             
             payload = {
                 "template_id": str(template_id),
@@ -234,6 +234,10 @@ async def create_document_generation_tool(
             msg = f"Failed to generate document: {e}"
             logger.error(msg, exc_info=True)
             return f"Error: {msg}"
+
+    # (Paranoia) Some tool wrappers read __annotations__ directly:
+    generate_document.__annotations__ = dict(generate_document.__annotations__)
+    generate_document.__annotations__["args"] = ArgsModel  # type: ignore
 
     safe = parameter_name.lower().replace(" ", "_").replace("-", "_")
     generate_document.__name__ = f"generate_document_{safe}"
