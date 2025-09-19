@@ -1,184 +1,172 @@
-"""
-LearnLoop Documents Service - Document Processing and Management
-
-This service provides FastAPI endpoints for:
-- Document upload and processing
-- Document text extraction
-- Document metadata management
-- Health checks and service status
-"""
-
 import logging
-import os
 import sys
+import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-import uvicorn
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+# PyLaTeX
+from pylatex import Command, Document, NewPage
+from pylatex.package import Package
+from pylatex.utils import NoEscape
 
-# Add the app directory to Python path
-sys.path.insert(0, str(Path(__file__).parent))
+from .templates import build_basic_doc
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-    ]
+    handlers=[logging.StreamHandler()],
 )
-
 logger = logging.getLogger("documents_service")
 
-# Create FastAPI app
 app = FastAPI(
     title="LearnLoop Documents Service",
-    description="Document processing and management service",
-    version="0.1.0"
+    description="Document creation (PyLaTeX + XeLaTeX)",
+    version="0.2.0",
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],  # tighten in prod
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Pydantic models
-class DocumentInfo(BaseModel):
-    id: str
-    filename: str
-    content_type: str
-    size: int
-    status: str = "processed"
-
-class DocumentResponse(BaseModel):
-    success: bool
-    message: str
-    document: Optional[DocumentInfo] = None
+# ---------- Schemas ----------
 
 class HealthResponse(BaseModel):
     status: str
     service: str
     version: str
 
-# In-memory storage for demo (replace with proper database in production)
-documents_store: Dict[str, DocumentInfo] = {}
+class CreateDocumentRequest(BaseModel):
+    title: str = Field(default="Untitled")
+    author: Optional[str] = Field(default=None)
+    text: str = Field(description="Freeform body text (markdown-ish allowed; minimal LaTeX escapes handled)")
+    main_font: Optional[str] = Field(default="Noto Serif")  # any installed font
+    mono_font: Optional[str] = Field(default="DejaVu Sans Mono")
+    fontsize_pt: int = Field(default=11, ge=8, le=20)
+    paper: str = Field(default="letterpaper", description="letterpaper|a4paper|...")
+
+class RawLatexRequest(BaseModel):
+    preamble: Optional[str] = Field(default=None, description="LaTeX preamble override (optional)")
+    body: str = Field(description="Raw LaTeX body content")
+    engine: str = Field(default="xelatex", description="xelatex|lualatex")
+    paper: str = Field(default="letterpaper")
+    fontsize_pt: int = Field(default=11, ge=8, le=20)
+
+# ---------- Routes ----------
 
 @app.get("/", response_model=Dict[str, str])
-async def root():
-    """Root endpoint with service information."""
-    return {
-        "service": "LearnLoop Documents Service",
-        "version": "0.1.0",
-        "status": "running"
-    }
+async def root() -> Dict[str, str]:
+    return {"service": "LearnLoop Documents Service", "version": "0.2.0", "status": "running"}
 
 @app.get("/health", response_model=HealthResponse)
-async def health_check():
-    """Health check endpoint."""
-    return HealthResponse(
-        status="healthy",
-        service="documents",
-        version="0.1.0"
-    )
+async def health_check() -> HealthResponse:
+    return HealthResponse(status="healthy", service="documents", version="0.2.0")
 
-@app.post("/documents/upload", response_model=DocumentResponse)
-async def upload_document(file: UploadFile = File(...)):
-    """Upload and process a document."""
+@app.post("/create")
+async def create_document(req: CreateDocumentRequest):
+    """
+    Build a PDF using PyLaTeX and XeLaTeX with fontspec (Unicode + system fonts).
+    """
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="Text is required.")
     try:
-        # Validate file
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="No filename provided")
-        
-        # Read file content
-        content = await file.read()
-        
-        # Create document info
-        doc_id = f"doc_{len(documents_store) + 1}"
-        document_info = DocumentInfo(
-            id=doc_id,
-            filename=file.filename,
-            content_type=file.content_type or "application/octet-stream",
-            size=len(content),
-            status="processed"
+        pdf_bytes = build_basic_doc(
+            title=req.title,
+            author=req.author,
+            text=req.text,
+            main_font=req.main_font,
+            mono_font=req.mono_font,
+            fontsize_pt=req.fontsize_pt,
+            paper=req.paper,
         )
-        
-        # Store document info (in production, store actual content in database/storage)
-        documents_store[doc_id] = document_info
-        
-        logger.info(f"Document uploaded: {file.filename} (ID: {doc_id})")
-        
-        return DocumentResponse(
-            success=True,
-            message=f"Document '{file.filename}' uploaded successfully",
-            document=document_info
-        )
-        
     except Exception as e:
-        logger.error(f"Error uploading document: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
+        logger.exception("LaTeX build failed")
+        raise HTTPException(status_code=500, detail=f"LaTeX build error: {e}")
 
-@app.get("/documents", response_model=List[DocumentInfo])
-async def list_documents():
-    """List all uploaded documents."""
-    return list(documents_store.values())
-
-@app.get("/documents/{document_id}", response_model=DocumentInfo)
-async def get_document(document_id: str):
-    """Get document information by ID."""
-    if document_id not in documents_store:
-        raise HTTPException(status_code=404, detail="Document not found")
-    
-    return documents_store[document_id]
-
-@app.delete("/documents/{document_id}")
-async def delete_document(document_id: str):
-    """Delete a document."""
-    if document_id not in documents_store:
-        raise HTTPException(status_code=404, detail="Document not found")
-    
-    del documents_store[document_id]
-    logger.info(f"Document deleted: {document_id}")
-    
-    return {"success": True, "message": f"Document {document_id} deleted successfully"}
-
-@app.post("/documents/{document_id}/extract-text")
-async def extract_text(document_id: str):
-    """Extract text from a document (placeholder implementation)."""
-    if document_id not in documents_store:
-        raise HTTPException(status_code=404, detail="Document not found")
-    
-    document = documents_store[document_id]
-    
-    # Placeholder text extraction
-    # In production, implement actual text extraction based on file type
-    extracted_text = f"Extracted text from {document.filename} (placeholder implementation)"
-    
-    return {
-        "success": True,
-        "document_id": document_id,
-        "extracted_text": extracted_text,
-        "message": "Text extraction completed (placeholder)"
-    }
-
-def main():
-    """Main entry point for the documents service."""
-    logger.info(f"Starting LearnLoop Documents Service on :8002")
-    
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=8002,
-        log_level="info",
-        access_log=True,
+    return StreamingResponse(
+        content=iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_filename(req.title)}.pdf"'},
     )
 
-if __name__ == "__main__":
-    main()
+@app.post("/create/raw")
+async def create_from_raw(req: RawLatexRequest):
+    """
+    Pass raw LaTeX (preamble optional). Uses XeLaTeX or LuaLaTeX.
+    """
+    try:
+        pdf_bytes = compile_raw_latex(
+            body=req.body,
+            preamble=req.preamble,
+            engine=req.engine,
+            paper=req.paper,
+            fontsize_pt=req.fontsize_pt,
+        )
+    except Exception as e:
+        logger.exception("Raw LaTeX build failed")
+        raise HTTPException(status_code=500, detail=f"LaTeX build error: {e}")
+
+    return StreamingResponse(
+        content=iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="document.pdf"'},
+    )
+
+# ---------- Helpers ----------
+
+def safe_filename(name: str) -> str:
+    s = "".join(ch for ch in name if ch.isalnum() or ch in (" ", "-", "_")).rstrip()
+    return s if s else "document"
+
+def compile_raw_latex(*, body: str, preamble: Optional[str], engine: str, paper: str, fontsize_pt: int) -> bytes:
+    """
+    Compile arbitrary LaTeX. We always inject fontspec + unicode packages when using xelatex/lualatex.
+    """
+    # Create a minimal doc if preamble not provided
+    if preamble is None:
+        preamble = rf"""
+\documentclass[{fontsize_pt}pt,{paper}]{{article}}
+\usepackage{{fontspec}}
+\usepackage{{microtype}}
+\usepackage{{hyperref}}
+\usepackage{{geometry}}
+\geometry{{margin=1in}}
+\setmainfont{{Noto Serif}}
+\setmonofont{{DejaVu Sans Mono}}
+"""
+
+    full_tex = preamble + "\n\\begin{document}\n" + body + "\n\\end{document}\n"
+
+    with tempfile.TemporaryDirectory() as d:
+        tex_path = Path(d) / "doc.tex"
+        tex_path.write_text(full_tex, encoding="utf-8")
+
+        # Use latexmk for robust builds
+        import shlex
+        import subprocess
+        engine_flag = "-xelatex" if engine == "xelatex" else "-lualatex"
+        cmd = f"latexmk {engine_flag} -interaction=nonstopmode -halt-on-error -pdf doc.tex"
+        proc = subprocess.run(
+            shlex.split(cmd),
+            cwd=d,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=60,  # keep tight
+            check=False,
+        )
+        if proc.returncode != 0:
+            log = proc.stdout.decode(errors="ignore")[-4000:]
+            raise RuntimeError(f"latexmk failed (code {proc.returncode}). Tail:\n{log}")
+
+        pdf_path = Path(d) / "doc.pdf"
+        if not pdf_path.exists():
+            raise RuntimeError("PDF not produced.")
+
+        return pdf_path.read_bytes()
