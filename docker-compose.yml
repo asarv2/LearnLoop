@@ -65,11 +65,9 @@ services:
       - TURN_PASSWORD=${TURN_PASSWORD}
       - AUDIO_SECRET=${AUDIO_SECRET}
 
-      # storage
-      - PROJECT_REGION=${PROJECT_REGION}
-      - S3_ENDPOINT=${S3_ENDPOINT}
-      - ACCESS_KEY=${ACCESS_KEY}
-      - SECRET_KEY=${SECRET_KEY}
+      # supabase storage
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
 
     volumes:
       - ./prompts:/app/prompts

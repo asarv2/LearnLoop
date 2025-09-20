@@ -307,12 +307,6 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_NAME: ${{ secrets.DB_NAME }}
 
-          # Storage
-          PROJECT_REGION: ${{ secrets.PROJECT_REGION }}
-          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-          ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-
           # API/CORS
           ORIGIN: ${{ env.CHANNEL == 'beta' && secrets.BETA_ORIGIN || secrets.ORIGIN }}
 
