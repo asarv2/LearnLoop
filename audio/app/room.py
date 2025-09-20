@@ -912,17 +912,21 @@ def create_room_with_config(
     # Dynamic agents
     try:
         from .agents.openai import OpenAIAgent  # lazy import
+        print(f"[AUDIO] Creating agents from {len(agents or [])} agent specs")
         for spec in (agents or []):
             if not isinstance(spec, dict):
+                print(f"[AUDIO] Skipping non-dict agent spec: {spec}")
                 continue
             aid = spec.get("id") or ""
             voice = spec.get("voice") or "alloy"
             instructions = spec.get("instructions") or "Be helpful."
+            print(f"[AUDIO] Creating agent: id={aid}, voice={voice}, has_instructions={bool(instructions)}")
             if not aid.startswith("agent:"):
                 aid = f"agent:{aid}" if aid else "agent:assistant"
             agent = OpenAIAgent(id=aid, bus=bus, room=r, voice_name=voice, instructions=instructions)
             agent.start()
             r.agents.append(agent)
+            print(f"[AUDIO] Successfully created and started agent: {aid}")
             # max turns
             try:
                 mt = spec.get("max_turns")
@@ -930,8 +934,11 @@ def create_room_with_config(
                     r.set_agent_max_turns(aid, int(mt))
             except Exception:
                 pass
-    except Exception:
-        pass
+        print(f"[AUDIO] Total agents created: {len(r.agents)}")
+    except Exception as e:
+        print(f"[AUDIO] Error creating agents: {e}")
+        import traceback
+        traceback.print_exc()
 
     ROOMS[rid] = r
     return r

@@ -319,6 +319,23 @@ async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
             sio = get_sio_instance()
             await sio.enter_room(sid, chat_id)
 
+            # Start a corresponding room in audio-multi (id == chat_id) and register this human
+            try:
+                from app.bridge import get_bridge
+                from app.utils.chat import get_audio_config
+                bridge = get_bridge(sio)
+                # Get dynamic config based on chat_id/room_id
+                config = get_audio_config(chat_id)
+                print(f"[SERVER] Starting audio room {chat_id} with config: {config}")
+                await bridge.start_room(room_id=chat_id, config=config)
+                human_id = f"user:{profile_id}" if profile_id else f"user:{sid[-6:]}"
+                print(f"[SERVER] Registering human {human_id} in room {chat_id}")
+                await bridge.register_human(room_id=chat_id, human_id=human_id)
+                print(f"[SERVER] Successfully started audio room and registered human")
+            except Exception as e:
+                print(f"[SERVER] ERROR: failed to start/register room in audio: {e}")
+                logger.exception("failed to start/register room in audio")
+
             # Send success response
             sio.start_background_task(sio.emit,
                 "training_joined",

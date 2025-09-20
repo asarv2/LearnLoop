@@ -267,7 +267,7 @@ def get_audio_config(chat_id: str) -> dict:
             
             # Build the base configuration from chat object
             config = {
-                "idle_timeout": chat.idle_timeout or 30,
+                "idle_timeout_ms": (chat.idle_timeout or 30) * 1000,  # Convert seconds to milliseconds
                 "require_users": getattr(chat, 'require_users', True),  # Use chat attribute, default to True
                 "max_turns": chat.max_turns or {},
                 "prompts": chat.prompts or {},
@@ -306,6 +306,7 @@ def get_audio_config(chat_id: str) -> dict:
                             "voice": persona.voice,
                             "profile_id": str(persona.profile_id) if persona.profile_id else None,
                             "user": is_user,
+                            "instructions": persona.realtime_prompt or persona.description or "Be helpful and respond to the user's messages.",
                         }
                         agents.append(agent)
             
