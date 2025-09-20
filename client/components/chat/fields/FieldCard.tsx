@@ -25,6 +25,8 @@ export default function FieldCard({
   setCustomPersonaName,
   customVoiceType,
   setCustomVoiceType,
+  hideBorder = false,
+  hideDivider = false,
 }: FieldCardProps) {
   const { data: field, isLoading } = useField(fieldId);
 
@@ -121,6 +123,83 @@ export default function FieldCard({
   const isOptionalField =
     field.field_type === "persona" || field.field_type === "document";
 
+  if (hideBorder) {
+    return (
+      <>
+        <Box mb="2">
+          <Box
+            style={{
+              background: "transparent",
+              border: "none",
+              borderRadius: "0",
+              boxShadow: "none",
+              margin: "0",
+              padding: "0",
+            }}
+          >
+            <Box p="4">
+              <Flex align="center" gap="4">
+                <Box
+                  style={{
+                    width: "32px",
+                    height: "32px",
+                    borderRadius: "50%",
+                    background: isComplete ? "var(--green-9)" : "var(--gray-7)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  {isComplete ? (
+                    <CheckIcon color="white" width="16" height="16" />
+                  ) : (
+                    <Text size="2" weight="bold" style={{ color: "white" }}>
+                      {index + 1}
+                    </Text>
+                  )}
+                </Box>
+                <Box style={{ flex: 1 }}>
+                  <Flex align="center" gap="2" mb="3">
+                    <Text size="4" weight="bold">
+                      {field.name}
+                    </Text>
+                    {isOptionalField && (
+                      <Text size="2" color="gray">
+                        (Optional)
+                      </Text>
+                    )}
+                    {isComplete && (
+                      <Badge size="1" variant="soft" color="green">
+                        Complete
+                      </Badge>
+                    )}
+                  </Flex>
+                  {renderFieldInput()}
+                </Box>
+              </Flex>
+            </Box>
+          </Box>
+        </Box>
+
+        {/* Progress Bar */}
+        {!isLast && !hideDivider && (
+          <Flex justify="center" mb="2">
+            <Box
+              style={{
+                width: "2px",
+                height: "24px",
+                background: isComplete ? "var(--green-8)" : "var(--gray-6)",
+                borderRadius: "2px",
+              }}
+            />
+          </Flex>
+        )}
+      </>
+    );
+  }
+
+  // Regular Card rendering for individual fields
   return (
     <>
       <Box mb="4">
@@ -183,7 +262,7 @@ export default function FieldCard({
       </Box>
 
       {/* Progress Bar */}
-      {!isLast && (
+      {!isLast && !hideDivider && (
         <Flex justify="center" mb="4">
           <Box
             style={{

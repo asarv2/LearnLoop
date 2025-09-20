@@ -83,6 +83,11 @@ class Fields(_Base, table=True):
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
 
+    groups: List['Groups'] = Relationship(back_populates='level_field')
+    groups_: List['Groups'] = Relationship(back_populates='name_field')
+    groups1: List['Groups'] = Relationship(back_populates='personality_field')
+    groups2: List['Groups'] = Relationship(back_populates='position_field')
+    groups3: List['Groups'] = Relationship(back_populates='voice_field')
     parameters: List['Parameters'] = Relationship(back_populates='field')
 
 
@@ -101,6 +106,33 @@ class Rubrics(_Base, table=True):
 
     standards: List['Standards'] = Relationship(back_populates='rubric')
     scenarios: List['Scenarios'] = Relationship(back_populates='rubric')
+
+
+class Groups(_Base, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['level_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_level_field_id_fkey'),
+        ForeignKeyConstraint(['name_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_name_field_id_fkey'),
+        ForeignKeyConstraint(['personality_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_personality_field_id_fkey'),
+        ForeignKeyConstraint(['position_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_position_field_id_fkey'),
+        ForeignKeyConstraint(['voice_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_voice_field_id_fkey'),
+        PrimaryKeyConstraint('id', name='groups_pkey')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    name: Optional[str] = Field(default=None, sa_column=Column('name', Text))
+    description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
+    name_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('name_field_id', Uuid(as_uuid=True)))
+    level_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('level_field_id', Uuid(as_uuid=True)))
+    voice_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('voice_field_id', Uuid(as_uuid=True)))
+    position_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('position_field_id', Uuid(as_uuid=True)))
+    personality_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('personality_field_id', Uuid(as_uuid=True)))
+
+    level_field: Optional['Fields'] = Relationship(back_populates='groups')
+    name_field: Optional['Fields'] = Relationship(back_populates='groups_')
+    personality_field: Optional['Fields'] = Relationship(back_populates='groups1')
+    position_field: Optional['Fields'] = Relationship(back_populates='groups2')
+    voice_field: Optional['Fields'] = Relationship(back_populates='groups3')
 
 
 class Parameters(_Base, table=True):
@@ -138,6 +170,7 @@ class Profiles(_Base, table=True):
     documents: List['Documents'] = Relationship(back_populates='profile')
     personas: List['Personas'] = Relationship(back_populates='profile')
     user_feedback: List['UserFeedback'] = Relationship(back_populates='user')
+    user_insights: List['UserInsights'] = Relationship(back_populates='user')
     chats: List['Chats'] = Relationship(back_populates='profile')
 
 
@@ -283,6 +316,7 @@ class Scenarios(_Base, table=True):
     document_ids: List[uuid.UUID] = Field(sa_column=Column('document_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
     prompts: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompts', JSONB))
     prompt_mapping: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompt_mapping', JSONB))
+    group_ids: List[uuid.UUID] = Field(sa_column=Column('group_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
@@ -311,6 +345,28 @@ class UserFeedback(_Base, table=True):
     user_id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, sa_column=Column('user_id', Uuid(as_uuid=True)))
 
     user: Optional['Profiles'] = Relationship(back_populates='user_feedback')
+
+
+class UserInsights(_Base, table=True):
+    __tablename__ = 'user_insights'
+    __table_args__ = (
+        ForeignKeyConstraint(['user_id'], ['profiles.id'], ondelete='CASCADE', name='user_insights_user_id_fkey'),
+        PrimaryKeyConstraint('id', name='user_insights_pkey'),
+        Index('idx_user_insights_generated_at', 'generated_at'),
+        Index('idx_user_insights_user_id', 'user_id')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    user_id: uuid.UUID = Field(sa_column=Column('user_id', Uuid(as_uuid=True)))
+    strengths_blurb: str = Field(sa_column=Column('strengths_blurb', Text))
+    improvements_blurb: str = Field(sa_column=Column('improvements_blurb', Text))
+    based_on_conversations: int = Field(sa_column=Column('based_on_conversations', Integer, default=0))
+    based_on_rubric_grades: int = Field(sa_column=Column('based_on_rubric_grades', Integer, default=0))
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('generated_at', DateTime(True)))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+
+    user: Optional['Profiles'] = Relationship(back_populates='user_insights')
 
 
 class Chats(_Base, table=True):
