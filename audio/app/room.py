@@ -113,6 +113,8 @@ class Room:
     scenario_id: Optional[str] = None
     scenario_config: Dict[str, Any] = field(default_factory=dict)
     _pseudo_user_by_persona_id: Dict[str, str] = field(default_factory=dict)
+    # For dynamic config path: map user profile_id -> pseudo agent id
+    _pseudo_user_by_profile_id: Dict[str, str] = field(default_factory=dict)
 
     def register_agent(self, agent_id: str, description: str = "") -> None:
         self.agent_meta[agent_id] = ("human" if description == "human" else "agent")
@@ -915,9 +917,25 @@ def create_room_with_config(
         for spec in (agents or []):
             if not isinstance(spec, dict):
                 continue
+            # Skip user personas when real users are required
+            try:
+                if bool(spec.get("user", False)) and bool(require_users):
+                    continue
+            except Exception:
+                pass
             aid = spec.get("id") or ""
             voice = spec.get("voice") or "alloy"
             instructions = spec.get("instructions") or "Be helpful."
+            # Track pseudo user mapping for dynamic config when require_users=False
+            try:
+                if bool(spec.get("user", False)) and (not bool(require_users)):
+                    pid = spec.get("profile_id") or None
+                    if isinstance(pid, str) and pid:
+                        # normalize agent id format
+                        track_aid = aid if aid.startswith("agent:") else (f"agent:{aid}" if aid else "agent:assistant")
+                        r._pseudo_user_by_profile_id[pid] = track_aid
+            except Exception:
+                pass
             if not aid.startswith("agent:"):
                 aid = f"agent:{aid}" if aid else "agent:assistant"
             agent = OpenAIAgent(id=aid, bus=bus, room=r, voice_name=voice, instructions=instructions)

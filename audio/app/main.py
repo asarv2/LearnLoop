@@ -56,6 +56,7 @@ fastapi_app = FastAPI(title="RTC2", lifespan=lifespan)
 # Removed CORS middleware - this is server-to-server communication
 
 
+# Re-enable Socket.IO logging by default; we will silence specific spammy logs below
 sio = socketio.AsyncServer(
     async_mode="asgi", transports=["websocket", "polling"], logger=True
 )
@@ -139,7 +140,8 @@ async def s2s_start_room(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     agents = agents_raw if isinstance(agents_raw, list) else []
     agents = [a for a in agents if isinstance(a, dict)]
     
-    print(f"[AUDIO] Processing {len(agents)} agents for room {room_id}")
+    # Reduce noisy logs; keep one concise line
+    logger.info(f"audio: start_room room_id=%s agents=%d require_users=%s", room_id, len(agents), require_users)
     room = create_room_with_config(
         room_id=room_id,
         require_users=require_users,
@@ -177,6 +179,28 @@ async def s2s_register_human(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     human_id = data.get("human_id") or sid
     room = get_room(room_id)
     try:
+        # Robust adoption: if this human corresponds to a pseudo user agent (dynamic config
+        # path when require_users=False), remove that pseudo agent so the real human speaks
+        try:
+            # human_id may be formatted as "user:<profile_id>" when provided by server bridge
+            profile_id = None
+            if isinstance(human_id, str) and human_id.startswith("user:"):
+                profile_id = human_id.split(":", 1)[-1]
+            # Only applicable when scenario allows pseudo users
+            allow_pseudo = not bool(room.scenario_config.get("require_users", True))
+            if allow_pseudo and profile_id:
+                pseudo_map = getattr(room, "_pseudo_user_by_profile_id", {})
+                pseudo_agent_id = pseudo_map.get(profile_id)
+                if isinstance(pseudo_agent_id, str) and pseudo_agent_id:
+                    from .room import _remove_agent_from_room
+                    _remove_agent_from_room(room, pseudo_agent_id)
+                    try:
+                        pseudo_map.pop(profile_id, None)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         room.register_agent(human_id, "human")
         # Ensure server connection hears the mixed output but not their own mic
         room.bus.set_ignore(human_id, {human_id, "agent:beep"})
@@ -307,6 +331,7 @@ async def s2s_subscribe_mix(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
                         "frame_b64": b64,
                         "meta": ch.meta,
                     }
+                    # Avoid per-frame log spam; emit quietly
                     await sio.emit("s2s_mixed_frame", payload, room=sid)
             except asyncio.CancelledError:
                 pass
