@@ -142,11 +142,12 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         // Invalidate all relevant queries
         invalidateChatQueries();
 
-        // Show feedback modal if grading was successful, or show message if skipped
+        // Don't auto-show feedback modal here - let the useEffect handle it once by default
         if (rubric_grade_id) {
-          // Grading was successful - show feedback modal
-          setShowFeedback(true);
-          lastProcessedFeedbackRef.current = "feedback";
+          // Grading was successful - the useEffect will show the modal once
+          logInfo(
+            "Grading completed successfully, feedback will be shown by default"
+          );
         } else {
           // Grading was skipped - show a message to user
           logInfo(`Grading skipped: ${message}`);
@@ -178,22 +179,29 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     };
   }, [chatId, chat?.attempt_id, queryClient, isWaitingForFeedback]);
 
-  // ✅ NEW: Fallback mechanism to check for feedback when chat data changes
+  // ✅ NEW: Show feedback modal by default when grading completes (only once)
   useEffect(() => {
     if (!chat) return;
 
-    // Check if feedback exists and we should show it
-    const hasFeedback = chat.feedback && chat.feedback.length > 0;
+    // Check if feedback exists and we should show it (check both new and old systems)
+    const chatWithIncludes = chat as {
+      feedback?: unknown[];
+      rubric_grades?: unknown[];
+    };
+    const hasFeedback =
+      (chatWithIncludes.rubric_grades &&
+        chatWithIncludes.rubric_grades.length > 0) ||
+      (chatWithIncludes.feedback && chatWithIncludes.feedback.length > 0);
 
     // Show feedback if available and we haven't processed it yet
-    if (hasFeedback && !lastProcessedFeedbackRef.current && !showFeedback) {
-      logInfo("Feedback available, showing feedback modal");
+    if (hasFeedback && !lastProcessedFeedbackRef.current) {
+      logInfo("Feedback available, showing feedback modal by default");
       setShowFeedback(true);
       lastProcessedFeedbackRef.current = "feedback";
       // ✅ NEW: Clear loading state for feedback
       setIsWaitingForFeedback(false);
     }
-  }, [chat, showFeedback]);
+  }, [chat]);
 
   // ✅ NEW: Refetch chat data when WebSocket connection is restored
   useEffect(() => {

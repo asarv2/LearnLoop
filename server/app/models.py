@@ -66,6 +66,7 @@ class Users(_Base, table=True):
     reauthentication_sent_at: Optional[datetime] = Field(default=None, sa_column=Column('reauthentication_sent_at', DateTime(True)))
     deleted_at: Optional[datetime] = Field(default=None, sa_column=Column('deleted_at', DateTime(True)))
 
+    trainings: List['Trainings'] = Relationship(back_populates='user')
     logs: List['Logs'] = Relationship(back_populates='user')
 
 
@@ -98,58 +99,8 @@ class Rubrics(_Base, table=True):
     total_points: Optional[int] = Field(default=None, sa_column=Column('total_points', Integer, default=100))
     standard_length: Optional[int] = Field(default=None, sa_column=Column('standard_length', Integer, default=5))
 
-    scenarios: List['Scenarios'] = Relationship(back_populates='rubric')
     standards: List['Standards'] = Relationship(back_populates='rubric')
-
-
-class Trainings(_Base, table=True):
-    __table_args__ = (
-        CheckConstraint("training_type = ANY (ARRAY['standard'::text, 'required'::text, 'custom'::text])", name='trainings_training_type_check'),
-        PrimaryKeyConstraint('id', name='trainings_pkey'),
-        Index('idx_trainings_created_at', 'created_at')
-    )
-
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    title: str = Field(sa_column=Column('title', Text))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
-    practice: bool = Field(sa_column=Column('practice', Boolean, default=False))
-    show_documents: bool = Field(sa_column=Column('show_documents', Boolean, default=False))
-    description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
-    active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
-    what_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_to_do', ARRAY(Text())))
-    what_not_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_not_to_do', ARRAY(Text())))
-    profile_ids: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('profile_ids', ARRAY(Uuid(as_uuid=True))))
-    training_type: Optional[str] = Field(default=None, sa_column=Column('training_type', Text, default=r'standard'))
-
-    logs: List['Logs'] = Relationship(back_populates='training')
-    scenarios: List['Scenarios'] = Relationship(back_populates='training')
-    attempts: List['Attempts'] = Relationship(back_populates='training')
-    chats: List['Chats'] = Relationship(back_populates='training')
-    assessments: List['Assessments'] = Relationship(back_populates='training')
-    feedback: List['Feedback'] = Relationship(back_populates='training')
-    messages: List['Messages'] = Relationship(back_populates='training')
-
-
-class Logs(_Base, table=True):
-    __table_args__ = (
-        ForeignKeyConstraint(['training_id'], ['trainings.id'], name='logs_training_id_fkey'),
-        ForeignKeyConstraint(['user_id'], ['auth.users.id'], ondelete='CASCADE', name='logs_user_id_fkey'),
-        PrimaryKeyConstraint('id', name='logs_pkey'),
-        Index('idx_logs_training_id', 'training_id'),
-        Index('idx_logs_user_id', 'user_id'),
-        {'comment': 'for viewing client logs'}
-    )
-
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
-    level: str = Field(sa_column=Column('level', Enum('info', 'error', 'warn', 'debug', name='log_level')))
-    message: str = Field(sa_column=Column('message', Text))
-    user_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('user_id', Uuid(as_uuid=True)))
-    training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
-
-    training: Optional['Trainings'] = Relationship(back_populates='logs')
-    user: Optional['Users'] = Relationship(back_populates='logs')
+    scenarios: List['Scenarios'] = Relationship(back_populates='rubric')
 
 
 class Parameters(_Base, table=True):
@@ -190,34 +141,6 @@ class Profiles(_Base, table=True):
     chats: List['Chats'] = Relationship(back_populates='profile')
 
 
-class Scenarios(_Base, table=True):
-    __table_args__ = (
-        ForeignKeyConstraint(['rubric_id'], ['rubrics.id'], ondelete='SET NULL', name='scenarios_rubric_id_fkey'),
-        ForeignKeyConstraint(['training_id'], ['trainings.id'], ondelete='CASCADE', name='scenarios_training_id_fkey'),
-        PrimaryKeyConstraint('id', name='scenarios_pkey')
-    )
-
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    title: str = Field(sa_column=Column('title', Text))
-    objectives: List[str] = Field(sa_column=Column('objectives', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    parameter_ids: List[uuid.UUID] = Field(sa_column=Column('parameter_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
-    document_ids: List[uuid.UUID] = Field(sa_column=Column('document_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
-    prompts: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompts', JSONB))
-    prompt_mapping: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompt_mapping', JSONB))
-    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
-    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
-    description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
-    training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
-    rubric_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('rubric_id', Uuid(as_uuid=True)))
-    field_ids: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('field_ids', ARRAY(Uuid(as_uuid=True))))
-    problem_statement: Optional[str] = Field(default=None, sa_column=Column('problem_statement', Text, comment='description of the problem'))
-    parent_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('parent_id', Uuid, comment='parent scenario id'))
-
-    rubric: Optional['Rubrics'] = Relationship(back_populates='scenarios')
-    training: Optional['Trainings'] = Relationship(back_populates='scenarios')
-    chats: List['Chats'] = Relationship(back_populates='scenario')
-
-
 class Standards(_Base, table=True):
     __table_args__ = (
         ForeignKeyConstraint(['rubric_id'], ['rubrics.id'], ondelete='CASCADE', name='standards_rubric_id_fkey'),
@@ -234,6 +157,37 @@ class Standards(_Base, table=True):
 
     rubric: Optional['Rubrics'] = Relationship(back_populates='standards')
     standard_grades: List['StandardGrades'] = Relationship(back_populates='standard')
+
+
+class Trainings(_Base, table=True):
+    __table_args__ = (
+        CheckConstraint("training_type = ANY (ARRAY['standard'::text, 'required'::text, 'custom'::text])", name='trainings_training_type_check'),
+        ForeignKeyConstraint(['user_id'], ['auth.users.id'], name='trainings_user_id_fkey'),
+        PrimaryKeyConstraint('id', name='trainings_pkey'),
+        Index('idx_trainings_created_at', 'created_at')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    title: str = Field(sa_column=Column('title', Text))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    practice: bool = Field(sa_column=Column('practice', Boolean, default=False))
+    show_documents: bool = Field(sa_column=Column('show_documents', Boolean, default=False))
+    description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
+    active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
+    what_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_to_do', ARRAY(Text())))
+    what_not_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_not_to_do', ARRAY(Text())))
+    training_type: Optional[str] = Field(default=None, sa_column=Column('training_type', Text, default=r'standard'))
+    user_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('user_id', Uuid(as_uuid=True)))
+
+    user: Optional['Users'] = Relationship(back_populates='trainings')
+    attempts: List['Attempts'] = Relationship(back_populates='training')
+    logs: List['Logs'] = Relationship(back_populates='training')
+    scenarios: List['Scenarios'] = Relationship(back_populates='training')
+    chats: List['Chats'] = Relationship(back_populates='training')
+    assessments: List['Assessments'] = Relationship(back_populates='training')
+    feedback: List['Feedback'] = Relationship(back_populates='training')
+    messages: List['Messages'] = Relationship(back_populates='training')
 
 
 class Attempts(_Base, table=True):
@@ -270,6 +224,27 @@ class Documents(_Base, table=True):
     profile: Optional['Profiles'] = Relationship(back_populates='documents')
 
 
+class Logs(_Base, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['training_id'], ['trainings.id'], name='logs_training_id_fkey'),
+        ForeignKeyConstraint(['user_id'], ['auth.users.id'], ondelete='CASCADE', name='logs_user_id_fkey'),
+        PrimaryKeyConstraint('id', name='logs_pkey'),
+        Index('idx_logs_training_id', 'training_id'),
+        Index('idx_logs_user_id', 'user_id'),
+        {'comment': 'for viewing client logs'}
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    level: str = Field(sa_column=Column('level', Enum('info', 'error', 'warn', 'debug', name='log_level')))
+    message: str = Field(sa_column=Column('message', Text))
+    user_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('user_id', Uuid(as_uuid=True)))
+    training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
+
+    training: Optional['Trainings'] = Relationship(back_populates='logs')
+    user: Optional['Users'] = Relationship(back_populates='logs')
+
+
 class Personas(_Base, table=True):
     __table_args__ = (
         ForeignKeyConstraint(['profile_id'], ['profiles.id'], ondelete='SET NULL', name='personas_profile_id_fkey'),
@@ -292,6 +267,34 @@ class Personas(_Base, table=True):
 
     profile: Optional['Profiles'] = Relationship(back_populates='personas')
     messages: List['Messages'] = Relationship(back_populates='persona')
+
+
+class Scenarios(_Base, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['rubric_id'], ['rubrics.id'], ondelete='SET NULL', name='scenarios_rubric_id_fkey'),
+        ForeignKeyConstraint(['training_id'], ['trainings.id'], ondelete='CASCADE', name='scenarios_training_id_fkey'),
+        PrimaryKeyConstraint('id', name='scenarios_pkey')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    title: str = Field(sa_column=Column('title', Text))
+    objectives: List[str] = Field(sa_column=Column('objectives', ARRAY(Text()), server_default=text("'{}'::text[]")))
+    parameter_ids: List[uuid.UUID] = Field(sa_column=Column('parameter_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
+    document_ids: List[uuid.UUID] = Field(sa_column=Column('document_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
+    prompts: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompts', JSONB))
+    prompt_mapping: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompt_mapping', JSONB))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
+    training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
+    rubric_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('rubric_id', Uuid(as_uuid=True)))
+    field_ids: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('field_ids', ARRAY(Uuid(as_uuid=True))))
+    problem_statement: Optional[str] = Field(default=None, sa_column=Column('problem_statement', Text, comment='description of the problem'))
+    parent_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('parent_id', Uuid, comment='parent scenario id'))
+
+    rubric: Optional['Rubrics'] = Relationship(back_populates='scenarios')
+    training: Optional['Trainings'] = Relationship(back_populates='scenarios')
+    chats: List['Chats'] = Relationship(back_populates='scenario')
 
 
 class UserFeedback(_Base, table=True):
@@ -429,6 +432,8 @@ class RubricGrades(_Base, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
     name: str = Field(sa_column=Column('name', Text))
     score: int = Field(sa_column=Column('score', Integer))
+    strengths: List[str] = Field(sa_column=Column('strengths', ARRAY(Text()), server_default=text("'{}'::text[]")))
+    improvements: List[str] = Field(sa_column=Column('improvements', ARRAY(Text()), server_default=text("'{}'::text[]")))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))

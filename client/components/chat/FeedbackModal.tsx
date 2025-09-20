@@ -1,5 +1,7 @@
 "use client";
 
+import { useRubrics } from "@/lib/api/hooks/useRubrics";
+import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import type { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import type {
   Chat,
@@ -8,7 +10,9 @@ import type {
   RubricGrade,
   StandardGrade,
 } from "@/types";
+import { InfoCircleOutlined } from "@ant-design/icons";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as HoverCard from "@radix-ui/react-hover-card";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -18,10 +22,6 @@ import {
 import { Badge, Box, Button, Flex, Heading, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import ScoreDisplay from "./ScoreDisplay";
-import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
-import { useRubrics } from "@/lib/api/hooks/useRubrics";
-import * as HoverCard from "@radix-ui/react-hover-card";
-import { InfoCircleOutlined } from "@ant-design/icons";
 
 const SUBTLE_TEXT = "#64748b"; // Subtle gray for secondary text
 const TEXT_COLOR = "#1e293b"; // Dark blue-gray for text
@@ -51,8 +51,25 @@ export default function FeedbackModal({
     return text.replace(/\*\*(.*?)\*\*/g, "$1");
   };
 
-  // If no feedback is available, show a loading/empty state
-  if (!feedback) {
+  // Extract rubric and standard grades if present on chat include
+  const chatWithIncludes = chat as unknown as ChatWithAllIncludes | undefined;
+  const rubric_id = scenarios?.[0]?.rubric_id;
+  const rubric = rubrics?.find((r) => r.id === rubric_id);
+  const rubricGrades: RubricGrade[] =
+    (chatWithIncludes?.rubric_grades as unknown as RubricGrade[]) || [];
+  // Use the rubric grade with the highest score (most recent/complete grading)
+  const bestRubricGrade = rubricGrades.reduce(
+    (best, current) => (current.score > best.score ? current : best),
+    rubricGrades[0] || { score: 0 }
+  );
+  const standardGrades: StandardGrade[] =
+    (bestRubricGrade &&
+      (bestRubricGrade as unknown as { standard_grades?: StandardGrade[] })
+        .standard_grades) ||
+    [];
+
+  // If no feedback is available (neither old feedback nor rubric_grades), show a loading/empty state
+  if (!feedback && rubricGrades.length === 0) {
     return (
       <Dialog.Root open={isOpen} onOpenChange={onClose}>
         <Dialog.Portal>
@@ -124,19 +141,6 @@ export default function FeedbackModal({
     );
   }
 
-  // Extract rubric and standard grades if present on chat include
-  const chatWithIncludes = chat as unknown as ChatWithAllIncludes | undefined;
-  const rubric_id = scenarios?.[0]?.rubric_id;
-  const rubric = rubrics?.find((r) => r.id === rubric_id);
-  const rubricGrades: RubricGrade[] =
-    (chatWithIncludes?.rubric_grades as unknown as RubricGrade[]) || [];
-  const firstRubricGrade = rubricGrades[0];
-  const standardGrades: StandardGrade[] =
-    (firstRubricGrade &&
-      (firstRubricGrade as unknown as { standard_grades?: StandardGrade[] })
-        .standard_grades) ||
-    [];
-
   const pages = [
     {
       title: "Performance Scores",
@@ -145,7 +149,7 @@ export default function FeedbackModal({
       content: (
         <Box style={{ padding: "24px" }}>
           <ScoreDisplay
-            score={score ?? firstRubricGrade?.score ?? null}
+            score={score ?? bestRubricGrade?.score ?? null}
             chat={chat || undefined}
             rubric={rubric as Rubric | null | undefined}
           />
@@ -168,44 +172,46 @@ export default function FeedbackModal({
                       }}
                     >
                       <Flex align="center" gap="2">
-                      <Text size="2">{sg.name}</Text>
-                      <HoverCard.Root>
-                        <HoverCard.Trigger asChild>
-                          <Box
-                            style={{
-                              cursor: "pointer",
-                              display: "flex",
-                              alignItems: "center",
-                              color: SUBTLE_TEXT,
-                            }}
-                          >
-                            <InfoCircleOutlined style={{ fontSize: "1rem", paddingLeft: "4px" }} />
-                          </Box>
-                        </HoverCard.Trigger>
-                        <HoverCard.Portal>
-                          <HoverCard.Content
-                            style={{
-                              backgroundColor: "white",
-                              border: "1px solid #e2e8f0",
-                              borderRadius: "8px",
-                              padding: "12px",
-                              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
-                              maxWidth: "300px",
-                              zIndex: 9999,
-                            }}
-                            sideOffset={5}
-                          >
-                            <Text
-                              size="2"
-                              style={{ color: TEXT_COLOR, lineHeight: "1.4" }}
+                        <Text size="2">{sg.name}</Text>
+                        <HoverCard.Root>
+                          <HoverCard.Trigger asChild>
+                            <Box
+                              style={{
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                color: SUBTLE_TEXT,
+                              }}
                             >
-                              {sg.description ||
-                                "No feedback available for this standard."}
-                            </Text>
-                            <HoverCard.Arrow style={{ fill: "white" }} />
-                          </HoverCard.Content>
-                        </HoverCard.Portal>
-                      </HoverCard.Root>
+                              <InfoCircleOutlined
+                                style={{ fontSize: "1rem", paddingLeft: "4px" }}
+                              />
+                            </Box>
+                          </HoverCard.Trigger>
+                          <HoverCard.Portal>
+                            <HoverCard.Content
+                              style={{
+                                backgroundColor: "white",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: "8px",
+                                padding: "12px",
+                                boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                                maxWidth: "300px",
+                                zIndex: 9999,
+                              }}
+                              sideOffset={5}
+                            >
+                              <Text
+                                size="2"
+                                style={{ color: TEXT_COLOR, lineHeight: "1.4" }}
+                              >
+                                {sg.description ||
+                                  "No feedback available for this standard."}
+                              </Text>
+                              <HoverCard.Arrow style={{ fill: "white" }} />
+                            </HoverCard.Content>
+                          </HoverCard.Portal>
+                        </HoverCard.Root>
                       </Flex>
                       <Badge variant="soft" color="blue">
                         {sg.score}/5
@@ -219,7 +225,7 @@ export default function FeedbackModal({
                   Summary
                 </Heading>
                 <Text size="2">
-                  {firstRubricGrade?.description ||
+                  {bestRubricGrade?.description ||
                     "No feedback available for this standard."}
                 </Text>
               </Box>
@@ -241,70 +247,73 @@ export default function FeedbackModal({
           }}
         >
           <Flex direction="column" gap="6">
-            {feedback.strengths.length > 0 ? (
+            {bestRubricGrade?.strengths &&
+            bestRubricGrade.strengths.length > 0 ? (
               <Flex direction="column" gap="4">
-                {feedback.strengths.map((strength: string, index: number) => (
-                  <Box
-                    key={index}
-                    style={{
-                      position: "relative",
-                      padding: "28px 32px",
-                      backgroundColor: "white",
-                      borderRadius: "16px",
-                      boxShadow:
-                        "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)",
-                      border: "1px solid rgba(22, 163, 74, 0.1)",
-                      transition: "all 0.2s ease",
-                      cursor: "default",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = "translateY(-2px)";
-                      e.currentTarget.style.boxShadow =
-                        "0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.1)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = "translateY(0)";
-                      e.currentTarget.style.boxShadow =
-                        "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)";
-                    }}
-                  >
-                    <Flex align="start" gap="4">
+                {bestRubricGrade.strengths.map(
+                  (strength: string, index: number) => (
+                    <Box
+                      key={index}
+                      style={{
+                        position: "relative",
+                        padding: "28px 32px",
+                        backgroundColor: "white",
+                        borderRadius: "16px",
+                        boxShadow:
+                          "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)",
+                        border: "1px solid rgba(22, 163, 74, 0.1)",
+                        transition: "all 0.2s ease",
+                        cursor: "default",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                        e.currentTarget.style.boxShadow =
+                          "0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.1)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "translateY(0)";
+                        e.currentTarget.style.boxShadow =
+                          "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)";
+                      }}
+                    >
+                      <Flex align="start" gap="4">
+                        <Box
+                          style={{
+                            width: "6px",
+                            height: "6px",
+                            backgroundColor: "#16a34a",
+                            borderRadius: "50%",
+                            marginTop: "12px",
+                            flexShrink: 0,
+                          }}
+                        />
+                        <Text
+                          size="3"
+                          style={{
+                            lineHeight: "1.7",
+                            color: "#1f2937",
+                            fontWeight: "400",
+                            fontSize: "15px",
+                          }}
+                        >
+                          {cleanText(strength)}
+                        </Text>
+                      </Flex>
                       <Box
                         style={{
-                          width: "6px",
-                          height: "6px",
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          bottom: 0,
+                          width: "4px",
                           backgroundColor: "#16a34a",
-                          borderRadius: "50%",
-                          marginTop: "12px",
-                          flexShrink: 0,
+                          borderTopLeftRadius: "16px",
+                          borderBottomLeftRadius: "16px",
                         }}
                       />
-                      <Text
-                        size="3"
-                        style={{
-                          lineHeight: "1.7",
-                          color: "#1f2937",
-                          fontWeight: "400",
-                          fontSize: "15px",
-                        }}
-                      >
-                        {cleanText(strength)}
-                      </Text>
-                    </Flex>
-                    <Box
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        bottom: 0,
-                        width: "4px",
-                        backgroundColor: "#16a34a",
-                        borderTopLeftRadius: "16px",
-                        borderBottomLeftRadius: "16px",
-                      }}
-                    />
-                  </Box>
-                ))}
+                    </Box>
+                  )
+                )}
               </Flex>
             ) : (
               <Box
@@ -341,58 +350,61 @@ export default function FeedbackModal({
           }}
         >
           <Flex direction="column" gap="6">
-            {feedback.errors && feedback.errors.length > 0 ? (
+            {bestRubricGrade?.improvements &&
+            bestRubricGrade.improvements.length > 0 ? (
               <Flex direction="column" gap="4">
-                {feedback.errors.map((error: string, index: number) => (
-                  <Box
-                    key={index}
-                    style={{
-                      position: "relative",
-                      padding: "28px 32px",
-                      backgroundColor: "white",
-                      borderRadius: "16px",
-                      boxShadow:
-                        "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)",
-                      border: "1px solid rgba(245, 158, 11, 0.1)",
-                      transition: "all 0.2s ease",
-                      cursor: "default",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = "translateY(-2px)";
-                      e.currentTarget.style.boxShadow =
-                        "0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.1)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = "translateY(0)";
-                      e.currentTarget.style.boxShadow =
-                        "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)";
-                    }}
-                  >
-                    <Text
-                      size="3"
+                {bestRubricGrade.improvements.map(
+                  (improvement: string, index: number) => (
+                    <Box
+                      key={index}
                       style={{
-                        lineHeight: "1.7",
-                        color: "#1f2937",
-                        fontWeight: "400",
-                        fontSize: "15px",
+                        position: "relative",
+                        padding: "28px 32px",
+                        backgroundColor: "white",
+                        borderRadius: "16px",
+                        boxShadow:
+                          "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)",
+                        border: "1px solid rgba(245, 158, 11, 0.1)",
+                        transition: "all 0.2s ease",
+                        cursor: "default",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                        e.currentTarget.style.boxShadow =
+                          "0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.1)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "translateY(0)";
+                        e.currentTarget.style.boxShadow =
+                          "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)";
                       }}
                     >
-                      {cleanText(error)}
-                    </Text>
-                    <Box
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        bottom: 0,
-                        width: "4px",
-                        backgroundColor: "#f59e0b",
-                        borderTopLeftRadius: "16px",
-                        borderBottomLeftRadius: "16px",
-                      }}
-                    />
-                  </Box>
-                ))}
+                      <Text
+                        size="3"
+                        style={{
+                          lineHeight: "1.7",
+                          color: "#1f2937",
+                          fontWeight: "400",
+                          fontSize: "15px",
+                        }}
+                      >
+                        {cleanText(improvement)}
+                      </Text>
+                      <Box
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          bottom: 0,
+                          width: "4px",
+                          backgroundColor: "#f59e0b",
+                          borderTopLeftRadius: "16px",
+                          borderBottomLeftRadius: "16px",
+                        }}
+                      />
+                    </Box>
+                  )
+                )}
               </Flex>
             ) : (
               <Box
@@ -408,7 +420,7 @@ export default function FeedbackModal({
                   size="3"
                   style={{ color: "#6b7280", fontStyle: "italic" }}
                 >
-                  No specific missteps identified.
+                  No specific improvements identified.
                 </Text>
               </Box>
             )}

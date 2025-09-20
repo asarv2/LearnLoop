@@ -430,7 +430,12 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
             if rubric_id:
                 logger.info(f"⚙️ Running grading for chat {chat_id} with rubric_id {rubric_id}")
                 try:
-                    rubric_grade_id = await run_grading_agent(chat_id, rubric_id, db_session)
+                    # Create a fresh session for grading to avoid prepared statement conflicts
+                    grading_session = next(get_session())
+                    try:
+                        rubric_grade_id = await run_grading_agent(chat_id, rubric_id, grading_session)
+                    finally:
+                        grading_session.close()
                     logger.info(f"✅ Grading completed for chat {chat_id}, rubric_grade_id: {rubric_grade_id}")
                 except Exception as e:
                     logger.error(f"❌ Grading failed for chat {chat_id}: {str(e)}")

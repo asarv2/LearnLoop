@@ -14,12 +14,13 @@ import { useParameters } from "@/lib/api/hooks/useParameters";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
 import { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import { logError } from "@/utils/logger";
-import { Box, Text } from "@radix-ui/themes";
+import { Box, Select, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChatArea from "./ChatArea";
 import ChatHeader from "./ChatHeader";
+import DocumentViewerModal from "./DocumentViewerModal";
 import FeedbackModal from "./FeedbackModal";
 
 interface TrainingAttemptProps {
@@ -70,18 +71,9 @@ function TrainingAttemptContent() {
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
     null
   );
-  const [documentPanelWidth, setDocumentPanelWidth] = useState(400);
-  const [isResizing, setIsResizing] = useState(false);
+  const [showDocumentModal, setShowDocumentModal] = useState(false);
   const [isDocumentPanelCollapsed, setIsDocumentPanelCollapsed] =
     useState(false);
-
-  // Refs for performance optimization
-  const panelRef = useRef<HTMLDivElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const startWidthRef = useRef<number>(400);
-  const pendingWidthRef = useRef<number>(400);
-  const rafIdRef = useRef<number | null>(null);
 
   // Get document_ids from scenario data
   const documentIds = useMemo(
@@ -104,101 +96,51 @@ function TrainingAttemptContent() {
     }
   }, [documentIds, selectedDocumentId]);
 
+  // Handle document selection
+  const handleDocumentSelect = useCallback((documentId: string) => {
+    setSelectedDocumentId(documentId);
+  }, []);
+
+  const handleCloseDocumentModal = useCallback(() => {
+    setShowDocumentModal(false);
+  }, []);
+
   // Handle document panel collapse
   const handleToggleDocumentPanel = useCallback(() => {
     setIsDocumentPanelCollapsed((prev) => !prev);
   }, []);
 
-  // Optimized pointer event handlers for resizing
-  const onResizeStart = useCallback(
-    (e: React.PointerEvent) => {
-      e.preventDefault();
-      // capture so we still get move events if pointer leaves handle
-      (e.target as Element).setPointerCapture(e.pointerId);
-      setIsResizing(true);
-
-      // establish starting width & limits for the 30% cap
-      startWidthRef.current =
-        panelRef.current?.offsetWidth ?? documentPanelWidth;
-
-      // make iframe cheap during drag
-      if (iframeRef.current) {
-        iframeRef.current.style.pointerEvents = "none";
-        iframeRef.current.style.visibility = "hidden"; // optional; remove if you want it visible while dragging
-      }
-
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    },
-    [documentPanelWidth]
-  );
-
-  const onResizeMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!isResizing) return;
-      // panel is on the right; compute width from the right edge
-      const vw = window.innerWidth;
-      const tentative = vw - e.clientX;
-
-      const minWidth = 300;
-      const hardMax = Math.min(800, vw * 0.6);
-
-      // "30% over" the starting width
-      const maxOver = startWidthRef.current * 1.3;
-      const maxWidth = Math.min(maxOver, hardMax);
-
-      const clamped = Math.max(minWidth, Math.min(maxWidth, tentative));
-      pendingWidthRef.current = clamped;
-
-      // rAF throttle: write to style, avoid React renders per move
-      if (rafIdRef.current == null) {
-        rafIdRef.current = requestAnimationFrame(() => {
-          rafIdRef.current = null;
-          if (panelRef.current) {
-            panelRef.current.style.width = `${pendingWidthRef.current}px`;
-          }
-        });
-      }
-    },
-    [isResizing]
-  );
-
-  const onResizeEnd = useCallback(() => {
-    if (!isResizing) return;
-    setIsResizing(false);
-    if (rafIdRef.current != null) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-    }
-    // Commit once to React state to keep it the single source of truth
-    setDocumentPanelWidth(pendingWidthRef.current);
-
-    // restore iframe interactivity
-    if (iframeRef.current) {
-      iframeRef.current.style.pointerEvents = "";
-      iframeRef.current.style.visibility = ""; // optional
-    }
-
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-  }, [isResizing]);
-
   // Helper function to check if feedback exists for this chat
   const hasFeedback = () => {
     if (!chat) return false;
     const chatWithIncludes = chat as ChatWithAllIncludes;
-    return chatWithIncludes.feedback && chatWithIncludes.feedback.length > 0;
+    // Check for rubric_grades (new system) or feedback (old system)
+    const hasRubricGrades =
+      chatWithIncludes.rubric_grades &&
+      chatWithIncludes.rubric_grades.length > 0;
+    const hasOldFeedback =
+      chatWithIncludes.feedback && chatWithIncludes.feedback.length > 0;
+
+    console.log("🔍 hasFeedback Debug:", {
+      chatId: chat.id,
+      hasRubricGrades,
+      hasOldFeedback,
+      rubricGrades: chatWithIncludes.rubric_grades,
+      feedback: chatWithIncludes.feedback,
+      rawChat: chat,
+      chatWithIncludes: chatWithIncludes,
+    });
+
+    return hasRubricGrades || hasOldFeedback;
   };
 
-  // Use non-smooth scroll while resizing to avoid competing animations
-  const scrollToBottom = useCallback(() => {
-    const behavior = isResizing ? "auto" : "smooth";
-    messagesEndRef.current?.scrollIntoView({ behavior });
-  }, [isResizing]);
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, scrollToBottom]);
+  }, [messages]);
 
   const endInterview = async () => {
     try {
@@ -262,7 +204,6 @@ function TrainingAttemptContent() {
 
   return (
     <Box
-      ref={containerRef}
       style={{
         display: "flex",
         height: "calc(100vh - 96px)",
@@ -320,64 +261,95 @@ function TrainingAttemptContent() {
               setCurrentMessage={setCurrentMessage}
               chat={chat}
               messagesEndRef={messagesEndRef}
-              onShowFeedback={() => setShowFeedback(true)}
             />
           </Box>
 
           {/* Right Column - Document Viewer */}
           {documentIds.length > 0 && !isDocumentPanelCollapsed && (
-            <>
-              {/* Resize Handle (Pointer Events) */}
+            <Box
+              style={{
+                width: "400px",
+                borderLeft: "1px solid var(--gray-6)",
+                background: "var(--gray-1)",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+              {/* Document Selector Header */}
               <Box
-                onPointerDown={onResizeStart}
-                onPointerMove={onResizeMove}
-                onPointerUp={onResizeEnd}
                 style={{
-                  width: 6,
-                  background: isResizing ? "var(--blue-6)" : "var(--gray-6)",
-                  cursor: "col-resize",
-                  touchAction: "none", // important for touch
-                  transition: isResizing
-                    ? "none"
-                    : "background-color 0.2s ease",
-                }}
-              />
-
-              {/* Right Panel */}
-              <Box
-                ref={panelRef}
-                // Keep React state as the authoritative width for first render / after commit
-                style={{
-                  width: `${documentPanelWidth}px`,
-                  display: "flex",
-                  flexDirection: "column",
-                  overflow: "hidden",
-                  // isolate layout/paint so the chat column doesn't reflow
-                  contain: "layout paint size",
-                  // optional hint; modern Chromium/WebKit ship it
-                  contentVisibility: "auto",
+                  padding: "16px",
+                  borderBottom: "1px solid var(--gray-6)",
+                  background: "white",
                 }}
               >
-                {selectedDocumentId && (
-                  <iframe
-                    ref={iframeRef}
-                    src={`/api/v1/documents/${selectedDocumentId}/file`}
-                    title={
-                      documentMap.get(selectedDocumentId)?.title || "Document"
-                    }
-                    loading="eager"
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      border: "none",
-                      flex: 1,
-                      // prevent subpixel jitter during rapid width writes
-                      willChange: "width",
-                    }}
-                  />
+                {documentIds.length > 1 ? (
+                  <Select.Root
+                    value={selectedDocumentId || ""}
+                    onValueChange={handleDocumentSelect}
+                  >
+                    <Select.Trigger
+                      style={{
+                        width: "100%",
+                        borderRadius: "8px",
+                        border: "1px solid var(--gray-6)",
+                      }}
+                    />
+                    <Select.Content>
+                      {documentIds.map((docId) => {
+                        const doc = documentMap.get(docId);
+                        return (
+                          <Select.Item key={docId} value={docId}>
+                            {doc?.title || `Document ${docId.slice(0, 8)}...`}
+                          </Select.Item>
+                        );
+                      })}
+                    </Select.Content>
+                  </Select.Root>
+                ) : (
+                  <Text size="2" style={{ color: "var(--gray-11)" }}>
+                    {documentMap.get(documentIds[0])?.title || "Document"}
+                  </Text>
                 )}
               </Box>
-            </>
+
+              {/* Document Preview */}
+              {selectedDocumentId && (
+                <Box
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    padding: "16px",
+                    overflow: "hidden",
+                  }}
+                >
+                  <Box
+                    style={{
+                      flex: 1,
+                      background: "white",
+                      border: "1px solid var(--gray-6)",
+                      borderRadius: "8px",
+                      overflow: "hidden",
+                      position: "relative",
+                    }}
+                  >
+                    <iframe
+                      src={`/api/v1/documents/${selectedDocumentId}/file`}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        border: "none",
+                      }}
+                      title={
+                        documentMap.get(selectedDocumentId)?.title || "Document"
+                      }
+                    />
+                  </Box>
+                </Box>
+              )}
+            </Box>
           )}
 
           {/* Feedback Modal - only show if feedback exists */}
@@ -388,6 +360,15 @@ function TrainingAttemptContent() {
               feedback={(chat as ChatWithAllIncludes)?.feedback?.[0] || null}
               score={null}
               chat={chat}
+            />
+          )}
+
+          {/* Document Viewer Modal */}
+          {selectedDocumentId && (
+            <DocumentViewerModal
+              isOpen={showDocumentModal}
+              onClose={handleCloseDocumentModal}
+              documentId={selectedDocumentId}
             />
           )}
         </>
