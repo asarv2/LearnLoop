@@ -227,9 +227,7 @@ export type Database = {
           chat_id: string
           created_at: string
           errors: string[]
-          green_flags: string[]
           id: string
-          red_flags: string[]
           strengths: string[]
           training_id: string | null
         }
@@ -237,9 +235,7 @@ export type Database = {
           chat_id: string
           created_at?: string
           errors?: string[]
-          green_flags?: string[]
           id?: string
-          red_flags?: string[]
           strengths?: string[]
           training_id?: string | null
         }
@@ -247,9 +243,7 @@ export type Database = {
           chat_id?: string
           created_at?: string
           errors?: string[]
-          green_flags?: string[]
           id?: string
-          red_flags?: string[]
           strengths?: string[]
           training_id?: string | null
         }
