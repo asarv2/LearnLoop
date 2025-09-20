@@ -55,6 +55,7 @@ export default function DocumentPreviewCard({
             display: "-webkit-box",
             WebkitLineClamp: 2,
             WebkitBoxOrient: "vertical",
+            color: "black",
           }}
         >
           {document?.title || "Document"}

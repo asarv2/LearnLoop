@@ -170,8 +170,18 @@ class Room:
 
     def _apply_beep_policy(self) -> None:
         # Single place that decides beep audibility
-        # - pending: beep ON for other agents, OFF for humans + selected next agent
-        # - everything else: beep OFF for everyone
+        # Special case: with exactly two participants (one human, one agent), keep beep OFF for everyone
+        try:
+            kinds = list(self.agent_meta.values())
+            agent_count = sum(1 for k in kinds if k == "agent" and k != "agent:beep")
+            human_count = sum(1 for k in kinds if k == "human")
+        except Exception:
+            agent_count = 0
+            human_count = 0
+        if (agent_count == 1 and human_count == 1):
+            self._update_beep_ignore(None, active=False)
+            return
+        # Default policy
         if self._speaker_state.mode == "pending":
             self._update_beep_ignore(self._speaker_state.next_id, active=True)
         else:
