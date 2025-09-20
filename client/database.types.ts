@@ -481,7 +481,9 @@ export type Database = {
           created_at: string | null
           description: string | null
           id: string
+          level: Database["public"]["Enums"]["level"] | null
           name: string
+          position: string | null
           profile_id: string | null
           realtime_prompt: string | null
           system_prompt: string | null
@@ -494,7 +496,9 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          level?: Database["public"]["Enums"]["level"] | null
           name: string
+          position?: string | null
           profile_id?: string | null
           realtime_prompt?: string | null
           system_prompt?: string | null
@@ -507,7 +511,9 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          level?: Database["public"]["Enums"]["level"] | null
           name?: string
+          position?: string | null
           profile_id?: string | null
           realtime_prompt?: string | null
           system_prompt?: string | null
@@ -832,6 +838,7 @@ export type Database = {
           profile_ids: string[] | null
           show_documents: boolean
           title: string
+          training_type: string | null
           updated_at: string
           what_not_to_do: string[] | null
           what_to_do: string[] | null
@@ -845,6 +852,7 @@ export type Database = {
           profile_ids?: string[] | null
           show_documents?: boolean
           title: string
+          training_type?: string | null
           updated_at?: string
           what_not_to_do?: string[] | null
           what_to_do?: string[] | null
@@ -858,6 +866,7 @@ export type Database = {
           profile_ids?: string[] | null
           show_documents?: boolean
           title?: string
+          training_type?: string | null
           updated_at?: string
           what_not_to_do?: string[] | null
           what_to_do?: string[] | null
@@ -906,6 +915,7 @@ export type Database = {
     Enums: {
       field_type: "persona" | "document" | "numerical" | "categorical" | "text"
       interview_type: "regular" | "cheating" | "ai-assisted"
+      level: "junior" | "mid" | "senior" | "executive"
       log_level: "info" | "error" | "warn" | "debug"
       message_role: "user" | "assistant"
       question_type: "mcq" | "frq"
@@ -1040,6 +1050,7 @@ export const Constants = {
     Enums: {
       field_type: ["persona", "document", "numerical", "categorical", "text"],
       interview_type: ["regular", "cheating", "ai-assisted"],
+      level: ["junior", "mid", "senior", "executive"],
       log_level: ["info", "error", "warn", "debug"],
       message_role: ["user", "assistant"],
       question_type: ["mcq", "frq"],
