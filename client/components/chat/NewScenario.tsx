@@ -34,6 +34,7 @@ import {
   useCreateDocument,
 } from "@/lib/api/hooks/useDocuments";
 import { useFields } from "@/lib/api/hooks/useFields";
+import { useGroups } from "@/lib/api/hooks/useGroups";
 import {
   useCreateParameter,
   useParameters,
@@ -54,6 +55,7 @@ export interface NewScenarioProps {
 
 export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [fieldValues, setFieldValues] = useState<FieldValue[]>([]);
+  const [groupFieldValues, setGroupFieldValues] = useState<FieldValue[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateProgress, setGenerateProgress] = useState({
@@ -71,6 +73,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const preparingModelTimerRef = useRef<number | null>(null);
   const { user } = useAuth();
   const { data: fields } = useFields();
+  const { data: groups } = useGroups();
   // Fetch scenario data
   const { data: scenario, isLoading: scenarioLoading } =
     useScenario(scenarioId);
@@ -127,6 +130,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     return parts.join("|");
   };
 
+  // Filter to only send individual scenario field_ids to server (exclude group fields)
+  const getIndividualFieldValuesForPayload = (): {
+    fieldId: string;
+    value: string;
+    parameterId?: string;
+  }[] => {
+    return fieldValues.map((fv) => ({
+      fieldId: fv.fieldId,
+      value: fv.value,
+      parameterId: fv.parameterId,
+    }));
+  };
+
   // Compute current signature from the visible fieldValues
   const currentSignature = (() => {
     const items = fieldValues.map((fv) => ({
@@ -144,8 +160,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
   // Initialize field values when scenario and training load
   useEffect(() => {
-    if (scenario?.field_ids && fields) {
-      const filteredFieldIds = scenario.field_ids.filter((fieldId: string) => {
+    if (scenario && fields && groups) {
+      // Only use individual scenario field_ids for the main fieldValues state
+      // Group field_ids will be handled separately within group components
+      const individualFieldIds = scenario.field_ids || [];
+
+      const filteredFieldIds = individualFieldIds.filter((fieldId: string) => {
         const field = fields.find((f) => f.id === fieldId);
         if (!field) return false;
         if (field.field_type === "document") {
@@ -161,8 +181,47 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           parameterId: undefined,
         }))
       );
+
+      // Initialize group field values separately using specific field IDs
+      const groupFieldIds = (scenario.group_ids || [])
+        .map((groupId: string) => {
+          const group = groups.find((g) => g.id === groupId);
+          if (!group) return [];
+
+          // Return field IDs in the specified order: name, voice, position, level, personality
+          const fieldIds = [
+            group.name_field_id,
+            group.voice_field_id,
+            group.position_field_id,
+            group.level_field_id,
+            group.personality_field_id,
+          ].filter(
+            (fieldId): fieldId is string =>
+              fieldId !== null && fieldId !== undefined
+          );
+
+          return fieldIds;
+        })
+        .flat();
+
+      const filteredGroupFieldIds = groupFieldIds.filter((fieldId: string) => {
+        const field = fields.find((f) => f.id === fieldId);
+        if (!field) return false;
+        if (field.field_type === "document") {
+          return training?.show_documents === true;
+        }
+        return true;
+      });
+
+      setGroupFieldValues(
+        filteredGroupFieldIds.map((fieldId: string) => ({
+          fieldId,
+          value: "",
+          parameterId: undefined,
+        }))
+      );
     }
-  }, [scenario, fields, training]);
+  }, [scenario, fields, groups, training]);
 
   // Cleanup timers on component unmount
   useEffect(() => {
@@ -303,6 +362,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     );
   };
 
+  const updateGroupFieldValue = (
+    fieldId: string,
+    value: string,
+    parameterId?: string,
+    file?: File
+  ) => {
+    setGroupFieldValues((prev) =>
+      prev.map((fv) =>
+        fv.fieldId === fieldId ? { ...fv, value, parameterId, file } : fv
+      )
+    );
+  };
+
   const handleAutoFill = () => {
     const pickRandom = <T,>(arr: T[]): T | undefined =>
       arr[Math.floor(Math.random() * arr.length)];
@@ -416,7 +488,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   };
 
   const isStepComplete = (fieldId: string) => {
-    const fieldValue = fieldValues.find((fv) => fv.fieldId === fieldId);
+    const fieldValue =
+      fieldValues.find((fv) => fv.fieldId === fieldId) ||
+      groupFieldValues.find((fv) => fv.fieldId === fieldId);
     if (!fieldValue) return false;
 
     const field = fields?.find((f) => f.id === fieldId);
@@ -453,15 +527,32 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     return fieldValue.value.trim() !== "";
   };
 
-  const allStepsComplete =
-    fieldValues.length > 0 &&
-    fieldValues.every((fv) => {
-      const field = fields?.find((f) => f.id === fv.fieldId);
-      if (!field) return false;
-      if (field.hidden) return true; // hidden fields do not gate UI completion
-      if (field.field_type === "document") return true;
-      return isStepComplete(fv.fieldId);
-    });
+  const allStepsComplete = (() => {
+    // Check individual fields
+    const individualFieldsComplete =
+      fieldValues.length > 0 &&
+      fieldValues.every((fv) => {
+        const field = fields?.find((f) => f.id === fv.fieldId);
+        if (!field) return false;
+        if (field.hidden) return true; // hidden fields do not gate UI completion
+        if (field.field_type === "document") return true;
+        return isStepComplete(fv.fieldId);
+      });
+
+    // Check group fields
+    const groupFieldsComplete =
+      groupFieldValues.length > 0 &&
+      groupFieldValues.every((fv) => {
+        const field = fields?.find((f) => f.id === fv.fieldId);
+        if (!field) return false;
+        if (field.hidden) return true; // hidden fields do not gate UI completion
+        if (field.field_type === "document") return true;
+        return isStepComplete(fv.fieldId);
+      });
+
+    // Both individual and group fields must be complete
+    return individualFieldsComplete && groupFieldsComplete;
+  })();
 
   // Determine scenario readiness: problem statement non-empty and >=1 objective (from draft or persisted)
   const scenarioProblem = (
@@ -556,9 +647,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
       const scenarioToUse = savedScenarioId || scenarioId;
 
-      // 1) Upload any document files first
+      // 1) Upload any document files first (process both individual and group fields)
+      const allFieldValues = [...fieldValues, ...groupFieldValues];
       const uploadedFieldValues = await Promise.all(
-        fieldValues.map(async (fieldValue) => {
+        allFieldValues.map(async (fieldValue) => {
           if (fieldValue.file) {
             try {
               const document = await createDocument.mutateAsync({
@@ -868,18 +960,22 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         return fv;
       });
 
-      // Persist computed values locally for Start flow
-      setFieldValues(personaCompletedFieldValues);
+      // Persist computed values locally for Start flow (separate individual and group fields)
+      const individualFields = personaCompletedFieldValues.filter((fv) =>
+        fieldValues.some((ifv) => ifv.fieldId === fv.fieldId)
+      );
+      const groupFields = personaCompletedFieldValues.filter((fv) =>
+        groupFieldValues.some((gfv) => gfv.fieldId === fv.fieldId)
+      );
+
+      setFieldValues(individualFields);
+      setGroupFieldValues(groupFields);
       if (nextAssistantPersonaId !== customAssistantPersonaId) {
         setCustomAssistantPersonaId(nextAssistantPersonaId);
       }
 
-      // 5) Update scenario parameters on server
-      const payloadFieldValues = personaCompletedFieldValues.map((fv) => ({
-        fieldId: fv.fieldId,
-        value: fv.value,
-        parameterId: fv.parameterId,
-      }));
+      // 5) Update scenario parameters on server (only send individual scenario field_ids)
+      const payloadFieldValues = getIndividualFieldValuesForPayload();
 
       // Record this generation's parameters for change detection
       setLastGeneratedSignature(makeSignatureFromPayload(payloadFieldValues));
@@ -914,37 +1010,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     try {
       // Update active scenario's parameter ids before starting
       const scenarioToUse = savedScenarioId || scenarioId;
-      // Auto-pick an active persona if none selected (and not Custom) before updating
-      const personaCompletedFieldValues = fieldValues.map((fv) => {
-        const f = fields?.find((ff) => ff.id === fv.fieldId);
-        if (!f) return fv;
-        if (
-          f.field_type === "persona" &&
-          (!fv.parameterId || fv.parameterId.trim() === "") &&
-          fv.value !== "Custom"
-        ) {
-          const candidates = (allParameters || [])
-            .filter((p) => p.field_id === f.id)
-            .filter(
-              (p) => (p.description || "").toLowerCase() !== "custom persona"
-            )
-            .filter((p) => {
-              const persona = personas?.find((pp) => pp.id === p.value);
-              return persona?.active === true;
-            });
-          if (candidates.length > 0) {
-            const choice =
-              candidates[Math.floor(Math.random() * candidates.length)];
-            return { ...fv, value: choice.name || "", parameterId: choice.id };
-          }
-        }
-        return fv;
-      });
-      const updateFieldValues = personaCompletedFieldValues.map((fv) => ({
-        fieldId: fv.fieldId,
-        value: fv.value,
-        parameterId: fv.parameterId,
-      }));
+      const updateFieldValues = getIndividualFieldValuesForPayload();
 
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
@@ -1057,6 +1123,161 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             {scenario.description}
           </Text>
         </Box>
+
+        {/* Groups Section */}
+        {scenario?.group_ids && scenario.group_ids.length > 0 && groups && (
+          <Box maxWidth="800px" mx="auto" mt="4">
+            {scenario.group_ids.map((groupId: string) => {
+              const group = groups.find((g) => g.id === groupId);
+              if (!group) return null;
+
+              return (
+                <Card
+                  key={groupId}
+                  style={{
+                    background: "white",
+                    border: "1px solid var(--gray-6)",
+                    borderRadius: "12px",
+                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                    marginBottom: "16px",
+                  }}
+                >
+                  <Box p="4">
+                    <Flex align="center" gap="3" mb="3">
+                      <Box
+                        style={{
+                          width: "24px",
+                          height: "24px",
+                          borderRadius: "50%",
+                          background: "var(--blue-9)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Text size="1" weight="bold" style={{ color: "white" }}>
+                          G
+                        </Text>
+                      </Box>
+                      <Box style={{ flex: 1 }}>
+                        <Text size="3" weight="bold">
+                          {group.name || `Group ${groupId.slice(0, 8)}`}:
+                        </Text>
+                        {group.description && (
+                          <Text
+                            size="2"
+                            color="gray"
+                            mt="1"
+                            style={{ paddingLeft: "4px" }}
+                          >
+                            {group.description}
+                          </Text>
+                        )}
+                      </Box>
+                    </Flex>
+
+                    {/* Group Field Cards */}
+                    {(() => {
+                      const hasFields = [
+                        group.name_field_id,
+                        group.voice_field_id,
+                        group.position_field_id,
+                        group.level_field_id,
+                        group.personality_field_id,
+                      ].some(
+                        (fieldId) => fieldId !== null && fieldId !== undefined
+                      );
+                      return hasFields;
+                    })() && (
+                      <Box>
+                        <Flex direction="column" gap="3">
+                          {(() => {
+                            // Get field IDs in the specified order: name, voice, position, level, personality
+                            const orderedFieldIds = [
+                              group.name_field_id,
+                              group.voice_field_id,
+                              group.position_field_id,
+                              group.level_field_id,
+                              group.personality_field_id,
+                            ].filter(
+                              (fieldId): fieldId is string =>
+                                fieldId !== null && fieldId !== undefined
+                            );
+
+                            return orderedFieldIds.map(
+                              (fieldId: string, index: number) => {
+                                const field = fields?.find(
+                                  (f) => f.id === fieldId
+                                );
+                                if (!field) return null;
+
+                                const fieldValue = groupFieldValues.find(
+                                  (fv) => fv.fieldId === fieldId
+                                );
+                                const isComplete = isStepComplete(fieldId);
+                                const isLast =
+                                  index === orderedFieldIds.length - 1;
+
+                                return (
+                                  <FieldCard
+                                    key={fieldId}
+                                    fieldId={fieldId}
+                                    index={index}
+                                    isComplete={isComplete}
+                                    value={fieldValue?.value || ""}
+                                    onChange={(value, parameterId, file) =>
+                                      updateGroupFieldValue(
+                                        fieldId,
+                                        value,
+                                        parameterId,
+                                        file
+                                      )
+                                    }
+                                    isLast={isLast}
+                                    selectedParameterId={
+                                      fieldValue?.parameterId
+                                    }
+                                    customPersonalityType={
+                                      customPersonalityType
+                                    }
+                                    setCustomPersonalityType={
+                                      setCustomPersonalityType
+                                    }
+                                    customPersonaName={customPersonaName}
+                                    setCustomPersonaName={setCustomPersonaName}
+                                    customVoiceType={customVoiceType}
+                                    setCustomVoiceType={setCustomVoiceType}
+                                    hideBorder={true}
+                                    hideDivider={true}
+                                  />
+                                );
+                              }
+                            );
+                          })()}
+                        </Flex>
+                      </Box>
+                    )}
+                  </Box>
+                </Card>
+              );
+            })}
+
+            {/* Divider after groups section */}
+            {scenario?.group_ids && scenario.group_ids.length > 0 && (
+              <Flex justify="center" mb="4" mt="2">
+                <Box
+                  style={{
+                    width: "2px",
+                    height: "24px",
+                    background: "var(--gray-6)",
+                    borderRadius: "2px",
+                  }}
+                />
+              </Flex>
+            )}
+          </Box>
+        )}
 
         {/* Dynamic Field Cards */}
         <Box maxWidth="800px" mx="auto" mt="4">

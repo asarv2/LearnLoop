@@ -50,4 +50,6 @@ export type FieldCardProps = {
   setCustomPersonaName: (value: string) => void;
   customVoiceType: string;
   setCustomVoiceType: (value: string) => void;
+  hideBorder?: boolean;
+  hideDivider?: boolean;
 };

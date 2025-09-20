@@ -430,52 +430,14 @@ function TrainingTabContent({
 
   const filteredTrainings =
     trainingsToShow?.filter((training) => {
-      if (type === "standard") {
-        // Show only Critical Conversations, Interview, and Leadership Development
-        const title = training.title.toLowerCase();
-        return (
-          (title.includes("difficult conversations") ||
-            title.includes("critical conversations") ||
-            title.includes("interview") ||
-            title.includes("leadership development") ||
-            title.includes("leadership")) &&
-          // Filter out unwanted trainings
-          !title.includes("offboarding") &&
-          !title.includes("customer communication") &&
-          !title.includes("cross-cultural") &&
-          !title.includes("cross cultural")
-        );
-      }
-      return true;
+      // Only show active trainings
+      return training.active === true;
     }) || [];
 
-  const sortedTrainings =
-    type === "standard"
-      ? filteredTrainings.sort((a, b) => {
-          // Sort Critical Conversations first, then Interview, then Leadership Development
-          const aTitle = a.title.toLowerCase();
-          const bTitle = b.title.toLowerCase();
-
-          if (
-            aTitle.includes("difficult conversations") ||
-            aTitle.includes("critical conversations")
-          )
-            return -1;
-          if (
-            bTitle.includes("difficult conversations") ||
-            bTitle.includes("critical conversations")
-          )
-            return 1;
-
-          if (aTitle.includes("interview")) return -1;
-          if (bTitle.includes("interview")) return 1;
-
-          if (aTitle.includes("leadership")) return -1;
-          if (bTitle.includes("leadership")) return 1;
-
-          return 0;
-        })
-      : filteredTrainings;
+  const sortedTrainings = filteredTrainings.sort((a, b) => {
+    // Sort alphabetically by title
+    return a.title.localeCompare(b.title);
+  });
 
   return (
     <div>

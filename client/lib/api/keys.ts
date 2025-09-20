@@ -29,6 +29,12 @@ export const fieldKeys = {
   detail: (id: string) => [...fieldKeys.all, id] as const,
 };
 
+export const groupKeys = {
+  all: ["groups"] as const,
+  list: (filters?: unknown) => [...groupKeys.all, { filters }] as const,
+  detail: (id: string) => [...groupKeys.all, id] as const,
+};
+
 export const hintKeys = {
   all: ["hints"] as const,
   list: (filters?: unknown) => [...hintKeys.all, { filters }] as const,
