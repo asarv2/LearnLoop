@@ -250,7 +250,6 @@ def _humanize(s: str) -> str:
 
 async def create_document_generation_tool(
     *,
-    parameter_id: uuid.UUID,
     template_id: uuid.UUID,
     parameter_name: str,
     documents_service_url: str,
@@ -377,8 +376,8 @@ async def create_document_generation_tool(
     return function_tool(flat_fn)
 
 
-async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], session: Session) -> tuple[List[Any], List[Dict[str, str]]]:
-    """Create document generation tools for each parameter that has a corresponding template.
+async def create_document_tool_for_scenario(scenario_id: uuid.UUID, session: Session) -> tuple[List[Any], List[Dict[str, str]]]:
+    """Create a single document generation tool for the scenario using scenario.id as template_id.
     
     Returns:
         tuple: (tools_list, tool_metadata_list) where tool_metadata_list contains dicts with 'name' and 'description' keys
@@ -389,7 +388,7 @@ async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], s
     # Get documents service URL
     documents_service_url = os.getenv("DOCUMENTS_SERVICE_URL")
     if not documents_service_url:
-        logger.warning("DOCUMENTS_SERVICE_URL not set, skipping document tools creation")
+        logger.warning("DOCUMENTS_SERVICE_URL not set, skipping document tool creation")
         return tools, tool_metadata
     
     try:
@@ -402,42 +401,38 @@ async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], s
         
         logger.info(f"Available template IDs: {available_template_ids}")
         
-        # Create tools for each parameter that has a corresponding template
-        for parameter_id in parameter_ids:
-            if parameter_id in available_template_ids:
-                # Get parameter details
-                parameter = session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
-                if parameter:
-                    parameter_name = parameter.name or f"parameter_{str(parameter_id)[:8]}"
-                    
-                    # Get template spec for metadata
-                    r = await HTTPX_CLIENT.get(f"{documents_service_url}/templates/{parameter_id}/spec")
-                    r.raise_for_status()
-                    spec = r.json()
-                    
-                    # Extract metadata
-                    default_filename = spec.get("default_filename")
-                    template_desc = spec.get("template_description")
-                    tool_title = default_filename or parameter_name or f"Template {str(parameter_id)[:8]}"
-                    tool_name = f"{tool_title.lower().replace(' ', '_').replace('-', '_')}_doc"
-                    description = template_desc or f"Generate document using {_humanize(tool_title)} template."
-                    
-                    tool = await create_document_generation_tool(
-                        parameter_id=parameter_id,
-                        template_id=parameter_id,  # one-to-one mapping you're using
-                        parameter_name=parameter_name,
-                        documents_service_url=documents_service_url,
-                    )
-                    tools.append(tool)
-                    tool_metadata.append({
-                        'name': tool_name,
-                        'description': description
-                    })
-                    logger.info(f"Created document tool for parameter {parameter_name} ({parameter_id})")
-                else:
-                    logger.warning(f"Parameter {parameter_id} not found in database")
-            else:
-                logger.info(f"No template found for parameter {parameter_id}")
+        # Check if scenario.id has a corresponding template
+        if scenario_id in available_template_ids:
+            # Get scenario details for naming
+            from app.models import Scenarios
+            scenario = session.exec(select(Scenarios).where(Scenarios.id == scenario_id)).one_or_none()
+            scenario_name = scenario.title if scenario else f"scenario_{str(scenario_id)[:8]}"
+            
+            # Get template spec for metadata
+            r = await HTTPX_CLIENT.get(f"{documents_service_url}/templates/{scenario_id}/spec")
+            r.raise_for_status()
+            spec = r.json()
+            
+            # Extract metadata
+            default_filename = spec.get("default_filename")
+            template_desc = spec.get("template_description")
+            tool_title = default_filename or scenario_name or f"Scenario {str(scenario_id)[:8]}"
+            tool_name = f"{tool_title.lower().replace(' ', '_').replace('-', '_')}_doc"
+            description = template_desc or f"Generate document using {_humanize(tool_title)} template."
+            
+            tool = await create_document_generation_tool(
+                template_id=scenario_id,   # Use scenario_id as template_id
+                parameter_name=scenario_name,
+                documents_service_url=documents_service_url,
+            )
+            tools.append(tool)
+            tool_metadata.append({
+                'name': tool_name,
+                'description': description
+            })
+            logger.info(f"Created document tool for scenario {scenario_name} ({scenario_id})")
+        else:
+            logger.info(f"No template found for scenario {scenario_id}")
                 
     except Exception as e:
         logger.error(f"Failed to get available templates: {str(e)}")
@@ -446,7 +441,7 @@ async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], s
     return tools, tool_metadata
 
 
-async def create_scenario_tools(parameter_ids: List[uuid.UUID], persona_ids: List[uuid.UUID], session: Session) -> tuple[List[Any], List[Dict[str, str]]]:
+async def create_scenario_tools(scenario_id: uuid.UUID, persona_ids: List[uuid.UUID], session: Session) -> tuple[List[Any], List[Dict[str, str]]]:
     """Create all scenario function tools including scenario, objectives, persona prompts, and document generation.
     
     Returns:
@@ -483,8 +478,8 @@ async def create_scenario_tools(parameter_ids: List[uuid.UUID], persona_ids: Lis
             logger.error(f"Persona {persona_id} not found in database - this will cause scenario generation to fail")
             # Continue without this persona rather than failing completely
     
-    # Add document generation tools for parameters
-    document_tools, document_tool_metadata = await create_document_tools_for_parameters(parameter_ids, session)
+    # Add document generation tool for scenario (using scenario.id as template_id)
+    document_tools, document_tool_metadata = await create_document_tool_for_scenario(scenario_id, session)
     tools.extend(document_tools)
     
     return tools, document_tool_metadata
@@ -625,7 +620,8 @@ async def run_scenario_agent(
         system_prompt = await get_scenario_prompt()
         
         # Create all scenario tools (scenario, objectives, persona prompts, and document generation)
-        scenario_tools, document_tool_metadata = await create_scenario_tools(scenario.parameter_ids, persona_ids, session)
+        # Use the parent scenario ID as template_id for document generation
+        scenario_tools, document_tool_metadata = await create_scenario_tools(scenario_id, persona_ids, session)
         logger.info(f"Created {len(scenario_tools)} scenario tools")
         
         # Add tools information for the model to understand what's available
@@ -656,14 +652,14 @@ async def run_scenario_agent(
 
         # Create tool use behavior to wait for core tools to be called
         def tool_use_behavior(context: Any, tool_results: list[Any]) -> ToolsToFinalOutputResult:
-            # We require scenario, objectives, persona prompt tools, AND document generation tools to be called
+            # We require scenario, objectives, persona prompt tools, AND document generation tool to be called
             required_tools = ['scenario', 'objectives']
             # Add persona prompt tools to required tools (only for personas that exist)
             for persona_id in persona_ids:
                 if persona_exists_map.get(persona_id, False):
                     required_tools.append(f'persona_prompt_{persona_id}')
             
-            # Add document generation tools to required tools (all document tools should be required)
+            # Add document generation tool to required tools (single document tool per scenario)
             for tool_metadata in document_tool_metadata:
                 tool_name = tool_metadata['name']
                 required_tools.append(tool_name)
@@ -691,7 +687,7 @@ async def run_scenario_agent(
             "type": "start",
             "message": "Starting scenario generation",
             "total_tools": len(scenario_tools),
-            "document_tools_count": len(document_tool_metadata)
+            "document_tools_count": len(document_tool_metadata)  # Should be 1 for single document tool
         })
         
         with trace("Scenario"):
@@ -712,7 +708,7 @@ async def run_scenario_agent(
             if persona_exists_map.get(persona_id, False):
                 required_tools.append(f'persona_prompt_{persona_id}')
         
-        # Add document generation tools to required tools (all document tools should be required)
+        # Add document generation tool to required tools (single document tool per scenario)
         for tool_metadata in document_tool_metadata:
             tool_name = tool_metadata['name']
             required_tools.append(tool_name)
