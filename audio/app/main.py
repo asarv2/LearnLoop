@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import time
 from fractions import Fraction
@@ -22,6 +23,10 @@ from .store import list_messages
 from .transcripts import synthesize_via_model_service
 
 load_dotenv()
+
+# Configure logging similar to server/model
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("audio.main")
 
 # Removed CORS configuration - this is server-to-server communication
 
@@ -52,13 +57,17 @@ fastapi_app = FastAPI(title="RTC2", lifespan=lifespan)
 
 
 sio = socketio.AsyncServer(
-    async_mode="asgi", transports=["websocket", "polling"]
+    async_mode="asgi", transports=["websocket", "polling"], logger=True
 )
 app = socketio.ASGIApp(sio, fastapi_app, socketio_path="socket.io")
 
 
 @sio.event
 async def connect(sid: str, environ: Dict[str, Any], auth: Optional[Dict[str, Any]]) -> bool:
+    try:
+        logger.info("audio socket connected: %s", sid)
+    except Exception:
+        pass
     return True
 
 
@@ -107,9 +116,6 @@ def _check_secret_from_data(data: _Optional[dict]) -> bool:
 async def s2s_start_room(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     if not _check_secret_from_data(data):
         return {"error": "unauthorized"}
-    
-    print(f"[AUDIO] Received s2s_start_room request for room {data.get('room_id')} with {len(data.get('agents', []))} agents")
-    print(f"[AUDIO] Agent configs: {data.get('agents', [])}")
     
     # Expected fields
     room_id = str(data.get("room_id")) if data.get("room_id") is not None else None

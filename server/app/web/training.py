@@ -6,6 +6,7 @@ Simplified version focused on core training functionality
 import asyncio
 import logging
 import random
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, cast
@@ -29,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 # Global store for active training runs
 active_training_runs: Dict[str, Any] = {}
+
+# Short-lived join dedupe map: key=(sid:chat_id) -> last_seen_ts
+_recent_joins: Dict[str, float] = {}
 
 
 async def _schedule_hints_for_message(chat_id: str, message_id: str) -> None:
@@ -296,6 +300,15 @@ async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
         if profile_id == "" or profile_id == "null":
             profile_id = None
 
+        # Idempotency guard: ignore duplicate joins for same (sid, chat) within 2 seconds
+        key = f"{sid}:{chat_id}"
+        now = time.time()
+        last = _recent_joins.get(key, 0.0)
+        if (now - last) < 2.0:
+            logger.info(f"Ignoring duplicate join_training within window for sid={sid}, chat_id={chat_id}")
+            return
+        _recent_joins[key] = now
+
         logger.info(
             f"Processing training join: chat_id={chat_id}, profile_id={profile_id}, sid={sid}"
         )
@@ -326,14 +339,12 @@ async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
                 bridge = get_bridge(sio)
                 # Get dynamic config based on chat_id/room_id
                 config = get_audio_config(chat_id)
-                print(f"[SERVER] Starting audio room {chat_id} with config: {config}")
                 await bridge.start_room(room_id=chat_id, config=config)
                 human_id = f"user:{profile_id}" if profile_id else f"user:{sid[-6:]}"
-                print(f"[SERVER] Registering human {human_id} in room {chat_id}")
                 await bridge.register_human(room_id=chat_id, human_id=human_id)
-                print(f"[SERVER] Successfully started audio room and registered human")
+                logger.info(f"Successfully started audio room and registered human {human_id}")
             except Exception as e:
-                print(f"[SERVER] ERROR: failed to start/register room in audio: {e}")
+                logger.error(f"Failed to start/register room in audio: {e}")
                 logger.exception("failed to start/register room in audio")
 
             # Send success response
@@ -903,7 +914,10 @@ async def process_training_message_websocket(
 
 # Register training event handlers with socketio
 def register_training_events(sio: socketio.AsyncServer) -> None:
-    """Register training WebSocket event handlers"""
+    """Register training WebSocket event handlers (idempotent)."""
+    # Prevent double registration if called more than once
+    if getattr(register_training_events, "_registered", False):
+        return
     
     @sio.event  # type: ignore
     async def start_training(sid: str, data: Dict[str, Any]) -> None:
@@ -1160,6 +1174,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
             logger.exception("client_interrupted handler failed")
     
     logger.info("Successfully registered training WebSocket event handlers")
+    register_training_events._registered = True  # type: ignore[attr-defined]
 
 
 # Utility functions
