@@ -412,12 +412,16 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
 
             logger.info(f"Training chat {chat_id} marked as completed")
 
-            # Get rubric_id for grading
-            scenario_result = db_session.exec(
-                select(Scenarios).where(Scenarios.training_id == chat.training_id)
-            ).first()
-            rubric_id = scenario_result.rubric_id if scenario_result else None
-            logger.info(f"🔧 DEBUG: Resolved rubric_id={rubric_id} for training_id={chat.training_id}")
+            # Get rubric_id for grading using chat.scenario_id
+            rubric_id = None
+            if chat.scenario_id:
+                scenario_result = db_session.exec(
+                    select(Scenarios).where(Scenarios.id == chat.scenario_id)
+                ).first()
+                rubric_id = scenario_result.rubric_id if scenario_result else None
+                logger.info(f"🔧 DEBUG: Resolved rubric_id={rubric_id} for scenario_id={chat.scenario_id}")
+            else:
+                logger.warning(f"🔧 DEBUG: No scenario_id found for chat {chat_id}")
             
             # Run grading in foreground
             sio = get_sio_instance()

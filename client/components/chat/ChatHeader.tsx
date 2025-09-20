@@ -1,7 +1,13 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { ArrowLeftIcon, Cross2Icon, FileTextIcon } from "@radix-ui/react-icons";
+import {
+  ArrowLeftIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  Cross2Icon,
+  FileTextIcon,
+} from "@radix-ui/react-icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Box, Button, Flex, Heading, Separator, Text } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
@@ -26,6 +32,9 @@ interface ChatHeaderProps {
   documentFieldName?: string;
   isCompleted?: boolean;
   onRetryEnding?: () => void;
+  hasDocuments?: boolean;
+  isDocumentPanelCollapsed?: boolean;
+  onToggleDocumentPanel?: () => void;
 }
 
 export default function ChatHeader({
@@ -44,6 +53,9 @@ export default function ChatHeader({
   documentFieldName,
   isCompleted = false,
   onRetryEnding,
+  hasDocuments = false,
+  isDocumentPanelCollapsed = false,
+  onToggleDocumentPanel,
 }: ChatHeaderProps) {
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
   const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
@@ -159,6 +171,53 @@ export default function ChatHeader({
               pr="3"
               style={{ minWidth: "120px", justifyContent: "flex-end" }}
             >
+              {/* Document Panel Toggle */}
+              {hasDocuments && onToggleDocumentPanel && (
+                <Tooltip.Provider>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <Button
+                        onClick={onToggleDocumentPanel}
+                        variant="ghost"
+                        size="2"
+                        style={{
+                          padding: "8px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {isDocumentPanelCollapsed ? (
+                          <ChevronLeftIcon width="16" height="16" />
+                        ) : (
+                          <ChevronRightIcon width="16" height="16" />
+                        )}
+                      </Button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Portal>
+                      <Tooltip.Content
+                        className="TooltipContent"
+                        sideOffset={5}
+                        style={{
+                          backgroundColor: "var(--gray-12)",
+                          color: "white",
+                          borderRadius: "6px",
+                          padding: "8px 12px",
+                          fontSize: "14px",
+                          lineHeight: "1.4",
+                          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                          zIndex: 1000,
+                        }}
+                      >
+                        {isDocumentPanelCollapsed
+                          ? "Show Documents"
+                          : "Hide Documents"}
+                        <Tooltip.Arrow style={{ fill: "var(--gray-12)" }} />
+                      </Tooltip.Content>
+                    </Tooltip.Portal>
+                  </Tooltip.Root>
+                </Tooltip.Provider>
+              )}
+
               {isSessionActive ? (
                 <Text size="2" weight="medium" color="gray">
                   {formatTime(elapsedTime)}
