@@ -130,17 +130,102 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     return parts.join("|");
   };
 
-  // Filter to only send individual scenario field_ids to server (exclude group fields)
-  const getIndividualFieldValuesForPayload = (): {
-    fieldId: string;
-    value: string;
-    parameterId?: string;
-  }[] => {
-    return fieldValues.map((fv) => ({
-      fieldId: fv.fieldId,
-      value: fv.value,
-      parameterId: fv.parameterId,
-    }));
+  // Create personas from group field values and return payload with persona IDs
+  const createPersonasFromGroupsAndGetPayload = async (): Promise<
+    {
+      fieldId: string;
+      value: string;
+      parameterId?: string;
+    }[]
+  > => {
+    const payload: { fieldId: string; value: string; parameterId?: string }[] =
+      [];
+
+    // Add individual field values
+    payload.push(
+      ...fieldValues.map((fv) => ({
+        fieldId: fv.fieldId,
+        value: fv.value,
+        parameterId: fv.parameterId,
+      }))
+    );
+
+    // Create personas from group field values
+    if (scenario?.group_ids && groups) {
+      for (const groupId of scenario.group_ids) {
+        const group = groups.find((g) => g.id === groupId);
+        if (!group) continue;
+
+        // Get all field values for this group
+        const currentGroupFieldValues = [
+          group.name_field_id,
+          group.voice_field_id,
+          group.position_field_id,
+          group.level_field_id,
+          group.personality_field_id,
+        ]
+          .map((fieldId) => {
+            if (!fieldId) return null;
+            return groupFieldValues.find((gfv) => gfv.fieldId === fieldId);
+          })
+          .filter(Boolean);
+
+        if (currentGroupFieldValues.length > 0) {
+          // Find the name field value for the persona name
+          const nameFieldValue =
+            currentGroupFieldValues.find(
+              (gfv) => gfv?.fieldId === group.name_field_id
+            )?.value || `Group Persona ${groupId.slice(0, 8)}`;
+
+          // Find voice and personality field values
+          const voiceFieldValue = currentGroupFieldValues.find(
+            (gfv) => gfv?.fieldId === group.voice_field_id
+          );
+          const personalityFieldValue = currentGroupFieldValues.find(
+            (gfv) => gfv?.fieldId === group.personality_field_id
+          );
+
+          // Get the voice and personality personas
+          const voicePersona = voiceFieldValue?.parameterId
+            ? personas?.find((p) => p.id === voiceFieldValue.parameterId)
+            : null;
+          const personalityPersona = personalityFieldValue?.parameterId
+            ? personas?.find((p) => p.id === personalityFieldValue.parameterId)
+            : null;
+
+          if (voicePersona && personalityPersona) {
+            try {
+              // Create a new persona combining voice and personality
+              const newPersona = await createPersona.mutateAsync({
+                name: nameFieldValue,
+                description: `Generated persona from group: ${
+                  group.name || groupId
+                }`,
+                profile_id: null,
+                system_prompt: personalityPersona.system_prompt,
+                realtime_prompt: personalityPersona.realtime_prompt,
+                temperature: personalityPersona.temperature,
+                voice: voicePersona.voice,
+                active: false, // Don't show in dropdowns
+              });
+
+              // Add the persona ID to the payload
+              if (newPersona.id) {
+                payload.push({
+                  fieldId: group.personality_field_id || groupId, // Use personality field ID or group ID as field ID
+                  value: nameFieldValue,
+                  parameterId: newPersona.id,
+                });
+              }
+            } catch (error) {
+              console.error("Failed to create persona from group:", error);
+            }
+          }
+        }
+      }
+    }
+
+    return payload;
   };
 
   // Compute current signature from the visible fieldValues
@@ -974,8 +1059,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         setCustomAssistantPersonaId(nextAssistantPersonaId);
       }
 
-      // 5) Update scenario parameters on server (only send individual scenario field_ids)
-      const payloadFieldValues = getIndividualFieldValuesForPayload();
+      // 5) Create personas from groups and update scenario parameters on server
+      const payloadFieldValues = await createPersonasFromGroupsAndGetPayload();
 
       // Record this generation's parameters for change detection
       setLastGeneratedSignature(makeSignatureFromPayload(payloadFieldValues));
@@ -1010,7 +1095,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     try {
       // Update active scenario's parameter ids before starting
       const scenarioToUse = savedScenarioId || scenarioId;
-      const updateFieldValues = getIndividualFieldValuesForPayload();
+      const updateFieldValues = await createPersonasFromGroupsAndGetPayload();
 
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
