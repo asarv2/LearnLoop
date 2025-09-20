@@ -28,6 +28,27 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("audio.main")
 
+# Create a Socket.IO logger that filters out s2s_mixed_frame spam
+class _SioFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+            if isinstance(msg, str) and ("s2s_mixed_frame" in msg):
+                return False
+        except Exception:
+            pass
+        return True
+
+_sio_logger = logging.getLogger("audio.sio")
+_sio_logger.setLevel(logging.INFO)
+if not _sio_logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setLevel(logging.INFO)
+    _h.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    _h.addFilter(_SioFilter())
+    _sio_logger.addHandler(_h)
+_sio_logger.propagate = False
+
 # Removed CORS configuration - this is server-to-server communication
 
 AUDIO_SR = 48000
@@ -58,7 +79,7 @@ fastapi_app = FastAPI(title="RTC2", lifespan=lifespan)
 
 # Re-enable Socket.IO logging by default; we will silence specific spammy logs below
 sio = socketio.AsyncServer(
-    async_mode="asgi", transports=["websocket", "polling"], logger=True
+    async_mode="asgi", transports=["websocket", "polling"], logger=_sio_logger
 )
 app = socketio.ASGIApp(sio, fastapi_app, socketio_path="socket.io")
 
@@ -267,6 +288,13 @@ async def s2s_user_text(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
                                         pass
                                     try:
                                         await sess.send_message(text)
+                                        # Save assistant response placeholder for consistency
+                                        try:
+                                            await room.append_text_chunk(
+                                                source_id=agent_ids[0], role="agent", text="", message_id=None, chunk_idx=0, is_final=False
+                                            )
+                                        except Exception:
+                                            pass
                                     except Exception:
                                         pass
                                 break

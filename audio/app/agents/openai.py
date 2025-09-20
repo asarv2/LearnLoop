@@ -307,9 +307,7 @@ class OpenAIAgent(Agent):
                         self._resp_audio_start_ts_ms[rid] = int(time.time() * 1000)
 
                 elif isinstance(ev, OAEventAudioEnd):
-                    # End of audio segment; clear one-shot suppression if active
-                    if self._suppress_next_tts:
-                        self._suppress_next_tts = False
+                    # End of audio segment for this response
                     pass
 
                 elif isinstance(ev, (OAEventRaw, OAEventRawServer)):
@@ -411,6 +409,12 @@ class OpenAIAgent(Agent):
                                     msg_id_final = msg_id_new3
                                 except Exception:
                                     pass
+                            # If we have final text but no audio/words to align, still persist final text
+                            if (effective_text or "").strip():
+                                try:
+                                    await self.publish_text_chunk(text=effective_text, message_id=msg_id_final or None, chunk_idx=9999, is_final=True)
+                                except Exception:
+                                    pass
                         # clear current active message id if it matches
                         if msg_id_final and self._current_msg_id == msg_id_final:
                             self._current_msg_id = None
@@ -479,9 +483,8 @@ class OpenAIAgent(Agent):
                         self._resp_audio_start_ts_ms.pop(rid, None)
                         self._announced_output = False
                         self._processed_done.add(rid)
-                        # Clear one-shot suppression at completion
-                        if self._suppress_next_tts:
-                            self._suppress_next_tts = False
+                        # Clear one-shot suppression at completion (finally)
+                        self._suppress_next_tts = False
 
                     # ---- OPTIONAL EARLY/PARTIAL ALIGNMENT ----
                     elif evt_type in ("response.output_text.delta", "response.text.delta", "response.delta", "response.audio_transcript.delta"):
