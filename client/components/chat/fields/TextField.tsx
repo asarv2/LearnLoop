@@ -140,7 +140,9 @@ export default function TextField({ field, value, onChange }: FieldProps) {
                     highlightIndex === idx ? "var(--blue-2)" : "transparent",
                 }}
               >
-                <Text size="2">{item.label}</Text>
+                <Text size="2" style={{ color: "black" }}>
+                  {item.label}
+                </Text>
               </div>
             ))}
           </div>,

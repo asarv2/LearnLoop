@@ -14,8 +14,8 @@ import numpy as np
 from aiortc import (MediaStreamTrack, RTCConfiguration,  # type: ignore
                     RTCDataChannel, RTCIceServer, RTCPeerConnection,
                     RTCSessionDescription)
-
 from app.bridge import MixedAudioSubscriber, get_bridge
+
 from .utils.audio_convert import frame_to_i16_mono_safe
 
 # Audio constants
@@ -130,17 +130,43 @@ class WebRTCSession:
 
                 if chat_id and text and is_final:
                     # lazy imports to avoid circulars
-                    from app.main import get_profile_id_for_sid
+                    from app.bridge import get_bridge
+                    from app.main import (get_profile_id_for_sid,
+                                          get_socketio_instance)
+                    from app.utils.chat import get_audio_config
                     from app.web.training import handle_send_training_message
 
                     profile_id = get_profile_id_for_sid(self.sid)
-                    # Fire-and-forget the training handler
+                    # Decide path: if exactly one agent and one human (2 participants), send direct text to agent
+                    # Otherwise, use normal training pipeline (which can route via TTS/bus or agent flow as designed)
+                    config = get_audio_config(str(chat_id))
+                    agents = config.get("agents", []) if isinstance(config, dict) else []
+                    # Determine current human presence via this session
+                    is_two_party = (len(agents) == 1)
+
                     async def _bg() -> None:
                         try:
-                            await handle_send_training_message(
-                                sid=self.sid,
-                                data={"chat_id": str(chat_id), "message": text, "source": "rtc"},
-                            )
+                            if is_two_party:
+                                # Prefer direct agent text if available: tell audio/agent to suppress TTS once and handle text
+                                try:
+                                    bridge = get_bridge(get_socketio_instance())
+                                    await bridge._client.emit("s2s_user_text", bridge._with_auth({
+                                        "room_id": self.room_id,
+                                        "human_id": self.human_id,
+                                        "text": text,
+                                        "text_only": True,
+                                    }))
+                                except Exception:
+                                    logger.exception("direct agent text path failed; falling back")
+                                    await handle_send_training_message(
+                                        sid=self.sid,
+                                        data={"chat_id": str(chat_id), "message": text, "source": "rtc"},
+                                    )
+                            else:
+                                await handle_send_training_message(
+                                    sid=self.sid,
+                                    data={"chat_id": str(chat_id), "message": text, "source": "rtc"},
+                                )
                         except Exception:
                             import logging
                             logging.getLogger(__name__).exception("training handler failed")

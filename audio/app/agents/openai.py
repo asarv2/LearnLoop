@@ -86,6 +86,8 @@ class OpenAIAgent(Agent):
 
         # diagnostics: track whether this agent currently hears the beep
         self._beep_heard = False
+        # suppress next TTS output if we want a text-only response
+        self._suppress_next_tts = False
 
         async def _audio_gate(chunk: Any) -> Any:
             if self._tts_blocked:
@@ -240,6 +242,9 @@ class OpenAIAgent(Agent):
         async for ev in session:
             try:
                 if isinstance(ev, OAEventAudio):
+                    # If we are suppressing the next TTS, drop audio frames on the floor
+                    if self._suppress_next_tts:
+                        continue
                     audio_bytes = (
                         getattr(ev.audio, "audio", None)
                         or getattr(ev.audio, "data", None)
@@ -302,6 +307,9 @@ class OpenAIAgent(Agent):
                         self._resp_audio_start_ts_ms[rid] = int(time.time() * 1000)
 
                 elif isinstance(ev, OAEventAudioEnd):
+                    # End of audio segment; clear one-shot suppression if active
+                    if self._suppress_next_tts:
+                        self._suppress_next_tts = False
                     pass
 
                 elif isinstance(ev, (OAEventRaw, OAEventRawServer)):
@@ -471,6 +479,9 @@ class OpenAIAgent(Agent):
                         self._resp_audio_start_ts_ms.pop(rid, None)
                         self._announced_output = False
                         self._processed_done.add(rid)
+                        # Clear one-shot suppression at completion
+                        if self._suppress_next_tts:
+                            self._suppress_next_tts = False
 
                     # ---- OPTIONAL EARLY/PARTIAL ALIGNMENT ----
                     elif evt_type in ("response.output_text.delta", "response.text.delta", "response.delta", "response.audio_transcript.delta"):

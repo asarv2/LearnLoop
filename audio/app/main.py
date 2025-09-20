@@ -241,34 +241,65 @@ async def s2s_user_text(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
         room_id = data.get("room_id")
         human_id = data.get("human_id") or sid
         text = (data.get("text") or "").strip()
+        text_only = bool(data.get("text_only", False))
         if not text:
             return {"error": "empty"}
         room = get_room(room_id)
-        msg_id = await room.append_text_chunk(
-            source_id=human_id, role="user", text="", message_id=None, chunk_idx=0, is_final=False
-        )
-        await room.recorder_start_message(human_id, label="typed")
-        audio_f32, sr = await synthesize_via_model_service(text, "alloy", PCM_SR)
-        if audio_f32 is not None and getattr(audio_f32, "size", 0) > 0:
-            # Optional: early words via model service
+        if text_only:
+            # Special path: with exactly 2 participants (one human, one agent), do not TTS.
+            # Publish user text and route directly to agent via session.send_message.
+            from .store import upsert_text_chunk as _upsert
+            _ = _upsert(room_id=str(room.id), source_id=human_id, role="user", text=text, message_id=None, chunk_idx=0, is_final=True)
+            # Find the sole agent and send text directly if supported
             try:
-                from .transcripts import align_via_model_service
-                tr = await align_via_model_service(audio_f32, sr, text, stage="final")
-                words = [{"start_ms": w.start_ms, "end_ms": w.end_ms, "text": w.text} for w in tr.words]
-                if words and room.on_transcript:
-                    await room.broadcast_transcript(agent_id=human_id, message_id=msg_id, start_ts_ms=int(time.time()*1000), words=words, full_text=text)
+                agent_ids = [aid for aid, kind in room.agent_meta.items() if kind == "agent" and aid != "agent:beep"]
+                if len(agent_ids) == 1:
+                    # Use agent API to deliver text directly to model session
+                    for a in list(room.agents):
+                        try:
+                            if getattr(a, "id", None) == agent_ids[0]:
+                                sess = getattr(a, "_session", None)
+                                if sess is not None:
+                                    # Avoid TTS on next output
+                                    try:
+                                        setattr(a, "_suppress_next_tts", True)
+                                    except Exception:
+                                        pass
+                                    try:
+                                        await sess.send_message(text)
+                                    except Exception:
+                                        pass
+                                break
+                        except Exception:
+                            pass
             except Exception:
                 pass
-            # Stream into bus
-            for i in range(0, audio_f32.size, SAMPLES_PER_CHUNK):
-                frame = audio_f32[i:i+SAMPLES_PER_CHUNK]
-                if frame.size == 0:
-                    continue
-                i16 = (np.clip(frame, -1.0, 1.0) * 32767.0).astype(np.int16)
-                await room.bus.ingest_i16(human_id, i16, PCM_SR)
-                await asyncio.sleep(SAMPLES_PER_CHUNK / PCM_SR)
-        await room.append_text_chunk(source_id=human_id, role="user", text=text, message_id=msg_id, chunk_idx=0, is_final=True)
-        room.schedule_segment_close_after_tail(human_id)
+        else:
+            msg_id = await room.append_text_chunk(
+                source_id=human_id, role="user", text="", message_id=None, chunk_idx=0, is_final=False
+            )
+            await room.recorder_start_message(human_id, label="typed")
+            audio_f32, sr = await synthesize_via_model_service(text, "alloy", PCM_SR)
+            if audio_f32 is not None and getattr(audio_f32, "size", 0) > 0:
+                # Optional: early words via model service
+                try:
+                    from .transcripts import align_via_model_service
+                    tr = await align_via_model_service(audio_f32, sr, text, stage="final")
+                    words = [{"start_ms": w.start_ms, "end_ms": w.end_ms, "text": w.text} for w in tr.words]
+                    if words and room.on_transcript:
+                        await room.broadcast_transcript(agent_id=human_id, message_id=msg_id, start_ts_ms=int(time.time()*1000), words=words, full_text=text)
+                except Exception:
+                    pass
+                # Stream into bus
+                for i in range(0, audio_f32.size, SAMPLES_PER_CHUNK):
+                    frame = audio_f32[i:i+SAMPLES_PER_CHUNK]
+                    if frame.size == 0:
+                        continue
+                    i16 = (np.clip(frame, -1.0, 1.0) * 32767.0).astype(np.int16)
+                    await room.bus.ingest_i16(human_id, i16, PCM_SR)
+                    await asyncio.sleep(SAMPLES_PER_CHUNK / PCM_SR)
+            await room.append_text_chunk(source_id=human_id, role="user", text=text, message_id=msg_id, chunk_idx=0, is_final=True)
+            room.schedule_segment_close_after_tail(human_id)
         return {"ok": True}
     except Exception as e:
         return {"error": str(e)}

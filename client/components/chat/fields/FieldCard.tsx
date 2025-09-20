@@ -1,5 +1,6 @@
 "use client";
 
+import type { Tables } from "@/database.types";
 import { useField } from "@/lib/api/hooks/useFields";
 import { CheckIcon } from "@radix-ui/react-icons";
 import { Badge, Box, Card, Flex, Spinner, Text } from "@radix-ui/themes";
@@ -67,12 +68,16 @@ export default function FieldCard({
     switch (field.field_type) {
       case "text":
         return (
-          <TextField field={safeField} value={value} onChange={handleChange} />
+          <TextField
+            field={safeField as NonNullable<Tables<"fields">>}
+            value={value}
+            onChange={handleChange}
+          />
         );
       case "numerical":
         return (
           <NumericalField
-            field={safeField}
+            field={safeField as NonNullable<Tables<"fields">>}
             value={value}
             onChange={handleChange}
           />
@@ -80,7 +85,7 @@ export default function FieldCard({
       case "categorical":
         return (
           <CategoricalField
-            field={safeField}
+            field={safeField as NonNullable<Tables<"fields">>}
             value={value}
             onChange={handleChange}
             selectedParameterId={selectedParameterId}
@@ -89,7 +94,7 @@ export default function FieldCard({
       case "document":
         return (
           <DocumentField
-            field={safeField}
+            field={safeField as NonNullable<Tables<"fields">>}
             value={value}
             onChange={handleFileChange}
           />
@@ -97,7 +102,7 @@ export default function FieldCard({
       case "persona":
         return (
           <PersonaField
-            field={safeField}
+            field={safeField as NonNullable<Tables<"fields">>}
             onChange={handleChange}
             selectedParameterId={selectedParameterId}
             customPersonalityType={customPersonalityType}

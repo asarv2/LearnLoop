@@ -58,7 +58,7 @@ export default function DocumentViewerModal({
             background: "var(--gray-1)",
           }}
         >
-          <Heading size="4" weight="bold">
+          <Heading size="4" weight="bold" style={{ color: "black" }}>
             {documentData?.title || "Document"}
           </Heading>
           <Button
@@ -71,7 +71,7 @@ export default function DocumentViewerModal({
               cursor: "pointer",
             }}
           >
-            <Cross2Icon width="16" height="16" />
+            <Cross2Icon width="16" height="16" color="black" />
           </Button>
         </Flex>
 
