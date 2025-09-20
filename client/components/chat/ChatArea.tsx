@@ -16,7 +16,7 @@ import {
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Box, Button, Card, Flex, Switch, Text } from "@radix-ui/themes";
 // Removed mic icons in favor of a consistent "Voice Mode" label
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import IntroMessageModal from "./IntroMessageModal";
 
 // Import necessary hooks
@@ -24,11 +24,12 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { useLatestMessageHints } from "@/lib/api/hooks/useHints";
 import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
+import { useScenario } from "@/lib/api/hooks/useScenarios";
 interface ChatAreaProps {
   displayMessages: Message[];
   isSendingMessage: boolean;
-  isEndingInterview: boolean;
-  isInterviewActive: boolean;
+  isEndingSession: boolean;
+  isSessionActive: boolean;
   currentMessage: string;
   setCurrentMessage: (message: string) => void;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
@@ -38,8 +39,8 @@ interface ChatAreaProps {
 export default function ChatArea({
   displayMessages,
   isSendingMessage,
-  isEndingInterview,
-  isInterviewActive,
+  isEndingSession,
+  isSessionActive,
   currentMessage,
   setCurrentMessage,
   messagesEndRef,
@@ -243,6 +244,30 @@ export default function ChatArea({
 
   // Scenario association - use chat.scenario_id directly
   const scenarioId: string | undefined = chat?.scenario_id || undefined;
+
+  // Fetch scenario data to get document_ids
+  const { data: scenarioData } = useScenario(
+    scenarioId || "",
+    Boolean(scenarioId)
+  );
+
+  // Document viewer state
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
+    null
+  );
+
+  // Get document_ids from scenario data
+  const documentIds = useMemo(
+    () => scenarioData?.document_ids || [],
+    [scenarioData?.document_ids]
+  );
+
+  // Set the first document as selected by default when documents are available
+  useEffect(() => {
+    if (documentIds.length > 0 && !selectedDocumentId) {
+      setSelectedDocumentId(documentIds[0]);
+    }
+  }, [documentIds, selectedDocumentId]);
 
   // Create a memoized map for efficient persona lookup
   const personaMap = React.useMemo(() => {
@@ -615,6 +640,8 @@ export default function ChatArea({
     }
   }, [showIntroModal, displayMessages.length]);
 
+  // Removed auto-show feedback modal useEffect - modal should only show when user clicks button
+
   // Early return if chat is not available
   if (!chat) {
     return (
@@ -655,7 +682,6 @@ export default function ChatArea({
         style={{
           flex: 1,
           display: "flex",
-          flexDirection: "column",
           background: "transparent",
           overflow: "hidden",
           height: "100%",
@@ -975,7 +1001,7 @@ export default function ChatArea({
         </Box>
 
         {/* Input Area */}
-        {isInterviewActive && (
+        {isSessionActive && (
           <Box
             style={{
               padding: "24px",
@@ -1371,7 +1397,7 @@ export default function ChatArea({
           </Box>
         )}
 
-        {isEndingInterview && (
+        {isEndingSession && (
           <Box
             style={{
               padding: "24px",

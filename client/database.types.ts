@@ -227,9 +227,7 @@ export type Database = {
           chat_id: string
           created_at: string
           errors: string[]
-          green_flags: string[]
           id: string
-          red_flags: string[]
           strengths: string[]
           training_id: string | null
         }
@@ -237,9 +235,7 @@ export type Database = {
           chat_id: string
           created_at?: string
           errors?: string[]
-          green_flags?: string[]
           id?: string
-          red_flags?: string[]
           strengths?: string[]
           training_id?: string | null
         }
@@ -247,9 +243,7 @@ export type Database = {
           chat_id?: string
           created_at?: string
           errors?: string[]
-          green_flags?: string[]
           id?: string
-          red_flags?: string[]
           strengths?: string[]
           training_id?: string | null
         }
@@ -481,7 +475,9 @@ export type Database = {
           created_at: string | null
           description: string | null
           id: string
+          level: Database["public"]["Enums"]["level"] | null
           name: string
+          position: string | null
           profile_id: string | null
           realtime_prompt: string | null
           system_prompt: string | null
@@ -494,7 +490,9 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          level?: Database["public"]["Enums"]["level"] | null
           name: string
+          position?: string | null
           profile_id?: string | null
           realtime_prompt?: string | null
           system_prompt?: string | null
@@ -507,7 +505,9 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          level?: Database["public"]["Enums"]["level"] | null
           name?: string
+          position?: string | null
           profile_id?: string | null
           realtime_prompt?: string | null
           system_prompt?: string | null
@@ -605,8 +605,10 @@ export type Database = {
           created_at: string | null
           description: string | null
           id: string
+          improvements: string[]
           name: string
           score: number
+          strengths: string[]
           updated_at: string | null
         }
         Insert: {
@@ -614,8 +616,10 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          improvements?: string[]
           name: string
           score: number
+          strengths?: string[]
           updated_at?: string | null
         }
         Update: {
@@ -623,8 +627,10 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          improvements?: string[]
           name?: string
           score?: number
+          strengths?: string[]
           updated_at?: string | null
         }
         Relationships: [
@@ -829,10 +835,11 @@ export type Database = {
           description: string | null
           id: string
           practice: boolean
-          profile_ids: string[] | null
           show_documents: boolean
           title: string
+          training_type: string | null
           updated_at: string
+          user_id: string | null
           what_not_to_do: string[] | null
           what_to_do: string[] | null
         }
@@ -842,10 +849,11 @@ export type Database = {
           description?: string | null
           id?: string
           practice?: boolean
-          profile_ids?: string[] | null
           show_documents?: boolean
           title: string
+          training_type?: string | null
           updated_at?: string
+          user_id?: string | null
           what_not_to_do?: string[] | null
           what_to_do?: string[] | null
         }
@@ -855,10 +863,11 @@ export type Database = {
           description?: string | null
           id?: string
           practice?: boolean
-          profile_ids?: string[] | null
           show_documents?: boolean
           title?: string
+          training_type?: string | null
           updated_at?: string
+          user_id?: string | null
           what_not_to_do?: string[] | null
           what_to_do?: string[] | null
         }
@@ -906,6 +915,7 @@ export type Database = {
     Enums: {
       field_type: "persona" | "document" | "numerical" | "categorical" | "text"
       interview_type: "regular" | "cheating" | "ai-assisted"
+      level: "junior" | "mid" | "senior" | "executive"
       log_level: "info" | "error" | "warn" | "debug"
       message_role: "user" | "assistant"
       question_type: "mcq" | "frq"
@@ -1040,6 +1050,7 @@ export const Constants = {
     Enums: {
       field_type: ["persona", "document", "numerical", "categorical", "text"],
       interview_type: ["regular", "cheating", "ai-assisted"],
+      level: ["junior", "mid", "senior", "executive"],
       log_level: ["info", "error", "warn", "debug"],
       message_role: ["user", "assistant"],
       question_type: ["mcq", "frq"],

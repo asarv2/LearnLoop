@@ -7,8 +7,8 @@ from typing import Any, Dict, List
 from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
 from app.db import get_session
 from app.extensions import load_prompt
-from app.models import (Assessments, Chats, Messages, RubricGrades, Rubrics,
-                        StandardGrades, Standards)
+from app.models import (Chats, Messages, RubricGrades, Rubrics, StandardGrades,
+                        Standards)
 from app.services.agents.generic import GenericAgent
 from app.utils.chat import get_conversation_history, get_dynamic_rubric
 from pydantic import Field
@@ -41,11 +41,18 @@ def create_grading_function(standard: Standards) -> Any:
     """Create a function tool for a specific standard."""
     safe_name = create_safe_field_name(standard.name)
     
+    # Build description with standard details
+    standard_description = standard.description or "No description available"
+    score_description = f"Score for {standard.name} (1-5) - {standard_description}"
+    feedback_description = f"Feedback for {standard.name} - {standard_description}"
+    
     async def grade_standard(
-        score: int = Field(ge=1, le=5, description=f"Score for {standard.name} (1-5)"),
-        feedback: str = Field(default="", description=f"Feedback for {standard.name}")
+        score: int = Field(ge=1, le=5, description=score_description),
+        feedback: str = Field(default="", description=feedback_description)
     ) -> str:
         f"""Grade the conversation on the standard: {standard.name}
+        
+        Standard Description: {standard_description}
         
         This function evaluates the conversation against the standard: {standard.name}
         
@@ -75,7 +82,7 @@ def create_strengths_function() -> Any:
     """Create a function tool for identifying strengths."""
     
     async def identify_strengths(
-        strengths: str = Field(description="Key strengths observed in the conversation")
+        strengths: List[str] = Field(description="List of key strengths observed in the conversation")
     ) -> str:
         """Identify the main strengths demonstrated in the conversation.
         
@@ -87,8 +94,8 @@ def create_strengths_function() -> Any:
         """
         grading_results['strengths'] = strengths
         grading_progress['strengths'] = True
-        logger.info(f"✓ Identified strengths: {strengths[:50]}...")
-        return f"Identified strengths: {strengths}"
+        logger.info(f"✓ Identified {len(strengths)} strengths: {[s[:30] + '...' if len(s) > 30 else s for s in strengths[:3]]}")
+        return f"Identified {len(strengths)} strengths"
     
     return function_tool(identify_strengths)
 
@@ -97,7 +104,7 @@ def create_improvements_function() -> Any:
     """Create a function tool for identifying areas for improvement."""
     
     async def identify_improvements(
-        improvements: str = Field(description="Areas for improvement in the conversation")
+        improvements: List[str] = Field(description="List of areas for improvement in the conversation")
     ) -> str:
         """Identify areas where the conversation could be improved.
         
@@ -109,8 +116,8 @@ def create_improvements_function() -> Any:
         """
         grading_results['improvements'] = improvements
         grading_progress['improvements'] = True
-        logger.info(f"✓ Identified improvements: {improvements[:50]}...")
-        return f"Identified improvements: {improvements}"
+        logger.info(f"✓ Identified {len(improvements)} improvements: {[i[:30] + '...' if len(i) > 30 else i for i in improvements[:3]]}")
+        return f"Identified {len(improvements)} improvements"
     
     return function_tool(identify_improvements)
 
@@ -123,11 +130,15 @@ def create_grading_tools(standards: List[Standards]) -> List[Any]:
     for standard in standards:
         tool = create_grading_function(standard)
         tools.append(tool)
+        standard_desc = standard.description or "No description"
+        logger.info(f"Created grading tool for standard: {standard.name} - {standard_desc[:100]}...")
     
     # Add strengths and improvements tools
     tools.append(create_strengths_function())
     tools.append(create_improvements_function())
+    logger.info(f"Created strengths and improvements tools")
     
+    logger.info(f"Total tools created: {len(tools)}")
     return tools
 
 
@@ -174,13 +185,6 @@ async def run_grading_agent(
         # Prepare conversation history from chat_id
         conversation_history = get_conversation_history(messages)
 
-        # Get the assessment to find the rubric
-        assessment = session.exec(
-            select(Assessments).where(Assessments.chat_id == chat_id)
-        ).one()
-        if not assessment:
-            raise ValueError(f"No assessment found for chat {chat_id}")
-
         # Get rubric from rubric_id
         rubric = session.exec(select(Rubrics).where(Rubrics.id == rubric_id)).one()
         if not rubric:
@@ -203,13 +207,22 @@ async def run_grading_agent(
 
         # Create grading tools
         grading_tools = create_grading_tools(list(standards))
+        logger.info(f"Created {len(grading_tools)} grading tools")
         
         # Create tool use behavior to wait for all tools to be called
         def tool_use_behavior(context: Any, tool_results: list[Any]) -> ToolsToFinalOutputResult:
-            expected_tool_count = len(standards) + 2  # standards + strengths + improvements
-            return ToolsToFinalOutputResult(
-                is_final_output=len(tool_results) >= expected_tool_count
-            )
+            # Build list of required tools based on standards and fixed tools
+            required_tools = ['strengths', 'improvements']
+            
+            # Add standard grading tools to required tools
+            for standard in standards:
+                safe_name = create_safe_field_name(standard.name)
+                required_tools.append(safe_name)
+            
+            # Check if all required tools have been called
+            completed_required = all(grading_progress.get(tool, False) for tool in required_tools)
+            logger.info(f"Tool use behavior check: required_tools={required_tools}, completed_required={completed_required}, grading_progress={grading_progress}")
+            return ToolsToFinalOutputResult(is_final_output=completed_required)
 
         system_prompt = await get_grade_prompt()
 
@@ -221,6 +234,7 @@ async def run_grading_agent(
             tools=grading_tools,
             parallel_tool_calls=True,
             tool_use_behavior=tool_use_behavior,
+            model="gpt-4.1-nano",
         )
 
         agent_instance = grading_agent.agent()
@@ -230,7 +244,7 @@ async def run_grading_agent(
 
         # Run the grading with parallel tool calls
         logger.info("Running parallel grading agent...")
-        with trace(chat.title, trace_id=chat.trace_id, group_id=str(assessment.id)):
+        with trace(chat.title, trace_id=chat.trace_id, group_id=str(chat_id)):
             result = await Runner.run(agent_instance, input=input_items)
 
         logger.info("Parallel grading agent completed successfully")
@@ -264,16 +278,22 @@ async def run_grading_agent(
             f"Time calculation: current={current_time}, created={chat_created_at}, taken={time_taken}s"
         )
 
-        # Get strengths and improvements from the results
-        strengths = grading_result.get('strengths', '')
-        improvements = grading_result.get('improvements', '')
+        # Get strengths and improvements from the results (now as arrays)
+        strengths_list = grading_result.get('strengths', [])
+        improvements_list = grading_result.get('improvements', [])
         
-        # Create overall summary combining strengths and improvements
+        # Ensure they are lists
+        if not isinstance(strengths_list, list):
+            strengths_list = []
+        if not isinstance(improvements_list, list):
+            improvements_list = []
+        
+        # Create overall summary for description field
         summary_parts = []
-        if strengths:
-            summary_parts.append(f"Strengths: {strengths}")
-        if improvements:
-            summary_parts.append(f"Areas for Improvement: {improvements}")
+        if strengths_list:
+            summary_parts.append(f"Strengths: {'; '.join(strengths_list)}")
+        if improvements_list:
+            summary_parts.append(f"Areas for Improvement: {'; '.join(improvements_list)}")
         summary = "\n\n".join(summary_parts) if summary_parts else "Grading completed"
 
         # Create standard grade records for each standard and calculate total score
@@ -326,11 +346,15 @@ async def run_grading_agent(
         
         # Create the rubric grade record with calculated score
         logger.info(f"Creating rubric grade with score: {score}, name: {rubric.name}")
+        logger.info(f"Strengths list: {strengths_list}")
+        logger.info(f"Improvements list: {improvements_list}")
         rubric_grade = RubricGrades(
             chat_id=chat_id,
             name=rubric.name,
             description=summary,
             score=score,  # Set the score here
+            strengths=strengths_list,  # Use dedicated strengths field
+            improvements=improvements_list,  # Use dedicated improvements field
         )
 
         session.add(rubric_grade)
