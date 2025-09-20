@@ -107,6 +107,7 @@ export type Database = {
           persona_mapping: Json
           profile_id: string | null
           prompts: Json
+          require_users: boolean
           scenario_id: string | null
           title: string
           trace_id: string | null
@@ -127,6 +128,7 @@ export type Database = {
           persona_mapping?: Json
           profile_id?: string | null
           prompts?: Json
+          require_users?: boolean
           scenario_id?: string | null
           title: string
           trace_id?: string | null
@@ -147,6 +149,7 @@ export type Database = {
           persona_mapping?: Json
           profile_id?: string | null
           prompts?: Json
+          require_users?: boolean
           scenario_id?: string | null
           title?: string
           trace_id?: string | null
@@ -190,6 +193,7 @@ export type Database = {
           created_at: string | null
           id: string
           profile_id: string | null
+          title: string | null
           updated_at: string | null
         }
         Insert: {
@@ -197,6 +201,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           profile_id?: string | null
+          title?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -204,6 +209,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           profile_id?: string | null
+          title?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -298,6 +304,7 @@ export type Database = {
         Row: {
           contents: string[] | null
           created_at: string | null
+          difficulty: string
           id: string
           message_id: string | null
           updated_at: string | null
@@ -305,6 +312,7 @@ export type Database = {
         Insert: {
           contents?: string[] | null
           created_at?: string | null
+          difficulty?: string
           id?: string
           message_id?: string | null
           updated_at?: string | null
@@ -312,6 +320,7 @@ export type Database = {
         Update: {
           contents?: string[] | null
           created_at?: string | null
+          difficulty?: string
           id?: string
           message_id?: string | null
           updated_at?: string | null
@@ -662,12 +671,15 @@ export type Database = {
         Row: {
           created_at: string | null
           description: string | null
+          document_ids: string[]
           field_ids: string[] | null
           id: string
           objectives: string[]
           parameter_ids: string[]
           parent_id: string | null
           problem_statement: string | null
+          prompt_mapping: Json
+          prompts: Json
           rubric_id: string | null
           title: string
           training_id: string | null
@@ -676,12 +688,15 @@ export type Database = {
         Insert: {
           created_at?: string | null
           description?: string | null
+          document_ids?: string[]
           field_ids?: string[] | null
           id?: string
           objectives?: string[]
           parameter_ids?: string[]
           parent_id?: string | null
           problem_statement?: string | null
+          prompt_mapping?: Json
+          prompts?: Json
           rubric_id?: string | null
           title: string
           training_id?: string | null
@@ -690,12 +705,15 @@ export type Database = {
         Update: {
           created_at?: string | null
           description?: string | null
+          document_ids?: string[]
           field_ids?: string[] | null
           id?: string
           objectives?: string[]
           parameter_ids?: string[]
           parent_id?: string | null
           problem_statement?: string | null
+          prompt_mapping?: Json
+          prompts?: Json
           rubric_id?: string | null
           title?: string
           training_id?: string | null
@@ -811,6 +829,7 @@ export type Database = {
           description: string | null
           id: string
           practice: boolean
+          profile_ids: string[] | null
           show_documents: boolean
           title: string
           updated_at: string
@@ -823,6 +842,7 @@ export type Database = {
           description?: string | null
           id?: string
           practice?: boolean
+          profile_ids?: string[] | null
           show_documents?: boolean
           title: string
           updated_at?: string
@@ -835,6 +855,7 @@ export type Database = {
           description?: string | null
           id?: string
           practice?: boolean
+          profile_ids?: string[] | null
           show_documents?: boolean
           title?: string
           updated_at?: string

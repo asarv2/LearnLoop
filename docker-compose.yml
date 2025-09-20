@@ -7,7 +7,6 @@ services:
   client:
     image: ${LEARNLOOP_CLIENT_IMAGE:-ghcr.io/ashokhomepc/learnloop-client:latest}
     pull_policy: always
-    container_name: learnloop-client
     restart: unless-stopped
     networks:
       - web
@@ -56,12 +55,22 @@ services:
       - ORIGIN=${ORIGIN}
       - REDIS_URL=redis://learnloop-redis:6379
       - MODEL_SERVICE_URL=http://learnloop-model:8000
+      - DOCUMENTS_SERVICE_URL=http://learnloop-documents:8000
+      - AUDIO_SERVICE_URL=http://learnloop-audio:8000
 
       # webrtc
       - STUN_URI=stun:learnloop-webrtc:3479
       - TURN_URI=turn:learnloop-webrtc:3479?transport=udp
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
+      - AUDIO_SECRET=${AUDIO_SECRET}
+
+      # supabase storage
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
+
+    volumes:
+      - ./prompts:/app/prompts
     depends_on:
       redis:
         condition: service_started
@@ -75,7 +84,6 @@ services:
   model:
     image: ${LEARNLOOP_MODEL_IMAGE:-ghcr.io/ashokhomepc/learnloop-model:latest}
     pull_policy: always
-    container_name: learnloop-model
     restart: unless-stopped
     networks:
       - web
@@ -84,18 +92,18 @@ services:
       - HOST=0.0.0.0
       - WHISPER_DEVICE=cuda
     volumes:
-      - model_cache:/app/model_cache
+      - ../model_cache:/app/model_cache
       - model_audio:/app/audio
-    # deploy:
-    #   resources:
-    #     limits:
-    #       memory: 24GB
-    #     reservations:
-    #       memory: 16GB
-    #       devices:
-    #         - driver: nvidia
-    #           capabilities: [gpu]
-    #           device_ids: ["0"]
+    deploy:
+      resources:
+        limits:
+          memory: 24GB
+        reservations:
+          memory: 16GB
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ["0"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -103,17 +111,55 @@ services:
       retries: 3
       start_period: 60s
 
+  documents:
+    image: ${LEARNLOOP_DOCUMENTS_IMAGE:-ghcr.io/ashokhomepc/learnloop-documents:latest}
+    pull_policy: always
+    restart: unless-stopped
+    networks:
+      - web
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+    volumes:
+      - ./templates:/app/templates
+      - ../files:/app/files
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  audio:
+    image: ${LEARNLOOP_AUDIO_IMAGE:-ghcr.io/ashokhomepc/learnloop-audio:latest}
+    pull_policy: always
+    restart: unless-stopped
+    networks:
+      - web
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - AUDIO_SECRET=${AUDIO_SECRET}
+      - MODEL_SERVICE_URL=http://learnloop-model:8000
+      - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
   redis:
     image: redis:7-alpine
-    container_name: learnloop-redis
     restart: unless-stopped
     networks:
       - web
 
   acme-extractor:
     image: ghcr.io/kereis/traefik-certs-dumper:latest
-    container_name: learnloop-acme-extractor
     restart: "no"
+    profiles:
+      - prod
     environment:
       - DOMAIN=turn.learn-loop.org          # dump only this cert
       - CERTIFICATE_FILE_NAME=fullchain         # → fullchain.pem
@@ -124,8 +170,9 @@ services:
 
   webrtc:
     build: ./turn
-    container_name: learnloop-webrtc
     restart: unless-stopped
+    profiles:
+      - prod
     volumes:
       - ../../../certs:/etc/coturn/certs:ro
     environment:
@@ -145,10 +192,9 @@ services:
 
   nginx:
     image: nginx:1.25
-    container_name: learnloop-nginx
     restart: unless-stopped
     ports:
-      - "5007:80"
+      - "${CLIENT_PORT}:80"
     volumes:
       - ./web/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       # Share the generated upstream with nginx
@@ -168,7 +214,6 @@ services:
 
   docker-gen:
     image: jwilder/docker-gen:0.7.6
-    container_name: learnloop-docker-gen
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
@@ -176,7 +221,7 @@ services:
       - ./web/templates:/etc/docker-gen/templates:ro
       - ./web/generated:/etc/nginx/conf.d/generated:rw
     command: >
-      -notify-sighup learnloop-nginx
+      -notify-sighup nginx
       -watch
       /etc/docker-gen/templates/api_socketio.upstream.tmpl
       /etc/nginx/conf.d/generated/api_socketio.upstream.conf

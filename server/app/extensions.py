@@ -3,15 +3,15 @@ import os
 from pathlib import Path
 from typing import Optional
 
-import redis.asyncio as redis 
+import redis.asyncio as redis
 from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE = Path(__file__).resolve().parents[2]
-AUDIO_DIR = BASE / "audio"
+BASE = Path(__file__).resolve().parents[1]
+PROMPTS_DIR = BASE / "prompts"
 
-AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ async def find_profile_by_socket(socket_id: str) -> Optional[str]:
         async for key in redis_client.scan_iter(match="socket_owner:*"):
             owner_sid = await redis_client.get(key)
             if owner_sid and owner_sid.decode('utf-8') == socket_id:
-                return key.decode('utf-8').replace('socket_owner:', '')
+                return str(key.decode('utf-8').replace('socket_owner:', ''))
         return None
     except Exception as e:
         logger.error(f"Redis error finding profile by socket {socket_id}: {e}")
@@ -112,3 +112,34 @@ async def cleanup_redis_client() -> None:
     if redis_client:
         await redis_client.close()
         logger.info("Redis client closed")
+
+
+# ---------- prompt loading utilities ----------
+
+async def load_prompt(prompt_name: str) -> str:
+    """
+    Load a prompt from the PROMPTS_DIR.
+    
+    Args:
+        prompt_name: Name of the prompt file (e.g., "grade", "hint", "scenario")
+        
+    Returns:
+        Content of the prompt file
+        
+    Raises:
+        FileNotFoundError: If the prompt file is not found
+    """
+    prompt_file = PROMPTS_DIR / f"{prompt_name}.md"
+    
+    if not prompt_file.exists():
+        logger.error(f"Prompt file not found: {prompt_file}")
+        raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
+    
+    try:
+        with open(prompt_file, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+        logger.info(f"Successfully loaded prompt: {prompt_name}")
+        return content
+    except Exception as e:
+        logger.error(f"Error reading prompt file {prompt_file}: {str(e)}")
+        raise

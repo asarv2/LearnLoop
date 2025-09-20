@@ -18,25 +18,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --prefer-binary --prefix=/install .
 
 ############################################
-# 2️⃣  tester stage  (CI only – never pushed)
-############################################
-FROM python:3.11-slim AS tester
-WORKDIR /src
-
-# re-use the compiled wheels
-COPY --from=deps /install /usr/local
-
-# copy *everything* so pytest can discover the tests
-COPY . .
-
-# install test-only deps
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir pytest pytest-cov
-
-# -q makes pytest quiet unless it fails
-CMD ["pytest", "-q"]
-
-############################################
 # 3️⃣  runtime image  (what you actually deploy)
 ############################################
 FROM python:3.11-slim AS runtime
@@ -46,7 +27,7 @@ WORKDIR /app
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates espeak-ng && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # bring in the wheels
@@ -54,6 +35,7 @@ COPY --from=deps /install /usr/local
 
 # Copy everything in the app folder (including all code, configs, etc.)
 COPY app/ ./app/
+COPY prompts/ ./prompts/
 
 # non-root for prod
 ARG APP_UID=1001

@@ -118,6 +118,7 @@ class Trainings(_Base, table=True):
     active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
     what_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_to_do', ARRAY(Text())))
     what_not_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_not_to_do', ARRAY(Text())))
+    profile_ids: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('profile_ids', ARRAY(Uuid(as_uuid=True))))
 
     logs: List['Logs'] = Relationship(back_populates='training')
     scenarios: List['Scenarios'] = Relationship(back_populates='training')
@@ -198,6 +199,9 @@ class Scenarios(_Base, table=True):
     title: str = Field(sa_column=Column('title', Text))
     objectives: List[str] = Field(sa_column=Column('objectives', ARRAY(Text()), server_default=text("'{}'::text[]")))
     parameter_ids: List[uuid.UUID] = Field(sa_column=Column('parameter_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
+    document_ids: List[uuid.UUID] = Field(sa_column=Column('document_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
+    prompts: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompts', JSONB))
+    prompt_mapping: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompt_mapping', JSONB))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
@@ -259,6 +263,7 @@ class Documents(_Base, table=True):
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     content: Optional[str] = Field(default=None, sa_column=Column('content', Text))
     profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
+    title: Optional[str] = Field(default=None, sa_column=Column('title', Text))
 
     profile: Optional['Profiles'] = Relationship(back_populates='documents')
 
@@ -320,6 +325,7 @@ class Chats(_Base, table=True):
     persona_mapping: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('persona_mapping', JSONB))
     prompts: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompts', JSONB))
     max_turns: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('max_turns', JSONB))
+    require_users: bool = Field(sa_column=Column('require_users', Boolean, default=True))
     completed_at: Optional[datetime] = Field(default=None, sa_column=Column('completed_at', DateTime(True)))
     trace_id: Optional[str] = Field(default=None, sa_column=Column('trace_id', Text, comment='for openAI traces'))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
@@ -435,6 +441,7 @@ class Hints(_Base, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    difficulty: str = Field(sa_column=Column('difficulty', Text, default=r'high'))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     message_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('message_id', Uuid(as_uuid=True)))

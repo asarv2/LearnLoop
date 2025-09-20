@@ -1,0 +1,244 @@
+"""
+Project Status Update Template Module.
+
+Contract:
+- Args: pydantic BaseModel (schema for kwargs)
+- render(args: Args) -> bytes  # returns compiled PDF bytes
+
+Optional:
+- DEFAULT_FILENAME: str
+"""
+
+from pathlib import Path
+from typing import Optional
+
+from pydantic import BaseModel, Field
+# PyLaTeX
+from pylatex import Command, Document, NoEscape, Package  # type: ignore
+from pylatex.utils import bold  # type: ignore
+
+# Define the files directory path
+FILES_DIR = Path(__file__).parent.parent / "files"
+FILES_DIR.mkdir(parents=True, exist_ok=True)
+
+DEFAULT_FILENAME = "project_status"
+TEMPLATE_DESCRIPTION = "A comprehensive project status update template covering 30, 60, and 90-day milestones. Includes project information, status summaries, challenges, next steps, and optional metrics graphs for each time period."
+
+class Args(BaseModel):
+    # Project Information
+    project_name: str = Field(default="", description="Name of the project")
+    project_manager: str = Field(default="", description="Project manager's name")
+    report_date: str = Field(default="", description="Date of the status report")
+    overall_status: str = Field(default="", description="Overall project status (On Track, At Risk, Delayed)")
+    
+    # 30-Day Status
+    thirty_day_summary: str = Field(default="", description="30-day project summary and key achievements")
+    thirty_day_challenges: str = Field(default="", description="30-day challenges and risks")
+    thirty_day_next_steps: str = Field(default="", description="30-day next steps and priorities")
+    
+    # 60-Day Status
+    sixty_day_summary: str = Field(default="", description="60-day project summary and key achievements")
+    sixty_day_challenges: str = Field(default="", description="60-day challenges and risks")
+    sixty_day_next_steps: str = Field(default="", description="60-day next steps and priorities")
+    
+    # 90-Day Status
+    ninety_day_summary: str = Field(default="", description="90-day project summary and key achievements")
+    ninety_day_challenges: str = Field(default="", description="90-day challenges and risks")
+    ninety_day_next_steps: str = Field(default="", description="90-day next steps and priorities")
+
+def _escape_latex(text: str) -> str:
+    """Escape special LaTeX characters in text."""
+    if not text:
+        return ""
+    
+    # Replace special LaTeX characters
+    replacements = {
+        '\\': r'\textbackslash{}',
+        '{': r'\{',
+        '}': r'\}',
+        '$': r'\$',
+        '&': r'\&',
+        '%': r'\%',
+        '#': r'\#',
+        '^': r'\textasciicircum{}',
+        '_': r'\_',
+        '~': r'\textasciitilde{}',
+    }
+    
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    
+    return text
+
+def render(args: Args) -> bytes:
+    """
+    Build a project status update PDF using the provided LaTeX template structure.
+    """
+    doc = Document(
+        documentclass="article",
+        document_options=["11pt"],
+        page_numbers=True,
+        indent=False,
+        lmodern=False,
+    )
+
+    # Page layout
+    doc.packages.append(Package("geometry", options=["margin=1in", "top=0.75in", "bottom=0.75in"]))
+    
+    # Colour definitions for headings and labels
+    doc.packages.append(Package("xcolor", options=["table"]))
+    
+    # Table and layout packages
+    doc.packages.append(Package("tabularx"))
+    doc.packages.append(Package("array"))
+    
+    # Graphics for graphs and logos
+    doc.packages.append(Package("graphicx"))
+    
+    # Fancy headers/footers
+    doc.packages.append(Package("fancyhdr"))
+    doc.packages.append(Package("lastpage"))
+    
+    # Core packages
+    doc.packages.append(Package("fontspec"))
+    doc.packages.append(Package("microtype"))
+    doc.packages.append(Package("hyperref"))
+
+    # Define custom colours based off the source document
+    doc.preamble.append(NoEscape(r"\definecolor{primary}{RGB}{14,104,202}   % blue headings"))
+    doc.preamble.append(NoEscape(r"\definecolor{labelbg}{RGB}{242,242,242}   % light grey for label cells"))
+    
+    # Configure headers and footers
+    doc.preamble.append(NoEscape(r"\pagestyle{fancy}"))
+    doc.preamble.append(NoEscape(r"\fancyhf{}"))
+    doc.preamble.append(NoEscape(r"\fancyfoot[R]{\small Page \thepage{} of \pageref{LastPage}}"))
+    
+    # Improve table spacing
+    doc.preamble.append(NoEscape(r"\renewcommand{\arraystretch}{1.3}"))
+    
+    # Disable paragraph indentation
+    doc.preamble.append(NoEscape(r"\setlength{\parindent}{0pt}"))
+    
+    # Conditional inclusion macro for graphs: displays an empty framed box if no image path is provided
+    doc.preamble.append(NoEscape(r"""
+\newcommand{\includeprojectgraph}[2][3.5cm]{%
+  \ifx\relax\detokenize{\relax #2}\relax
+    \fbox{\rule{0pt}{#1}\rule{0.95\linewidth}{0pt}}% placeholder box
+  \else
+    \includegraphics[height=#1,width=0.95\linewidth,keepaspectratio]{#2}% include provided image
+  \fi
+}
+"""))
+
+    # Title and subtitle
+    title_section = NoEscape(r"""
+{\centering
+  {\color{primary}\bfseries\LARGE 30–60–90 Project Status Update}\par
+  \vspace{0.2cm}
+  {\small A concise summary of project progress, challenges and next steps across the first 90 days.}\par
+}\par
+
+\vspace{0.5cm}
+""")
+    doc.append(title_section)
+
+    # Project information section
+    project_info = NoEscape(r"""
+{\color{primary}\large\bfseries Project Information}\par
+\vspace{0.2cm}
+
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}p{0.25\textwidth}|>{\raggedright\arraybackslash}p{0.35\textwidth}|>{\raggedright\arraybackslash}p{0.20\textwidth}|X|}
+  \hline
+  \cellcolor{labelbg}\small Project Name & """ + _escape_latex(args.project_name) + r""" & \cellcolor{labelbg}\small Project Manager & """ + _escape_latex(args.project_manager) + r""" \\
+  \hline
+  \cellcolor{labelbg}\small Report Date & """ + _escape_latex(args.report_date) + r""" & \cellcolor{labelbg}\small Overall Status & """ + _escape_latex(args.overall_status) + r""" \\
+  \hline
+\end{tabularx}
+
+\vspace{0.6cm}
+""")
+    doc.append(project_info)
+
+    # Helper macro for each time period section
+    doc.preamble.append(NoEscape(r"""
+\newcommand{\statussection}[4]{%
+  {\color{primary}\large\bfseries #1}\par
+  \vspace{0.2cm}
+  \begin{tabularx}{\textwidth}{|X|}
+    \hline
+    \cellcolor{labelbg}\small Summary \\
+    \hline
+    #2 \\
+    \hline
+    \cellcolor{labelbg}\small Challenges \\
+    \hline
+    #3 \\
+    \hline
+    \cellcolor{labelbg}\small Next Steps \\
+    \hline
+    #4 \\
+    \hline
+  \end{tabularx}
+  \vspace{0.6cm}
+}
+"""))
+
+    # 30-Day Status Section
+    thirty_day_section = NoEscape(r"""
+\statussection{30-Day Status}{ """ + _escape_latex(args.thirty_day_summary) + r""" }{ """ + _escape_latex(args.thirty_day_challenges) + r""" }{ """ + _escape_latex(args.thirty_day_next_steps) + r""" }
+""")
+    doc.append(thirty_day_section)
+
+    # 60-Day Status Section
+    sixty_day_section = NoEscape(r"""
+\statussection{60-Day Status}{ """ + _escape_latex(args.sixty_day_summary) + r""" }{ """ + _escape_latex(args.sixty_day_challenges) + r""" }{ """ + _escape_latex(args.sixty_day_next_steps) + r""" }
+""")
+    doc.append(sixty_day_section)
+
+    # 90-Day Status Section
+    ninety_day_section = NoEscape(r"""
+\statussection{90-Day Status}{ """ + _escape_latex(args.ninety_day_summary) + r""" }{ """ + _escape_latex(args.ninety_day_challenges) + r""" }{ """ + _escape_latex(args.ninety_day_next_steps) + r""" }
+""")
+    doc.append(ninety_day_section)
+
+    # Generate PDF using FILES_DIR
+    import os
+    import time
+    
+    try:
+        # Generate filename with template name and timestamp
+        timestamp = int(time.time())
+        pdf_filename = f"project_status_{timestamp}"  # No .pdf extension - PyLaTeX adds it
+        pdf_path = FILES_DIR / pdf_filename
+        
+        # Generate PDF to FILES_DIR
+        doc.generate_pdf(
+            filepath=str(pdf_path),
+            clean=True,
+            clean_tex=True,
+            compiler="xelatex",
+            silent=True,
+        )
+        
+        # Check if file was created and has content (PyLaTeX adds .pdf extension)
+        pdf_file_path = pdf_path.with_suffix('.pdf')
+        if not pdf_file_path.exists():
+            raise Exception(f"PDF file was not created at {pdf_file_path}")
+        
+        file_size = pdf_file_path.stat().st_size
+        if file_size == 0:
+            raise Exception(f"PDF file is empty (0 bytes) at {pdf_file_path}")
+        
+        # Read the generated PDF bytes
+        with open(pdf_file_path, 'rb') as f:
+            pdf_bytes = f.read()
+        
+        # Keep the file for later retrieval
+        # pdf_path.unlink()  # Commented out to persist the file
+        
+        return pdf_bytes
+    except Exception as e:
+        # Clean up the generated file if it exists
+        if 'pdf_path' in locals() and pdf_path.exists():
+            pdf_path.unlink()
+        raise Exception(f"PDF generation failed: {e}")

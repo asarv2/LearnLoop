@@ -11,7 +11,6 @@ interface InterviewHeaderProps {
   onEndInterview: () => void;
   isInterviewActive: boolean;
   onShowFeedback?: () => void;
-  onShowAssessment?: () => void;
   onBack?: () => void;
   interviewStartTimeIso?: string;
   completedAtIso?: string | null;
@@ -22,7 +21,6 @@ interface InterviewHeaderProps {
     problem_statement: string | null;
     objectives: string[];
   } | null;
-  hasAssessment?: boolean;
   hasFeedback?: boolean;
   documentId?: string;
   documentFieldName?: string;
@@ -33,14 +31,12 @@ export default function ChatHeader({
   onEndInterview,
   isInterviewActive,
   onShowFeedback,
-  onShowAssessment,
   onBack,
   interviewStartTimeIso,
   completedAtIso,
   isAudioMode = false,
   onToggleAudioMode,
   scenario,
-  hasAssessment = false,
   hasFeedback = false,
   documentId,
   documentFieldName,
@@ -168,32 +164,6 @@ export default function ChatHeader({
                   <Text size="2" weight="medium" color="gray">
                     Duration: {formatTime(elapsedTime)}
                   </Text>
-                  {hasAssessment && !hasFeedback && onShowAssessment && (
-                    <Button
-                      onClick={onShowAssessment}
-                      variant="outline"
-                      size="2"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        padding: "12px 16px",
-                        borderRadius: "12px",
-                        border: "1px solid var(--gray-6)",
-                        fontSize: "14px",
-                        fontWeight: "500",
-                        background: "white",
-                        color: "var(--gray-12)",
-                        cursor: "pointer",
-                        outline: "none",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                        transition: "all 0.2s ease",
-                        height: "48px",
-                        flexShrink: 0,
-                      }}
-                    >
-                      Assessment
-                    </Button>
-                  )}
                   {hasFeedback && onShowFeedback && (
                     <Button
                       onClick={onShowFeedback}
