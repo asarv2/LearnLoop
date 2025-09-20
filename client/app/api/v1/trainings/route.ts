@@ -33,9 +33,19 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const practice = searchParams.get("practice");
+    const type = searchParams.get("type") as
+      | "standard"
+      | "required"
+      | "custom"
+      | null;
+    const userId = searchParams.get("userId");
 
     let rows;
-    if (practice === "true") {
+    if (type === "custom" && userId) {
+      rows = await trainingRepo.listCustomForUser(userId);
+    } else if (type && ["standard", "required", "custom"].includes(type)) {
+      rows = await trainingRepo.listByType(type);
+    } else if (practice === "true") {
       rows = await trainingRepo.listPractice();
     } else {
       rows = await trainingRepo.list();
