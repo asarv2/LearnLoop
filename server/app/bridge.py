@@ -80,11 +80,8 @@ class AudioBridge:
     async def start_room(self, *, room_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
         await self._connected.wait()
         payload = self._with_auth({"room_id": room_id, **config})
-        print(f"[SERVER] Calling audio service start_room for {room_id} with {len(config.get('agents', []))} agents")
-        print(f"[SERVER] Payload keys: {list(payload.keys())}")
         try:
             result = await self._client.call("s2s_start_room", payload, timeout=10.0)
-            print(f"[SERVER] Audio service start_room response: {result}")
             if isinstance(result, dict) and "error" in result:
                 log.error(f"Audio service error starting room {room_id}: {result['error']}")
                 raise Exception(f"Audio service error: {result['error']}")

@@ -145,6 +145,15 @@ async def connect(sid: str, environ: dict, auth: dict) -> bool:
     if not hasattr(connect, '_watchdog_started'):
         _maybe_start_watchdog()
         connect._watchdog_started = True
+    # Ensure audio bridge startup on first socket connection (lifespan may not have run yet)
+    if not hasattr(connect, '_bridge_started'):
+        try:
+            bridge = get_bridge(sio)
+            asyncio.create_task(bridge.start())
+        except Exception:
+            # Errors are logged in bridge; do not block connect
+            pass
+        connect._bridge_started = True
     
     # read profileId from query string (?profileId=...)
     q = environ.get("QUERY_STRING", "") or ""
