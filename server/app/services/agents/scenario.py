@@ -7,7 +7,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Type, cast
 
-import boto3
 import httpx
 import PyPDF2
 from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
@@ -17,7 +16,6 @@ from app.models import Chats, Documents, Messages, Parameters
 from app.services.agents.generic import GenericAgent
 from app.utils.tools_args_model import (build_args_model_from_spec,
                                         make_flat_tool_from_args_model)
-from botocore.config import Config
 from dotenv import load_dotenv
 from fastapi import Depends
 from pydantic import BaseModel, Field
@@ -86,62 +84,48 @@ async def cleanup_http_client() -> None:
         logger.warning(f"Failed to close HTTPX client: {e}")
 
 
-def _upload_pdf_to_s3_sync(pdf_bytes: bytes, doc_id: str) -> None:
-    """Synchronous S3 upload function that runs in a thread."""
-    # Get S3 configuration from environment variables
-    project_region = os.getenv("PROJECT_REGION")
-    s3_endpoint = os.getenv("S3_ENDPOINT")
-    access_key = os.getenv("ACCESS_KEY")
-    secret_key = os.getenv("SECRET_KEY")
+async def _upload_pdf_to_supabase_storage(pdf_bytes: bytes, doc_id: str) -> None:
+    """Upload PDF bytes to Supabase Storage using the Storage API."""
+    # Get Supabase configuration from environment variables
+    supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+    service_role_key = os.getenv("SERVICE_ROLE_KEY")
     bucket_name = "documents"
     
-    logger.info(f"S3 config - endpoint: {s3_endpoint}, region: {project_region}, access_key: {'***' if access_key else 'None'}")
+    logger.info(f"Supabase Storage config - url: {supabase_url}, service_key: {'***' if service_role_key else 'None'}")
     
-    if not all([s3_endpoint, access_key, secret_key]):
-        logger.error("Missing S3 configuration environment variables")
-        logger.error(f"Missing: endpoint={bool(s3_endpoint)}, access_key={bool(access_key)}, secret_key={bool(secret_key)}")
-        raise ValueError("S3 configuration incomplete")
+    if not all([supabase_url, service_role_key]):
+        logger.error("Missing Supabase configuration environment variables")
+        logger.error(f"Missing: url={bool(supabase_url)}, service_key={bool(service_role_key)}")
+        raise ValueError("Supabase configuration incomplete")
     
-    # Strip any whitespace from keys (common issue with copy/paste)
-    access_key = access_key.strip() if access_key else access_key
-    secret_key = secret_key.strip() if secret_key else secret_key
+    # Upload PDF bytes to Supabase Storage using Storage API
+    file_key = f"{doc_id}.pdf"
+    storage_url = f"{supabase_url}/storage/v1/object/{bucket_name}/{file_key}"
     
-    # Supabase-specific configuration
-    cfg = Config(
-        signature_version="s3v4",
-        s3={"addressing_style": "path"}  # required for Supabase S3 gateway
-    )
+    headers = {
+        "Authorization": f"Bearer {service_role_key}",
+        "Content-Type": "application/pdf",
+        "x-upsert": "true"  # Allow overwrite
+    }
     
-    # Create S3 client with Supabase configuration
-    s3 = boto3.client(
-        "s3",
-        region_name=project_region,
-        endpoint_url=s3_endpoint,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        config=cfg,
-    )
+    # Use httpx client for async HTTP request
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            storage_url,
+            content=pdf_bytes,
+            headers=headers
+        )
+        response.raise_for_status()
     
-    # Upload PDF bytes to S3
-    key = f"{doc_id}.pdf"  # No leading slash
-    
-    s3.put_object(
-        Bucket=bucket_name,
-        Key=key,
-        Body=pdf_bytes,
-        ContentType="application/pdf"
-    )
-    
-    logger.info(f"Successfully uploaded PDF {key} to S3 bucket {bucket_name}")
+    logger.info(f"Successfully uploaded PDF {file_key} to Supabase Storage bucket {bucket_name}")
 
 
-async def upload_pdf_to_s3(pdf_bytes: bytes, doc_id: str) -> None:
-    """Upload PDF bytes to S3 storage using Supabase S3 configuration."""
+async def upload_pdf_to_supabase_storage(pdf_bytes: bytes, doc_id: str) -> None:
+    """Upload PDF bytes to Supabase Storage using the Storage API."""
     try:
-        # Run the synchronous S3 upload in a thread to avoid blocking the event loop
-        await asyncio.to_thread(_upload_pdf_to_s3_sync, pdf_bytes, doc_id)
+        await _upload_pdf_to_supabase_storage(pdf_bytes, doc_id)
     except Exception as e:
-        logger.error(f"Failed to upload PDF to S3: {str(e)}")
+        logger.error(f"Failed to upload PDF to Supabase Storage: {str(e)}")
         raise
 
 
@@ -345,12 +329,12 @@ async def create_document_generation_tool(
                 session.commit()
                 session.refresh(document)
                 
-                # Try to upload to S3, but don't fail the entire generation if it fails
+                # Try to upload to Supabase Storage, but don't fail the entire generation if it fails
                 try:
-                    await upload_pdf_to_s3(pdf_bytes, str(document.id))
-                except Exception as s3_error:
-                    logger.warning(f"S3 upload failed for document {document.id}: {s3_error}")
-                    # Continue with document generation even if S3 upload fails
+                    await upload_pdf_to_supabase_storage(pdf_bytes, str(document.id))
+                except Exception as storage_error:
+                    logger.warning(f"Supabase Storage upload failed for document {document.id}: {storage_error}")
+                    # Continue with document generation even if storage upload fails
                 
                 scenario_results.setdefault("document_ids", []).append(str(document.id))
                 
