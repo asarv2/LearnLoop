@@ -1,18 +1,24 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { ArrowLeftIcon, Cross2Icon, FileTextIcon } from "@radix-ui/react-icons";
+import {
+  ArrowLeftIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  Cross2Icon,
+  FileTextIcon,
+} from "@radix-ui/react-icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Box, Button, Flex, Heading, Separator, Text } from "@radix-ui/themes";
 import { useEffect, useMemo, useState } from "react";
 
-interface InterviewHeaderProps {
-  isEndingInterview: boolean;
-  onEndInterview: () => void;
-  isInterviewActive: boolean;
+interface ChatHeaderProps {
+  isEndingSession: boolean;
+  onEndSession: () => void;
+  isSessionActive: boolean;
   onShowFeedback?: () => void;
   onBack?: () => void;
-  interviewStartTimeIso?: string;
+  sessionStartTimeIso?: string;
   completedAtIso?: string | null;
   isAudioMode?: boolean;
   onToggleAudioMode?: () => void;
@@ -24,15 +30,20 @@ interface InterviewHeaderProps {
   hasFeedback?: boolean;
   documentId?: string;
   documentFieldName?: string;
+  isCompleted?: boolean;
+  onRetryEnding?: () => void;
+  hasDocuments?: boolean;
+  isDocumentPanelCollapsed?: boolean;
+  onToggleDocumentPanel?: () => void;
 }
 
 export default function ChatHeader({
-  isEndingInterview,
-  onEndInterview,
-  isInterviewActive,
+  isEndingSession,
+  onEndSession,
+  isSessionActive,
   onShowFeedback,
   onBack,
-  interviewStartTimeIso,
+  sessionStartTimeIso,
   completedAtIso,
   isAudioMode = false,
   onToggleAudioMode,
@@ -40,29 +51,34 @@ export default function ChatHeader({
   hasFeedback = false,
   documentId,
   documentFieldName,
-}: InterviewHeaderProps) {
+  isCompleted = false,
+  onRetryEnding,
+  hasDocuments = false,
+  isDocumentPanelCollapsed = false,
+  onToggleDocumentPanel,
+}: ChatHeaderProps) {
   const [isResumeModalOpen, setIsResumeModalOpen] = useState(false);
   const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
 
   // Memoize Date objects for timer
-  const interviewStartTime = useMemo(
-    () => (interviewStartTimeIso ? new Date(interviewStartTimeIso) : undefined),
-    [interviewStartTimeIso]
+  const sessionStartTime = useMemo(
+    () => (sessionStartTimeIso ? new Date(sessionStartTimeIso) : undefined),
+    [sessionStartTimeIso]
   );
   const completedAt = useMemo(
     () => (completedAtIso ? new Date(completedAtIso) : undefined),
     [completedAtIso]
   );
 
-  // Timer effect for active interviews
+  // Timer effect for active sessions
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
 
-    if (interviewStartTime) {
-      if (isInterviewActive && !completedAt) {
-        // Active interview - count up
-        const startTime = interviewStartTime;
+    if (sessionStartTime) {
+      if (isSessionActive && !completedAt) {
+        // Active session - count up
+        const startTime = sessionStartTime;
 
         // Function to calculate and update elapsed time
         const updateElapsedTime = () => {
@@ -80,8 +96,8 @@ export default function ChatHeader({
         // Update every second
         interval = setInterval(updateElapsedTime, 1000);
       } else if (completedAt) {
-        // Interview is completed - show final duration
-        const startTime = interviewStartTime;
+        // Session is completed - show final duration
+        const startTime = sessionStartTime;
         const endTime = completedAt;
         const diffInSeconds = Math.floor(
           (endTime.getTime() - startTime.getTime()) / 1000
@@ -99,11 +115,11 @@ export default function ChatHeader({
       }
     };
   }, [
-    isInterviewActive,
-    interviewStartTime,
+    isSessionActive,
+    sessionStartTime,
     completedAt,
     elapsedTime,
-    interviewStartTimeIso,
+    sessionStartTimeIso,
   ]);
 
   // Format time as MM:SS
@@ -116,7 +132,7 @@ export default function ChatHeader({
   };
 
   // End button text
-  const endButtonText = "End Training";
+  const endButtonText = "End Session";
 
   return (
     <>
@@ -155,7 +171,7 @@ export default function ChatHeader({
               pr="3"
               style={{ minWidth: "120px", justifyContent: "flex-end" }}
             >
-              {isInterviewActive ? (
+              {isSessionActive ? (
                 <Text size="2" weight="medium" color="gray">
                   {formatTime(elapsedTime)}
                 </Text>
@@ -164,37 +180,72 @@ export default function ChatHeader({
                   <Text size="2" weight="medium" color="gray">
                     Duration: {formatTime(elapsedTime)}
                   </Text>
-                  {hasFeedback && onShowFeedback && (
-                    <Button
-                      onClick={onShowFeedback}
-                      variant="outline"
-                      size="2"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        padding: "12px 16px",
-                        borderRadius: "12px",
-                        border: "1px solid var(--gray-6)",
-                        fontSize: "14px",
-                        fontWeight: "500",
-                        background: "white",
-                        color: "var(--gray-12)",
-                        cursor: "pointer",
-                        outline: "none",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                        transition: "all 0.2s ease",
-                        height: "48px",
-                        flexShrink: 0,
-                      }}
-                    >
-                      Feedback
-                    </Button>
+                  {isCompleted && (
+                    <>
+                      {hasFeedback && onShowFeedback ? (
+                        <Button
+                          onClick={onShowFeedback}
+                          variant="outline"
+                          size="2"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            padding: "12px 16px",
+                            borderRadius: "12px",
+                            border: "1px solid var(--gray-6)",
+                            fontSize: "14px",
+                            fontWeight: "500",
+                            background: "white",
+                            color: "var(--gray-12)",
+                            cursor: "pointer",
+                            outline: "none",
+                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                            transition: "all 0.2s ease",
+                            height: "48px",
+                            flexShrink: 0,
+                          }}
+                        >
+                          Feedback
+                        </Button>
+                      ) : (
+                        onRetryEnding && (
+                          <Button
+                            onClick={onRetryEnding}
+                            variant="outline"
+                            size="2"
+                            loading={isEndingSession}
+                            disabled={isEndingSession}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              padding: "12px 16px",
+                              borderRadius: "12px",
+                              border: "1px solid var(--amber-6)",
+                              fontSize: "14px",
+                              fontWeight: "500",
+                              background: "white",
+                              color: "var(--amber-11)",
+                              cursor: isEndingSession
+                                ? "not-allowed"
+                                : "pointer",
+                              outline: "none",
+                              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                              transition: "all 0.2s ease",
+                              height: "48px",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {isEndingSession ? "Retrying..." : "Retry Ending"}
+                          </Button>
+                        )
+                      )}
+                    </>
                   )}
                 </>
               )}
 
-              {/* Audio Mode Toggle - only show for active interviews */}
-              {isInterviewActive && onToggleAudioMode && (
+              {/* Audio Mode Toggle - only show for active sessions */}
+              {isSessionActive && onToggleAudioMode && (
                 <Button
                   variant={isAudioMode ? "solid" : "soft"}
                   color={isAudioMode ? "purple" : "gray"}
@@ -470,20 +521,67 @@ export default function ChatHeader({
                 </Dialog.Root>
               )}
 
-              {/* End Interview/Training Button - only show for active trainings */}
-              {isInterviewActive && (
+              {/* End Session Button - only show for active sessions */}
+              {isSessionActive && (
                 <Button
                   variant="solid"
                   color="red"
                   size="2"
-                  onClick={onEndInterview}
-                  loading={isEndingInterview}
-                  disabled={isEndingInterview}
+                  onClick={onEndSession}
+                  loading={isEndingSession}
+                  disabled={isEndingSession}
                 >
-                  {isEndingInterview
+                  {isEndingSession
                     ? endButtonText.replace("End", "Ending...")
                     : endButtonText}
                 </Button>
+              )}
+
+              {/* Document Panel Toggle */}
+              {hasDocuments && onToggleDocumentPanel && (
+                <Tooltip.Provider>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <Button
+                        onClick={onToggleDocumentPanel}
+                        variant="ghost"
+                        size="2"
+                        style={{
+                          padding: "8px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {isDocumentPanelCollapsed ? (
+                          <ChevronLeftIcon width="16" height="16" />
+                        ) : (
+                          <ChevronRightIcon width="16" height="16" />
+                        )}
+                      </Button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Portal>
+                      <Tooltip.Content
+                        className="TooltipContent"
+                        sideOffset={5}
+                        style={{
+                          backgroundColor: "var(--gray-12)",
+                          color: "white",
+                          borderRadius: "6px",
+                          padding: "8px 12px",
+                          fontSize: "14px",
+                          lineHeight: "1.4",
+                          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                          zIndex: 1000,
+                        }}
+                      >
+                        {isDocumentPanelCollapsed
+                          ? "Show Documents"
+                          : "Hide Documents"}
+                        <Tooltip.Arrow style={{ fill: "var(--gray-12)" }} />
+                      </Tooltip.Content>
+                    </Tooltip.Portal>
+                  </Tooltip.Root>
+                </Tooltip.Provider>
               )}
             </Flex>
           </Flex>
