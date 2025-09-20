@@ -14,7 +14,8 @@ import { useParameters } from "@/lib/api/hooks/useParameters";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
 import { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import { logError } from "@/utils/logger";
-import { Box, Select, Text } from "@radix-ui/themes";
+import { EyeOpenIcon } from "@radix-ui/react-icons";
+import { Box, Button, Select, Text } from "@radix-ui/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -108,6 +109,11 @@ function TrainingAttemptContent() {
   // Handle document panel collapse
   const handleToggleDocumentPanel = useCallback(() => {
     setIsDocumentPanelCollapsed((prev) => !prev);
+  }, []);
+
+  // Helper function to build PDF URL with proper zoom parameters
+  const buildPdfUrl = useCallback((id: string) => {
+    return `/api/v1/documents/${id}/file#page=1&zoom=page-width`;
   }, []);
 
   // Helper function to check if feedback exists for this chat
@@ -269,6 +275,7 @@ function TrainingAttemptContent() {
             <Box
               style={{
                 width: "400px",
+                height: "100%",
                 borderLeft: "1px solid var(--gray-6)",
                 background: "var(--gray-1)",
                 display: "flex",
@@ -282,35 +289,56 @@ function TrainingAttemptContent() {
                   padding: "16px",
                   borderBottom: "1px solid var(--gray-6)",
                   background: "white",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
                 }}
               >
-                {documentIds.length > 1 ? (
-                  <Select.Root
-                    value={selectedDocumentId || ""}
-                    onValueChange={handleDocumentSelect}
+                <Box style={{ flex: 1 }}>
+                  {documentIds.length > 1 ? (
+                    <Select.Root
+                      value={selectedDocumentId || ""}
+                      onValueChange={handleDocumentSelect}
+                    >
+                      <Select.Trigger
+                        style={{
+                          width: "100%",
+                          borderRadius: "8px",
+                          border: "1px solid var(--gray-6)",
+                        }}
+                      />
+                      <Select.Content>
+                        {documentIds.map((docId) => {
+                          const doc = documentMap.get(docId);
+                          return (
+                            <Select.Item key={docId} value={docId}>
+                              {doc?.title || `Document ${docId.slice(0, 8)}...`}
+                            </Select.Item>
+                          );
+                        })}
+                      </Select.Content>
+                    </Select.Root>
+                  ) : (
+                    <Text size="2" style={{ color: "var(--gray-11)" }}>
+                      {documentMap.get(documentIds[0])?.title || "Document"}
+                    </Text>
+                  )}
+                </Box>
+                {selectedDocumentId && (
+                  <Button
+                    variant="ghost"
+                    size="2"
+                    onClick={() => setShowDocumentModal(true)}
+                    style={{
+                      padding: "8px",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
+                    title="View document in full screen"
                   >
-                    <Select.Trigger
-                      style={{
-                        width: "100%",
-                        borderRadius: "8px",
-                        border: "1px solid var(--gray-6)",
-                      }}
-                    />
-                    <Select.Content>
-                      {documentIds.map((docId) => {
-                        const doc = documentMap.get(docId);
-                        return (
-                          <Select.Item key={docId} value={docId}>
-                            {doc?.title || `Document ${docId.slice(0, 8)}...`}
-                          </Select.Item>
-                        );
-                      })}
-                    </Select.Content>
-                  </Select.Root>
-                ) : (
-                  <Text size="2" style={{ color: "var(--gray-11)" }}>
-                    {documentMap.get(documentIds[0])?.title || "Document"}
-                  </Text>
+                    <EyeOpenIcon width="16" height="16" />
+                  </Button>
                 )}
               </Box>
 
@@ -321,7 +349,7 @@ function TrainingAttemptContent() {
                     flex: 1,
                     display: "flex",
                     flexDirection: "column",
-                    padding: "16px",
+                    padding: "8px 8px 8px 8px",
                     overflow: "hidden",
                   }}
                 >
@@ -333,18 +361,23 @@ function TrainingAttemptContent() {
                       borderRadius: "8px",
                       overflow: "hidden",
                       position: "relative",
+                      minWidth: 0,
+                      minHeight: 0,
                     }}
                   >
                     <iframe
-                      src={`/api/v1/documents/${selectedDocumentId}/file`}
+                      src={buildPdfUrl(selectedDocumentId)}
                       style={{
+                        display: "block",
                         width: "100%",
                         height: "100%",
                         border: "none",
+                        overflow: "hidden",
                       }}
                       title={
                         documentMap.get(selectedDocumentId)?.title || "Document"
                       }
+                      loading="lazy"
                     />
                   </Box>
                 </Box>
