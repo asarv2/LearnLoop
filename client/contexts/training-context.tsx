@@ -135,16 +135,22 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     };
 
     const handleGradingCompleted = (event: CustomEvent) => {
-      const { chatId: eventChatId } = event.detail;
+      const { chatId: eventChatId, rubric_grade_id, message } = event.detail;
       if (eventChatId === chatId) {
         logInfo("Grading completed for current chat, invalidating queries");
 
         // Invalidate all relevant queries
         invalidateChatQueries();
 
-        // Show feedback modal immediately after grading is complete
-        setShowFeedback(true);
-        lastProcessedFeedbackRef.current = "feedback";
+        // Show feedback modal if grading was successful, or show message if skipped
+        if (rubric_grade_id) {
+          // Grading was successful - show feedback modal
+          setShowFeedback(true);
+          lastProcessedFeedbackRef.current = "feedback";
+        } else {
+          // Grading was skipped - show a message to user
+          logInfo(`Grading skipped: ${message}`);
+        }
         setIsWaitingForFeedback(false);
       }
     };

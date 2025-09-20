@@ -676,7 +676,6 @@ export default function ChatArea({
         style={{
           flex: 1,
           display: "flex",
-          flexDirection: "column",
           background: "transparent",
           overflow: "hidden",
           height: "100%",
