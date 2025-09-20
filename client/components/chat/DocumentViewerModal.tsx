@@ -59,7 +59,7 @@ export default function DocumentViewerModal({
           }}
         >
           <Heading size="4" weight="bold">
-            {documentData?.content || "Document"}
+            {documentData?.title || "Document"}
           </Heading>
           <Button
             variant="ghost"
@@ -84,7 +84,7 @@ export default function DocumentViewerModal({
               height: "100%",
               border: "none",
             }}
-            title={documentData?.content || "Document"}
+            title={documentData?.title || "Document"}
           />
         </Box>
       </div>

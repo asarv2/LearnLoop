@@ -1,3 +1,4 @@
+import base64
 import logging
 import os
 import uuid
@@ -218,10 +219,17 @@ async def create_document_generation_tool(
             async with httpx.AsyncClient() as client:
                 resp = await client.post(f"{ds_url}/create", json=payload, timeout=30.0)
                 resp.raise_for_status()
-                pdf_bytes = resp.content
+                response_data = resp.json()
+                pdf_bytes_base64 = response_data["pdf_bytes_base64"]
+                text_content = response_data["text_content"]
+                filename = response_data["filename"]
+                
+                # Decode base64 PDF bytes
+                pdf_bytes = base64.b64decode(pdf_bytes_base64)
 
             document = Documents(
-                content=f"Generated document from template {template_id} for parameter {parameter_name}",
+                content=text_content,
+                title=filename,
                 profile_id=None
             )
 
@@ -526,17 +534,20 @@ async def run_scenario_agent(
         # Update history with tools information
         history = context_items + parameter_history
         
+        # Build persona existence map from the personas we already fetched for context
+        persona_exists_map = {}
+        for persona_id in persona_ids:
+            # We already verified these personas exist when building context above
+            persona_exists_map[persona_id] = True
+
         # Create tool use behavior to wait for core tools to be called
         def tool_use_behavior(context: Any, tool_results: list[Any]) -> ToolsToFinalOutputResult:
             # We require scenario, objectives, and persona prompt tools to be called
             # Document generation tools are optional
             required_tools = ['scenario', 'objectives']
             # Add persona prompt tools to required tools (only for personas that exist)
-            from app.models import Personas
             for persona_id in persona_ids:
-                # Check if persona exists in database before requiring its tool
-                persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
-                if persona:
+                if persona_exists_map.get(persona_id, False):
                     required_tools.append(f'persona_prompt_{persona_id}')
             
             completed_required = all(scenario_progress.get(tool, False) for tool in required_tools)
@@ -545,10 +556,11 @@ async def run_scenario_agent(
         scenario_agent = GenericAgent(
             agent_name="Scenario Generator",
             system_prompt=system_prompt,
-            temperature=0.0,
+            temperature=None,
             tools=scenario_tools,  # scenario_tools is already just the tools list from the tuple
             parallel_tool_calls=True,
             tool_use_behavior=tool_use_behavior,
+            model="gpt-5-nano"
         )
 
         agent_instance = scenario_agent.agent()
@@ -563,10 +575,8 @@ async def run_scenario_agent(
         # Check if required tools were called
         required_tools = ['scenario', 'objectives']
         # Add persona prompt tools to required tools (only for personas that exist)
-        from app.models import Personas
         for persona_id in persona_ids:
-            persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
-            if persona:
+            if persona_exists_map.get(persona_id, False):
                 required_tools.append(f'persona_prompt_{persona_id}')
         
         completed_required = [tool for tool in required_tools if scenario_progress.get(tool, False)]
