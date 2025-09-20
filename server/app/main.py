@@ -248,13 +248,20 @@ async def offer(sid: str, data: Dict[str, Any]) -> None:
     Client sends SDP offer with { room_id: chat_id }.
     We join that room, spin a WebRTCSession, produce an answer.
     """
-    room_id = data.get("room_id")
-    if not room_id:
-        # if omitted, fall back to a default room using the store's get_room function
-        room = get_room("default-room")
-        room_id = room.id
+    try:
+        print(f"[SERVER] Received offer from {sid} with data: {data}")
+        room_id = data.get("room_id")
+        if not room_id:
+            # if omitted, fall back to a default room using the store's get_room function
+            room = get_room("default-room")
+            room_id = room.id
+        print(f"[SERVER] Using room_id: {room_id}")
 
-    await sio.enter_room(sid, room_id)
+        await sio.enter_room(sid, room_id)
+    except Exception as e:
+        print(f"[SERVER] ERROR in offer handler: {e}")
+        logger.exception("Error in offer handler")
+        return
 
     # remember who this socket/user is for this room
     try:
@@ -264,16 +271,7 @@ async def offer(sid: str, data: Dict[str, Any]) -> None:
     pid_from_session = (sess or {}).get("profile_id") if isinstance(sess, dict) else None
     room_user_profile_id = pid_from_session or get_profile_id_for_sid(sid)
 
-    # Start a corresponding room in audio-multi (id == chat_id) and register this human
-    try:
-        bridge = get_bridge(sio)
-        # Get dynamic config based on chat_id/room_id
-        config = get_audio_config(room_id)
-        await bridge.start_room(room_id=room_id, config=config)
-        human_id = f"user:{room_user_profile_id}" if room_user_profile_id else f"user:{sid[-6:]}"
-        await bridge.register_human(room_id=room_id, human_id=human_id)
-    except Exception:
-        logger.exception("failed to start/register room in audio")
+    # Note: Audio room creation is now handled in the join_training event handler
 
     # On offer, ensure the mixed audio subscription is active for this sid
     try:

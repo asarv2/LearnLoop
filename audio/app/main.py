@@ -107,6 +107,10 @@ def _check_secret_from_data(data: _Optional[dict]) -> bool:
 async def s2s_start_room(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     if not _check_secret_from_data(data):
         return {"error": "unauthorized"}
+    
+    print(f"[AUDIO] Received s2s_start_room request for room {data.get('room_id')} with {len(data.get('agents', []))} agents")
+    print(f"[AUDIO] Agent configs: {data.get('agents', [])}")
+    
     # Expected fields
     room_id = str(data.get("room_id")) if data.get("room_id") is not None else None
     require_users = bool(data.get("require_users", True))
@@ -128,6 +132,8 @@ async def s2s_start_room(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     agents_raw = data.get("agents")
     agents = agents_raw if isinstance(agents_raw, list) else []
     agents = [a for a in agents if isinstance(a, dict)]
+    
+    print(f"[AUDIO] Processing {len(agents)} agents for room {room_id}")
     room = create_room_with_config(
         room_id=room_id,
         require_users=require_users,
