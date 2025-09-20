@@ -1,3 +1,4 @@
+import base64
 import importlib.util
 import json
 import logging
@@ -6,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple, Type
 from uuid import UUID
 
+import PyPDF2
 from app.extensions import TEMPLATES_DIR  # <-- your templates directory (Path)
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,6 +45,11 @@ class CreateRequest(BaseModel):
     template_id: UUID = Field(description="UUID of the template module (filename without .py)")
     kwargs: Dict[str, Any] = Field(default_factory=dict, description="Arguments for the template's Args model")
 
+class CreateResponse(BaseModel):
+    pdf_bytes_base64: str = Field(description="Generated PDF as base64-encoded string")
+    text_content: str = Field(description="Text content extracted from the document")
+    filename: str = Field(description="Suggested filename for the document")
+
 # ---------- Utilities ----------
 
 def _template_module_path(template_id: UUID) -> Path:
@@ -62,6 +69,19 @@ def _import_template_module(template_id: UUID) -> Any:
         logger.exception("Template import failed")
         raise HTTPException(status_code=500, detail=f"Template import error: {e}")
     return mod
+
+def _extract_text_from_pdf(pdf_bytes: bytes) -> str:
+    """Extract text content from PDF bytes using PyPDF2."""
+    try:
+        import io
+        pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+        text_content = ""
+        for page in pdf_reader.pages:
+            text_content += page.extract_text() + "\n"
+        return text_content.strip()
+    except Exception as e:
+        logger.warning(f"Failed to extract text from PDF: {e}")
+        return "Text extraction failed"
 
 def _get_template_contract(mod: Any) -> Tuple[Type[BaseModel], Callable[[BaseModel], bytes], Optional[str], Optional[str]]:
     """
@@ -170,10 +190,11 @@ async def get_template_spec(template_id: UUID) -> JSONResponse:
     spec = _model_spec(ArgsModel, template_description, default_filename)
     return JSONResponse(content=spec)
 
-@app.post("/create")
-async def create_document(req: CreateRequest) -> StreamingResponse:
+@app.post("/create", response_model=CreateResponse)
+async def create_document(req: CreateRequest) -> CreateResponse:
     """
     Single endpoint: pick template by UUID, validate kwargs against template's Args, then compile PDF.
+    Returns both PDF bytes and extracted text content.
     """
     mod = _import_template_module(req.template_id)
     ArgsModel, render_fn, default_filename, _ = _get_template_contract(mod)
@@ -190,11 +211,16 @@ async def create_document(req: CreateRequest) -> StreamingResponse:
         logger.exception("Template render failed")
         raise HTTPException(status_code=500, detail=f"Render error: {e}")
 
+    # Extract text content from PDF
+    text_content = _extract_text_from_pdf(pdf_bytes)
+    
     # pick filename from args if present, else template's default, else generic
     filename = getattr(args_obj, "title", None) or default_filename or "document"
-    return StreamingResponse(
-        content=iter([pdf_bytes]),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{_safe_filename(filename)}.pdf"'},
+    
+    return CreateResponse(
+        pdf_bytes_base64=base64.b64encode(pdf_bytes).decode('utf-8'),
+        text_content=text_content,
+        filename=_safe_filename(filename)
     )
+
 

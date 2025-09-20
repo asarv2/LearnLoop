@@ -263,6 +263,7 @@ class Documents(_Base, table=True):
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     content: Optional[str] = Field(default=None, sa_column=Column('content', Text))
     profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
+    title: Optional[str] = Field(default=None, sa_column=Column('title', Text))
 
     profile: Optional['Profiles'] = Relationship(back_populates='documents')
 

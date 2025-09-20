@@ -57,7 +57,7 @@ export default function DocumentPreviewCard({
             WebkitBoxOrient: "vertical",
           }}
         >
-          {document?.content || "Document"}
+          {document?.title || "Document"}
         </Text>
       </Flex>
     </Box>

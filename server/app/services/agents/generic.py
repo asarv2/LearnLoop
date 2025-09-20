@@ -61,7 +61,7 @@ class GenericAgent:
         self,
         agent_name: str,
         system_prompt: str,
-        temperature: float,
+        temperature: float | None = 0.0,
         model: str = "gpt-4.1",
         tools: list[Tool] = [],
         parallel_tool_calls: bool = False,
