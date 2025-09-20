@@ -32,6 +32,31 @@ export function useTrainingsPractice() {
   });
 }
 
+export function useTrainingsByType(type: "standard" | "required" | "custom") {
+  return useQuery({
+    queryKey: [...trainingKeys.list(), "type", type],
+    queryFn: () => {
+      logInfo(`Fetching ${type} trainings list`);
+      return api<TrainingCreate[]>(`/api/v1/trainings?type=${type}`);
+    },
+    staleTime: 5 * 60_000, // 5 minutes
+  });
+}
+
+export function useCustomTrainingsForUser(userId: string | undefined) {
+  return useQuery({
+    queryKey: [...trainingKeys.list(), "custom", "user", userId],
+    queryFn: () => {
+      logInfo(`Fetching custom trainings for user: ${userId}`);
+      return api<TrainingCreate[]>(
+        `/api/v1/trainings?type=custom&userId=${userId}`
+      );
+    },
+    enabled: !!userId,
+    staleTime: 5 * 60_000, // 5 minutes
+  });
+}
+
 export function useTraining(id: string, enabled = true) {
   return useQuery({
     queryKey: trainingKeys.detail(id),
