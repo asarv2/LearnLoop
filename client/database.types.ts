@@ -611,8 +611,10 @@ export type Database = {
           created_at: string | null
           description: string | null
           id: string
+          improvements: string[]
           name: string
           score: number
+          strengths: string[]
           updated_at: string | null
         }
         Insert: {
@@ -620,8 +622,10 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          improvements?: string[]
           name: string
           score: number
+          strengths?: string[]
           updated_at?: string | null
         }
         Update: {
@@ -629,8 +633,10 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          improvements?: string[]
           name?: string
           score?: number
+          strengths?: string[]
           updated_at?: string | null
         }
         Relationships: [
@@ -835,11 +841,11 @@ export type Database = {
           description: string | null
           id: string
           practice: boolean
-          profile_ids: string[] | null
           show_documents: boolean
           title: string
           training_type: string | null
           updated_at: string
+          user_id: string | null
           what_not_to_do: string[] | null
           what_to_do: string[] | null
         }
@@ -849,11 +855,11 @@ export type Database = {
           description?: string | null
           id?: string
           practice?: boolean
-          profile_ids?: string[] | null
           show_documents?: boolean
           title: string
           training_type?: string | null
           updated_at?: string
+          user_id?: string | null
           what_not_to_do?: string[] | null
           what_to_do?: string[] | null
         }
@@ -863,11 +869,11 @@ export type Database = {
           description?: string | null
           id?: string
           practice?: boolean
-          profile_ids?: string[] | null
           show_documents?: boolean
           title?: string
           training_type?: string | null
           updated_at?: string
+          user_id?: string | null
           what_not_to_do?: string[] | null
           what_to_do?: string[] | null
         }

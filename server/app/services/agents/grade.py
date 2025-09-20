@@ -82,7 +82,7 @@ def create_strengths_function() -> Any:
     """Create a function tool for identifying strengths."""
     
     async def identify_strengths(
-        strengths: str = Field(description="Key strengths observed in the conversation")
+        strengths: List[str] = Field(description="List of key strengths observed in the conversation")
     ) -> str:
         """Identify the main strengths demonstrated in the conversation.
         
@@ -94,8 +94,8 @@ def create_strengths_function() -> Any:
         """
         grading_results['strengths'] = strengths
         grading_progress['strengths'] = True
-        logger.info(f"✓ Identified strengths: {strengths[:50]}...")
-        return f"Identified strengths: {strengths}"
+        logger.info(f"✓ Identified {len(strengths)} strengths: {[s[:30] + '...' if len(s) > 30 else s for s in strengths[:3]]}")
+        return f"Identified {len(strengths)} strengths"
     
     return function_tool(identify_strengths)
 
@@ -104,7 +104,7 @@ def create_improvements_function() -> Any:
     """Create a function tool for identifying areas for improvement."""
     
     async def identify_improvements(
-        improvements: str = Field(description="Areas for improvement in the conversation")
+        improvements: List[str] = Field(description="List of areas for improvement in the conversation")
     ) -> str:
         """Identify areas where the conversation could be improved.
         
@@ -116,8 +116,8 @@ def create_improvements_function() -> Any:
         """
         grading_results['improvements'] = improvements
         grading_progress['improvements'] = True
-        logger.info(f"✓ Identified improvements: {improvements[:50]}...")
-        return f"Identified improvements: {improvements}"
+        logger.info(f"✓ Identified {len(improvements)} improvements: {[i[:30] + '...' if len(i) > 30 else i for i in improvements[:3]]}")
+        return f"Identified {len(improvements)} improvements"
     
     return function_tool(identify_improvements)
 
@@ -278,16 +278,22 @@ async def run_grading_agent(
             f"Time calculation: current={current_time}, created={chat_created_at}, taken={time_taken}s"
         )
 
-        # Get strengths and improvements from the results
-        strengths = grading_result.get('strengths', '')
-        improvements = grading_result.get('improvements', '')
+        # Get strengths and improvements from the results (now as arrays)
+        strengths_list = grading_result.get('strengths', [])
+        improvements_list = grading_result.get('improvements', [])
         
-        # Create overall summary combining strengths and improvements
+        # Ensure they are lists
+        if not isinstance(strengths_list, list):
+            strengths_list = []
+        if not isinstance(improvements_list, list):
+            improvements_list = []
+        
+        # Create overall summary for description field
         summary_parts = []
-        if strengths:
-            summary_parts.append(f"Strengths: {strengths}")
-        if improvements:
-            summary_parts.append(f"Areas for Improvement: {improvements}")
+        if strengths_list:
+            summary_parts.append(f"Strengths: {'; '.join(strengths_list)}")
+        if improvements_list:
+            summary_parts.append(f"Areas for Improvement: {'; '.join(improvements_list)}")
         summary = "\n\n".join(summary_parts) if summary_parts else "Grading completed"
 
         # Create standard grade records for each standard and calculate total score
@@ -340,11 +346,15 @@ async def run_grading_agent(
         
         # Create the rubric grade record with calculated score
         logger.info(f"Creating rubric grade with score: {score}, name: {rubric.name}")
+        logger.info(f"Strengths list: {strengths_list}")
+        logger.info(f"Improvements list: {improvements_list}")
         rubric_grade = RubricGrades(
             chat_id=chat_id,
             name=rubric.name,
             description=summary,
             score=score,  # Set the score here
+            strengths=strengths_list,  # Use dedicated strengths field
+            improvements=improvements_list,  # Use dedicated improvements field
         )
 
         session.add(rubric_grade)
