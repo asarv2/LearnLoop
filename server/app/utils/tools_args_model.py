@@ -56,6 +56,11 @@ def build_args_model_from_spec(*, model_name: str, spec_fields: Dict[str, Dict[s
       }
     """
     fields_def: Dict[str, Tuple[type, Any]] = {}
+    
+    # Always add doc_name field if it doesn't already exist
+    if "doc_name" not in spec_fields:
+        fields_def["doc_name"] = (str, Field(default="", description="Name/title for the generated document"))
+    
     for name, meta in spec_fields.items():
         py_type, default_fallback = _resolve_type(str(meta.get("type", "str")))
         desc = meta.get("description")
