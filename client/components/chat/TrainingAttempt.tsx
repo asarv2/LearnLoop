@@ -37,6 +37,7 @@ function TrainingAttemptContent() {
     isEndingTraining,
     isWaitingForFeedback, // ✅ NEW: Loading state while waiting for feedback
     isTrainingActive,
+    isTrainingCompleted,
     currentMessage,
     setCurrentMessage,
     showFeedback,
@@ -159,28 +160,31 @@ function TrainingAttemptContent() {
       ) : (
         <>
           <ChatHeader
-            onEndInterview={endInterview}
-            isInterviewActive={isTrainingActive}
-            isEndingInterview={isEndingTraining || isWaitingForFeedback} // ✅ NEW: Show loading while waiting for feedback
+            onEndSession={endInterview}
+            isSessionActive={isTrainingActive}
+            isEndingSession={isEndingTraining || isWaitingForFeedback} // ✅ NEW: Show loading while waiting for feedback
             onShowFeedback={() => setShowFeedback(true)}
             onBack={() => router.push("/dashboard/trainings")}
-            interviewStartTimeIso={chat?.created_at}
+            sessionStartTimeIso={chat?.created_at}
             completedAtIso={chat?.completed_at}
             scenario={scenario}
             hasFeedback={hasFeedback()}
             documentId={documentId}
             documentFieldName={documentFieldName}
+            isCompleted={isTrainingCompleted}
+            onRetryEnding={endTraining}
           />
 
           <ChatArea
             displayMessages={displayMessages}
             isSendingMessage={isSendingMessage}
-            isEndingInterview={isEndingTraining}
-            isInterviewActive={isTrainingActive}
+            isEndingSession={isEndingTraining}
+            isSessionActive={isTrainingActive}
             currentMessage={currentMessage}
             setCurrentMessage={setCurrentMessage}
             chat={chat}
             messagesEndRef={messagesEndRef}
+            onShowFeedback={() => setShowFeedback(true)}
           />
 
           {/* Feedback Modal - only show if feedback exists */}

@@ -104,6 +104,7 @@ class Rubrics(_Base, table=True):
 
 class Trainings(_Base, table=True):
     __table_args__ = (
+        CheckConstraint("training_type = ANY (ARRAY['standard'::text, 'required'::text, 'custom'::text])", name='trainings_training_type_check'),
         PrimaryKeyConstraint('id', name='trainings_pkey'),
         Index('idx_trainings_created_at', 'created_at')
     )
@@ -119,6 +120,7 @@ class Trainings(_Base, table=True):
     what_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_to_do', ARRAY(Text())))
     what_not_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_not_to_do', ARRAY(Text())))
     profile_ids: Optional[List[uuid.UUID]] = Field(default=None, sa_column=Column('profile_ids', ARRAY(Uuid(as_uuid=True))))
+    training_type: Optional[str] = Field(default=None, sa_column=Column('training_type', Text, default=r'standard'))
 
     logs: List['Logs'] = Relationship(back_populates='training')
     scenarios: List['Scenarios'] = Relationship(back_populates='training')
@@ -285,6 +287,8 @@ class Personas(_Base, table=True):
     voice: Optional[str] = Field(default=None, sa_column=Column('voice', Text))
     profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
     realtime_prompt: Optional[str] = Field(default=None, sa_column=Column('realtime_prompt', Text))
+    level: Optional[str] = Field(default=None, sa_column=Column('level', Enum('junior', 'mid', 'senior', 'executive', name='level')))
+    position: Optional[str] = Field(default=None, sa_column=Column('position', Text))
 
     profile: Optional['Profiles'] = Relationship(back_populates='personas')
     messages: List['Messages'] = Relationship(back_populates='persona')

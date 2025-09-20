@@ -27,23 +27,25 @@ import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
 interface ChatAreaProps {
   displayMessages: Message[];
   isSendingMessage: boolean;
-  isEndingInterview: boolean;
-  isInterviewActive: boolean;
+  isEndingSession: boolean;
+  isSessionActive: boolean;
   currentMessage: string;
   setCurrentMessage: (message: string) => void;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   chat: Chat;
+  onShowFeedback?: () => void;
 }
 
 export default function ChatArea({
   displayMessages,
   isSendingMessage,
-  isEndingInterview,
-  isInterviewActive,
+  isEndingSession,
+  isSessionActive,
   currentMessage,
   setCurrentMessage,
   messagesEndRef,
   chat,
+  onShowFeedback,
 }: ChatAreaProps) {
   // WebSocket context
   const {
@@ -615,6 +617,25 @@ export default function ChatArea({
     }
   }, [showIntroModal, displayMessages.length]);
 
+  // Auto-show feedback modal when chat is completed and feedback exists
+  useEffect(() => {
+    if (chat?.completed && onShowFeedback) {
+      // Check if feedback exists by looking at the chat's feedback property
+      const chatWithIncludes = chat as { feedback?: unknown[] };
+      const hasFeedback =
+        chatWithIncludes?.feedback && chatWithIncludes.feedback.length > 0;
+
+      if (hasFeedback) {
+        // Add a small delay to ensure the UI has updated
+        const timer = setTimeout(() => {
+          onShowFeedback();
+        }, 1000);
+
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [chat, onShowFeedback]);
+
   // Early return if chat is not available
   if (!chat) {
     return (
@@ -975,7 +996,7 @@ export default function ChatArea({
         </Box>
 
         {/* Input Area */}
-        {isInterviewActive && (
+        {isSessionActive && (
           <Box
             style={{
               padding: "24px",
@@ -1371,7 +1392,7 @@ export default function ChatArea({
           </Box>
         )}
 
-        {isEndingInterview && (
+        {isEndingSession && (
           <Box
             style={{
               padding: "24px",
