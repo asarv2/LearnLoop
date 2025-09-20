@@ -486,12 +486,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       (completed / generateProgress.steps.length) * 100
     );
 
-    // Show tool completion count if available
-    const showToolCount = generateProgress.totalTools > 0;
-    const toolProgressText = showToolCount
-      ? `${generateProgress.completedCount}/${generateProgress.totalTools} tools completed`
-      : null;
-
     return (
       <Box mt="4">
         <Box
@@ -513,13 +507,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             }}
           />
         </Box>
-
-        {/* Tool progress indicator */}
-        {toolProgressText && (
-          <Text size="2" color="gray" style={{ marginBottom: "8px" }}>
-            {toolProgressText}
-          </Text>
-        )}
 
         <Flex direction="column" gap="2">
           {generateProgress.steps.map((step, idx) => (

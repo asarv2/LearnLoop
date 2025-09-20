@@ -1,13 +1,15 @@
 import asyncio
 import base64
+import io
 import logging
 import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Type, cast
 
-import aioboto3
+import boto3
 import httpx
+import PyPDF2
 from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
 from app.db import get_session
 from app.extensions import load_prompt
@@ -28,6 +30,19 @@ logger = logging.getLogger(__name__)
 # Global storage for scenario results
 scenario_results: Dict[str, Any] = {}
 scenario_progress: Dict[str, bool] = {}
+
+
+def _extract_text_from_pdf(pdf_bytes: bytes) -> str:
+    """Extract text content from PDF bytes using PyPDF2."""
+    try:
+        pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+        text_content = ""
+        for page in pdf_reader.pages:
+            text_content += page.extract_text() + "\n"
+        return text_content.strip()
+    except Exception as e:
+        logger.warning(f"Failed to extract text from PDF: {e}")
+        return "Text extraction failed"
 
 # Global HTTP client for reuse across tools
 HTTPX_CLIENT = httpx.AsyncClient(
@@ -71,51 +86,60 @@ async def cleanup_http_client() -> None:
         logger.warning(f"Failed to close HTTPX client: {e}")
 
 
+def _upload_pdf_to_s3_sync(pdf_bytes: bytes, doc_id: str) -> None:
+    """Synchronous S3 upload function that runs in a thread."""
+    # Get S3 configuration from environment variables
+    project_region = os.getenv("PROJECT_REGION")
+    s3_endpoint = os.getenv("S3_ENDPOINT")
+    access_key = os.getenv("ACCESS_KEY")
+    secret_key = os.getenv("SECRET_KEY")
+    bucket_name = "documents"
+    
+    logger.info(f"S3 config - endpoint: {s3_endpoint}, region: {project_region}, access_key: {'***' if access_key else 'None'}")
+    
+    if not all([s3_endpoint, access_key, secret_key]):
+        logger.error("Missing S3 configuration environment variables")
+        logger.error(f"Missing: endpoint={bool(s3_endpoint)}, access_key={bool(access_key)}, secret_key={bool(secret_key)}")
+        raise ValueError("S3 configuration incomplete")
+    
+    # Strip any whitespace from keys (common issue with copy/paste)
+    access_key = access_key.strip() if access_key else access_key
+    secret_key = secret_key.strip() if secret_key else secret_key
+    
+    # Supabase-specific configuration
+    cfg = Config(
+        signature_version="s3v4",
+        s3={"addressing_style": "path"}  # required for Supabase S3 gateway
+    )
+    
+    # Create S3 client with Supabase configuration
+    s3 = boto3.client(
+        "s3",
+        region_name=project_region,
+        endpoint_url=s3_endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        config=cfg,
+    )
+    
+    # Upload PDF bytes to S3
+    key = f"{doc_id}.pdf"  # No leading slash
+    
+    s3.put_object(
+        Bucket=bucket_name,
+        Key=key,
+        Body=pdf_bytes,
+        ContentType="application/pdf"
+    )
+    
+    logger.info(f"Successfully uploaded PDF {key} to S3 bucket {bucket_name}")
+
+
 async def upload_pdf_to_s3(pdf_bytes: bytes, doc_id: str) -> None:
     """Upload PDF bytes to S3 storage using Supabase S3 configuration."""
     try:
-        # Get S3 configuration from environment variables
-        project_region = os.getenv("PROJECT_REGION")
-        s3_endpoint = os.getenv("S3_ENDPOINT")
-        access_key = os.getenv("ACCESS_KEY")
-        secret_key = os.getenv("SECRET_KEY")
-        bucket_name = "documents"
-        
-        logger.info(f"S3 config - endpoint: {s3_endpoint}, region: {project_region}, access_key: {'***' if access_key else 'None'}")
-        
-        if not all([s3_endpoint, access_key, secret_key]):
-            logger.error("Missing S3 configuration environment variables")
-            logger.error(f"Missing: endpoint={bool(s3_endpoint)}, access_key={bool(access_key)}, secret_key={bool(secret_key)}")
-            raise ValueError("S3 configuration incomplete")
-        
-        # Supabase-specific configuration
-        cfg = Config(
-            signature_version="s3v4",
-            s3={"addressing_style": "path"}  # required for Supabase S3 gateway
-        )
-        
-        # Create async S3 client with Supabase configuration
-        session = aioboto3.Session()
-        async with session.client(
-            "s3",
-            region_name=project_region,
-            endpoint_url=s3_endpoint,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            config=cfg,
-        ) as s3:
-            # Upload PDF bytes to S3
-            key = f"{doc_id}.pdf"
-            
-            await s3.put_object(
-                Bucket=bucket_name,
-                Key=key,
-                Body=pdf_bytes,
-                ContentType="application/pdf"
-            )
-            
-            logger.info(f"Successfully uploaded PDF {key} to S3 bucket {bucket_name}")
-        
+        # Run the synchronous S3 upload in a thread to avoid blocking the event loop
+        await asyncio.to_thread(_upload_pdf_to_s3_sync, pdf_bytes, doc_id)
     except Exception as e:
         logger.error(f"Failed to upload PDF to S3: {str(e)}")
         raise
@@ -292,13 +316,18 @@ async def create_document_generation_tool(
 
             resp = await HTTPX_CLIENT.post(f"{ds_url}/create", json=payload)
             resp.raise_for_status()
-            response_data = resp.json()
-            pdf_bytes_base64 = response_data["pdf_bytes_base64"]
-            text_content = response_data["text_content"]
-            filename = response_data["filename"]
             
-            # Decode base64 PDF bytes
-            pdf_bytes = base64.b64decode(pdf_bytes_base64)
+            # Get PDF bytes from streaming response
+            pdf_bytes = resp.content
+            
+            # Extract text content from PDF
+            text_content = _extract_text_from_pdf(pdf_bytes)
+            
+            # Get filename from Content-Disposition header
+            content_disposition = resp.headers.get("content-disposition", "")
+            filename = "document"  # default
+            if "filename=" in content_disposition:
+                filename = content_disposition.split("filename=")[1].strip('"').replace(".pdf", "")
 
             document = Documents(
                 content=text_content,
