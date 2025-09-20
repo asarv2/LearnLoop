@@ -616,6 +616,16 @@ async def handle_training_message_rtc(sid: str, data: Dict[str, Any]) -> None:
             is_final=True,
             persona_id=persona_id,
         )
+
+        # Trigger audio service TTS + streaming of user's typed text into the room bus
+        try:
+            from app.bridge import get_bridge
+            sio = get_sio_instance()
+            bridge = get_bridge(sio)
+            human_id = f"user:{profile_id}" if profile_id else f"user:{sid[-6:]}"
+            await bridge.user_text(room_id=str(chat_id), human_id=human_id, text=message)
+        except Exception as e:
+            logger.error(f"Failed to send user_text to audio for chat {chat_id}: {str(e)}")
     except Exception as e:
         logger.error(f"Error in room system flow: {str(e)}")
         await emit_error(sid, f"Failed to process message: {str(e)}")
