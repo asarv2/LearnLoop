@@ -172,13 +172,12 @@ class Room:
         # Single place that decides beep audibility
         # Special case: with exactly two participants (one human, one agent), keep beep OFF for everyone
         try:
-            kinds = list(self.agent_meta.values())
-            agent_count = sum(1 for k in kinds if k == "agent" and k != "agent:beep")
-            human_count = sum(1 for k in kinds if k == "human")
+            agent_ids = [aid for aid, kind in self.agent_meta.items() if kind == "agent" and aid != "agent:beep"]
+            human_ids = [aid for aid, kind in self.agent_meta.items() if kind == "human"]
         except Exception:
-            agent_count = 0
-            human_count = 0
-        if (agent_count == 1 and human_count == 1):
+            agent_ids = []
+            human_ids = []
+        if (len(agent_ids) == 1 and len(human_ids) == 1):
             self._update_beep_ignore(None, active=False)
             return
         # Default policy
