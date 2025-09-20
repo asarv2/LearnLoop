@@ -383,6 +383,9 @@ export function WebSocketProvider({
           logInfo("transcript (raw)", {
             messageId: ev.message_id,
             wordsLength: ev.words?.length ?? 0,
+            start_ts_ms: ev.start_ts_ms,
+            current_time: Date.now(),
+            time_diff: Date.now() - ev.start_ts_ms,
           });
         } catch {}
         // Forward as a DOM event for chat components to consume and attach by message id
@@ -564,17 +567,28 @@ export function WebSocketProvider({
         success: boolean;
         message: string;
         chat_id: string;
-        hints: string[];
+        hints: unknown[];
+        low_hints: string[];
+        high_hints: string[];
         message_id: string; // ★ expect message_id
       }) => {
         logInfo("Hints generated", data);
         if (data.success) {
+          // Combine low and high hints into a single array for display
+          const combinedHints = [
+            ...(data.low_hints || []),
+            ...(data.high_hints || []),
+          ];
+
           window.dispatchEvent(
             new CustomEvent("hintsGenerated", {
               detail: {
                 chatId: data.chat_id,
                 messageId: data.message_id, // ★ forward messageId
                 hints: data.hints,
+                lowHints: data.low_hints || [],
+                highHints: data.high_hints || [],
+                combinedHints: combinedHints,
               },
             })
           );

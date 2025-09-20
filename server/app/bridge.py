@@ -206,6 +206,32 @@ class AudioBridge:
         try:
             room_id = payload.get("room_id")
             if isinstance(room_id, str):
+                # Persist assistant/user text into DB using the server store so the
+                # frontend message list reflects the same message_id as transcripts.
+                try:
+                    from app.store import \
+                        upsert_text_chunk as \
+                        _store_upsert  # lazy import to avoid cycles
+                    msg_id = payload.get("message_id")
+                    source_id = payload.get("source_id") or payload.get("agent_id") or "agent"
+                    role = payload.get("role") or ("agent" if (isinstance(source_id, str) and source_id.startswith("agent:")) else "user")
+                    text = payload.get("text") or ""
+                    chunk_idx = int(payload.get("chunk_idx", 0))
+                    is_final = bool(payload.get("is_final", False))
+                    await _store_upsert(
+                        room_id=str(room_id),
+                        message_id=str(msg_id) if msg_id else None,
+                        source_id=str(source_id),
+                        role=str(role),
+                        text=str(text),
+                        chunk_idx=int(chunk_idx),
+                        is_final=bool(is_final),
+                        persona_id=payload.get("persona_id"),
+                    )
+                except Exception:
+                    # Do not fail the bridge if persistence has issues; still forward to clients
+                    log.exception("failed to persist text_chunk to DB store")
+
                 # rebroadcast to browser clients joined to the same room_id
                 await self.server_sio.emit("text_chunk", payload, room=room_id)
         except Exception:
@@ -214,8 +240,12 @@ class AudioBridge:
     async def _on_transcript(self, payload: Dict[str, Any]) -> None:
         try:
             room_id = payload.get("room_id")
+            words = payload.get("words", [])
+            agent_id = payload.get("agent_id", "unknown")
+            log.info(f"Server received transcript: room_id={room_id}, agent_id={agent_id}, words_count={len(words)}")
             if isinstance(room_id, str):
                 await self.server_sio.emit("transcript", payload, room=room_id)
+                log.info(f"Server forwarded transcript to room {room_id}")
         except Exception:
             log.exception("failed to forward transcript")
 

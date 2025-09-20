@@ -270,6 +270,19 @@ class Room:
             except Exception:
                 # Fail-open on gating errors to avoid wedging chat
                 pass
+        # Try to derive persona_id for this source when available from scenario config
+        persona_id: Optional[str] = None
+        try:
+            if role == "agent":
+                # Match on agent display name (after prefix)
+                name = source_id.split(":", 1)[-1]
+                for a in (self.scenario_config.get("agents", []) if isinstance(self.scenario_config, dict) else []):
+                    if isinstance(a, dict) and (a.get("name") or "") == name and a.get("persona_id"):
+                        persona_id = str(a.get("persona_id"))
+                        break
+        except Exception:
+            persona_id = None
+
         msg = upsert_text_chunk(
             self.id,
             message_id=message_id,
@@ -278,6 +291,7 @@ class Room:
             text=text,
             chunk_idx=chunk_idx,
             is_final=is_final,
+            persona_id=persona_id,
         )
         # Track the most recent assistant message id for interruption clamping
         try:
@@ -296,6 +310,7 @@ class Room:
             "is_final": is_final,
             "created_ms": msg.created_ms,
             "chunk_ts_ms": last_chunk_ts,
+            "persona_id": persona_id,
         }
         if self.on_text_chunk:
             await self.on_text_chunk(payload)

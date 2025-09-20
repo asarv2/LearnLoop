@@ -63,6 +63,7 @@ class OpenAIAgent(Agent):
         self._session: Optional[RealtimeSession] = None
         self._tasks: list[asyncio.Task] = []
         self._running = True
+        self._session_ready: asyncio.Event = asyncio.Event()
 
         # audio streaming buffer
         self._audio_buf = np.zeros(0, dtype=np.float32)
@@ -99,6 +100,7 @@ class OpenAIAgent(Agent):
         # Register an interrupt handler to hard-stop audio and clear state
         try:
             async def _interrupt() -> None:
+                log.info(f"Agent {self.id} interrupted - clearing state")
                 self._block_tts()
                 self._resp_audio.clear()
                 self._resp_text.clear()
@@ -112,6 +114,7 @@ class OpenAIAgent(Agent):
             pass
 
     async def _start_session(self) -> RealtimeSession:
+        log.info(f"Starting OpenAI session for agent {self.id}")
         oa_agent = OARealtimeAgent(name="OpenAI Realtime", instructions=self.instructions)
         model_settings: RealtimeSessionModelSettings = {
             "model_name": self.model_name,
@@ -133,6 +136,7 @@ class OpenAIAgent(Agent):
         runner = RealtimeRunner(oa_agent, config=run_cfg)
         session: RealtimeSession = await runner.run()
         session = await session.enter()
+        log.info(f"OpenAI session started for agent {self.id}")
         return session
 
     def _ensure_drainer(self) -> None:
@@ -182,10 +186,10 @@ class OpenAIAgent(Agent):
                     includes_beep = bool(getattr(chunk, "meta", {}).get("includes_beep", False))
                     if includes_beep and not self._beep_heard:
                         self._beep_heard = True
-                        print(f"[beep] {self.id} now hearing beep (sources={getattr(chunk, 'meta', {}).get('sources', [])})")
+                        log.info(f"beep: {self.id} now hearing beep (sources={getattr(chunk, 'meta', {}).get('sources', [])})")
                     elif (not includes_beep) and self._beep_heard:
                         self._beep_heard = False
-                        print(f"[beep] {self.id} beep off")
+                        log.info(f"beep: {self.id} beep off")
                 except Exception:
                     pass
                 if x is None or x.size == 0:
@@ -274,6 +278,7 @@ class OpenAIAgent(Agent):
                     # first audio frame for this response: mark as speaking
                     if not self._announced_output:
                         self._announced_output = True
+                        log.info(f"Agent {self.id} starting audio output")
                         try:
                             activator = getattr(self.room, "activate_agent_output", None)
                             if callable(activator):
@@ -359,8 +364,10 @@ class OpenAIAgent(Agent):
                     # ---- DONE / COMPLETED ----
                     elif evt_type in ("response.completed","response.done"):
                         rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
+                        log.info(f"Agent response completed: rid={rid}, processed_done={rid in self._processed_done}")
                         if rid in self._processed_done:
                             # already finalized this response id
+                            log.info(f"Skipping already processed response: {rid}")
                             continue
                         # 1) best-effort final text from payload
                         final_text = self._extract_text_from_payload(payload)
@@ -425,7 +432,7 @@ class OpenAIAgent(Agent):
                         except Exception:
                             pass
 
-                        # Word timestamps (align only if we have reference text)
+                        # Word timestamps (align only if we have reference text and non-empty audio)
                         words_payload = []
                         tr_text = (effective_text or "").strip()
                         # Prefer the exact text that was stored for the message (what the UI displays)
@@ -440,13 +447,18 @@ class OpenAIAgent(Agent):
                                         break
                         except Exception:
                             pass
-                        if tr_text and bool(getattr(self.room, "word_timestamps_enabled", True)):
+                        
+                        # DEBUG: Check word timestamps configuration
+                        word_timestamps_enabled = bool(getattr(self.room, "word_timestamps_enabled", True))
+                        log.info(f"word_timestamps_enabled={word_timestamps_enabled}, tr_text='{tr_text}', audio_size={audio_arr.size if audio_arr is not None else 'None'}")
+                        
+                        if tr_text and word_timestamps_enabled and isinstance(audio_arr, np.ndarray) and audio_arr.size > 0:
                             try:
                                 try:
                                     dur_ms = int(round((audio_arr.size / float(PCM_SR)) * 1000.0))
                                 except Exception:
                                     dur_ms = 0
-                                print(f"[align] Starting FINAL alignment via model service (dur_ms={dur_ms}, text_len={len(tr_text)})")
+                                log.info(f"Starting FINAL alignment via model service (dur_ms={dur_ms}, text_len={len(tr_text)})")
                                 # Prefer model service; fallback handled inside helper
                                 tr = await align_via_model_service(audio_arr, PCM_SR, tr_text, stage="final")
                                 tr_text = tr.text
@@ -454,19 +466,23 @@ class OpenAIAgent(Agent):
                                 try:
                                     if getattr(tr, "words", None):
                                         # sample = ", ".join(f"{w.text}({w.start_ms}-{w.end_ms}ms)" for w in tr.words)
-                                        print(f"[align] Agent aligned {len(tr.words)} words")
+                                        log.info(f"Agent aligned {len(tr.words)} words")
                                     else:
-                                        print("[align] Alignment completed with 0 words.")
+                                        log.info("Alignment completed with 0 words.")
                                 except Exception:
                                     pass
                             except Exception as e:
+                                log.error(f"alignment failed: {e}")
                                 log.warning("alignment failed: %s", e)
+                        else:
+                            log.info(f"Skipping alignment: tr_text_len={len(tr_text)}, audio_size={getattr(audio_arr, 'size', None)}, enabled={word_timestamps_enabled}")
 
                         # Broadcast transcript → include message_id so UI can attach it
                         try:
                             bc = getattr(self.room, "broadcast_transcript", None)
-                            if callable(bc) and getattr(self.room, "word_timestamps_enabled", True) and words_payload:
-                                print(f"[align] Broadcasting transcript words={len(words_payload)} msg_id={msg_id_final}")
+                            log.info(f"broadcast_transcript callable={callable(bc)}, word_timestamps_enabled={getattr(self.room, 'word_timestamps_enabled', True)}, words_count={len(words_payload)}")
+                            if callable(bc) and getattr(self.room, "word_timestamps_enabled", True) and words_payload and (msg_id_final or "").strip():
+                                log.info(f"Broadcasting transcript words={len(words_payload)} msg_id={msg_id_final} start_ts={start_ts} current_time={int(time.time() * 1000)}")
                                 await bc(
                                     agent_id=self.id,
                                     message_id=msg_id_final,
@@ -474,7 +490,11 @@ class OpenAIAgent(Agent):
                                     words=words_payload,
                                     full_text=tr_text,
                                 )
-                        except Exception:
+                                log.info(f"Successfully broadcast transcript")
+                            else:
+                                log.info(f"NOT broadcasting transcript: callable={callable(bc)}, enabled={getattr(self.room, 'word_timestamps_enabled', True)}, words={len(words_payload)}")
+                        except Exception as e:
+                            log.error(f"Failed to broadcast transcript: {e}")
                             pass
 
                         # cleanup
@@ -537,6 +557,10 @@ class OpenAIAgent(Agent):
 
     async def _run(self) -> None:
         self._session = await self._start_session()
+        try:
+            self._session_ready.set()
+        except Exception:
+            pass
         self._tasks = [
             asyncio.create_task(self._pump_audio_in(self._session)),
             asyncio.create_task(self._pump_events(self._session)),
@@ -562,3 +586,23 @@ class OpenAIAgent(Agent):
                 except Exception:
                     pass
                 self._session = None
+            try:
+                # Reset session ready flag on exit
+                self._session_ready = asyncio.Event()
+            except Exception:
+                pass
+
+    async def send_text(self, text: str, timeout: float = 2.0) -> None:
+        """Send a text message directly to the realtime session, waiting briefly for readiness."""
+        try:
+            if self._session is None:
+                try:
+                    await asyncio.wait_for(self._session_ready.wait(), timeout)
+                except Exception:
+                    pass
+            sess = self._session
+            if sess is None:
+                return
+            await sess.send_message(text)
+        except Exception:
+            pass

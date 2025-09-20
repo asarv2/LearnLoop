@@ -376,6 +376,8 @@ async def upsert_text_chunk(
                                 "message_id": str(db_msg.id),
                                 "success": result.get("success", False),
                                 "hints": result.get("hints", []),
+                                "low_hints": result.get("dif_low_hints", []),
+                                "high_hints": result.get("dif_high_hints", []),
                                 "message": result.get("message", ""),
                             })
                         except Exception as e:

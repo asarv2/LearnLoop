@@ -23,23 +23,23 @@ def create_hint_dif_low_function() -> Any:
     """Create a function tool for generating low difficulty hints."""
     
     async def hints_dif_low(
-        hints: str = Field(description="Low difficulty hints that are easy for the user to understand what they want next")
+        hints: List[str] = Field(description="List of low difficulty hints that are copy-paste ready for the manager to say")
     ) -> str:
         """Generate low difficulty hints for the user.
         
-        These hints should be straightforward and easy to understand, helping the user
-        know what they want to do next in the conversation.
+        These hints should be copy-paste ready phrases and questions that the manager
+        can use directly in their conversation.
         
         Args:
-            hints: Low difficulty hints that guide the user's next steps
+            hints: List of copy-paste ready hints that guide the user's next steps
             
         Returns:
             Confirmation message
         """
         hint_results['dif_low'] = hints
         hint_progress['dif_low'] = True
-        logger.info(f"✓ Generated low difficulty hints: {hints[:50]}...")
-        return f"Generated low difficulty hints: {hints}"
+        logger.info(f"✓ Generated {len(hints)} low difficulty hints")
+        return f"Generated {len(hints)} low difficulty hints"
     
     return function_tool(hints_dif_low)
 
@@ -48,7 +48,7 @@ def create_hint_dif_high_function() -> Any:
     """Create a function tool for generating high difficulty hints."""
     
     async def hints_dif_high(
-        hints: str = Field(description="High difficulty hints that explain what is going on now, more abstract concepts")
+        hints: List[str] = Field(description="List of high difficulty hints that explain abstract concepts and what is happening in the conversation")
     ) -> str:
         """Generate high difficulty hints for the user.
         
@@ -56,15 +56,15 @@ def create_hint_dif_high_function() -> Any:
         in the conversation, providing deeper insights.
         
         Args:
-            hints: High difficulty hints that explain current situation and abstract concepts
+            hints: List of high difficulty hints that explain current situation and abstract concepts
             
         Returns:
             Confirmation message
         """
         hint_results['dif_high'] = hints
         hint_progress['dif_high'] = True
-        logger.info(f"✓ Generated high difficulty hints: {hints[:50]}...")
-        return f"Generated high difficulty hints: {hints}"
+        logger.info(f"✓ Generated {len(hints)} high difficulty hints")
+        return f"Generated {len(hints)} high difficulty hints"
     
     return function_tool(hints_dif_high)
 
@@ -83,6 +83,8 @@ def create_hint_tools() -> List[Any]:
 async def get_hint_prompt() -> str:
     """Read the hint prompt from the markdown file."""
     return await load_prompt("hint")
+
+
 
 
 async def run_hint_agent(
@@ -168,7 +170,7 @@ async def run_hint_agent(
             tools=hint_tools,
             parallel_tool_calls=True,
             tool_use_behavior=tool_use_behavior,
-            model="gpt-4.1-mini",
+            model="gpt-4.1-nano",
         )
 
         with trace("Hint"):
@@ -193,9 +195,9 @@ async def run_hint_agent(
         # Extract results from the global storage
         hint_result = hint_results
         
-        # Get both types of hints
-        dif_low_hints = hint_result.get('dif_low', '')
-        dif_high_hints = hint_result.get('dif_high', '')
+        # Get both types of hints (now as lists)
+        dif_low_hints = hint_result.get('dif_low', [])
+        dif_high_hints = hint_result.get('dif_high', [])
         
         # Create separate Hint records for each difficulty level
         hint_ids = []
@@ -204,7 +206,7 @@ async def run_hint_agent(
         if dif_low_hints:
             low_hint = Hints(
                 message_id=message_id,
-                contents=[dif_low_hints],
+                contents=dif_low_hints,
                 difficulty='low'
             )
             session.add(low_hint)
@@ -214,12 +216,12 @@ async def run_hint_agent(
                 "difficulty": "low",
                 "content": dif_low_hints
             })
-            logger.info(f"Created low difficulty hint with ID: {low_hint.id}")
+            logger.info(f"Created low difficulty hint with ID: {low_hint.id} and {len(dif_low_hints)} hint items")
         
         if dif_high_hints:
             high_hint = Hints(
                 message_id=message_id,
-                contents=[dif_high_hints],
+                contents=dif_high_hints,
                 difficulty='high'
             )
             session.add(high_hint)
@@ -229,7 +231,7 @@ async def run_hint_agent(
                 "difficulty": "high",
                 "content": dif_high_hints
             })
-            logger.info(f"Created high difficulty hint with ID: {high_hint.id}")
+            logger.info(f"Created high difficulty hint with ID: {high_hint.id} and {len(dif_high_hints)} hint items")
         
         session.commit()
 

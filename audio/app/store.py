@@ -8,8 +8,9 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 
-def gen_id(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+def gen_id(prefix: str | None = None) -> str:
+    # Return a standard UUID string so it can be used as DB message.id
+    return str(uuid.uuid4())
 
 @dataclass
 class TextChunk:
@@ -26,6 +27,7 @@ class Message:
     role: str                # "user" | "agent" | "system"
     created_ms: int
     chunks: List[TextChunk] = field(default_factory=list)
+    persona_id: Optional[str] = None
 
 @dataclass
 class RoomRecord:
@@ -46,17 +48,19 @@ def get_room(room_id: str) -> RoomRecord:
     return ROOMS.setdefault(room_id, create_room(room_id))
 
 def upsert_text_chunk(room_id: str, *, message_id: Optional[str], source_id: str, role: str,
-                      text: str, chunk_idx: int, is_final: bool) -> Message:
+                      text: str, chunk_idx: int, is_final: bool, persona_id: Optional[str] = None) -> Message:
     room = get_room(room_id)
-    mid = message_id or gen_id("msg")
+    mid = message_id or gen_id(None)
     msg = room.messages.get(mid)
     if msg is None:
-        msg = Message(id=mid, source_id=source_id, role=role, created_ms=int(time.time()*1000))
+        msg = Message(id=mid, source_id=source_id, role=role, created_ms=int(time.time()*1000), persona_id=persona_id)
         room.messages[mid] = msg
+    else:
+        if persona_id and not msg.persona_id:
+            msg.persona_id = persona_id
     msg.chunks.append(TextChunk(message_id=mid, chunk_idx=chunk_idx, text=text,
                                 is_final=is_final, ts_ms=int(time.time()*1000)))
-    if not message_id:
-        print("genereated new message:", text)
+    # Removed noisy print for production
     return msg
 
 def list_messages(room_id: str) -> List[Message]:

@@ -141,15 +141,18 @@ class WebRTCSession:
                     # Otherwise, use normal training pipeline (which can route via TTS/bus or agent flow as designed)
                     config = get_audio_config(str(chat_id))
                     agents = config.get("agents", []) if isinstance(config, dict) else []
-                    # Determine current human presence via this session
-                    is_two_party = (len(agents) == 1)
+                    # two-party means exactly one agent persona and exactly one user (this session)
+                    num_agent_personas = len([a for a in agents if not a.get("user")])
+                    num_user_personas = len([a for a in agents if a.get("user")])
+                    is_two_party = (num_agent_personas == 1 and num_user_personas == 1)
 
                     async def _bg() -> None:
                         try:
                             if is_two_party:
-                                # Prefer direct agent text if available: tell audio/agent to suppress TTS once and handle text
+                                # Prefer direct agent text: instruct audio service to route text-only, and also try direct send on the agent session.
                                 try:
                                     bridge = get_bridge(get_socketio_instance())
+                                    # Signal audio to suppress TTS and deliver as text to model
                                     await bridge._client.emit("s2s_user_text", bridge._with_auth({
                                         "room_id": self.room_id,
                                         "human_id": self.human_id,
@@ -157,11 +160,8 @@ class WebRTCSession:
                                         "text_only": True,
                                     }))
                                 except Exception:
-                                    logger.exception("direct agent text path failed; falling back")
-                                    await handle_send_training_message(
-                                        sid=self.sid,
-                                        data={"chat_id": str(chat_id), "message": text, "source": "rtc"},
-                                    )
+                                    logger.exception("audio text_only path failed")
+                                # Do not emit s2s_user_text a second time; audio service will route to agent session
                             else:
                                 await handle_send_training_message(
                                     sid=self.sid,
