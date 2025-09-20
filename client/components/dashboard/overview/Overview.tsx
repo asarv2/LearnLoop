@@ -6,6 +6,7 @@
  */
 "use client";
 
+import { useAuth } from "@/components/auth/AuthProvider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -15,7 +16,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useChats } from "@/lib/api/hooks/useChats";
-import { useFeedback } from "@/lib/api/hooks/useFeedback";
 import { useAllRubricGrades } from "@/lib/api/hooks/useRubrics";
 import { useTrainings } from "@/lib/api/hooks/useTrainings";
 import { useCallback, useMemo, useState } from "react";
@@ -38,14 +38,13 @@ const TRAINING_TYPES: TrainingTypeOption[] = [
 ];
 
 export default function Overview() {
+  const { user } = useAuth();
   const { data: chats } = useChats();
-  const { data: rubricGrades } = useAllRubricGrades();
-  const { data: feedback, isLoading: feedbackLoading } = useFeedback();
+  const { data: rubricGrades, isLoading: rubricGradesLoading } =
+    useAllRubricGrades();
   const { data: trainings } = useTrainings();
 
   const [range, setRange] = useState<"weekly" | "monthly">("weekly");
-  const [selectedType, setSelectedType] =
-    useState<TrainingTypeOption>("Interview");
 
   // Helper function to get score for a chat from its rubric grade
   const getChatScore = useCallback(
@@ -58,35 +57,20 @@ export default function Overview() {
     [rubricGrades]
   );
 
-  // Helper function to get training type from chat
-  const getTrainingTypeFromChat = useCallback(
-    (chat: { training_id?: string | null }): TrainingTypeOption => {
-      if (!chat.training_id) return "Critical Conversations";
+  // Get user's chats and their rubric grades
+  const userChats = useMemo(() => {
+    if (!user?.id) return [];
 
-      const training = (trainings || []).find((t) => t.id === chat.training_id);
-      if (!training) return "Critical Conversations";
+    return (chats || []).filter((chat) => {
+      // Filter chats that belong to the current user
+      // Assuming chats have a profile_id or user_id field that matches the user
+      return chat.profile_id === user.id;
+    });
+  }, [chats, user?.id]);
 
-      const title = training.title.toLowerCase();
-      if (title.includes("interview")) return "Interview";
-      if (title.includes("leadership")) return "Leadership";
-      return "Critical Conversations";
-    },
-    [trainings]
-  );
-
-  // Helper function to filter chats by training type
-  const getChatsByType = useCallback(
-    (type: TrainingTypeOption) => {
-      return (chats || []).filter(
-        (chat) => getTrainingTypeFromChat(chat) === type
-      );
-    },
-    [chats, getTrainingTypeFromChat]
-  );
-
-  // Get recent 5 completed conversations with their feedback
+  // Get recent 5 completed conversations with their rubric grades
   const recentConversations = useMemo(() => {
-    const completedChats = (chats || [])
+    const completedChats = userChats
       .filter((c) => c.completed && c.created_at)
       .sort(
         (a, b) =>
@@ -95,27 +79,32 @@ export default function Overview() {
       .slice(0, 5);
 
     return completedChats.map((chat) => {
-      const feedbackArray = Array.isArray(feedback) ? feedback : [];
-      const chatFeedback = feedbackArray.find(
-        (f: { chat_id: string }) => f.chat_id === chat.id
+      const rubricGradeArray = Array.isArray(rubricGrades) ? rubricGrades : [];
+      const chatRubricGrade = rubricGradeArray.find(
+        (rg: { chat_id: string | null }) => rg.chat_id === chat.id
       );
       return {
         chat,
-        feedback: chatFeedback,
+        rubricGrade: chatRubricGrade,
         score: getChatScore(chat.id || ""),
       };
     });
-  }, [chats, feedback, getChatScore]);
+  }, [userChats, rubricGrades, getChatScore]);
 
   // Extract strengths and areas for improvement from recent conversations
   const insights = useMemo(() => {
     const allStrengths: string[] = [];
     const allAreasForImprovement: string[] = [];
 
-    recentConversations.forEach(({ feedback }) => {
-      if (feedback) {
-        allStrengths.push(...(feedback.strengths || []));
-        allAreasForImprovement.push(...(feedback.errors || []));
+    recentConversations.forEach(({ rubricGrade }) => {
+      if (rubricGrade) {
+        // Only use strengths and improvements arrays from rubric_grades table
+        if (rubricGrade.strengths && rubricGrade.strengths.length > 0) {
+          allStrengths.push(...rubricGrade.strengths);
+        }
+        if (rubricGrade.improvements && rubricGrade.improvements.length > 0) {
+          allAreasForImprovement.push(...rubricGrade.improvements);
+        }
       }
     });
 
@@ -132,15 +121,21 @@ export default function Overview() {
   }, [recentConversations]);
 
   const trendData = useMemo(() => {
-    // Create filtered data with scores from rubric grades for selected training type
-    const filtered = getChatsByType(selectedType)
+    // Get all user's completed chats with scores
+    const userCompletedChats = userChats
       .filter((c) => c.completed && c.created_at)
       .map((c) => ({
         date: new Date(c.created_at || 0),
         score: getChatScore(c.id || ""),
       }))
-      .filter((item) => item.score > 0); // Only include chats with scores
+      .filter((item) => item.score > 0) // Only include chats with scores
+      .sort((a, b) => a.date.getTime() - b.date.getTime()); // Sort by date
 
+    if (userCompletedChats.length === 0) {
+      return [];
+    }
+
+    // Group by time periods based on range
     if (range === "weekly") {
       // Build last 12 full weeks, starting from current week
       const weeks: { start: Date; end: Date; label: string }[] = [];
@@ -162,7 +157,9 @@ export default function Overview() {
         weeks.push({ start, end, label });
       }
       return weeks.map(({ start, end, label }) => {
-        const scores = filtered.filter((x) => x.date >= start && x.date <= end);
+        const scores = userCompletedChats.filter(
+          (x) => x.date >= start && x.date <= end
+        );
         const avg =
           scores.length > 0
             ? Math.round(
@@ -193,7 +190,9 @@ export default function Overview() {
         months.push({ start, end, label });
       }
       return months.map(({ start, end, label }) => {
-        const scores = filtered.filter((x) => x.date >= start && x.date <= end);
+        const scores = userCompletedChats.filter(
+          (x) => x.date >= start && x.date <= end
+        );
         const avg =
           scores.length > 0
             ? Math.round(
@@ -203,7 +202,7 @@ export default function Overview() {
         return { date: label, score: avg };
       });
     }
-  }, [getChatsByType, selectedType, range, getChatScore]);
+  }, [userChats, range, getChatScore]);
 
   return (
     <div className="min-h-screen w-full">
@@ -233,23 +232,6 @@ export default function Overview() {
                   <SelectContent className="bg-white text-slate-900 border border-slate-200">
                     <SelectItem value="weekly">Weekly</SelectItem>
                     <SelectItem value="monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={selectedType}
-                  onValueChange={(v) =>
-                    setSelectedType(v as TrainingTypeOption)
-                  }
-                >
-                  <SelectTrigger className="w-48 rounded-lg shadow-sm bg-white text-slate-900 border-slate-200 h-9">
-                    <SelectValue placeholder="Training type" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white text-slate-900 border border-slate-200">
-                    {TRAINING_TYPES.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t}
-                      </SelectItem>
-                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -350,7 +332,7 @@ export default function Overview() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {feedbackLoading ? (
+                {rubricGradesLoading ? (
                   <div className="text-center py-8">
                     <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center">
                       <div className="w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
@@ -428,7 +410,7 @@ export default function Overview() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {feedbackLoading ? (
+                {rubricGradesLoading ? (
                   <div className="text-center py-8">
                     <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
                       <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
