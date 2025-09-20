@@ -3,42 +3,34 @@
 import { useAuth } from "@/components/auth/AuthProvider";
 import SuggestionsModal from "@/components/suggestions/SuggestionsModal";
 import { useRole } from "@/contexts/role-context";
-import { LogoutOutlined, SwapOutlined, UserOutlined } from "@ant-design/icons";
+import {
+  LogoutOutlined,
+  MessageOutlined,
+  SwapOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import { useQueryClient } from "@tanstack/react-query";
 import type { MenuProps } from "antd";
-import {
-  Avatar,
-  Button,
-  Dropdown,
-  Layout,
-  Menu,
-  Space,
-  theme,
-  Typography,
-} from "antd";
+import { Avatar, Button, Dropdown, Layout, Space, Typography } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 
-const { Sider, Content } = Layout;
+const { Content } = Layout;
 const { Text } = Typography;
 
 const menuItems = [
   {
     key: "/dashboard/trainings",
-    label: <Link href="/dashboard/trainings">Trainings</Link>,
+    label: "Trainings",
   },
   {
     key: "/dashboard/overview",
-    label: <Link href="/dashboard/overview">Analytics</Link>,
+    label: "Analytics",
   },
   {
     key: "/dashboard/history",
-    label: <Link href="/dashboard/history">History</Link>,
-  },
-  {
-    key: "suggestions",
-    label: "Suggestions",
+    label: "History",
   },
   // {
   //   key: "/dashboard/settings",
@@ -47,19 +39,50 @@ const menuItems = [
   // },
 ];
 
-const userMenuItems: MenuProps["items"] = [
-  // {
-  //   key: "profile",
-  //   icon: <UserOutlined />,
-  //   label: "Profile",
-  // },
-  {
+const getUserMenuItems = (
+  userRole: string | null,
+  currentView: "employee" | "admin",
+  switchToAdmin: () => void,
+  switchToEmployee: () => void
+): MenuProps["items"] => {
+  const items: MenuProps["items"] = [];
+
+  // Add view switch options for superadmin users
+  if (userRole === "superadmin") {
+    if (currentView === "employee") {
+      items.push({
+        key: "switch-to-admin",
+        icon: <SwapOutlined />,
+        label: "Switch to Admin View",
+        onClick: switchToAdmin,
+      });
+    } else {
+      items.push({
+        key: "switch-to-employee",
+        icon: <SwapOutlined />,
+        label: "Switch to Employee View",
+        onClick: switchToEmployee,
+      });
+    }
+  }
+
+  // Add divider if we have switch options
+  if (items.length > 0) {
+    items.push({
+      type: "divider",
+    });
+  }
+
+  // Add logout option
+  items.push({
     key: "logout",
     icon: <LogoutOutlined />,
     label: "Logout",
     danger: true,
-  },
-];
+  });
+
+  return items;
+};
 
 export default function DashboardLayout({
   children,
@@ -71,10 +94,8 @@ export default function DashboardLayout({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, signOut } = useAuth();
-  const { userRole, loading, switchToAdmin, currentView } = useRole();
-  const {
-    token: { colorBgContainer, borderRadiusLG },
-  } = theme.useToken();
+  const { userRole, loading, switchToAdmin, switchToEmployee, currentView } =
+    useRole();
 
   // Redirect admin users to admin interface if they're not in employee view
   useEffect(() => {
@@ -116,12 +137,7 @@ export default function DashboardLayout({
     if (e.key === "logout") {
       handleLogout();
     }
-  };
-
-  const handleNavMenuClick: MenuProps["onClick"] = (e) => {
-    if (e.key === "suggestions") {
-      setFeedbackModalOpen(true);
-    }
+    // Note: Switch actions are handled directly in the menu items via onClick
   };
 
   return (
@@ -142,93 +158,135 @@ export default function DashboardLayout({
           style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
             height: "64px",
+            position: "relative",
           }}
         >
           {/* Left side - Logo */}
-          <Link href="/dashboard/trainings" style={{ textDecoration: "none" }}>
-            <Space align="center" size="middle">
-              <div
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  borderRadius: "8px",
-                  background:
-                    "linear-gradient(135deg, #1890ff 0%, #722ed1 100%)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "white",
-                  fontWeight: "bold",
-                  fontSize: "18px",
-                }}
-              >
-                L
-              </div>
-              <Text
-                style={{
-                  color: "#262626",
-                  fontSize: "22px",
-                  fontWeight: "bold",
-                  margin: 0,
-                }}
-              >
-                LearnLoop
-              </Text>
-            </Space>
-          </Link>
-
-          {/* Center - Navigation Menu */}
-          <Menu
-            mode="horizontal"
-            selectedKeys={[
-              pathname.startsWith("/dashboard/trainings") ||
-              pathname.startsWith("/dashboard/s/") ||
-              pathname.startsWith("/dashboard/t/") ||
-              pathname.startsWith("/dashboard/a/")
-                ? "/dashboard/trainings"
-                : pathname,
-            ]}
-            items={menuItems}
-            onClick={handleNavMenuClick}
-            style={{
-              border: "none",
-              background: "transparent",
-              justifyContent: "center",
-              fontSize: "15px",
-              fontWeight: "500",
-              flex: 1,
-              minWidth: 0,
-            }}
-          />
-
-          {/* Right side - Admin switch and User dropdown */}
-          <Space size="middle">
-            {/* Admin switch for superadmin users */}
-            {userRole === "superadmin" && currentView === "employee" && (
-              <Button
-                type="primary"
-                icon={<SwapOutlined />}
-                onClick={switchToAdmin}
-                size="small"
-              >
-                Admin View
-              </Button>
-            )}
-
-            <Dropdown
-              menu={{ items: userMenuItems, onClick: handleMenuClick }}
-              placement="bottomRight"
+          <div style={{ position: "absolute", left: "24px" }}>
+            <Link
+              href="/dashboard/trainings"
+              style={{ textDecoration: "none" }}
             >
-              <Space style={{ cursor: "pointer" }} size="small">
-                <Avatar size="default" icon={<UserOutlined />} />
-                <Text strong style={{ color: "#262626" }}>
-                  {user?.user_metadata?.full_name || user?.email || "User"}
+              <Space align="center" size="middle">
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "8px",
+                    background:
+                      "linear-gradient(135deg, #1890ff 0%, #722ed1 100%)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "white",
+                    fontWeight: "bold",
+                    fontSize: "18px",
+                  }}
+                >
+                  L
+                </div>
+                <Text
+                  style={{
+                    color: "#262626",
+                    fontSize: "22px",
+                    fontWeight: "bold",
+                    margin: 0,
+                  }}
+                >
+                  LearnLoop
                 </Text>
               </Space>
-            </Dropdown>
-          </Space>
+            </Link>
+          </div>
+
+          {/* Center - Navigation Menu */}
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              transform: "translateX(-50%)",
+              display: "flex",
+              alignItems: "center",
+              gap: "32px",
+            }}
+          >
+            {menuItems.map((item) => {
+              const isSelected =
+                item.key === "/dashboard/trainings"
+                  ? pathname.startsWith("/dashboard/trainings") ||
+                    pathname.startsWith("/dashboard/s/") ||
+                    pathname.startsWith("/dashboard/t/") ||
+                    pathname.startsWith("/dashboard/a/")
+                  : pathname === item.key;
+
+              return (
+                <Link
+                  key={item.key}
+                  href={item.key}
+                  style={{
+                    textDecoration: "none",
+                    color: isSelected ? "#1890ff" : "#262626",
+                    fontSize: "15px",
+                    fontWeight: "500",
+                    padding: "8px 0",
+                    borderBottom: isSelected
+                      ? "2px solid #1890ff"
+                      : "2px solid transparent",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+
+          {/* Right side - Suggestions button and User dropdown */}
+          <div style={{ position: "absolute", right: "24px" }}>
+            <Space size="middle">
+              {/* Suggestions button */}
+              <Button
+                type="default"
+                icon={<MessageOutlined />}
+                onClick={() => setFeedbackModalOpen(true)}
+                style={{
+                  border: "1px solid #d9d9d9",
+                  borderRadius: "6px",
+                  height: "36px",
+                  padding: "4px 12px",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  color: "#262626",
+                  background: "#ffffff",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                }}
+              >
+                Suggestions
+              </Button>
+
+              {/* User dropdown */}
+              <Dropdown
+                menu={{
+                  items: getUserMenuItems(
+                    userRole,
+                    currentView,
+                    switchToAdmin,
+                    switchToEmployee
+                  ),
+                  onClick: handleMenuClick,
+                }}
+                placement="bottomRight"
+              >
+                <Space style={{ cursor: "pointer" }} size="small">
+                  <Avatar size="default" icon={<UserOutlined />} />
+                  <Text strong style={{ color: "#262626" }}>
+                    {user?.user_metadata?.full_name || user?.email || "User"}
+                  </Text>
+                </Space>
+              </Dropdown>
+            </Space>
+          </div>
         </div>
       </div>
 

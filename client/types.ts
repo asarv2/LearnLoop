@@ -18,6 +18,8 @@ export type Document = Tables<'documents'>;
 export type Feedback = Tables<'feedback'>;
 // --- FIELDS ---
 export type Field = Tables<'fields'>;
+// --- GROUPS ---
+export type Group = Tables<'groups'>;
 // --- HINTS ---
 export type Hint = Tables<'hints'>;
 // --- LOGS ---
@@ -46,6 +48,8 @@ export type Standard = Tables<'standards'>;
 export type Training = Tables<'trainings'>;
 // --- USER_FEEDBACK ---
 export type UserFeedback = Tables<'user_feedback'>;
+// --- USER_INSIGHTS ---
+export type UserInsight = Tables<'user_insights'>;
 
 // =============================================
 // ================ ENUM TYPES ================
@@ -65,7 +69,7 @@ export type UserRole = "employee" | "admin" | "superadmin";
 // =============================================
 
 // Union type of all table names
-export type TableName = 'assessments' | 'attempts' | 'chats' | 'documents' | 'feedback' | 'fields' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'profiles' | 'questions' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings' | 'user_feedback';
+export type TableName = 'assessments' | 'attempts' | 'chats' | 'documents' | 'feedback' | 'fields' | 'groups' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'profiles' | 'questions' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings' | 'user_feedback' | 'user_insights';
 
 // Union type of all entity types
-export type Entity = Assessment | Attempt | Chat | Document | Feedback | Field | Hint | Log | Message | Parameter | Persona | Profile | Question | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training | UserFeedback;
+export type Entity = Assessment | Attempt | Chat | Document | Feedback | Field | Group | Hint | Log | Message | Parameter | Persona | Profile | Question | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training | UserFeedback | UserInsight;
