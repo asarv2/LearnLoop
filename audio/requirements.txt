@@ -1,0 +1,9 @@
+fastapi>=0.115.5,<0.116.0
+uvicorn[standard]>=0.29.0,<0.30.0
+openai-agents[litellm,realtime]>=0.2.10,<0.3.0
+openai>=1.99.6,<2.0.0
+av>=11.0,<12.0
+numpy>=1.26.4,<1.27.0
+python-socketio[asyncio_client]>=5.11.2,<5.12.0
+python-dotenv>=1.0.1,<1.1.0
+httpx>=0.27.0,<0.28.0

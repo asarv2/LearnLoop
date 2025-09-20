@@ -1,11 +1,12 @@
 # server/app/main.py (REFRESHED, slim)
 import asyncio
+import contextlib
 import logging
 import os
 import sys
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, AsyncIterator, Dict, Optional
 
 # Use uvloop for better performance
 try:
@@ -34,12 +35,21 @@ redis_url = os.getenv("REDIS_URL")
 if redis_url and socketio.AsyncRedisManager:
     logger.info(f"Socket.IO clustering via Redis -> {redis_url}")
     manager = socketio.AsyncRedisManager(redis_url)
-    sio = socketio.AsyncServer(async_mode="asgi", client_manager=manager,
-                               cors_allowed_origins=allowed_origins, transports=["websocket", "polling"])
+    sio = socketio.AsyncServer(
+        async_mode="asgi", 
+        client_manager=manager,
+        cors_allowed_origins=allowed_origins,
+        transports=["websocket", "polling"],
+        logger=True  # Keep useful Socket.IO logging
+    )
 else:
     logger.info("Socket.IO using in-memory manager")
-    sio = socketio.AsyncServer(async_mode="asgi",
-                               cors_allowed_origins=allowed_origins, transports=["websocket", "polling"])
+    sio = socketio.AsyncServer(
+        async_mode="asgi",
+        cors_allowed_origins=allowed_origins,
+        transports=["websocket", "polling"],
+        logger=True  # Keep useful Socket.IO logging
+    )
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
 fastapi_app = FastAPI(title="GLOW API")
@@ -61,8 +71,9 @@ from app.web.training import \
 register_training_events(sio)
 
 # ── Import new WebRTC primitives (from your NEWMAIN extraction) ───────────────
-from app.rtc import (WebRTCSession, get_room,  # get_room from your new code
-                     sessions)
+from app.rtc import WebRTCSession, sessions
+from app.store import get_room
+from app.utils.chat import get_audio_config
 
 
 # ── Loop lag watchdog ─────────────────────────────────────────────────────────
@@ -113,6 +124,7 @@ import uuid
 
 # ── Wire RTC emitter ──────────────────────────────────────────────────────────
 from app import rtc
+from app.bridge import get_bridge
 from app.db import session_scope
 from app.models import Profiles
 from app.store import set_emitter
@@ -128,11 +140,20 @@ set_emitter(emit_to_room)
 
 # ── Socket lifecycle (very light) ─────────────────────────────────────────────
 @sio.event
-async def connect(sid, environ, auth):
+async def connect(sid: str, environ: dict, auth: dict) -> bool:
     # Start the loop lag watchdog on first connection (only once)
     if not hasattr(connect, '_watchdog_started'):
         _maybe_start_watchdog()
         connect._watchdog_started = True
+    # Ensure audio bridge startup on first socket connection (lifespan may not have run yet)
+    if not hasattr(connect, '_bridge_started'):
+        try:
+            bridge = get_bridge(sio)
+            asyncio.create_task(bridge.start())
+        except Exception:
+            # Errors are logged in bridge; do not block connect
+            pass
+        connect._bridge_started = True
     
     # read profileId from query string (?profileId=...)
     q = environ.get("QUERY_STRING", "") or ""
@@ -180,10 +201,10 @@ async def connect(sid, environ, auth):
     return True
 
 @sio.event
-async def disconnect(sid):
+async def disconnect(sid: str) -> None:
     s = sessions.pop(sid, None)
     if s:
-        await sio.leave_room(sid, s.room.id)
+        await sio.leave_room(sid, s.room_id)
         await s.close()
     # clean sid/profile maps
     pid = SID_TO_PROFILE.pop(sid, None)
@@ -215,7 +236,7 @@ async def _force_close_sid(old_sid: str) -> None:
         old = sessions.pop(old_sid, None)
         if old:
             try:
-                await sio.leave_room(old_sid, old.room.id)
+                await sio.leave_room(old_sid, old.room_id)
             except Exception:
                 pass
             try:
@@ -231,18 +252,25 @@ async def _force_close_sid(old_sid: str) -> None:
 
 # ── WebRTC events (thin shim) ─────────────────────────────────────────────────
 @sio.event
-async def offer(sid, data: Dict[str, Any]):
+async def offer(sid: str, data: Dict[str, Any]) -> None:
     """
     Client sends SDP offer with { room_id: chat_id }.
     We join that room, spin a WebRTCSession, produce an answer.
     """
-    room_id = data.get("room_id")
-    if not room_id:
-        # if omitted, fall back to a default room (get_room()) but we expect chat_id
-        room_id = get_room().id
+    try:
+        print(f"[SERVER] Received offer from {sid} with data: {data}")
+        room_id = data.get("room_id")
+        if not room_id:
+            # if omitted, fall back to a default room using the store's get_room function
+            room = get_room("default-room")
+            room_id = room.id
+        print(f"[SERVER] Using room_id: {room_id}")
 
-    await sio.enter_room(sid, room_id)
-    room = get_room(room_id)
+        await sio.enter_room(sid, room_id)
+    except Exception as e:
+        print(f"[SERVER] ERROR in offer handler: {e}")
+        logger.exception("Error in offer handler")
+        return
 
     # remember who this socket/user is for this room
     try:
@@ -250,53 +278,33 @@ async def offer(sid, data: Dict[str, Any]):
     except Exception:
         sess = None
     pid_from_session = (sess or {}).get("profile_id") if isinstance(sess, dict) else None
-    room.user_profile_id = pid_from_session or get_profile_id_for_sid(sid)
+    room_user_profile_id = pid_from_session or get_profile_id_for_sid(sid)
 
-    # hook up text broadcast once (idempotent)
-    if room.on_text_chunk is None:
-        async def _broadcast(payload):
-            await sio.emit("text_chunk", payload, room=room.id)
-        room.on_text_chunk = _broadcast
+    # Note: Audio room creation is now handled in the join_training event handler
 
-    # Wire transcript broadcasters if not set
-    if room.on_transcript is None:
-        async def _broadcast_tx(payload):
-            try:
-                print(f"[ctc][emit] transcript words={len(payload.get('words', []))} msg={payload.get('message_id')} room={payload.get('room_id')}")
-            except Exception:
-                pass
-            await sio.emit("transcript", payload, room=room.id)
-        room.on_transcript = _broadcast_tx
+    # On offer, ensure the mixed audio subscription is active for this sid
+    try:
+        s = sessions.get(sid)
+        if s is None:
+            # Use profile id (if available) for human_id identity
+            human_id = f"user:{room_user_profile_id}" if room_user_profile_id else f"user:{sid[-6:]}"
+            s = WebRTCSession(sid, room_id, human_id)
+            sessions[sid] = s
+        await s.init_mixed_audio()
+    except Exception:
+        logger.exception("failed to init mixed audio for sid=%s", sid)
 
-    if room.on_transcript_stop is None:
-        async def _broadcast_tx_stop(payload):
-            try:
-                print(f"[ctc][emit] transcript_stop msg={payload.get('message_id')} stop_ts={payload.get('stop_ts_ms')} room={payload.get('room_id')}")
-            except Exception:
-                pass
-            await sio.emit("transcript_stop", payload, room=room.id)
-        room.on_transcript_stop = _broadcast_tx_stop
-
-    if sid not in sessions:
-        sessions[sid] = WebRTCSession(sid, room_id)
-    else:
-        # If an old session exists for this sid, close it and recreate to avoid audio deadlocks
-        try:
-            old = sessions.pop(sid)
-            await old.close()
-        except Exception:
-            pass
-        sessions[sid] = WebRTCSession(sid, room_id)
+    # sessions[sid] is created above with proper human_id
 
     ans = await sessions[sid].handle_offer(data)
     await sio.emit("answer", ans, room=sid)
 
     # ✅ tell the client the server's out track is ready to play
-    pid = pid_from_session or get_profile_id_for_sid(sid)
+    pid = room_user_profile_id
     await sio.emit("webrtc_audio_ready", {"profile_id": pid}, room=sid)
 
 @sio.event
-async def ice_candidate(sid, data: Dict[str, Any]):
+async def ice_candidate(sid: str, data: Dict[str, Any]) -> None:
     if sid in sessions:
         await sessions[sid].add_ice(data.get("candidate"))
 
@@ -308,9 +316,34 @@ async def root_info() -> JSONResponse:
 
 @fastapi_app.get("/health")
 async def health_check() -> JSONResponse:
-    return JSONResponse(content={"status": "ok"})
+    # Check audio service connection
+    bridge = get_bridge(sio)
+    audio_healthy = await bridge.health_check()
+    
+    status = "ok" if audio_healthy else "degraded"
+    return JSONResponse(content={
+        "status": status,
+        "audio_service": "connected" if audio_healthy else "disconnected"
+    })
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000,
-                reload=False, log_level="info", loop="uvloop")
+
+# ── Lifespan management ───────────────────────────────────────────────────
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
+    # Startup: connect to audio-multi bridge
+    bridge = get_bridge(sio)
+    bridge_task = asyncio.create_task(bridge.start())
+    
+    yield
+    
+    # Shutdown: cleanup bridge connection
+    try:
+        bridge_task.cancel()
+        await bridge_task
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.exception("Error during bridge shutdown")
+
+# Apply lifespan to FastAPI app
+fastapi_app.router.lifespan_context = lifespan

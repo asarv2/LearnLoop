@@ -177,9 +177,9 @@ export function WebSocketProvider({
     const socket = io(getApiBase(), {
       path: "/socket.io",
       autoConnect: true,
-      transports: ["websocket"],
-      upgrade: false,
-      query: { profileId, timestamp: Date.now(), EIO: "4" },
+      // Allow normal Socket.IO transport negotiation and upgrade
+      transports: ["websocket"], // Start with polling, upgrade to websocket
+      query: { profileId, timestamp: Date.now() },
     });
     socketRef.current = socket;
 
@@ -270,6 +270,7 @@ export function WebSocketProvider({
         title: string;
         problem_statement: string;
         objectives: string[];
+        document_ids: string[];
       }) => {
         logInfo("Scenario generated", data);
         if (data.success) {
@@ -382,6 +383,9 @@ export function WebSocketProvider({
           logInfo("transcript (raw)", {
             messageId: ev.message_id,
             wordsLength: ev.words?.length ?? 0,
+            start_ts_ms: ev.start_ts_ms,
+            current_time: Date.now(),
+            time_diff: Date.now() - ev.start_ts_ms,
           });
         } catch {}
         // Forward as a DOM event for chat components to consume and attach by message id
@@ -563,23 +567,63 @@ export function WebSocketProvider({
         success: boolean;
         message: string;
         chat_id: string;
-        hints: string[];
+        hints: unknown[];
+        low_hints: string[];
+        high_hints: string[];
         message_id: string; // ★ expect message_id
       }) => {
         logInfo("Hints generated", data);
         if (data.success) {
+          // Combine low and high hints into a single array for display
+          const combinedHints = [
+            ...(data.low_hints || []),
+            ...(data.high_hints || []),
+          ];
+
           window.dispatchEvent(
             new CustomEvent("hintsGenerated", {
               detail: {
                 chatId: data.chat_id,
                 messageId: data.message_id, // ★ forward messageId
                 hints: data.hints,
+                lowHints: data.low_hints || [],
+                highHints: data.high_hints || [],
+                combinedHints: combinedHints,
               },
             })
           );
         } else {
           toast.error(data.message);
         }
+      }
+    );
+
+    // Scenario generation progress events
+    socket.on(
+      "scenario_progress",
+      (data: {
+        type:
+          | "start"
+          | "scenario"
+          | "objectives"
+          | "persona_prompt"
+          | "document";
+        message: string;
+        completed?: boolean;
+        total_tools?: number;
+        count?: number;
+        persona_alias?: string;
+        persona_name?: string;
+        document_id?: string;
+        filename?: string;
+        parameter_name?: string;
+      }) => {
+        logInfo("Scenario progress update", data);
+        window.dispatchEvent(
+          new CustomEvent("scenarioProgress", {
+            detail: data,
+          })
+        );
       }
     );
 

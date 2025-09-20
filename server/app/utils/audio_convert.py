@@ -33,7 +33,7 @@ def frame_to_i16_mono_safe(frame: av.AudioFrame) -> np.ndarray:
     # Ensure dtype and 1-D mono
     pcm_i16 = arr.astype(np.int16, copy=False).reshape(-1)
 
-    return pcm_i16
+    return pcm_i16  # type: ignore
 
 def f32_levels(x: np.ndarray) -> tuple[float, float, int]:
     """Simple meter for debugging audio levels"""

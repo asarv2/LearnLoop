@@ -1,2 +1,13 @@
 .env
-/audio/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.pytest_cache/
+.coverage.xml
+.coverage.json
+.coverage.xml
+.coverage
+.venv
+dump.rdb
+__pycache__/

@@ -14,7 +14,7 @@ import {
   PersonIcon,
 } from "@radix-ui/react-icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { Box, Button, Card, Flex, Text } from "@radix-ui/themes";
+import { Box, Button, Card, Flex, Switch, Text } from "@radix-ui/themes";
 // Removed mic icons in favor of a consistent "Voice Mode" label
 import React, { useCallback, useEffect, useState } from "react";
 import IntroMessageModal from "./IntroMessageModal";
@@ -65,8 +65,16 @@ export default function ChatArea({
 
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
+  const [hintsDifficulty, setHintsDifficulty] = useState<"easy" | "hard">(
+    "hard"
+  );
   const [lastAIResponse, setLastAIResponse] = useState<string>("");
-  const [realtimeHints, setRealtimeHints] = useState<string[] | null>(null);
+  const [realtimeLowHints, setRealtimeLowHints] = useState<string[] | null>(
+    null
+  );
+  const [realtimeHighHints, setRealtimeHighHints] = useState<string[] | null>(
+    null
+  );
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
 
   // Transcript state per message id
@@ -274,7 +282,8 @@ export default function ChatArea({
       // Update local state for UI - hints will be fetched automatically by the hook
       setLastAIResponse(finalContent || "");
       setLastAssistantId(messageId);
-      setRealtimeHints(null); // Clear any previous real-time hints
+      setRealtimeLowHints(null); // Clear any previous real-time hints
+      setRealtimeHighHints(null); // Clear any previous real-time hints
     };
 
     window.addEventListener(
@@ -292,10 +301,15 @@ export default function ChatArea({
   // Listen for hints generated events to show them immediately
   useEffect(() => {
     const handleHintsGenerated = (event: CustomEvent) => {
-      const { hints, messageId } = event.detail || {};
+      const { lowHints, highHints, messageId } = event.detail || {};
       if (!messageId || messageId !== lastAssistantId) return; // only accept newest
-      if (hints && Array.isArray(hints)) {
-        setRealtimeHints(hints);
+
+      // Store both low and high hints separately
+      if (lowHints && Array.isArray(lowHints)) {
+        setRealtimeLowHints(lowHints);
+      }
+      if (highHints && Array.isArray(highHints)) {
+        setRealtimeHighHints(highHints);
       }
     };
 
@@ -1284,35 +1298,74 @@ export default function ChatArea({
                   </Button>
                 </Flex>
 
-                {realtimeHints && realtimeHints.length > 0 ? (
-                  <Box>
-                    <Text
-                      size="2"
-                      style={{ lineHeight: "1.5", color: "var(--gray-12)" }}
-                    >
-                      <Markdown>{realtimeHints.join("\n\n")}</Markdown>
-                    </Text>
-                  </Box>
-                ) : hints && hints.length > 0 ? (
-                  <Box>
-                    <Text
-                      size="2"
-                      style={{ lineHeight: "1.5", color: "var(--gray-12)" }}
-                    >
-                      <Markdown>
-                        {hints
-                          .map((h) => h.contents?.join("\n\n") || "")
-                          .join("\n\n")}
-                      </Markdown>
-                    </Text>
-                  </Box>
-                ) : (
-                  <Text size="2" style={{ color: "var(--gray-11)" }}>
-                    {isLoadingHints
-                      ? "Generating hints..."
-                      : "No hints available"}
+                {(() => {
+                  // Determine which hints to show based on difficulty setting
+                  let hintsToShow: string[] = [];
+                  let hasRealtimeHints = false;
+
+                  if (hintsDifficulty === "hard") {
+                    if (realtimeHighHints && realtimeHighHints.length > 0) {
+                      hintsToShow = realtimeHighHints;
+                      hasRealtimeHints = true;
+                    }
+                  } else {
+                    if (realtimeLowHints && realtimeLowHints.length > 0) {
+                      hintsToShow = realtimeLowHints;
+                      hasRealtimeHints = true;
+                    }
+                  }
+
+                  // Fallback to API hints if no realtime hints available
+                  if (!hasRealtimeHints && hints && hints.length > 0) {
+                    const filteredHints = hints.filter((h) =>
+                      hintsDifficulty === "hard"
+                        ? h.difficulty === "high"
+                        : h.difficulty === "low"
+                    );
+                    hintsToShow = filteredHints.map(
+                      (h) => h.contents?.join("\n\n") || ""
+                    );
+                  }
+
+                  if (hintsToShow.length > 0) {
+                    return (
+                      <Box>
+                        <Text
+                          size="2"
+                          style={{ lineHeight: "1.5", color: "var(--gray-12)" }}
+                        >
+                          <Markdown>{hintsToShow.join("\n\n")}</Markdown>
+                        </Text>
+                      </Box>
+                    );
+                  } else {
+                    return (
+                      <Text size="2" style={{ color: "var(--gray-11)" }}>
+                        {isLoadingHints
+                          ? "Generating hints..."
+                          : `No ${hintsDifficulty} hints available`}
+                      </Text>
+                    );
+                  }
+                })()}
+
+                {/* Toggle switch in bottom right */}
+                <Flex
+                  justify="end"
+                  align="center"
+                  gap="2"
+                  style={{ marginTop: "8px" }}
+                >
+                  <Switch
+                    checked={hintsDifficulty === "easy"}
+                    onCheckedChange={(checked) =>
+                      setHintsDifficulty(checked ? "easy" : "hard")
+                    }
+                  />
+                  <Text size="1" style={{ color: "var(--gray-10)" }}>
+                    Easy
                   </Text>
-                )}
+                </Flex>
               </Flex>
             </Card>
           </Box>

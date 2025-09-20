@@ -1,18 +1,24 @@
-name: Deploy to Production
+name: Deploy (Prod/Beta)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, beta ]
     paths:
       - 'client/**'
       - 'server/**'
       - 'model/**'
+      - 'documents/**'
+      - 'audio/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
+
+env:
+  # Channel is prod for main, beta for beta branch
+  CHANNEL: ${{ github.ref_name == 'beta' && 'beta' || 'prod' }}
 
 jobs:
   detect-changes:
@@ -21,230 +27,312 @@ jobs:
       client-changed: ${{ steps.changes.outputs.client }}
       server-changed: ${{ steps.changes.outputs.server }}
       model-changed: ${{ steps.changes.outputs.model }}
+      documents-changed: ${{ steps.changes.outputs.documents }}
+      audio-changed: ${{ steps.changes.outputs.audio }}
       any-changes: ${{ steps.changes.outputs.any }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 2  # Need at least 2 commits to compare
-        
-    - name: Detect changes
-      id: changes
-      run: |
-        # Get the list of changed files
-        CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
-        
-        # Check if client folder has changes
-        if echo "$CHANGED_FILES" | grep -q "^client/"; then
-          echo "client=true" >> $GITHUB_OUTPUT
-        else
-          echo "client=false" >> $GITHUB_OUTPUT
-        fi
-        
-        # Check if server folder has changes
-        if echo "$CHANGED_FILES" | grep -q "^server/"; then
-          echo "server=true" >> $GITHUB_OUTPUT
-        else
-          echo "server=false" >> $GITHUB_OUTPUT
-        fi
-        
-        # Check if model folder has changes
-        if echo "$CHANGED_FILES" | grep -q "^model/"; then
-          echo "model=true" >> $GITHUB_OUTPUT
-        else
-          echo "model=false" >> $GITHUB_OUTPUT
-        fi
-        
-        # Check if any relevant changes occurred
-        if echo "$CHANGED_FILES" | grep -q "^client/\|^server/\|^model/\|^\.github/workflows/deploy\.yml"; then
-          echo "any=true" >> $GITHUB_OUTPUT
-        else
-          echo "any=false" >> $GITHUB_OUTPUT
-        fi
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+
+      - name: Detect changes
+        id: changes
+        run: |
+          # Compare full push range (handles multi-commit pushes)
+          CHANGED_FILES=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")
+
+          set_flag () {
+            if echo "$CHANGED_FILES" | grep -q "^$1/"; then
+              echo "$2=true" >> $GITHUB_OUTPUT
+            else
+              echo "$2=false" >> $GITHUB_OUTPUT
+            fi
+          }
+
+          set_flag "client" "client"
+          set_flag "server" "server"
+          set_flag "model"  "model"
+          set_flag "documents" "documents"
+          set_flag "audio" "audio"
+
+          if echo "$CHANGED_FILES" | grep -qE "^client/|^server/|^model/|^documents/|^audio/|^\.github/workflows/deploy\.yml"; then
+            echo "any=true" >> $GITHUB_OUTPUT
+          else
+            echo "any=false" >> $GITHUB_OUTPUT
+          fi
 
   build-client:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.client-changed == 'true'
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Extract metadata for client Docker image
-      id: meta-client
-      uses: docker/metadata-action@v5
-      with:
-        images: ghcr.io/ashokhomepc/learnloop-client
-        tags: |
-          type=raw,value=latest
-          type=sha,prefix={{branch}}-
-        
-    - name: Build and push client image
-      uses: docker/build-push-action@v5
-      with:
-        context: ./client
-        push: true
-        tags: ${{ steps.meta-client.outputs.tags }}
-        labels: ${{ steps.meta-client.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        build-args: |
-          NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          NEXT_PUBLIC_SUPABASE_SCHEMA=${{ secrets.NEXT_PUBLIC_SUPABASE_SCHEMA }}
-          INTERNAL_API_BASE=http://learnloop-server:8000
+      - uses: actions/checkout@v4
+        with: { clean: true }
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Meta (client)
+        id: meta-client
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/ashokhomepc/learnloop-client
+          tags: |
+            type=raw,value=${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+            type=sha,prefix=${{ github.ref_name }}-
+
+      - name: Build & push (client)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./client
+          push: true
+          tags: ${{ steps.meta-client.outputs.tags }}
+          labels: ${{ steps.meta-client.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_SUPABASE_SCHEMA=${{ secrets.NEXT_PUBLIC_SUPABASE_SCHEMA }}
+            INTERNAL_API_BASE=http://learnloop-server:8000
 
   build-server:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.server-changed == 'true'
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Extract metadata for server Docker image
-      id: meta-server
-      uses: docker/metadata-action@v5
-      with:
-        images: ghcr.io/ashokhomepc/learnloop-server
-        tags: |
-          type=raw,value=latest
-          type=sha,prefix={{branch}}-
-        
-    - name: Build and push server image
-      uses: docker/build-push-action@v5
-      with:
-        context: ./server
-        push: true
-        tags: ${{ steps.meta-server.outputs.tags }}
-        labels: ${{ steps.meta-server.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+      - uses: actions/checkout@v4
+        with: { clean: true }
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Meta (server)
+        id: meta-server
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/ashokhomepc/learnloop-server
+          tags: |
+            type=raw,value=${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+            type=sha,prefix=${{ github.ref_name }}-
+
+      - name: Build & push (server)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          push: true
+          tags: ${{ steps.meta-server.outputs.tags }}
+          labels: ${{ steps.meta-server.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   build-model:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.model-changed == 'true'
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Extract metadata for model Docker image
-      id: meta-model
-      uses: docker/metadata-action@v5
-      with:
-        images: ghcr.io/ashokhomepc/learnloop-model
-        tags: |
-          type=raw,value=latest
-          type=sha,prefix={{branch}}-
-        
-    - name: Build and push model image
-      uses: docker/build-push-action@v5
-      with:
-        context: ./model
-        push: true
-        tags: ${{ steps.meta-model.outputs.tags }}
-        labels: ${{ steps.meta-model.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+      - uses: actions/checkout@v4
+        with: { clean: true }
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Meta (model)
+        id: meta-model
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/ashokhomepc/learnloop-model
+          tags: |
+            type=raw,value=${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+            type=sha,prefix=${{ github.ref_name }}-
+
+      - name: Build & push (model)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./model
+          push: true
+          tags: ${{ steps.meta-model.outputs.tags }}
+          labels: ${{ steps.meta-model.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-documents:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.documents-changed == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with: { clean: true }
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Meta (documents)
+        id: meta-documents
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/ashokhomepc/learnloop-documents
+          tags: |
+            type=raw,value=${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+            type=sha,prefix=${{ github.ref_name }}-
+
+      - name: Build & push (documents)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./documents
+          push: true
+          tags: ${{ steps.meta-documents.outputs.tags }}
+          labels: ${{ steps.meta-documents.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-audio:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.audio-changed == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with: { clean: true }
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Meta (audio)
+        id: meta-audio
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/ashokhomepc/learnloop-audio
+          tags: |
+            type=raw,value=${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+            type=sha,prefix=${{ github.ref_name }}-
+
+      - name: Build & push (audio)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./audio
+          push: true
+          tags: ${{ steps.meta-audio.outputs.tags }}
+          labels: ${{ steps.meta-audio.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     runs-on: self-hosted
-    needs: [detect-changes, build-client, build-server, build-model]
+    needs: [detect-changes, build-client, build-server, build-model, build-documents, build-audio]
     if: |
-      always() && 
+      always() &&
       (needs.detect-changes.outputs.any-changes == 'true' || github.event_name == 'workflow_dispatch')
-    
+    concurrency:
+      group: deploy-${{ github.ref_name == 'beta' && 'beta' || 'prod' }}
+      cancel-in-progress: true
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    # Login using the github.actor (whoever triggered the workflow)
-    - name: Log in to GHCR for deploy
-      env:
-        DOCKER_CONFIG: /srv/deploy/.docker-ghcr
-      run: |
-        echo "${{ secrets.GITHUB_TOKEN }}" | \
-          docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          clean: true
 
-    # Deploy to production
-    - name: Deploy to production
-      env:
-        # Client environment variables
-        SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
-        NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-        NEXT_PUBLIC_SUPABASE_SCHEMA: ${{ secrets.NEXT_PUBLIC_SUPABASE_SCHEMA }}
-        
-        # Server environment variables
-        GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        
-        # Database environment variables
-        DB_HOST: ${{ secrets.DB_HOST }}
-        DB_PORT: ${{ secrets.DB_PORT }}
-        DB_USER: ${{ secrets.DB_USER }}
-        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        DB_NAME: ${{ secrets.DB_NAME }}
-        
-        # API and Socket.IO environment variables
-        ORIGIN: ${{ secrets.ORIGIN }}
-        
-        # WebRTC environment variables
-        TURN_URI: ${{ secrets.TURN_URI_PUBLIC }}
-        STUN_URI: ${{ secrets.STUN_URI_PUBLIC }}
-        TURN_USERNAME: ${{ secrets.TURN_USERNAME }}
-        TURN_PASSWORD: ${{ secrets.TURN_PASSWORD }}
-        TURN_REALM: ${{ secrets.TURN_REALM }}
-        TURN_PUBLIC_IP: ${{ secrets.TURN_PUBLIC_IP }}
-        
-        # Docker image references
-        LEARNLOOP_CLIENT_IMAGE: ghcr.io/ashokhomepc/learnloop-client:latest
-        LEARNLOOP_SERVER_IMAGE: ghcr.io/ashokhomepc/learnloop-server:latest
-        LEARNLOOP_MODEL_IMAGE: ghcr.io/ashokhomepc/learnloop-model:latest
-        
-        # Server scaling
-        SERVER_REPLICAS: ${{ secrets.SERVER_REPLICAS }}
-        
-        DOCKER_CONFIG: /srv/deploy/.docker-ghcr
-      run: |
+      - name: Login GHCR
+        env:
+          DOCKER_CONFIG: /srv/deploy/.docker-ghcr
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-        mkdir -p web/generated
-        chmod 777 web/generated
+      - name: Stage release to /srv/deploy/learnloop/{prod|beta}
+        run: |
+          DEST="/srv/deploy/learnloop/${{ env.CHANNEL }}"
+          mkdir -p "$DEST"
+          rsync -a --delete \
+            docker-compose.yml web/ server/ client/ model/ documents/ audio/ turn/ \
+            "$DEST"/
+          # optional: include web/templates, nginx templates, etc.
+          if [ -d web/templates ]; then rsync -a web/templates "$DEST"/web/; fi
 
-        docker compose pull
-        docker compose up -d --scale server="${SERVER_REPLICAS:-1}"
-        docker image prune -f
+      - name: Deploy
+        working-directory: /srv/deploy/learnloop/${{ env.CHANNEL }}
+        env:
+          COMPOSE_PROJECT_NAME: learnloop-${{ env.CHANNEL }}
+          DOCKER_CONFIG: /srv/deploy/.docker-ghcr
+
+          # Image pins per channel
+          LEARNLOOP_CLIENT_IMAGE: ghcr.io/ashokhomepc/learnloop-client:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+          LEARNLOOP_SERVER_IMAGE: ghcr.io/ashokhomepc/learnloop-server:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+          LEARNLOOP_MODEL_IMAGE:  ghcr.io/ashokhomepc/learnloop-model:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+          LEARNLOOP_DOCUMENTS_IMAGE: ghcr.io/ashokhomepc/learnloop-documents:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+          LEARNLOOP_AUDIO_IMAGE: ghcr.io/ashokhomepc/learnloop-audio:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
+
+          # Common env (client)
+          SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_SUPABASE_SCHEMA: ${{ secrets.NEXT_PUBLIC_SUPABASE_SCHEMA }}
+
+          # Common env (server)
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+          AUDIO_SECRET: ${{ secrets.AUDIO_SECRET }}
+          OPENAI_REALTIME_MODEL: ${{ secrets.OPENAI_REALTIME_MODEL }}
+
+          # DB env
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+
+          # API/CORS
+          ORIGIN: ${{ env.CHANNEL == 'beta' && secrets.BETA_ORIGIN || secrets.ORIGIN }}
+
+          # Client port (parameterized) — defaults: prod 5007, beta 5012
+          CLIENT_PORT: ${{ env.CHANNEL == 'beta' && secrets.BETA_CLIENT_PORT || secrets.CLIENT_PORT }}
+
+          # WebRTC
+          TURN_URI: ${{ env.CHANNEL == 'beta' && secrets.BETA_TURN_URI_PUBLIC || secrets.TURN_URI_PUBLIC }}
+          STUN_URI: ${{ env.CHANNEL == 'beta' && secrets.BETA_STUN_URI_PUBLIC || secrets.STUN_URI_PUBLIC }}
+          TURN_USERNAME: ${{ env.CHANNEL == 'beta' && secrets.BETA_TURN_USERNAME || secrets.TURN_USERNAME }}
+          TURN_PASSWORD: ${{ env.CHANNEL == 'beta' && secrets.BETA_TURN_PASSWORD || secrets.TURN_PASSWORD }}
+          TURN_REALM: ${{ secrets.TURN_REALM }}
+          TURN_PUBLIC_IP: ${{ secrets.TURN_PUBLIC_IP }}
+
+          # Scale
+          SERVER_REPLICAS: ${{ env.CHANNEL == 'beta' && secrets.BETA_SERVER_REPLICAS || secrets.SERVER_REPLICAS }}
+        run: |
+          mkdir -p web/generated && chmod 777 web/generated
+
+          # Pull & up
+          docker compose pull
+          if [ "${{ env.CHANNEL }}" = "prod" ]; then
+            docker compose --profile prod up -d --scale server="${SERVER_REPLICAS:-1}"
+          else
+            docker compose up -d --scale server="${SERVER_REPLICAS:-1}"
+          fi
+
+          # Optional cleanup
+          docker image prune -f

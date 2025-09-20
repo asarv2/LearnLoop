@@ -6,6 +6,7 @@ Simplified version focused on core training functionality
 import asyncio
 import logging
 import random
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, cast
@@ -14,21 +15,14 @@ import socketio  # type: ignore
 from agents import Runner, trace
 from agents.items import TResponseInputItem
 from app.db import get_session
-from app.models import (Assessments, Attempts, Chats,  # ✨ Import Personas
-                        Documents, Fields, Messages, Parameters, Personas,
-                        Questions, Rubrics, Scenarios)
-from app.services.agents.assesment import (
-    create_initial_assessment_with_training_questions, run_assessment_agent,
-    run_training_specific_assessment)
-from app.services.agents.feedback import run_feedback_agent
+from app.models import (Attempts, Chats, Documents,  # ✨ Import Personas
+                        Fields, Messages, Parameters, Personas, Rubrics,
+                        Scenarios)
 from app.services.agents.generic import GenericAgent, run_generic_agent
 from app.services.agents.grade import run_grading_agent
 from app.services.agents.hint import run_hint_agent
-from app.services.agents.scenario import ScenarioResponse, get_scenario_prompt
-from app.utils.chat import (get_conversation_history, get_parameter_history,
-                            get_parameter_history_from_field_values,
-                            get_parameter_history_simple,
-                            get_persona_id_from_chat, get_preamble)
+from app.services.agents.scenario import run_scenario_agent
+from app.utils.chat import get_conversation_history, get_preamble
 from sqlalchemy import Column, text
 from sqlmodel import select
 
@@ -37,11 +31,14 @@ logger = logging.getLogger(__name__)
 # Global store for active training runs
 active_training_runs: Dict[str, Any] = {}
 
+# Short-lived join dedupe map: key=(sid:chat_id) -> last_seen_ts
+_recent_joins: Dict[str, float] = {}
+
 
 async def _schedule_hints_for_message(chat_id: str, message_id: str) -> None:
     """Background hint generation keyed to a specific assistant message."""
     try:
-        def _sync(msg_uuid: uuid.UUID):
+        def _sync(msg_uuid: uuid.UUID) -> Dict[str, Any]:
             import asyncio as _asyncio
             return _asyncio.run(run_hint_agent(msg_uuid))
         result = await asyncio.to_thread(_sync, uuid.UUID(message_id))
@@ -53,6 +50,8 @@ async def _schedule_hints_for_message(chat_id: str, message_id: str) -> None:
                 "message_id": message_id,              # ★ add message_id
                 "success": result.get("success", False),
                 "hints": result.get("hints", []),
+                "low_hints": result.get("dif_low_hints", []),
+                "high_hints": result.get("dif_high_hints", []),
                 "message": result.get("message", ""),
             },
             room=chat_id,
@@ -134,53 +133,120 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
             # Document uploads are handled on the frontend before this call
             logger.info("Document uploads completed on frontend")
 
-            # Populate chat.persona_ids
+            # Populate chat.persona_ids, prompts, and max_turns from scenario
             try:
                 persona_ids: list[str] = []
+                max_turns: dict[str, Optional[int]] = {}
+                transformed_prompts: dict[str, str] = {}
 
-                # If client provided assistant_persona_id, use it
-                assistant_persona_id = (data or {}).get("assistant_persona_id")
-                if assistant_persona_id:
-                    try:
-                        _ = uuid.UUID(str(assistant_persona_id))
-                        persona_ids.append(str(assistant_persona_id))
-                    except Exception:
-                        logger.warning("Invalid assistant_persona_id provided")
-                else:
-                    # Fallback: derive from scenario.parameter_ids (persona parameters only)
-                    conn = db_session.connection()
-                    row = conn.execute(
-                        text("SELECT parameter_ids FROM scenarios WHERE id = :id"),
-                        {"id": str(scenario.id)},
-                    ).fetchone()
-                    scenario_parameter_ids: list[str] = list(row[0]) if row and row[0] else []
+                # Get scenario parameter_ids to find persona fields
+                conn = db_session.connection()
+                row = conn.execute(
+                    text("SELECT parameter_ids FROM scenarios WHERE id = :id"),
+                    {"id": str(scenario.id)},
+                ).fetchone()
+                scenario_parameter_ids: list[str] = list(row[0]) if row and row[0] else []
 
-                    for pid in scenario_parameter_ids:
-                        param = db_session.exec(select(Parameters).where(Parameters.id == pid)).one_or_none()
-                        if not param or not param.field_id:
-                            continue
-                        fld = db_session.exec(select(Fields).where(Fields.id == param.field_id)).one_or_none()
-                        if fld and getattr(fld, "field_type", None) == "persona" and param.value:
-                            try:
-                                _ = uuid.UUID(str(param.value))
-                                persona_ids.append(str(param.value))
-                            except Exception:
-                                logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
+                # Extract persona_ids from scenario parameters
+                for pid in scenario_parameter_ids:
+                    param = db_session.exec(select(Parameters).where(Parameters.id == pid)).one_or_none()
+                    if not param or not param.field_id:
+                        continue
+                    fld = db_session.exec(select(Fields).where(Fields.id == param.field_id)).one_or_none()
+                    if fld and getattr(fld, "field_type", None) == "persona" and param.value:
+                        try:
+                            persona_id = str(param.value)
+                            _ = uuid.UUID(persona_id)  # Validate UUID format
+                            persona_ids.append(persona_id)
+                            
+                            # Get persona to check if it's a user (has profile_id)
+                            persona = db_session.exec(select(Personas).where(Personas.id == param.value)).one_or_none()
+                            if persona and persona.profile_id:
+                                # User persona - infinite turns
+                                max_turns[persona_id] = None
+                            else:
+                                # Assistant persona - 1 turn
+                                max_turns[persona_id] = 1
+                                
+                        except Exception:
+                            logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
 
-                # Update chats.persona_ids via raw SQL
+                # Ensure the user's persona is included if they have one
+                if profile_id:
+                    user_persona = db_session.exec(select(Personas).where(Personas.profile_id == profile_id)).one_or_none()
+                    if user_persona:
+                        user_persona_id_str = str(user_persona.id)
+                        if user_persona_id_str not in persona_ids:
+                            persona_ids.append(user_persona_id_str)
+                            max_turns[user_persona_id_str] = None  # User persona - infinite turns
+                            logger.info(f"Added user persona {user_persona.id} for profile {profile_id}")
+                        else:
+                            logger.info(f"User persona {user_persona.id} already in persona_ids")
+                    else:
+                        logger.warning(f"No persona found for profile_id {profile_id}")
+
+                logger.info(f"Final persona_ids for chat: {persona_ids}")
+
+                # Transform scenario prompts from alias format to persona_id format
+                if hasattr(scenario, 'prompts') and scenario.prompts and hasattr(scenario, 'prompt_mapping') and scenario.prompt_mapping:
+                    import json
+
+                    # Create alias to persona name mapping
+                    alias_to_persona_name = {}
+                    for alias, persona_id in scenario.prompt_mapping.items():
+                        persona = db_session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+                        if persona:
+                            alias_to_persona_name[alias] = persona.name
+                    
+                    # Transform prompts: alias keys -> persona_id keys, and replace alias references in text
+                    for alias, prompt_text in scenario.prompts.items():
+                        if alias in scenario.prompt_mapping:
+                            persona_id = scenario.prompt_mapping[alias]
+                            
+                            # Replace alias references in prompt text with persona names
+                            transformed_text = prompt_text
+                            for ref_alias, persona_name in alias_to_persona_name.items():
+                                transformed_text = transformed_text.replace(ref_alias, persona_name)
+                            
+                            transformed_prompts[persona_id] = transformed_text
+                    
+                    logger.info(f"Transformed {len(transformed_prompts)} prompts from alias format to persona_id format")
+
+                # Update chat fields via raw SQL
                 try:
+                    # Set persona_ids
                     if persona_ids:
                         array_sql = "ARRAY[" + ", ".join([f"'{p}'" for p in persona_ids]) + "]::uuid[]"
                     else:
                         array_sql = "NULL"
-                    conn = db_session.connection()
+                    
+                    # Set transformed prompts
+                    prompts_json = "NULL"
+                    if transformed_prompts:
+                        import json
+                        prompts_json = f"'{json.dumps(transformed_prompts)}'::jsonb"
+                    
+                    # Set max_turns
+                    max_turns_json = "NULL"
+                    if max_turns:
+                        import json
+                        max_turns_json = f"'{json.dumps(max_turns)}'::jsonb"
+                    
                     conn.execute(
-                        text(f"UPDATE chats SET persona_ids = {array_sql} WHERE id = :id"),
+                        text(f"""
+                            UPDATE chats 
+                            SET persona_ids = {array_sql},
+                                prompts = {prompts_json},
+                                max_turns = {max_turns_json}
+                            WHERE id = :id
+                        """),
                         {"id": str(chat.id)},
                     )
                     db_session.commit()
+                    logger.info(f"Updated chat {chat.id} with {len(persona_ids)} personas, {len(transformed_prompts)} prompts, and max_turns: {max_turns}")
+                    
                 except Exception:
-                    logger.exception("Failed to update chat.persona_ids")
+                    logger.exception("Failed to update chat fields")
             except Exception:
                 logger.exception("Failed to derive persona_ids from scenario parameters")
 
@@ -203,36 +269,7 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                 room=sid,
             )
 
-            # Schedule training-specific assessment generation in the background
-            async def _bg_training_questions(cid: uuid.UUID) -> None:
-                try:
-                    logger.info(f"🔍 DEBUG: (bg) Starting training-specific assessment generation for chat {cid}")
-                    sess = next(get_session())
-                    try:
-                        training_questions_result = await run_training_specific_assessment(cid, sess)
-                        logger.info(f"🔍 DEBUG: (bg) Training questions result: {training_questions_result}")
-                        if training_questions_result.get("success"):
-                            training_questions = training_questions_result.get("questions", [])
-                            if training_questions:
-                                assessment_result = await create_initial_assessment_with_training_questions(
-                                    cid,
-                                    training_questions,
-                                    sess,
-                                )
-                                logger.info(f"🔍 DEBUG: (bg) Assessment creation result: {assessment_result}")
-                            else:
-                                logger.warning(f"(bg) No training questions generated for chat {cid}")
-                        else:
-                            logger.error(f"❌ (bg) Training-specific assessment generation failed: {training_questions_result.get('message')}")
-                    finally:
-                        try:
-                            sess.close()
-                        except Exception:
-                            pass
-                except Exception:
-                    logger.exception("❌ (bg) Error generating training-specific assessment questions")
-
-            asyncio.create_task(_bg_training_questions(chat.id))
+            # No assessment generation needed - grading will happen at end_training
 
         finally:
             try:
@@ -265,6 +302,15 @@ async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
         if profile_id == "" or profile_id == "null":
             profile_id = None
 
+        # Idempotency guard: ignore duplicate joins for same (sid, chat) within 2 seconds
+        key = f"{sid}:{chat_id}"
+        now = time.time()
+        last = _recent_joins.get(key, 0.0)
+        if (now - last) < 2.0:
+            logger.info(f"Ignoring duplicate join_training within window for sid={sid}, chat_id={chat_id}")
+            return
+        _recent_joins[key] = now
+
         logger.info(
             f"Processing training join: chat_id={chat_id}, profile_id={profile_id}, sid={sid}"
         )
@@ -287,6 +333,21 @@ async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
             # Add the user to the chat room
             sio = get_sio_instance()
             await sio.enter_room(sid, chat_id)
+
+            # Start a corresponding room in audio-multi (id == chat_id) and register this human
+            try:
+                from app.bridge import get_bridge
+                from app.utils.chat import get_audio_config
+                bridge = get_bridge(sio)
+                # Get dynamic config based on chat_id/room_id
+                config = get_audio_config(chat_id)
+                await bridge.start_room(room_id=chat_id, config=config)
+                human_id = f"user:{profile_id}" if profile_id else f"user:{sid[-6:]}"
+                await bridge.register_human(room_id=chat_id, human_id=human_id)
+                logger.info(f"Successfully started audio room and registered human {human_id}")
+            except Exception as e:
+                logger.error(f"Failed to start/register room in audio: {e}")
+                logger.exception("failed to start/register room in audio")
 
             # Send success response
             sio.start_background_task(sio.emit,
@@ -316,76 +377,12 @@ async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
         await emit_error(sid, f"Failed to join training: {str(e)}")
 
 
-async def handle_stop_training(sid: str, data: Dict[str, Any]) -> None:
-    """
-    Handle training stop requests via WebSocket
-    Stops the current training message generation
-    """
-    try:
-        chat_id = data.get("chat_id")
-
-        if not chat_id:
-            await emit_error(sid, "Missing chat_id")
-            return
-
-        # Create a new session for this operation
-        db_session = next(get_session())
-
-        try:
-            # Verify the chat exists
-            result = db_session.exec(
-                select(Chats).where(Chats.id == chat_id)
-            )
-            chat = result.one_or_none()
-            if not chat:
-                await emit_error(sid, "Chat not found")
-                return
-
-            # Stop any active training run for this chat
-            if chat_id in active_training_runs:
-                # Cancel the training run
-                training_run = active_training_runs[chat_id]
-                if hasattr(training_run, 'cancel'):
-                    training_run.cancel()
-                del active_training_runs[chat_id]
-                success = True
-                logger.info(f"Successfully cancelled training run for chat {chat_id}")
-            else:
-                success = False
-                logger.warning(f"No active training run found for chat {chat_id}")
-
-            sio_instance = get_sio_instance()
-
-            # Emit stop signal via WebSocket
-            sio_instance.start_background_task(sio_instance.emit,
-                "training_stopped",
-                {
-                    "chat_id": chat_id,
-                    "success": success,
-                    "message": "" if success else "No active training run found",
-                },
-                room=chat_id,
-            )
-
-        finally:
-            try:
-                db_session.close()
-            except Exception:
-                pass
-
-    except Exception as e:
-        logger.error(f"Error stopping training for {sid}: {str(e)}")
-        try:
-            db_session.rollback()
-        except Exception:
-            pass
-        await emit_error(sid, f"Failed to stop training: {str(e)}")
 
 
 async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
     """
     Handle training end requests via WebSocket
-    Ends the training session, marks chat as completed, and runs assessment agent
+    Ends the training session, marks chat as completed, and runs grading
     """
     try:
         chat_id = data.get("chat_id")
@@ -415,104 +412,49 @@ async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
 
             logger.info(f"Training chat {chat_id} marked as completed")
 
-            # Check if assessment with training questions already exists
-            existing_assessment = db_session.exec(
-                select(Assessments).where(Assessments.chat_id == chat_id)
-            ).first()
-
-            logger.info(f"🔍 DEBUG: Looking for existing assessment for chat {chat_id}")
-
-            # IMPORTANT:
-            # We cannot use `db_session` inside the background task (it will be closed
-            # in the finally block below). Resolve the primitive we need *now*.
+            # Get rubric_id for grading
             scenario_result = db_session.exec(
                 select(Scenarios).where(Scenarios.training_id == chat.training_id)
             ).first()
             rubric_id = scenario_result.rubric_id if scenario_result else None
             logger.info(f"🔧 DEBUG: Resolved rubric_id={rubric_id} for training_id={chat.training_id}")
             
-            if existing_assessment:
-                # Count existing questions
-                existing_questions = db_session.exec(
-                    select(Questions).where(Questions.assessment_id == existing_assessment.id)
-                ).all()
-                
-                logger.info(f"🔍 DEBUG: Found existing assessment {existing_assessment.id} with {len(existing_questions)} questions")
-                logger.info(f"🔍 DEBUG: Questions: {[(q.stem[:50] + '...' if len(q.stem) > 50 else q.stem, q.default_question) for q in existing_questions]}")
-                
-                logger.info(f"✅ Found existing assessment {existing_assessment.id}, sending immediate response")
-                
-                # Send immediate success response with assessment ready
-                sio = get_sio_instance()
-                sio.start_background_task(sio.emit,
-                    "training_ended",
-                    {
-                        "success": True,
-                        "chat_id": chat_id,
-                        "message": "Training session ended successfully",
-                        "assessment_ready": True,  # Assessment is immediately available (3 questions)
-                        "assessment_id": str(existing_assessment.id),
-                    },
-                    room=chat_id,
-                )
-                
-                # Move heavy operations to background to avoid blocking the event loop
-                async def _bg_assessment_and_grading(rubric_id):
-                    logger.info(f"⚙️ grading background job started (chat_id={chat_id}, rubric_id={rubric_id})")
-                    try:
-                        def _run_assessment_sync(cid: uuid.UUID):
-                            import asyncio as _asyncio
-
-                            return _asyncio.run(run_assessment_agent(cid))
-                        await asyncio.to_thread(_run_assessment_sync, uuid.UUID(chat_id))
-                    except Exception:
-                        logger.exception("Assessment background job failed")
-                    try:
-                        # Fresh session inside background task
-                        def _run_grading_sync(cid: uuid.UUID, rid):
-                            import asyncio as _asyncio
-
-                            from app.db import get_session as _gs
-                            sess = next(_gs())
-                            try:
-                                return _asyncio.run(run_grading_agent(cid, rid, sess))
-                            finally:
-                                sess.close()
-                        
-                        if rubric_id:
-                            rubric_grade_id = await asyncio.to_thread(_run_grading_sync, uuid.UUID(chat_id), rubric_id)
-                            sio = get_sio_instance()
-                            await sio.emit("grading_completed", {
-                                "chat_id": chat_id,
-                                "rubric_grade_id": rubric_grade_id,
-                                "message": "Grading completed successfully"
-                            }, room=chat_id)
-                        else:
-                            logger.warning(f"⏭️ Skipping grading for chat {chat_id}: no rubric_id")
-                            sio = get_sio_instance()
-                            await sio.emit("grading_completed", {
-                                "chat_id": chat_id,
-                                "rubric_grade_id": None,
-                                "message": "Skipped grading: no rubric_id"
-                            }, room=chat_id)
-                    except Exception:
-                        logger.exception("Grading background job failed")
-                asyncio.create_task(_bg_assessment_and_grading(rubric_id))
-                    
+            # Run grading in foreground
+            sio = get_sio_instance()
+            rubric_grade_id = None
+            
+            if rubric_id:
+                logger.info(f"⚙️ Running grading for chat {chat_id} with rubric_id {rubric_id}")
+                try:
+                    rubric_grade_id = await run_grading_agent(chat_id, rubric_id, db_session)
+                    logger.info(f"✅ Grading completed for chat {chat_id}, rubric_grade_id: {rubric_grade_id}")
+                except Exception as e:
+                    logger.error(f"❌ Grading failed for chat {chat_id}: {str(e)}")
+                    rubric_grade_id = None
             else:
-                logger.warning(f"No existing assessment found for chat {chat_id}")
-                # Fallback - send response indicating assessment may not be ready
-                sio = get_sio_instance()
-                sio.start_background_task(sio.emit,
-                    "training_ended",
-                    {
-                        "success": True,
-                        "chat_id": chat_id,
-                        "message": "Training session ended successfully",
-                        "assessment_ready": False,  # Assessment may not be complete
-                    },
-                    room=chat_id,
-                )
+                logger.warning(f"⏭️ Skipping grading for chat {chat_id}: no rubric_id")
+            
+            # Send success response with grading results
+            sio.start_background_task(sio.emit,
+                "training_ended",
+                {
+                    "success": True,
+                    "chat_id": chat_id,
+                    "message": "Training session ended successfully",
+                },
+                room=chat_id,
+            )
+            
+            # Send grading completed event
+            sio.start_background_task(sio.emit,
+                "grading_completed",
+                {
+                    "chat_id": chat_id,
+                    "rubric_grade_id": str(rubric_grade_id) if rubric_grade_id else None,
+                    "message": "Grading completed successfully" if rubric_grade_id else "Skipped grading: no rubric_id"
+                },
+                room=chat_id,
+            )
 
         finally:
             try:
@@ -617,8 +559,8 @@ async def handle_training_message_rtc(sid: str, data: Dict[str, Any]) -> None:
         chat_id = data.get("chat_id")
         message = (data.get("message") or "").strip()
 
-        from app.room import get_room
-        room = get_room(chat_id)
+        from app.store import get_room
+        room = get_room(str(chat_id))
         
         # Ensure sender is in the room to receive room-scoped events (no-op if already joined)
         try:
@@ -664,8 +606,10 @@ async def handle_training_message_rtc(sid: str, data: Dict[str, Any]) -> None:
                 except Exception:
                     pass
 
-        # Use room system with OpenAIAgent
-        await room.append_text_chunk(
+        # Use room system with store function
+        from app.store import upsert_text_chunk
+        await upsert_text_chunk(
+            room_id=str(chat_id),
             source_id=sid,     # or profile id
             role="user",
             text=message,
@@ -674,12 +618,22 @@ async def handle_training_message_rtc(sid: str, data: Dict[str, Any]) -> None:
             is_final=True,
             persona_id=persona_id,
         )
+
+        # Trigger audio service TTS + streaming of user's typed text into the room bus
+        try:
+            from app.bridge import get_bridge
+            sio = get_sio_instance()
+            bridge = get_bridge(sio)
+            human_id = f"user:{profile_id}" if profile_id else f"user:{sid[-6:]}"
+            await bridge.user_text(room_id=str(chat_id), human_id=human_id, text=message)
+        except Exception as e:
+            logger.error(f"Failed to send user_text to audio for chat {chat_id}: {str(e)}")
     except Exception as e:
         logger.error(f"Error in room system flow: {str(e)}")
         await emit_error(sid, f"Failed to process message: {str(e)}")
 
 
-# Handler functions for hints and assessment
+# Handler functions for hints
 async def handle_get_hints(sid: str, data: Dict[str, Any]) -> None:
     """Handle hints generation without blocking the event loop."""
     chat_id = data.get("chat_id")
@@ -689,9 +643,9 @@ async def handle_get_hints(sid: str, data: Dict[str, Any]) -> None:
         return
 
     # Fire a background job in a thread so the main loop stays hot.
-    async def _bg():
+    async def _bg() -> None:
         try:
-            def _sync_wrapper(msg_id: uuid.UUID):
+            def _sync_wrapper(msg_id: uuid.UUID) -> Dict[str, Any]:
                 # Run the async hint routine on a dedicated loop in this worker thread
                 import asyncio as _asyncio
                 return _asyncio.run(run_hint_agent(msg_id))
@@ -704,6 +658,8 @@ async def handle_get_hints(sid: str, data: Dict[str, Any]) -> None:
                 "message_id": message_id,   # ★ include
                 "success": result.get("success", False),
                 "hints": result.get("hints", []),
+                "low_hints": result.get("dif_low_hints", []),
+                "high_hints": result.get("dif_high_hints", []),
                 "message": result.get("message", "")
             }, room=chat_id)
         except Exception as e:
@@ -968,39 +924,14 @@ async def process_training_message_websocket(
                 logger.error(f"Error closing database session: {str(close_error)}")
 
 
-async def handle_submit_assessment(sid: str, data: Dict[str, Any]) -> None:
-    """Handle assessment submission and feedback generation without blocking the event loop."""
-    chat_id = data.get("chat_id")
-    responses = data.get("responses", {})
-    
-    if not chat_id:
-        await emit_error(sid, "Missing chat_id")
-        return
-        
-    # Fire a background job in a thread so the main loop stays hot.
-    async def _bg():
-        try:
-            def _sync_wrapper(cid: uuid.UUID):
-                import asyncio as _asyncio
-                return _asyncio.run(run_feedback_agent(cid))
-            feedback_result = await asyncio.to_thread(_sync_wrapper, uuid.UUID(chat_id))
-            sio = get_sio_instance()
-            await sio.emit("assessment_submitted", {
-                "chat_id": chat_id,
-                "success": True,
-                "feedback_id": feedback_result.get("feedback_id"),
-                "message": "Assessment submitted and feedback generated successfully"
-            }, room=chat_id)
-        except Exception as e:
-            logger.exception("Error submitting assessment (bg)")
-            await emit_error(sid, f"Failed to submit assessment: {e}")
-    asyncio.create_task(_bg())
-    return
 
 
 # Register training event handlers with socketio
 def register_training_events(sio: socketio.AsyncServer) -> None:
-    """Register training WebSocket event handlers"""
+    """Register training WebSocket event handlers (idempotent)."""
+    # Prevent double registration if called more than once
+    if getattr(register_training_events, "_registered", False):
+        return
     
     @sio.event  # type: ignore
     async def start_training(sid: str, data: Dict[str, Any]) -> None:
@@ -1017,12 +948,26 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
             parent_id = data.get("scenario_id")
             field_values = data.get("field_values", [])
             additional_prompt = (data.get("additional_prompt") or "").strip()
-            assistant_persona_id = (data or {}).get("assistant_persona_id")
-            current_draft_objectives = data.get("current_draft_objectives", [])
 
             if not parent_id:
                 await emit_error(sid, "Missing scenario_id")
                 return
+
+            # Get profile_id from WebSocket session
+            profile_id = None
+            try:
+                from app.main import (get_profile_id_for_sid,
+                                      get_socketio_instance)
+                sio = get_socketio_instance()
+                try:
+                    sess = await sio.get_session(sid)  # type: ignore
+                except Exception:
+                    sess = None
+                profile_id = (sess or {}).get("profile_id") if isinstance(sess, dict) else None
+                if not profile_id:
+                    profile_id = get_profile_id_for_sid(sid)
+            except Exception:
+                logger.warning("Could not get profile_id from session")
 
             db_session = next(get_session())
             try:
@@ -1031,110 +976,71 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     await emit_error(sid, "Scenario not found")
                     return
 
-                # Build parameter history from provided field values
-                parameter_history = get_parameter_history_from_field_values(field_values, db_session)
-
-                preamble = [
-                    f"TRAINING: {parent.title}",
-                    f"Parent Problem Statement: {(parent.description or '').strip()}",
-                ]
-
-                system_prompt = await get_scenario_prompt()
-                agent = GenericAgent(
-                    agent_name="Scenario Generator",
-                    system_prompt=system_prompt,
-                    temperature=0.2,
-                    output_type=ScenarioResponse,
-                )
-
-                # Use a single string input to satisfy strict typing
-                param_content = ""
-                if parameter_history:
-                    param_content = str(parameter_history[0].get("content", ""))
-
-                combined = "\n".join([
-                    "\n".join(preamble),
-                    param_content,
-                    additional_prompt or "",
-                ]).strip()
-
-                with trace("Scenario"):
-                    result = await Runner.run(agent.agent(), input=combined)
-                    sr = result.final_output_as(ScenarioResponse)
-
-                # Simple approach: always use the newest AI-generated objectives
-                final_objectives = sr.objectives or []
-
-                # Create the child scenario row
-                child = Scenarios(
-                    title=sr.title,
-                    description=getattr(parent, "description", None),
-                    training_id=parent.training_id,
-                    rubric_id=parent.rubric_id,
-                    field_ids=parent.field_ids,
-                    problem_statement=sr.problem_statement,
-                    objectives=final_objectives,
-                    parent_id=parent.id,
-                )
-                db_session.add(child)
-                db_session.commit()
-                db_session.refresh(child)
-
-                # Build/collect parameter_ids: reuse provided parameterId, else create
-                parameter_ids: list[str] = []
+                # Extract persona_ids from field_values
+                persona_ids_from_fields = []
                 for fv in field_values:
                     field_id = fv.get("fieldId")
-                    value = (fv.get("value") or "").strip()
-                    pid = fv.get("parameterId")
-                    if pid:
-                        parameter_ids.append(str(pid))
-                        continue
-                    if field_id:
-                        try:
-                            new_param = Parameters(
-                                field_id=field_id,
-                                name=value,
-                                value=value,
-                            )
-                            db_session.add(new_param)
-                            db_session.commit()
-                            db_session.refresh(new_param)
-                            parameter_ids.append(str(new_param.id))
-                        except Exception:
-                            logger.exception("Failed to create parameter from field value")
+                    parameter_id = fv.get("parameterId")
+                    if field_id and parameter_id:
+                        # Check if this field is a persona field
+                        field = db_session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
+                        if field and getattr(field, "field_type", None) == "persona":
+                            # For persona fields, parameter_id points to Parameters record, 
+                            # and the actual persona_id is in Parameters.value
+                            param = db_session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
+                            if param and param.value:
+                                try:
+                                    persona_ids_from_fields.append(uuid.UUID(str(param.value)))
+                                    logger.info(f"Added persona_id {param.value} from parameter {parameter_id}")
+                                except Exception:
+                                    logger.warning(f"Invalid persona UUID in parameter {parameter_id}: {param.value}")
 
-                # Persist scenarios.parameter_ids via raw SQL
-                try:
-                    if parameter_ids:
-                        array_sql = "ARRAY[" + ", ".join([f"'{p}'" for p in parameter_ids]) + "]::uuid[]"
+                # Add the user's persona if they have one
+                if profile_id:
+                    user_persona = db_session.exec(select(Personas).where(Personas.profile_id == profile_id)).one_or_none()
+                    if user_persona:
+                        if user_persona.id not in persona_ids_from_fields:
+                            persona_ids_from_fields.append(user_persona.id)
+                            logger.info(f"Added user persona {user_persona.id} for profile {profile_id}")
+                        else:
+                            logger.info(f"User persona {user_persona.id} already in persona_ids")
                     else:
-                        array_sql = "NULL"
-                    conn = db_session.connection()
-                    conn.execute(
-                        text(f"UPDATE scenarios SET parameter_ids = {array_sql} WHERE id = :id"),
-                        {"id": str(child.id)},
-                    )
-                    db_session.commit()
-                except Exception:
-                    logger.exception("Failed to update scenarios.parameter_ids")
+                        logger.warning(f"No persona found for profile_id {profile_id}")
 
-                # If assistant_persona_id provided, also set chat persona context for future use
-                if assistant_persona_id:
-                    try:
-                        _ = uuid.UUID(str(assistant_persona_id))
-                        # child scenario has no chat yet; the persona will be applied at start_training
-                    except Exception:
-                        logger.warning("Invalid assistant_persona_id on generate_scenario (ignored)")
+                logger.info(f"Final persona_ids for scenario generation: {[str(p) for p in persona_ids_from_fields]}")
+
+                # Use the centralized scenario agent - it will handle everything including child scenario creation
+                result = await run_scenario_agent(
+                    scenario_id=uuid.UUID(parent_id),
+                    field_values=field_values,
+                    persona_ids=persona_ids_from_fields,
+                    additional_context=additional_prompt,
+                    create_child=True,
+                    session=db_session
+                )
+
+                if not result.get("success", False):
+                    await emit_error(sid, result.get("message", "Failed to generate scenario"))
+                    return
+
+                # Extract results from the scenario agent
+                title = result.get("title", "")
+                problem_statement = result.get("problem_statement", "")
+                objectives = result.get("objectives", [])
+                document_ids = result.get("document_ids", [])
+                child_scenario_id = result.get("child_scenario_id")
+
 
                 sio = get_sio_instance()
                 await sio.emit(
                     "scenario_generated",
                     {
                         "success": True,
-                        "scenario_id": str(child.id),
-                        "title": sr.title,
-                        "problem_statement": sr.problem_statement,
-                        "objectives": final_objectives,
+                        "scenario_id": child_scenario_id,
+                        "title": title,
+                        "problem_statement": problem_statement,
+                        "objectives": objectives,
+                        "document_ids": document_ids,
                     },
                     room=sid,
                 )
@@ -1222,11 +1128,6 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
         logger.info(f"send_training_message event triggered for sid={sid}")
         await handle_send_training_message(sid, data)
     
-    @sio.event  # type: ignore
-    async def stop_training(sid: str, data: Dict[str, Any]) -> None:
-        """Stop training message generation"""
-        logger.info(f"stop_training event triggered for sid={sid}")
-        await handle_stop_training(sid, data)
     
     @sio.event  # type: ignore
     async def end_training(sid: str, data: Dict[str, Any]) -> None:
@@ -1240,11 +1141,6 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
         logger.info(f"get_hints event triggered for sid={sid}")
         await handle_get_hints(sid, data)
     
-    @sio.event  # type: ignore
-    async def submit_assessment(sid: str, data: Dict[str, Any]) -> None:
-        """Submit assessment responses and generate feedback"""
-        logger.info(f"submit_assessment event triggered for sid={sid}")
-        await handle_submit_assessment(sid, data)
 
     @sio.event  # type: ignore
     async def client_interrupted(sid: str, data: Dict[str, Any]) -> None:
@@ -1292,6 +1188,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
             logger.exception("client_interrupted handler failed")
     
     logger.info("Successfully registered training WebSocket event handlers")
+    register_training_events._registered = True  # type: ignore[attr-defined]
 
 
 # Utility functions
