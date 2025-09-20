@@ -321,6 +321,9 @@ async def create_document_generation_tool(
                 
                 scenario_results.setdefault("document_ids", []).append(str(document.id))
                 
+                # Track progress for this document tool
+                scenario_progress[tool_name] = True
+                
                 # Emit progress event (fire-and-forget)
                 _emit_progress_fire_and_forget("scenario_progress", {
                     "type": "document",
@@ -636,13 +639,17 @@ async def run_scenario_agent(
 
         # Create tool use behavior to wait for core tools to be called
         def tool_use_behavior(context: Any, tool_results: list[Any]) -> ToolsToFinalOutputResult:
-            # We require scenario, objectives, and persona prompt tools to be called
-            # Document generation tools are optional
+            # We require scenario, objectives, persona prompt tools, AND document generation tools to be called
             required_tools = ['scenario', 'objectives']
             # Add persona prompt tools to required tools (only for personas that exist)
             for persona_id in persona_ids:
                 if persona_exists_map.get(persona_id, False):
                     required_tools.append(f'persona_prompt_{persona_id}')
+            
+            # Add document generation tools to required tools (all document tools should be required)
+            for tool_metadata in document_tool_metadata:
+                tool_name = tool_metadata['name']
+                required_tools.append(tool_name)
             
             completed_required = all(scenario_progress.get(tool, False) for tool in required_tools)
             return ToolsToFinalOutputResult(is_final_output=completed_required)
@@ -666,7 +673,8 @@ async def run_scenario_agent(
         _emit_progress_fire_and_forget("scenario_progress", {
             "type": "start",
             "message": "Starting scenario generation",
-            "total_tools": len(scenario_tools)
+            "total_tools": len(scenario_tools),
+            "document_tools_count": len(document_tool_metadata)
         })
         
         with trace("Scenario"):
@@ -687,8 +695,16 @@ async def run_scenario_agent(
             if persona_exists_map.get(persona_id, False):
                 required_tools.append(f'persona_prompt_{persona_id}')
         
+        # Add document generation tools to required tools (all document tools should be required)
+        for tool_metadata in document_tool_metadata:
+            tool_name = tool_metadata['name']
+            required_tools.append(tool_name)
+        
         completed_required = [tool for tool in required_tools if scenario_progress.get(tool, False)]
         logger.info(f"Scenario generation completed: {len(completed_required)}/{len(required_tools)} required tools called")
+        logger.info(f"Required tools: {required_tools}")
+        logger.info(f"Completed tools: {completed_required}")
+        logger.info(f"Document tools created: {[tool['name'] for tool in document_tool_metadata]}")
         
         if len(completed_required) < len(required_tools):
             missing_tools = [tool for tool in required_tools if not scenario_progress.get(tool, False)]
