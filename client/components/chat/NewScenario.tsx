@@ -60,9 +60,13 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     visible: false,
     steps: [
       { label: "Processing inputs", complete: false },
-      { label: "Preparing model", complete: false },
       { label: "Generating scenario", complete: false },
+      { label: "Creating objectives", complete: false },
+      { label: "Creating persona prompts", complete: false },
+      { label: "Generating documents", complete: false },
     ],
+    completedCount: 0,
+    totalTools: 0,
   });
   const preparingModelTimerRef = useRef<number | null>(null);
   const { user } = useAuth();
@@ -174,20 +178,83 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     setGenerateProgress((prev) => ({
       ...prev,
       visible: true,
+      completedCount: 0,
+      totalTools: 0,
       steps: prev.steps.map((s, i) => ({ ...s, complete: i === 0 })),
     }));
     if (preparingModelTimerRef.current) {
       window.clearTimeout(preparingModelTimerRef.current);
     }
-    preparingModelTimerRef.current = window.setTimeout(() => {
-      setGenerateProgress((prev) => ({
-        ...prev,
-        steps: prev.steps.map((s, i) =>
-          i === 1 ? { ...s, complete: true } : s
-        ),
-      }));
-    }, 2000);
   };
+
+  // Listen for scenario progress events
+  useEffect(() => {
+    const handleScenarioProgress = (e: CustomEvent) => {
+      const data = e.detail || {};
+
+      setGenerateProgress((prev) => {
+        const newProgress = { ...prev };
+
+        // Update based on progress type
+        switch (data.type) {
+          case "start":
+            newProgress.totalTools = data.total_tools || 0;
+            newProgress.completedCount = 0;
+            newProgress.steps = newProgress.steps.map((s, i) => ({
+              ...s,
+              complete: i === 0,
+            }));
+            break;
+
+          case "scenario":
+            newProgress.completedCount += 1;
+            newProgress.steps = newProgress.steps.map((s, i) => ({
+              ...s,
+              complete: i === 1 ? true : s.complete,
+            }));
+            break;
+
+          case "objectives":
+            newProgress.completedCount += 1;
+            newProgress.steps = newProgress.steps.map((s, i) => ({
+              ...s,
+              complete: i === 2 ? true : s.complete,
+            }));
+            break;
+
+          case "persona_prompt":
+            newProgress.completedCount += 1;
+            newProgress.steps = newProgress.steps.map((s, i) => ({
+              ...s,
+              complete: i === 3 ? true : s.complete,
+            }));
+            break;
+
+          case "document":
+            newProgress.completedCount += 1;
+            newProgress.steps = newProgress.steps.map((s, i) => ({
+              ...s,
+              complete: i === 4 ? true : s.complete,
+            }));
+            break;
+        }
+
+        return newProgress;
+      });
+    };
+
+    window.addEventListener(
+      "scenarioProgress",
+      handleScenarioProgress as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        "scenarioProgress",
+        handleScenarioProgress as EventListener
+      );
+    };
+  }, []);
 
   // Listen for scenario generated events
   useEffect(() => {
@@ -197,13 +264,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       if (!scenario) return;
       // Accept any generated child and store its id for Start/Regenerate chaining
       setSavedScenarioId(d.scenario_id || null);
-      // Complete the final step of generation progress
-      setGenerateProgress((prev) => ({
-        ...prev,
-        steps: prev.steps.map((s, i) =>
-          i === 2 ? { ...s, complete: true } : s
-        ),
-      }));
       if (preparingModelTimerRef.current) {
         window.clearTimeout(preparingModelTimerRef.current);
         preparingModelTimerRef.current = null;
@@ -425,6 +485,13 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     const percent = Math.round(
       (completed / generateProgress.steps.length) * 100
     );
+
+    // Show tool completion count if available
+    const showToolCount = generateProgress.totalTools > 0;
+    const toolProgressText = showToolCount
+      ? `${generateProgress.completedCount}/${generateProgress.totalTools} tools completed`
+      : null;
+
     return (
       <Box mt="4">
         <Box
@@ -446,6 +513,14 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             }}
           />
         </Box>
+
+        {/* Tool progress indicator */}
+        {toolProgressText && (
+          <Text size="2" color="gray" style={{ marginBottom: "8px" }}>
+            {toolProgressText}
+          </Text>
+        )}
+
         <Flex direction="column" gap="2">
           {generateProgress.steps.map((step, idx) => (
             <Flex key={idx} align="center" gap="3">

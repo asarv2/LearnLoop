@@ -42,9 +42,18 @@ async def upload_pdf_to_s3(pdf_bytes: bytes, doc_id: str) -> None:
         secret_key = os.getenv("SECRET_KEY")
         bucket_name = "documents"
         
+        logger.info(f"S3 config - endpoint: {s3_endpoint}, region: {project_region}, access_key: {'***' if access_key else 'None'}")
+        
         if not all([s3_endpoint, access_key, secret_key]):
             logger.error("Missing S3 configuration environment variables")
+            logger.error(f"Missing: endpoint={bool(s3_endpoint)}, access_key={bool(access_key)}, secret_key={bool(secret_key)}")
             raise ValueError("S3 configuration incomplete")
+        
+        # Supabase-specific configuration
+        cfg = Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"}  # required for Supabase S3 gateway
+        )
         
         # Create async S3 client with Supabase configuration
         session = aioboto3.Session()
@@ -54,13 +63,11 @@ async def upload_pdf_to_s3(pdf_bytes: bytes, doc_id: str) -> None:
             endpoint_url=s3_endpoint,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
-            config=Config(s3={"addressing_style": "path"}, signature_version="s3v4"),
+            config=cfg,
         ) as s3:
             # Upload PDF bytes to S3
-            # File path is just doc_id.pdf as specified
             key = f"{doc_id}.pdf"
             
-            # Use put_object for small files (PDFs are typically small)
             await s3.put_object(
                 Bucket=bucket_name,
                 Key=key,
@@ -96,6 +103,16 @@ def create_scenario_tool() -> Any:
             'problem_statement': problem_statement
         }
         scenario_progress['scenario'] = True
+        
+        # Emit progress event
+        from app.main import get_socketio_instance
+        sio = get_socketio_instance()
+        await sio.emit("scenario_progress", {
+            "type": "scenario",
+            "completed": True,
+            "message": f"Generated scenario: {title}"
+        })
+        
         logger.info(f"✓ Generated scenario: {title} - {problem_statement[:50]}...")
         return f"Generated scenario: {title}"
     
@@ -118,6 +135,17 @@ def create_objectives_tool() -> Any:
         """
         scenario_results['objectives'] = objectives
         scenario_progress['objectives'] = True
+        
+        # Emit progress event
+        from app.main import get_socketio_instance
+        sio = get_socketio_instance()
+        await sio.emit("scenario_progress", {
+            "type": "objectives",
+            "completed": True,
+            "message": f"Generated {len(objectives)} objectives",
+            "count": len(objectives)
+        })
+        
         logger.info(f"✓ Generated {len(objectives)} objectives: {objectives[:2] if objectives else 'None'}...")
         return f"Generated {len(objectives)} objectives"
     
@@ -153,6 +181,18 @@ def create_persona_prompt_tool(persona_id: uuid.UUID, persona_alias: str, person
         # Store mapping from alias to persona_id
         scenario_results['prompt_mapping'][persona_alias] = str(persona_id)
         scenario_progress[f'persona_prompt_{persona_id}'] = True
+        
+        # Emit progress event
+        from app.main import get_socketio_instance
+        sio = get_socketio_instance()
+        await sio.emit("scenario_progress", {
+            "type": "persona_prompt",
+            "completed": True,
+            "message": f"Generated prompt for {persona_alias}",
+            "persona_alias": persona_alias,
+            "persona_name": persona_name
+        })
+        
         logger.info(f"✓ Generated prompt for {persona_alias} ({persona_name}): {prompt[:50]}...")
         return f"Generated prompt for {persona_alias}"
     
@@ -238,8 +278,28 @@ async def create_document_generation_tool(
                 session.add(document)
                 session.commit()
                 session.refresh(document)
-                await upload_pdf_to_s3(pdf_bytes, str(document.id))
+                
+                # Try to upload to S3, but don't fail the entire generation if it fails
+                try:
+                    await upload_pdf_to_s3(pdf_bytes, str(document.id))
+                except Exception as s3_error:
+                    logger.warning(f"S3 upload failed for document {document.id}: {s3_error}")
+                    # Continue with document generation even if S3 upload fails
+                
                 scenario_results.setdefault("document_ids", []).append(str(document.id))
+                
+                # Emit progress event
+                from app.main import get_socketio_instance
+                sio = get_socketio_instance()
+                await sio.emit("scenario_progress", {
+                    "type": "document",
+                    "completed": True,
+                    "message": f"Generated document: {filename}",
+                    "document_id": str(document.id),
+                    "filename": filename,
+                    "parameter_name": parameter_name
+                })
+                
                 logger.info(f"Created document {document.id} for parameter {parameter_name}")
                 return str(document.id)
             finally:
@@ -558,13 +618,23 @@ async def run_scenario_agent(
             tools=scenario_tools,  # scenario_tools is already just the tools list from the tuple
             parallel_tool_calls=True,
             tool_use_behavior=tool_use_behavior,
-            model="gpt-5-nano"
+            model="gpt-4.1"
         )
 
         agent_instance = scenario_agent.agent()
 
         # Run the scenario generation with parallel tool calls
         logger.info("Running scenario generation agent...")
+        
+        # Emit initial progress event
+        from app.main import get_socketio_instance
+        sio = get_socketio_instance()
+        await sio.emit("scenario_progress", {
+            "type": "start",
+            "message": "Starting scenario generation",
+            "total_tools": len(scenario_tools)
+        })
+        
         with trace("Scenario"):
             result = await Runner.run(agent_instance, input=history)
 

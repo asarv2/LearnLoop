@@ -584,6 +584,35 @@ export function WebSocketProvider({
       }
     );
 
+    // Scenario generation progress events
+    socket.on(
+      "scenario_progress",
+      (data: {
+        type:
+          | "start"
+          | "scenario"
+          | "objectives"
+          | "persona_prompt"
+          | "document";
+        message: string;
+        completed?: boolean;
+        total_tools?: number;
+        count?: number;
+        persona_alias?: string;
+        persona_name?: string;
+        document_id?: string;
+        filename?: string;
+        parameter_name?: string;
+      }) => {
+        logInfo("Scenario progress update", data);
+        window.dispatchEvent(
+          new CustomEvent("scenarioProgress", {
+            detail: data,
+          })
+        );
+      }
+    );
+
     socket.on(
       "user_message_token",
       (data: {
