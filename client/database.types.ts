@@ -294,6 +294,30 @@ export type Database = {
         }
         Relationships: []
       }
+      groups: {
+        Row: {
+          created_at: string
+          description: string | null
+          field_ids: string[]
+          id: string
+          name: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          field_ids?: string[]
+          id?: string
+          name?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          field_ids?: string[]
+          id?: string
+          name?: string | null
+        }
+        Relationships: []
+      }
       hints: {
         Row: {
           contents: string[] | null
@@ -679,6 +703,7 @@ export type Database = {
           description: string | null
           document_ids: string[]
           field_ids: string[] | null
+          group_ids: string[]
           id: string
           objectives: string[]
           parameter_ids: string[]
@@ -696,6 +721,7 @@ export type Database = {
           description?: string | null
           document_ids?: string[]
           field_ids?: string[] | null
+          group_ids?: string[]
           id?: string
           objectives?: string[]
           parameter_ids?: string[]
@@ -713,6 +739,7 @@ export type Database = {
           description?: string | null
           document_ids?: string[]
           field_ids?: string[] | null
+          group_ids?: string[]
           id?: string
           objectives?: string[]
           parameter_ids?: string[]
@@ -898,6 +925,50 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "user_feedback_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_insights: {
+        Row: {
+          based_on_conversations: number
+          based_on_rubric_grades: number
+          created_at: string
+          generated_at: string
+          id: string
+          improvements_blurb: string
+          strengths_blurb: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          based_on_conversations?: number
+          based_on_rubric_grades?: number
+          created_at?: string
+          generated_at?: string
+          id?: string
+          improvements_blurb: string
+          strengths_blurb: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          based_on_conversations?: number
+          based_on_rubric_grades?: number
+          created_at?: string
+          generated_at?: string
+          id?: string
+          improvements_blurb?: string
+          strengths_blurb?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_insights_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
