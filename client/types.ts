@@ -53,6 +53,7 @@ export type UserFeedback = Tables<'user_feedback'>;
 
 export type FieldType = "persona" | "document" | "numerical" | "categorical" | "text";
 export type InterviewType = "regular" | "cheating" | "ai-assisted";
+export type Level = "junior" | "mid" | "senior" | "executive";
 export type LogLevel = "info" | "error" | "warn" | "debug";
 export type MessageRole = "user" | "assistant";
 export type QuestionType = "mcq" | "frq";

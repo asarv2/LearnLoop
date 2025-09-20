@@ -35,6 +35,8 @@ export const TrainingCreateSchema = z.object({
   what_not_to_do: z.array(z.string()).nullable().optional(),
   active: z.boolean().nullable().optional(),
   practice: z.boolean().optional(),
+  training_type: z.enum(["standard", "required", "custom"]).optional(),
+  user_id: z.string().nullable().optional(),
   updated_at: z.string().optional(),
 });
 
@@ -45,6 +47,8 @@ export const TrainingUpdateSchema = z.object({
   what_not_to_do: z.array(z.string()).nullable().optional(),
   active: z.boolean().nullable().optional(),
   practice: z.boolean().optional(),
+  training_type: z.enum(["standard", "required", "custom"]).optional(),
+  user_id: z.string().nullable().optional(),
   updated_at: z.string().optional(),
 });
 
@@ -81,6 +85,29 @@ export const trainingRepo = {
       .from("trainings")
       .select("*")
       .eq("practice", true)
+      .order("created_at", { ascending: false });
+    if (error) throw new HttpError(500, error.message);
+    return data;
+  },
+
+  async listByType(type: "standard" | "required" | "custom") {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("trainings")
+      .select("*")
+      .eq("training_type", type)
+      .order("created_at", { ascending: false });
+    if (error) throw new HttpError(500, error.message);
+    return data;
+  },
+
+  async listCustomForUser(userId: string) {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("trainings")
+      .select("*")
+      .eq("training_type", "custom")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false });
     if (error) throw new HttpError(500, error.message);
     return data;
