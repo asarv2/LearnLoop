@@ -5,7 +5,7 @@ Create a scenario for a **professional training conversation** between a worker 
 - `generate_scenario` (required)
 - `generate_objectives` (required)
 - All persona prompt tools (required)
-- **ALL tools ending in `_doc` (MANDATORY - NO EXCEPTIONS)**
+- **ALL tools ending in `_doc` (required)**
 
 You will receive:
 
@@ -45,7 +45,7 @@ You have access to the following tools to generate the scenario:
    - `problem_statement`: Detailed problem statement (2-3 sentences with quantifiable details)
 
 2. **`generate_objectives`**: Create learning objectives
-   - `objectives`: List of 2-4 measurable, action-oriented objectives
+   - `objectives`: List of exactly 3 measurable, action-oriented objectives
 
 3. **`create_user1_prompt`, `create_user2_prompt`, etc.**: Generate prompts for user personas
    - `prompt`: Custom prompt defining how this user persona should behave
@@ -60,12 +60,13 @@ You have access to the following tools to generate the scenario:
    - `incident_report_doc`: Incident report document  
    - `project_status_doc`: Project status update document
    - **ANY tool ending in `_doc`**: These are all document generation tools
+   - **IMPORTANT**: Always include `doc_name` parameter with a descriptive name for the document
 
 **CRITICAL**: You must call ALL available tools to complete the task:
 - `generate_scenario` (required)
 - `generate_objectives` (required) 
 - All persona prompt tools (required)
-- **ALL document generation tools ending in `_doc` (REQUIRED)**
+- **ALL document generation tools ending in `_doc` (required)**
 
 ---
 
@@ -76,13 +77,13 @@ You have access to the following tools to generate the scenario:
   Example: "Priya Interviews for Data Analyst Role"
 
 * **Problem Statement (2–3 sentences):**
-  *If a review/feedback/termination scenario:* Be specific and numeric about performance gaps (e.g., missed deadlines, percent decline, error rate, client survey data).
-  *If an interview scenario:* Clearly define what the company is looking for in the role, using measurable expectations where possible (e.g., "manage 5–7 client accounts," "improve process efficiency by 15%," "deliver monthly reporting to executives").
+  *If a review/feedback/termination scenario:* Be specific and numeric about performance gaps (e.g., missed deadlines, percent decline, error rate, client survey data). Include exact numbers, percentages, and timeframes.
+  *If an interview scenario:* Clearly define what the company is looking for in the role, using measurable expectations where possible (e.g., "manage 5–7 client accounts," "improve process efficiency by 15%," "deliver monthly reporting to executives"). Include specific metrics and quantifiable goals.
   ⚠️ *Note:* Some interview personas may be marked as "cheating candidates." Do **not** reveal or reference this in the problem statement or objectives. It should only be inferred from their behavior/personality.
 
 **Use the `generate_objectives` tool to create:**
-* **Objectives (2–4):** Write clear, **action-oriented objectives** that connect back to company metrics or values.
-  *For interviews:* Focus on what the candidate should demonstrate or communicate to show they meet role requirements (without disclosing cheating info).
+* **Objectives (exactly 3):** Write clear, **action-oriented objectives** that connect back to company metrics or values. Include specific, measurable targets where applicable.
+  *For interviews:* Focus on what the candidate should demonstrate or communicate to show they meet role requirements (without disclosing cheating info). Include quantifiable expectations.
 
 **Use the persona prompt tools to create:**
 * **User Persona Prompts:** Define how user personas (candidates/trainees) should behave in the conversation
@@ -90,11 +91,12 @@ You have access to the following tools to generate the scenario:
 
 **Use ALL available document generation tools:**
 * **Look for ANY tool ending in `_doc`** - these are all document generation tools that MUST be called
-* **Performance Review scenarios**: Use `perf_review_doc` to create formal review documentation
-* **Termination scenarios**: Use `incident_report_doc` to document the termination process and reasons
-* **Constructive feedback scenarios**: Use `project_status_doc` to track improvement progress over time
-* **Interview scenarios**: Use ALL available `_doc` tools for the scenario parameters
-* **IMPORTANT**: If you see a tool ending in `_doc`, you MUST call it - no exceptions
+* **Performance Review scenarios**: Use `perf_review_doc` to create formal review documentation with specific metrics and quantifiable data
+* **Termination scenarios**: Use `incident_report_doc` to document the termination process and reasons with exact performance numbers
+* **Constructive feedback scenarios**: Use `project_status_doc` to track improvement progress over time with measurable targets
+* **Interview scenarios**: Use ALL available `_doc` tools for the scenario parameters with specific role requirements and metrics
+* **IMPORTANT**: If you see a tool ending in `_doc`, you must call it
+* **CRITICAL**: Always include the `doc_name` parameter with a descriptive, specific name for each document
 
 ---
 
@@ -107,17 +109,18 @@ You must call these tools to complete the scenario generation:
    - `problem_statement`: 2–3 sentence numeric, goal-anchored description
 
 2. **`generate_objectives`** - Required  
-   - `objectives`: 2–4 measurable, goal-aligned objectives
+   - `objectives`: Exactly 3 measurable, goal-aligned objectives
 
 3. **Persona prompt tools** - Required (one for each persona)
    - `create_user1_prompt`, `create_user2_prompt`, etc. for user personas
    - `create_agent1_prompt`, `create_agent2_prompt`, etc. for agent personas
    - `prompt`: Custom behavior definition for each persona
 
-4. **Document generation tools** - REQUIRED for ALL tools ending in `_doc`
-   - **MANDATORY**: Call every tool that ends with `_doc`
-   - **NO EXCEPTIONS**: If a tool ends in `_doc`, you must use it
-   - **COMPLETION REQUIREMENT**: Task cannot be completed without calling all `_doc` tools
+4. **Document generation tools** - Required for ALL tools ending in `_doc`
+   - **Required**: Call every tool that ends with `_doc`
+   - **No exceptions**: If a tool ends in `_doc`, you must use it
+   - **Completion requirement**: Task cannot be completed without calling all `_doc` tools
+   - **Critical**: Always include `doc_name` parameter with a descriptive, specific name for each document
 
 ---
 
@@ -144,8 +147,7 @@ You must call these tools to complete the scenario generation:
    - `objectives`: [
      "Communicate experience managing multiple projects",
      "Show ability to produce accurate reports under deadlines", 
-     "Demonstrate process improvement strategies that support a 10% efficiency gain",
-     "Highlight collaboration skills consistent with the company's transparency values"
+     "Demonstrate process improvement strategies that support a 10% efficiency gain"
    ]
 
 3. `create_user1_prompt`:
@@ -168,8 +170,7 @@ You must call these tools to complete the scenario generation:
    - `objectives`: [
      "Analyze causes of missed deadlines",
      "Plan to raise on-time delivery to 90% next year",
-     "Commit to improving client satisfaction scores by 20%",
-     "Align goals with the company's accountability and continuous improvement values"
+     "Commit to improving client satisfaction scores by 20%"
    ]
 
 3. `create_user1_prompt`:
@@ -179,14 +180,15 @@ You must call these tools to complete the scenario generation:
    - `prompt`: "You are agent1, user1's supervisor conducting a year-end performance review. Focus on addressing performance gaps constructively, setting clear goals for next year, and maintaining a supportive but firm tone."
 
 5. `perf_review_doc` (REQUIRED - this tool ends in `_doc`):
+   - `doc_name`: "Taylor Johnson Q4 2024 Performance Review"
    - `company_name`: "TechCorp Solutions"
    - `employee_name`: "Taylor Johnson"
    - `position_held`: "Senior Project Manager"
    - `department`: "Engineering"
    - `reviewer_name`: "Sarah Chen"
    - `date_of_review`: "December 15, 2024"
-   - `greatest_strengths`: "Strong technical skills and team collaboration. Successfully delivered 8 projects despite challenges."
-   - `improvement_areas`: "Project timeline management and client communication. Need to improve deadline adherence and proactive status updates."
+   - `greatest_strengths`: "Strong technical skills and team collaboration. Successfully delivered 8 of 12 projects (67%) despite challenges."
+   - `improvement_areas`: "Project timeline management and client communication. Need to improve deadline adherence from 67% to 90% and proactive status updates."
    - `achieved_goals`: "Completed 67% of assigned projects and maintained team morale during challenging periods."
    - `next_goals`: "Achieve 90% on-time delivery rate, improve client satisfaction scores by 20%, and implement better project tracking systems."
 
@@ -206,8 +208,7 @@ You must call these tools to complete the scenario generation:
    - `objectives`: [
      "Clearly explain the decision with documented performance data",
      "Recognize Morgan's contributions while upholding accountability standards",
-     "Provide details on severance, benefits, and transition support",
-     "Maintain professionalism consistent with the company's integrity and respect values"
+     "Provide details on severance, benefits, and transition support"
    ]
 
 3. `create_user1_prompt`:
@@ -217,6 +218,7 @@ You must call these tools to complete the scenario generation:
    - `prompt`: "You are agent1, user1's supervisor conducting a termination conversation. Be respectful but firm, provide clear documentation of performance issues, and ensure all company policies are followed."
 
 5. `incident_report_doc` (REQUIRED - this tool ends in `_doc`):
+   - `doc_name`: "Morgan Davis Performance Termination Report"
    - `employee_name`: "Morgan Davis"
    - `job_title`: "Senior Developer"
    - `department`: "Engineering"
@@ -224,9 +226,9 @@ You must call these tools to complete the scenario generation:
    - `incident_date`: "December 10, 2024"
    - `incident_time`: "2:00 PM"
    - `incident_location`: "Conference Room A"
-   - `incident_description`: "Performance termination discussion following documented performance issues over 12 months including missed deadlines and quality concerns."
+   - `incident_description`: "Performance termination discussion following documented performance issues over 12 months: missed 9 of 15 key deadlines (60% failure rate) and averaged 18% error rate (3.6x above 5% benchmark)."
    - `immediate_actions`: "Conducted respectful termination conversation, provided severance package details, and arranged for equipment return."
-   - `root_cause`: "Consistent performance issues despite multiple improvement plans and support interventions."
+   - `root_cause`: "Consistent performance issues despite multiple improvement plans and support interventions over 12-month period."
    - `follow_up_actions`: "Process final paperwork, arrange for benefits continuation, and ensure smooth transition of work responsibilities."
 
 ---
@@ -243,8 +245,7 @@ You must call these tools to complete the scenario generation:
    - `objectives`: [
      "Review and discuss client survey feedback",
      "Adopt client-friendly language in all Q3 presentations",
-     "Set a target to raise satisfaction scores to 4.5 by year-end",
-     "Strengthen communication in line with the company's customer-first values"
+     "Set a target to raise satisfaction scores to 4.5 by year-end"
    ]
 
 3. `create_user1_prompt`:
@@ -254,6 +255,7 @@ You must call these tools to complete the scenario generation:
    - `prompt`: "You are agent1, user1's supervisor providing constructive feedback on presentation skills. Be supportive but specific about areas for improvement, provide actionable suggestions, and set clear expectations for improvement."
 
 5. `project_status_doc` (REQUIRED - this tool ends in `_doc`):
+   - `doc_name`: "Riley Communication Skills Improvement Project Status"
    - `project_name`: "Riley's Communication Improvement Initiative"
    - `project_manager`: "Jordan Kim"
    - `report_date`: "December 1, 2024"
@@ -280,4 +282,4 @@ You must call these tools to complete the scenario generation:
 
 **If the answer to ANY question is NO, your task is incomplete!**
 
-**Remember: Tools ending in `_doc` are NOT optional - they are MANDATORY!**
+**Remember: Tools ending in `_doc` are required!**
