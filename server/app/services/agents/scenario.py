@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 import os
@@ -29,7 +30,45 @@ scenario_results: Dict[str, Any] = {}
 scenario_progress: Dict[str, bool] = {}
 
 # Global HTTP client for reuse across tools
-HTTPX_CLIENT = httpx.AsyncClient(timeout=30.0)
+HTTPX_CLIENT = httpx.AsyncClient(
+    timeout=30.0,
+    http2=True,  # Enable HTTP/2 for better performance
+    limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
+)
+
+# Context for socket routing
+_scenario_socket_context: Dict[str, str] = {}  # scenario_id -> socket_id
+
+
+def _emit_progress_fire_and_forget(event: str, data: Dict[str, Any], to: Optional[str] = None) -> None:
+    """Fire-and-forget socketio emit to avoid blocking tool execution."""
+    try:
+        from app.main import get_socketio_instance
+        sio = get_socketio_instance()
+        
+        # Use provided 'to' or try to find socket context
+        target = to
+        if not target and _scenario_socket_context:
+            # Use the first available socket context (for simplicity)
+            # In a more complex setup, you'd pass scenario_id to identify the right socket
+            target = next(iter(_scenario_socket_context.values()))
+        
+        # Create fire-and-forget task
+        if target:
+            asyncio.create_task(sio.emit(event, data, to=target))
+        else:
+            asyncio.create_task(sio.emit(event, data))
+    except Exception as e:
+        logger.warning(f"Failed to emit {event}: {e}")
+
+
+async def cleanup_http_client() -> None:
+    """Clean up the global HTTPX client on shutdown."""
+    try:
+        await HTTPX_CLIENT.aclose()
+        logger.info("HTTPX client closed")
+    except Exception as e:
+        logger.warning(f"Failed to close HTTPX client: {e}")
 
 
 async def upload_pdf_to_s3(pdf_bytes: bytes, doc_id: str) -> None:
@@ -104,10 +143,8 @@ def create_scenario_tool() -> Any:
         }
         scenario_progress['scenario'] = True
         
-        # Emit progress event
-        from app.main import get_socketio_instance
-        sio = get_socketio_instance()
-        await sio.emit("scenario_progress", {
+        # Emit progress event (fire-and-forget)
+        _emit_progress_fire_and_forget("scenario_progress", {
             "type": "scenario",
             "completed": True,
             "message": f"Generated scenario: {title}"
@@ -136,10 +173,8 @@ def create_objectives_tool() -> Any:
         scenario_results['objectives'] = objectives
         scenario_progress['objectives'] = True
         
-        # Emit progress event
-        from app.main import get_socketio_instance
-        sio = get_socketio_instance()
-        await sio.emit("scenario_progress", {
+        # Emit progress event (fire-and-forget)
+        _emit_progress_fire_and_forget("scenario_progress", {
             "type": "objectives",
             "completed": True,
             "message": f"Generated {len(objectives)} objectives",
@@ -182,10 +217,8 @@ def create_persona_prompt_tool(persona_id: uuid.UUID, persona_alias: str, person
         scenario_results['prompt_mapping'][persona_alias] = str(persona_id)
         scenario_progress[f'persona_prompt_{persona_id}'] = True
         
-        # Emit progress event
-        from app.main import get_socketio_instance
-        sio = get_socketio_instance()
-        await sio.emit("scenario_progress", {
+        # Emit progress event (fire-and-forget)
+        _emit_progress_fire_and_forget("scenario_progress", {
             "type": "persona_prompt",
             "completed": True,
             "message": f"Generated prompt for {persona_alias}",
@@ -288,10 +321,8 @@ async def create_document_generation_tool(
                 
                 scenario_results.setdefault("document_ids", []).append(str(document.id))
                 
-                # Emit progress event
-                from app.main import get_socketio_instance
-                sio = get_socketio_instance()
-                await sio.emit("scenario_progress", {
+                # Emit progress event (fire-and-forget)
+                _emit_progress_fire_and_forget("scenario_progress", {
                     "type": "document",
                     "completed": True,
                     "message": f"Generated document: {filename}",
@@ -488,6 +519,7 @@ async def run_scenario_agent(
     additional_context: Optional[str] = None,
     create_child: bool = True,
     session: Session = Depends(get_session),
+    socket_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     This function is used to run the scenario agent.
@@ -509,6 +541,10 @@ async def run_scenario_agent(
         global scenario_results, scenario_progress
         scenario_results.clear()
         scenario_progress.clear()
+        
+        # Store socket context for routing progress events
+        if socket_id:
+            _scenario_socket_context[str(scenario_id)] = socket_id
 
         # Get the scenario to use for parameter history
         from app.models import Scenarios
@@ -614,11 +650,11 @@ async def run_scenario_agent(
         scenario_agent = GenericAgent(
             agent_name="Scenario Generator",
             system_prompt=system_prompt,
-            temperature=None,
+            temperature=0.0,
             tools=scenario_tools,  # scenario_tools is already just the tools list from the tuple
             parallel_tool_calls=True,
             tool_use_behavior=tool_use_behavior,
-            model="gpt-4.1"
+            model="gpt-4.1-nano"
         )
 
         agent_instance = scenario_agent.agent()
@@ -627,16 +663,20 @@ async def run_scenario_agent(
         logger.info("Running scenario generation agent...")
         
         # Emit initial progress event
-        from app.main import get_socketio_instance
-        sio = get_socketio_instance()
-        await sio.emit("scenario_progress", {
+        _emit_progress_fire_and_forget("scenario_progress", {
             "type": "start",
             "message": "Starting scenario generation",
             "total_tools": len(scenario_tools)
         })
         
         with trace("Scenario"):
-            result = await Runner.run(agent_instance, input=history)
+            # Use streamed runner for better progress visibility
+            streamed_result = Runner.run_streamed(agent_instance, input=history)
+            
+            # Optionally handle streaming events for even more granular progress
+            async for event in streamed_result.stream_events():
+                # Could emit planning/tool-call started events here if needed
+                pass
 
         logger.info("Scenario generation agent completed successfully")
         
