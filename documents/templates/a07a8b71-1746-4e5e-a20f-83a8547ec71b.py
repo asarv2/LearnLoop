@@ -105,11 +105,10 @@ def render(args: Args) -> bytes:
     doc.preamble.append(NoEscape(r"\definecolor{primary}{RGB}{14,104,202}    % blue used for section titles"))
     doc.preamble.append(NoEscape(r"\definecolor{labelbg}{RGB}{242,242,242}    % light grey for label cells"))
     
-    # Configure headers and footers
+    # Configure headers and footers (no footer)
     doc.preamble.append(NoEscape(r"\pagestyle{fancy}"))
     doc.preamble.append(NoEscape(r"\fancyhf{}"))
-    doc.preamble.append(NoEscape(r"\fancyfoot[L]{\small\itshape Template downloaded from HelpJuice.com}"))
-    doc.preamble.append(NoEscape(r"\fancyfoot[R]{\small Page \thepage{} of \pageref{LastPage}}"))
+    # Footer lines removed to remove footer
     
     # Improve table row spacing
     doc.preamble.append(NoEscape(r"\renewcommand{\arraystretch}{1.3}"))

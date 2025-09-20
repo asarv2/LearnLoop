@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Type, cast
 
-import boto3
+import aioboto3
 import httpx
 from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
 from app.db import get_session
@@ -14,7 +14,6 @@ from app.models import Chats, Documents, Messages, Parameters
 from app.services.agents.generic import GenericAgent
 from app.utils.tools_args_model import (build_args_model_from_spec,
                                         make_flat_tool_from_args_model)
-from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from dotenv import load_dotenv
 from fastapi import Depends
@@ -28,6 +27,9 @@ logger = logging.getLogger(__name__)
 # Global storage for scenario results
 scenario_results: Dict[str, Any] = {}
 scenario_progress: Dict[str, bool] = {}
+
+# Global HTTP client for reuse across tools
+HTTPX_CLIENT = httpx.AsyncClient(timeout=30.0)
 
 
 async def upload_pdf_to_s3(pdf_bytes: bytes, doc_id: str) -> None:
@@ -44,29 +46,29 @@ async def upload_pdf_to_s3(pdf_bytes: bytes, doc_id: str) -> None:
             logger.error("Missing S3 configuration environment variables")
             raise ValueError("S3 configuration incomplete")
         
-        # Create S3 client with Supabase configuration
-        s3 = boto3.client(
+        # Create async S3 client with Supabase configuration
+        session = aioboto3.Session()
+        async with session.client(
             "s3",
             region_name=project_region,
             endpoint_url=s3_endpoint,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             config=Config(s3={"addressing_style": "path"}, signature_version="s3v4"),
-        )
-        
-        # Upload PDF bytes to S3
-        # File path is just doc_id.pdf as specified
-        key = f"{doc_id}.pdf"
-        
-        # Use put_object for small files (PDFs are typically small)
-        s3.put_object(
-            Bucket=bucket_name,
-            Key=key,
-            Body=pdf_bytes,
-            ContentType="application/pdf"
-        )
-        
-        logger.info(f"Successfully uploaded PDF {key} to S3 bucket {bucket_name}")
+        ) as s3:
+            # Upload PDF bytes to S3
+            # File path is just doc_id.pdf as specified
+            key = f"{doc_id}.pdf"
+            
+            # Use put_object for small files (PDFs are typically small)
+            await s3.put_object(
+                Bucket=bucket_name,
+                Key=key,
+                Body=pdf_bytes,
+                ContentType="application/pdf"
+            )
+            
+            logger.info(f"Successfully uploaded PDF {key} to S3 bucket {bucket_name}")
         
     except Exception as e:
         logger.error(f"Failed to upload PDF to S3: {str(e)}")
@@ -175,10 +177,9 @@ async def create_document_generation_tool(
     """Create a document generation tool for a specific parameter/template combination with typed Args parameter."""
 
     # 1) Pull the template spec and build a strict Args model
-    async with httpx.AsyncClient() as client:
-        r = await client.get(f"{documents_service_url}/templates/{template_id}/spec", timeout=10.0)
-        r.raise_for_status()
-        spec = r.json()  # has "fields", "json_schema", "default_filename", "template_description"
+    r = await HTTPX_CLIENT.get(f"{documents_service_url}/templates/{template_id}/spec")
+    r.raise_for_status()
+    spec = r.json()  # has "fields", "json_schema", "default_filename", "template_description"
     
     # 2) Extract template metadata for better tool naming and description
     default_filename = spec.get("default_filename")  # from DEFAULT_FILENAME
@@ -216,16 +217,15 @@ async def create_document_generation_tool(
                 "kwargs": kwargs_data,
             }
 
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(f"{ds_url}/create", json=payload, timeout=30.0)
-                resp.raise_for_status()
-                response_data = resp.json()
-                pdf_bytes_base64 = response_data["pdf_bytes_base64"]
-                text_content = response_data["text_content"]
-                filename = response_data["filename"]
-                
-                # Decode base64 PDF bytes
-                pdf_bytes = base64.b64decode(pdf_bytes_base64)
+            resp = await HTTPX_CLIENT.post(f"{ds_url}/create", json=payload)
+            resp.raise_for_status()
+            response_data = resp.json()
+            pdf_bytes_base64 = response_data["pdf_bytes_base64"]
+            text_content = response_data["text_content"]
+            filename = response_data["filename"]
+            
+            # Decode base64 PDF bytes
+            pdf_bytes = base64.b64decode(pdf_bytes_base64)
 
             document = Documents(
                 content=text_content,
@@ -283,12 +283,11 @@ async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], s
     
     try:
         # Get available template IDs from documents service
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{documents_service_url}/templates", timeout=10.0)
-            response.raise_for_status()
-            data = response.json()
-            template_ids = cast(List[str], data.get("template_ids", []))
-            available_template_ids = {uuid.UUID(tid) for tid in template_ids}
+        response = await HTTPX_CLIENT.get(f"{documents_service_url}/templates")
+        response.raise_for_status()
+        data = response.json()
+        template_ids = cast(List[str], data.get("template_ids", []))
+        available_template_ids = {uuid.UUID(tid) for tid in template_ids}
         
         logger.info(f"Available template IDs: {available_template_ids}")
         
@@ -301,10 +300,9 @@ async def create_document_tools_for_parameters(parameter_ids: List[uuid.UUID], s
                     parameter_name = parameter.name or f"parameter_{str(parameter_id)[:8]}"
                     
                     # Get template spec for metadata
-                    async with httpx.AsyncClient() as client:
-                        r = await client.get(f"{documents_service_url}/templates/{parameter_id}/spec", timeout=10.0)
-                        r.raise_for_status()
-                        spec = r.json()
+                    r = await HTTPX_CLIENT.get(f"{documents_service_url}/templates/{parameter_id}/spec")
+                    r.raise_for_status()
+                    spec = r.json()
                     
                     # Extract metadata
                     default_filename = spec.get("default_filename")
