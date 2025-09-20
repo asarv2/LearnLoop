@@ -50,6 +50,8 @@ async def _schedule_hints_for_message(chat_id: str, message_id: str) -> None:
                 "message_id": message_id,              # ★ add message_id
                 "success": result.get("success", False),
                 "hints": result.get("hints", []),
+                "low_hints": result.get("dif_low_hints", []),
+                "high_hints": result.get("dif_high_hints", []),
                 "message": result.get("message", ""),
             },
             room=chat_id,
@@ -656,6 +658,8 @@ async def handle_get_hints(sid: str, data: Dict[str, Any]) -> None:
                 "message_id": message_id,   # ★ include
                 "success": result.get("success", False),
                 "hints": result.get("hints", []),
+                "low_hints": result.get("dif_low_hints", []),
+                "high_hints": result.get("dif_high_hints", []),
                 "message": result.get("message", "")
             }, room=chat_id)
         except Exception as e:

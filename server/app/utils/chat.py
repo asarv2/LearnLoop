@@ -306,6 +306,7 @@ def get_audio_config(chat_id: str) -> dict:
                             "voice": persona.voice,
                             "profile_id": str(persona.profile_id) if persona.profile_id else None,
                             "user": is_user,
+                            "persona_id": str(persona.id),
                             "instructions": persona.realtime_prompt or persona.description or "Be helpful and respond to the user's messages.",
                         }
                         agents.append(agent)

@@ -178,6 +178,29 @@ async def s2s_start_room(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
     # Wire up broadcasters to this room id if not already
     if room.on_text_chunk is None:
         async def _text_broadcast(payload: Dict[str, Any]) -> None:
+            # Attempt to enrich payload with persona_id using agent mapping if available
+            try:
+                src = payload.get("source_id") or payload.get("agent_id")
+                persona_id = None
+                if isinstance(src, str) and not src.startswith("user:"):
+                    # find matching agent spec by name portion
+                    name = src.split(":", 1)[-1]
+                    for a in agents:
+                        if (a.get("name") or "") == name and a.get("persona_id"):
+                            persona_id = a.get("persona_id")
+                            break
+                elif isinstance(src, str) and src.startswith("user:"):
+                    # map user profile to persona if present
+                    prof = src.split(":", 1)[-1]
+                    for a in agents:
+                        if a.get("user") and (a.get("profile_id") or "") == prof and a.get("persona_id"):
+                            persona_id = a.get("persona_id")
+                            break
+                if persona_id and isinstance(payload, dict):
+                    payload = dict(payload)
+                    payload["persona_id"] = persona_id
+            except Exception:
+                pass
             await sio.emit("text_chunk", payload, room=room.id)
         room.on_text_chunk = _text_broadcast
     if room.on_transcript is None:
@@ -188,6 +211,24 @@ async def s2s_start_room(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
         async def _txs(payload: Dict[str, Any]) -> None:
             await sio.emit("transcript_stop", payload, room=room.id)
         room.on_transcript_stop = _txs
+
+    # Provide a helper for direct agent text (used by two-party optimization)
+    # This avoids callers poking at private attributes on the agent objects.
+    async def _send_direct_text(agent_id: str, text: str) -> None:
+        try:
+            for a in list(room.agents):
+                try:
+                    if getattr(a, "id", None) == agent_id and hasattr(a, "send_text"):
+                        await getattr(a, "send_text")(text)
+                        break
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    try:
+        setattr(room, "send_agent_text", _send_direct_text)
+    except Exception:
+        pass
 
     return {"room_id": room.id}
 
@@ -268,35 +309,39 @@ async def s2s_user_text(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
         room = get_room(room_id)
         if text_only:
             # Special path: with exactly 2 participants (one human, one agent), do not TTS.
-            # Publish user text and route directly to agent via session.send_message.
-            from .store import upsert_text_chunk as _upsert
-            _ = _upsert(room_id=str(room.id), source_id=human_id, role="user", text=text, message_id=None, chunk_idx=0, is_final=True)
+            # Publish user text via room so it is broadcasted to server/clients and persisted.
+            try:
+                await room.append_text_chunk(
+                    source_id=human_id,
+                    role="user",
+                    text=text,
+                    message_id=None,
+                    chunk_idx=0,
+                    is_final=True,
+                )
+            except Exception:
+                pass
             # Find the sole agent and send text directly if supported
             try:
                 agent_ids = [aid for aid, kind in room.agent_meta.items() if kind == "agent" and aid != "agent:beep"]
                 if len(agent_ids) == 1:
-                    # Use agent API to deliver text directly to model session
                     for a in list(room.agents):
                         try:
                             if getattr(a, "id", None) == agent_ids[0]:
-                                sess = getattr(a, "_session", None)
-                                if sess is not None:
-                                    # Avoid TTS on next output
-                                    try:
-                                        setattr(a, "_suppress_next_tts", True)
-                                    except Exception:
-                                        pass
-                                    try:
-                                        await sess.send_message(text)
-                                        # Save assistant response placeholder for consistency
-                                        try:
-                                            await room.append_text_chunk(
-                                                source_id=agent_ids[0], role="agent", text="", message_id=None, chunk_idx=0, is_final=False
-                                            )
-                                        except Exception:
-                                            pass
-                                    except Exception:
-                                        pass
+                                # Send text using the agent helper which waits for session readiness
+                                try:
+                                    send_fn = getattr(a, "send_text", None)
+                                    if callable(send_fn):
+                                        await send_fn(text)
+                                except Exception:
+                                    pass
+                                # Ensure a placeholder assistant message exists for transcript/text updates
+                                try:
+                                    await room.append_text_chunk(
+                                        source_id=agent_ids[0], role="agent", text="", message_id=None, chunk_idx=0, is_final=False
+                                    )
+                                except Exception:
+                                    pass
                                 break
                         except Exception:
                             pass
