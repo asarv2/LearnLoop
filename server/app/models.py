@@ -385,8 +385,6 @@ class Feedback(_Base, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     strengths: List[str] = Field(sa_column=Column('strengths', ARRAY(Text()), server_default=text("'{}'::text[]")))
     errors: List[str] = Field(sa_column=Column('errors', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    green_flags: List[str] = Field(sa_column=Column('green_flags', ARRAY(Text()), server_default=text("'{}'::text[]")))
-    red_flags: List[str] = Field(sa_column=Column('red_flags', ARRAY(Text()), server_default=text("'{}'::text[]")))
     chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
 
