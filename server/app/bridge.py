@@ -130,6 +130,24 @@ class AudioBridge:
             log.error(f"Failed to ingest frame for {source_id} in room {room_id}: {e}")
             # Don't raise here as this is called frequently and shouldn't break the flow
 
+    async def user_text(self, *, room_id: str, human_id: str, text: str) -> Dict[str, Any]:
+        """Send user text to audio service for TTS and streaming into the bus."""
+        await self._connected.wait()
+        try:
+            payload = self._with_auth({
+                "room_id": room_id,
+                "human_id": human_id,
+                "text": text,
+            })
+            result = await self._client.call("s2s_user_text", payload, timeout=10.0)
+            if isinstance(result, dict) and "error" in result:
+                log.error(f"Audio service error user_text in room {room_id}: {result['error']}")
+                raise Exception(f"Audio service error: {result['error']}")
+            return result if isinstance(result, dict) else {}
+        except Exception as e:
+            log.error(f"Failed to send user_text in room {room_id}: {e}")
+            raise
+
     async def subscribe_mix(self, *, room_id: str, subscriber_id: str) -> MixedAudioSubscriber:
         await self._connected.wait()
         sub = self._mix_subs.get(subscriber_id)
