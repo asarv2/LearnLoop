@@ -15,17 +15,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useChats } from "@/lib/api/hooks/useChats";
+import { useFeedback } from "@/lib/api/hooks/useFeedback";
 import { useAllRubricGrades } from "@/lib/api/hooks/useRubrics";
-import { useAllStandardGrades } from "@/lib/api/hooks/useStandards";
 import { useTrainings } from "@/lib/api/hooks/useTrainings";
-import { type ComponentType, useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
-  Legend,
   Tooltip as RCTooltip,
   ResponsiveContainer,
   XAxis,
@@ -40,29 +37,15 @@ const TRAINING_TYPES: TrainingTypeOption[] = [
   "Leadership",
 ];
 
-const INTERVIEW_CATEGORIES = [
-  { key: "question_quality", label: "Question Quality & Depth" },
-  { key: "followup_skills", label: "Follow-up & Probing Skills" },
-  { key: "assessment_thoughtfulness", label: "Assessment Thoughtfulness" },
-  { key: "interview_conduct", label: "Interview Conduct & Flow" },
-  { key: "communication_rapport", label: "Communication & Rapport" },
-  { key: "professional_judgment", label: "Professional Judgment" },
-] as const;
-
-// Types with rubric dimensions currently supported by the category chart
-// const TYPES_WITH_RUBRICS: TrainingTypeOption[] = ["Interview", "Offboarding"];
-
 export default function Overview() {
   const { data: chats } = useChats();
   const { data: rubricGrades } = useAllRubricGrades();
-  const { data: standardGrades } = useAllStandardGrades();
+  const { data: feedback, isLoading: feedbackLoading } = useFeedback();
   const { data: trainings } = useTrainings();
 
   const [range, setRange] = useState<"weekly" | "monthly">("weekly");
   const [selectedType, setSelectedType] =
     useState<TrainingTypeOption>("Interview");
-  const [avgType, setAvgType] = useState<TrainingTypeOption>("Interview");
-  const [hoursType, setHoursType] = useState<TrainingTypeOption>("Interview");
 
   // Helper function to get score for a chat from its rubric grade
   const getChatScore = useCallback(
@@ -101,94 +84,52 @@ export default function Overview() {
     [chats, getTrainingTypeFromChat]
   );
 
-  const totals = useMemo(() => {
-    const completed = (chats || []).filter((c) => c.completed).length;
+  // Get recent 5 completed conversations with their feedback
+  const recentConversations = useMemo(() => {
+    const completedChats = (chats || [])
+      .filter((c) => c.completed && c.created_at)
+      .sort(
+        (a, b) =>
+          new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime()
+      )
+      .slice(0, 5);
 
-    // Completed trainings in the current month
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const completedThisMonth = (chats || []).filter((c) => {
-      if (!c.completed) return false;
-      const createdAt = c.created_at ? new Date(c.created_at) : null;
-      return createdAt !== null && createdAt >= monthStart;
-    }).length;
+    return completedChats.map((chat) => {
+      const feedbackArray = Array.isArray(feedback) ? feedback : [];
+      const chatFeedback = feedbackArray.find(
+        (f: { chat_id: string }) => f.chat_id === chat.id
+      );
+      return {
+        chat,
+        feedback: chatFeedback,
+        score: getChatScore(chat.id || ""),
+      };
+    });
+  }, [chats, feedback, getChatScore]);
 
-    // Find highest score this month and the training it was from
-    let highestScoreThisMonth = 0;
-    let highestScoreTrainingName: string | null = null;
+  // Extract strengths and areas for improvement from recent conversations
+  const insights = useMemo(() => {
+    const allStrengths: string[] = [];
+    const allAreasForImprovement: string[] = [];
 
-    for (const chat of chats || []) {
-      if (!chat.completed || !chat.created_at) continue;
-
-      const createdAt = new Date(chat.created_at);
-      if (createdAt < monthStart) continue;
-
-      const score = getChatScore(chat.id || "");
-      if (score > highestScoreThisMonth) {
-        highestScoreThisMonth = score;
-        const training = (trainings || []).find(
-          (t) => t.id === chat.training_id
-        );
-        highestScoreTrainingName = training?.title || "Training Session";
+    recentConversations.forEach(({ feedback }) => {
+      if (feedback) {
+        allStrengths.push(...(feedback.strengths || []));
+        allAreasForImprovement.push(...(feedback.errors || []));
       }
-    }
+    });
 
-    // Active days in last 30 days
-    const last30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const activeDays30d = new Set(
-      (chats || [])
-        .filter(
-          (c) => c.completed && c.created_at && new Date(c.created_at) >= last30
-        )
-        .map((c) => new Date(c.created_at || 0).toDateString())
-    ).size;
-
-    // Total hours practiced this month filtered by training type
-    const hoursThisMonth = (() => {
-      const sessions = getChatsByType(hoursType).filter((c) => {
-        if (!c.completed) return false;
-        if (!c.created_at) return false;
-        const createdAt = new Date(c.created_at);
-        return createdAt >= monthStart;
-      });
-
-      const totalMs = sessions.reduce((acc, c) => {
-        const start = c.created_at ? new Date(c.created_at).getTime() : 0;
-        const end = (c as { updated_at?: string }).updated_at
-          ? new Date(
-              (c as { updated_at?: string }).updated_at as string
-            ).getTime()
-          : start;
-        const ms = Math.max(0, end - start);
-        return acc + ms;
-      }, 0);
-      const hours = totalMs / (1000 * 60 * 60);
-      return Math.round(hours * 10) / 10;
-    })();
-
-    // Calculate current streak: consecutive days with at least one completed chat
-    const days = new Set(
-      (chats || [])
-        .filter((c) => c.completed)
-        .map((c) => new Date(c.created_at || 0).toDateString())
-    );
-    let currentStreak = 0;
-    const d = new Date();
-    while (days.has(d.toDateString())) {
-      currentStreak += 1;
-      d.setDate(d.getDate() - 1);
-    }
+    // Remove duplicates and limit to top items
+    const uniqueStrengths = Array.from(new Set(allStrengths)).slice(0, 5);
+    const uniqueAreasForImprovement = Array.from(
+      new Set(allAreasForImprovement)
+    ).slice(0, 5);
 
     return {
-      completed,
-      completedThisMonth,
-      highestScoreThisMonth,
-      highestScoreTrainingName,
-      currentStreak,
-      activeDays30d,
-      hoursThisMonth,
+      strengths: uniqueStrengths,
+      areasForImprovement: uniqueAreasForImprovement,
     };
-  }, [chats, trainings, hoursType, getChatScore, getChatsByType]);
+  }, [recentConversations]);
 
   const trendData = useMemo(() => {
     // Create filtered data with scores from rubric grades for selected training type
@@ -264,242 +205,44 @@ export default function Overview() {
     }
   }, [getChatsByType, selectedType, range, getChatScore]);
 
-  const avgByCategory30d = useMemo(() => {
-    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const recent = getChatsByType(avgType).filter(
-      (s) => new Date(s.created_at || 0).getTime() >= cutoff
-    );
-
-    // Get recent chat IDs for filtering standard grades
-    const recentChatIds = new Set(recent.map((chat) => chat.id));
-
-    // Debug: Log the data we're working with
-    console.log("Recent chats for", avgType, ":", recent.length);
-    console.log("Standard grades available:", standardGrades?.length || 0);
-    console.log("Recent chat IDs:", Array.from(recentChatIds));
-    console.log("Sample standard grade:", standardGrades?.[0]);
-    console.log(
-      "All standard grade names:",
-      standardGrades?.map((sg) => sg.name)
-    );
-
-    if (avgType === "Interview") {
-      return INTERVIEW_CATEGORIES.map((cat) => {
-        // Get all standard grades for recent chats
-        const recentStandardGrades = (standardGrades || []).filter((sg) =>
-          recentChatIds.has(sg.rubric_grades?.chat_id)
-        );
-
-        console.log(`Category ${cat.label} (${cat.key}):`, {
-          totalStandardGrades: standardGrades?.length || 0,
-          recentStandardGrades: recentStandardGrades.length,
-          allNames: recentStandardGrades.map((sg) => sg.name),
-          catKey: cat.key,
-          catLabel: cat.label,
-        });
-
-        // Try to find matching standard grades by name
-        let standardGradeData = recentStandardGrades.filter((sg) => {
-          const name = sg.name?.toLowerCase() || "";
-          const key = cat.key.toLowerCase();
-          const labelWords = cat.label.toLowerCase().split(" ");
-
-          return (
-            name.includes(key) ||
-            name.includes(labelWords[0]) ||
-            name.includes(labelWords[1] || "") ||
-            key.includes(name.split(" ")[0] || "")
-          );
-        });
-
-        // If no matches found, try a more flexible approach
-        if (standardGradeData.length === 0 && recentStandardGrades.length > 0) {
-          // For now, just take the first few standard grades and distribute them
-          // This is a temporary solution until we understand the data structure better
-          standardGradeData = recentStandardGrades.slice(0, 1);
-        }
-
-        if (standardGradeData.length > 0) {
-          const total = standardGradeData.reduce(
-            (sum, sg) => sum + (sg.score || 0),
-            0
-          );
-          const avg = Math.round((total / standardGradeData.length) * 10) / 10;
-          return { name: cat.label, avg };
-        }
-
-        // Fallback to chat data if no standard grades
-        const total = recent.reduce((sum, s) => {
-          const value = (
-            s as unknown as { [k: string]: number | null | undefined }
-          )[cat.key];
-          return sum + (typeof value === "number" ? value : 0);
-        }, 0);
-        const avg = recent.length
-          ? Math.round(((total / recent.length) as number) * 10) / 10
-          : 0;
-        return { name: cat.label, avg };
-      });
-    }
-
-    if (avgType === "Leadership") {
-      const categories = [
-        "Communication",
-        "Decision Making",
-        "Team Management",
-        "Strategic Thinking",
-        "Conflict Resolution",
-        "Performance Management",
-      ];
-
-      return categories.map((category) => {
-        const recentStandardGrades = (standardGrades || []).filter((sg) =>
-          recentChatIds.has(sg.rubric_grades?.chat_id)
-        );
-
-        console.log(`Leadership Category ${category}:`, {
-          recentStandardGrades: recentStandardGrades.length,
-          allNames: recentStandardGrades.map((sg) => sg.name),
-        });
-
-        let standardGradeData = recentStandardGrades.filter((sg) => {
-          const name = sg.name?.toLowerCase() || "";
-          const categoryLower = category.toLowerCase();
-          return (
-            name.includes(categoryLower) ||
-            categoryLower.includes(name.split(" ")[0] || "")
-          );
-        });
-
-        // If no matches found, try a more flexible approach
-        if (standardGradeData.length === 0 && recentStandardGrades.length > 0) {
-          standardGradeData = recentStandardGrades.slice(0, 1);
-        }
-
-        if (standardGradeData.length > 0) {
-          const total = standardGradeData.reduce(
-            (sum, sg) => sum + (sg.score || 0),
-            0
-          );
-          const avg = Math.round((total / standardGradeData.length) * 10) / 10;
-          return { name: category, avg };
-        }
-
-        return { name: category, avg: 0 };
-      });
-    }
-
-    if (avgType === "Critical Conversations") {
-      const categories = [
-        "Active Listening",
-        "Empathy & Understanding",
-        "Clear Communication",
-        "Conflict Resolution",
-        "Emotional Intelligence",
-        "Problem Solving",
-      ];
-
-      return categories.map((category) => {
-        const recentStandardGrades = (standardGrades || []).filter((sg) =>
-          recentChatIds.has(sg.rubric_grades?.chat_id)
-        );
-
-        console.log(`Critical Conversations Category ${category}:`, {
-          recentStandardGrades: recentStandardGrades.length,
-          allNames: recentStandardGrades.map((sg) => sg.name),
-        });
-
-        let standardGradeData = recentStandardGrades.filter((sg) => {
-          const name = sg.name?.toLowerCase() || "";
-          const categoryLower = category.toLowerCase();
-          return (
-            name.includes(categoryLower) ||
-            categoryLower.includes(name.split(" ")[0] || "")
-          );
-        });
-
-        // If no matches found, try a more flexible approach
-        if (standardGradeData.length === 0 && recentStandardGrades.length > 0) {
-          standardGradeData = recentStandardGrades.slice(0, 1);
-        }
-
-        if (standardGradeData.length > 0) {
-          const total = standardGradeData.reduce(
-            (sum, sg) => sum + (sg.score || 0),
-            0
-          );
-          const avg = Math.round((total / standardGradeData.length) * 10) / 10;
-          return { name: category, avg };
-        }
-
-        return { name: category, avg: 0 };
-      });
-    }
-
-    // Fallback placeholder if no standards are found
-    return [{ name: "Overall", avg: 0 }];
-  }, [getChatsByType, avgType, standardGrades]);
-
   return (
     <div className="min-h-screen w-full">
-      <div className="max-w-7xl mx-auto px-4 lg:px-6 py-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">
-              Performance Analytics Dashboard
-            </h2>
-            <p className="text-slate-600 text-base mt-2">
-              Comprehensive insights into your training progress, skill
-              development, and performance metrics
-            </p>
-          </div>
-          <div />
-        </div>
-
-        {/* Top Metrics Row */}
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
-          <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px]">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-medium text-slate-500">
-                Highest Score
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl md:text-4xl font-bold text-indigo-600">
-                {totals.highestScoreThisMonth}
+      <div className="max-w-7xl mx-auto px-4 lg:px-6 py-6 space-y-8">
+        {/* Performance Trends */}
+        <Card className="rounded-2xl shadow-lg border-0 bg-gradient-to-br from-white to-slate-50">
+          <CardHeader className="pb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-xl font-semibold text-slate-900">
+                  Performance Trends
+                </CardTitle>
+                <p className="text-sm text-slate-600 mt-1">
+                  Track your progress over time
+                </p>
               </div>
-              <p className="text-xs text-slate-500">
-                {totals.highestScoreTrainingName || "This month"}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px]">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-medium text-slate-500">
-                This Month
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl md:text-4xl font-bold text-indigo-600">
-                {totals.completedThisMonth}
-              </div>
-              <p className="text-xs text-slate-500">Completed sessions</p>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px]">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-medium text-slate-500">
-                Hours Practiced
-              </CardTitle>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <Select
-                  value={hoursType}
-                  onValueChange={(v) => setHoursType(v as TrainingTypeOption)}
+                  value={range}
+                  onValueChange={(v) =>
+                    setRange(v === "weekly" ? "weekly" : "monthly")
+                  }
                 >
-                  <SelectTrigger className="w-32 rounded-full shadow-sm bg-white text-slate-900 border-slate-200 h-8 px-3 text-xs">
-                    <SelectValue placeholder="Type" />
+                  <SelectTrigger className="w-32 rounded-lg shadow-sm bg-white text-slate-900 border-slate-200 h-9">
+                    <SelectValue placeholder="Range" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white text-slate-900 border border-slate-200">
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={selectedType}
+                  onValueChange={(v) =>
+                    setSelectedType(v as TrainingTypeOption)
+                  }
+                >
+                  <SelectTrigger className="w-48 rounded-lg shadow-sm bg-white text-slate-900 border-slate-200 h-9">
+                    <SelectValue placeholder="Training type" />
                   </SelectTrigger>
                   <SelectContent className="bg-white text-slate-900 border border-slate-200">
                     {TRAINING_TYPES.map((t) => (
@@ -510,115 +253,63 @@ export default function Overview() {
                   </SelectContent>
                 </Select>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl md:text-4xl font-bold text-indigo-600">
-                {totals.hoursThisMonth}
-              </div>
-              <p className="text-xs text-slate-500">This month</p>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px]">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-medium text-slate-500">
-                Current Streak
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl md:text-4xl font-bold text-indigo-600">
-                {totals.currentStreak}
-              </div>
-              <p className="text-xs text-slate-500">Consecutive days</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Score Trends */}
-        <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px]">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Score Trends</CardTitle>
-            <div className="flex items-center gap-2">
-              <Select
-                value={range}
-                onValueChange={(v) =>
-                  setRange(v === "weekly" ? "weekly" : "monthly")
-                }
-              >
-                <SelectTrigger className="w-40 rounded-full shadow-sm bg-white text-slate-900 border-slate-200">
-                  <SelectValue placeholder="Range" />
-                </SelectTrigger>
-                <SelectContent className="bg-white text-slate-900 border border-slate-200">
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="monthly">Monthly</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={selectedType}
-                onValueChange={(v) => setSelectedType(v as TrainingTypeOption)}
-              >
-                <SelectTrigger className="w-56 rounded-full shadow-sm bg-white text-slate-900 border-slate-200">
-                  <SelectValue placeholder="Training type" />
-                </SelectTrigger>
-                <SelectContent className="bg-white text-slate-900 border border-slate-200">
-                  {TRAINING_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="h-72 w-full">
+            <div className="h-80 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
                   data={trendData}
-                  margin={{ left: 8, right: 8, top: 8, bottom: 8 }}
+                  margin={{ left: 16, right: 16, top: 16, bottom: 16 }}
                 >
                   <defs>
                     <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                      <stop
-                        offset="5%"
-                        stopColor="#4f46e5"
-                        stopOpacity={0.35}
-                      />
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
                       <stop
                         offset="95%"
-                        stopColor="#4f46e5"
-                        stopOpacity={0.06}
+                        stopColor="#3b82f6"
+                        stopOpacity={0.05}
                       />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <CartesianGrid strokeDasharray="2 2" stroke="#e2e8f0" />
                   <XAxis
                     dataKey="date"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: "#64748b" }}
+                    tick={{ fill: "#64748b", fontSize: 12 }}
                   />
                   <YAxis
                     tickLine={false}
                     axisLine={false}
                     domain={[0, 100]}
-                    tick={{ fill: "#64748b" }}
+                    tick={{ fill: "#64748b", fontSize: 12 }}
                   />
                   <RCTooltip
                     wrapperStyle={{
-                      borderRadius: 8,
-                      border: "1px solid #e5e7eb",
+                      borderRadius: 12,
+                      border: "1px solid #e2e8f0",
+                      boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
                     }}
-                    contentStyle={{ borderRadius: 8 }}
+                    contentStyle={{
+                      borderRadius: 12,
+                      backgroundColor: "white",
+                      border: "none",
+                    }}
                   />
-                  <Legend />
                   <Area
                     type="monotone"
                     dataKey="score"
-                    stroke="#4f46e5"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
                     fill="url(#colorScore)"
                     isAnimationActive
-                    dot={{ r: 3 }}
+                    dot={{
+                      r: 4,
+                      fill: "#3b82f6",
+                      strokeWidth: 2,
+                      stroke: "white",
+                    }}
                   />
                 </AreaChart>
               </ResponsiveContainer>
@@ -626,134 +317,164 @@ export default function Overview() {
           </CardContent>
         </Card>
 
-        {/* Average Score by Training Type (Last 30 Days) */}
-        {(() => {
-          const RCResponsiveContainer =
-            ResponsiveContainer as unknown as ComponentType<
-              Record<string, unknown>
-            >;
-          const RCBarChart = BarChart as unknown as ComponentType<
-            Record<string, unknown>
-          >;
-          const RCCartesianGrid = CartesianGrid as unknown as ComponentType<
-            Record<string, unknown>
-          >;
-          const RCXAxis = XAxis as unknown as ComponentType<
-            Record<string, unknown>
-          >;
-          const RCYAxis = YAxis as unknown as ComponentType<
-            Record<string, unknown>
-          >;
-          const RCBar = Bar as unknown as ComponentType<
-            Record<string, unknown>
-          >;
-          const RCTip = RCTooltip as unknown as ComponentType<
-            Record<string, unknown>
-          >;
-          return (
-            <Card className="rounded-2xl shadow-md transition-all hover:shadow-lg hover:-translate-y-[1px]">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Average Score by Category (Last 30 Days)</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Select
-                    value={avgType}
-                    onValueChange={(v) => setAvgType(v as TrainingTypeOption)}
+        {/* Insights Cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Strengths Card */}
+          <Card className="rounded-2xl shadow-lg border-0 bg-gradient-to-br from-green-50 to-emerald-50">
+            <CardHeader className="pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                  <svg
+                    className="w-5 h-5 text-green-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
                   >
-                    <SelectTrigger className="w-44 rounded-full shadow-sm bg-white text-slate-900 border-slate-200 h-8 px-3">
-                      <SelectValue placeholder="Training" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white text-slate-900 border border-slate-200">
-                      {TRAINING_TYPES.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[420px] w-full">
-                  <RCResponsiveContainer width="100%" height="100%">
-                    <RCBarChart
-                      data={avgByCategory30d}
-                      margin={{ left: 8, right: 8, top: 8, bottom: 10 }}
+                <div>
+                  <CardTitle className="text-lg font-semibold text-slate-900">
+                    Key Strengths
+                  </CardTitle>
+                  <p className="text-sm text-slate-600">
+                    Based on your recent 5 conversations
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {feedbackLoading ? (
+                  <div className="text-center py-8">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center">
+                      <div className="w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                    <p className="text-sm text-slate-500">
+                      Loading insights...
+                    </p>
+                  </div>
+                ) : insights.strengths.length > 0 ? (
+                  insights.strengths.map((strength, index) => (
+                    <div
+                      key={index}
+                      className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-green-200/50"
                     >
-                      <RCCartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <RCXAxis
-                        dataKey="name"
-                        tickLine={false}
-                        axisLine={false}
-                        height={80}
-                        interval={0}
-                        tick={(props: {
-                          x: number;
-                          y: number;
-                          payload: { value: string };
-                        }) => {
-                          const { x, y, payload } = props;
-                          const text = payload.value;
-                          const words = text.split(" ");
-                          const maxWordsPerLine = 2;
+                      <div className="w-2 h-2 rounded-full bg-green-500 mt-2 flex-shrink-0" />
+                      <p className="text-sm text-slate-700 leading-relaxed">
+                        {strength}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center">
+                      <svg
+                        className="w-8 h-8 text-green-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </div>
+                    <p className="text-sm text-slate-500">
+                      Complete more conversations to see your strengths
+                    </p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
-                          // Split into lines with max 2 words each
-                          const lines = [];
-                          for (
-                            let i = 0;
-                            i < words.length;
-                            i += maxWordsPerLine
-                          ) {
-                            lines.push(
-                              words.slice(i, i + maxWordsPerLine).join(" ")
-                            );
-                          }
-
-                          return (
-                            <g transform={`translate(${x},${y})`}>
-                              {lines.map((line, index) => (
-                                <text
-                                  key={index}
-                                  x={0}
-                                  y={index * 12 + 5}
-                                  textAnchor="middle"
-                                  fill="#64748b"
-                                  fontSize="11"
-                                >
-                                  {line}
-                                </text>
-                              ))}
-                            </g>
-                          );
-                        }}
-                      />
-                      <RCYAxis
-                        allowDecimals={false}
-                        tickLine={false}
-                        axisLine={false}
-                        domain={[0, 5]}
-                        ticks={[0, 1, 2, 3, 4, 5]}
-                        tick={{ fill: "#64748b", fontSize: 12 }}
-                        tickCount={6}
-                      />
-                      <RCTip
-                        wrapperStyle={{
-                          borderRadius: 8,
-                          border: "1px solid #e5e7eb",
-                        }}
-                        contentStyle={{ borderRadius: 8 }}
-                      />
-                      <RCBar
-                        dataKey="avg"
-                        fill="#4f46e5"
-                        radius={[8, 8, 0, 0]}
-                      />
-                    </RCBarChart>
-                  </RCResponsiveContainer>
+          {/* Areas for Improvement Card */}
+          <Card className="rounded-2xl shadow-lg border-0 bg-gradient-to-br from-amber-50 to-orange-50">
+            <CardHeader className="pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                  <svg
+                    className="w-5 h-5 text-amber-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
                 </div>
-              </CardContent>
-            </Card>
-          );
-        })()}
+                <div>
+                  <CardTitle className="text-lg font-semibold text-slate-900">
+                    Areas for Improvement
+                  </CardTitle>
+                  <p className="text-sm text-slate-600">
+                    Focus areas from your recent 5 conversations
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {feedbackLoading ? (
+                  <div className="text-center py-8">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
+                      <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                    <p className="text-sm text-slate-500">
+                      Loading insights...
+                    </p>
+                  </div>
+                ) : insights.areasForImprovement.length > 0 ? (
+                  insights.areasForImprovement.map((area, index) => (
+                    <div
+                      key={index}
+                      className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-amber-200/50"
+                    >
+                      <div className="w-2 h-2 rounded-full bg-amber-500 mt-2 flex-shrink-0" />
+                      <p className="text-sm text-slate-700 leading-relaxed">
+                        {area}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
+                      <svg
+                        className="w-8 h-8 text-amber-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </div>
+                    <p className="text-sm text-slate-500">
+                      Great job! No specific areas for improvement identified
+                    </p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

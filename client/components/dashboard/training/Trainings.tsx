@@ -1,16 +1,23 @@
 /**
  * Trainings.tsx
- * Used to show all of the trainings that are practice.
+ * Used to show all of the trainings organized by type: Standard, Required, Custom
  * @AshokSaravanan222 & @siladie
  * 08-02-2025
  */
 "use client";
 
+import { useAuth } from "@/components/auth/AuthProvider";
 import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
-import { useTrainingsPractice } from "@/lib/api/hooks/useTrainings";
+import {
+  useCreateTraining,
+  useCustomTrainingsForUser,
+  useTrainingsByType,
+  useUpdateTraining,
+} from "@/lib/api/hooks/useTrainings";
 import {
   BulbOutlined,
   CommentOutlined,
+  EditOutlined,
   ExclamationCircleOutlined,
   HeartOutlined,
   PlayCircleOutlined,
@@ -19,12 +26,30 @@ import {
   SafetyOutlined,
   TeamOutlined,
   TrophyOutlined,
+  UploadOutlined,
   UserDeleteOutlined,
 } from "@ant-design/icons";
-import { Badge, Button, Card, Col, Row, Spin, Typography } from "antd";
+import {
+  Badge,
+  Button,
+  Card,
+  Col,
+  Form,
+  Input,
+  message,
+  Modal,
+  Row,
+  Space,
+  Spin,
+  Tabs,
+  Typography,
+  Upload,
+} from "antd";
 import Link from "next/link";
+import React, { useState } from "react";
 
-const { Title, Paragraph, Text } = Typography;
+const { Title, Paragraph } = Typography;
+const { TextArea } = Input;
 
 // Array of colors and icons for training modules
 const trainingColors = [
@@ -86,6 +111,8 @@ function getTrainingDescription(training: {
 function TrainingCard({
   training,
   index,
+  onEdit,
+  isCustom = false,
 }: {
   training: {
     id?: string;
@@ -94,6 +121,8 @@ function TrainingCard({
     active?: boolean | null;
   };
   index: number;
+  onEdit?: () => void;
+  isCustom?: boolean;
 }) {
   const { data: scenarios } = useScenariosByTrainingId(
     training.id || "",
@@ -126,48 +155,24 @@ function TrainingCard({
           position: "relative",
         }}
       >
-        {/* Scenarios Icon with Tooltip */}
-        {/* {training.active && training.id && (
-          <Link href={`/dashboard/trainings/t/${training.id}/scenarios`}>
-            <Tooltip
-              title="View all scenarios"
-              placement="top"
-              overlayStyle={{ zIndex: 1000 }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  top: "12px",
-                  right: "12px",
-                  zIndex: 10,
-                  cursor: "pointer",
-                  padding: "4px",
-                  borderRadius: "4px",
-                  backgroundColor: "rgba(255, 255, 255, 0.9)",
-                  boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-                  transition: "all 0.2s ease",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor =
-                    "rgba(255, 255, 255, 1)";
-                  e.currentTarget.style.transform = "scale(1.1)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor =
-                    "rgba(255, 255, 255, 0.9)";
-                  e.currentTarget.style.transform = "scale(1)";
-                }}
-              >
-                <UnorderedListOutlined
-                  style={{
-                    fontSize: "16px",
-                    color: color,
-                  }}
-                />
-              </div>
-            </Tooltip>
-          </Link>
-        )} */}
+        {/* Edit button for custom trainings */}
+        {isCustom && onEdit && (
+          <Button
+            type="text"
+            icon={<EditOutlined />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            style={{
+              position: "absolute",
+              top: "12px",
+              right: "12px",
+              zIndex: 10,
+            }}
+          />
+        )}
+
         <div style={{ textAlign: "center", marginBottom: "16px" }}>
           <div
             style={{
@@ -234,14 +239,177 @@ function TrainingCard({
   );
 }
 
-export default function Trainings() {
-  const { data: trainings, isLoading, error } = useTrainingsPractice();
+// Custom Training Creation/Edit Modal
+function CreateCustomTrainingModal({
+  visible,
+  onCancel,
+  onSuccess,
+  editingTraining,
+}: {
+  visible: boolean;
+  onCancel: () => void;
+  onSuccess: () => void;
+  editingTraining?: {
+    id: string;
+    title: string;
+    description?: string | null;
+  } | null;
+}) {
+  const [form] = Form.useForm();
+  const createTraining = useCreateTraining();
+  const updateTraining = useUpdateTraining(editingTraining?.id || "");
+  const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
+
+  const handleSubmit = async (values: {
+    scenario: string;
+    description: string;
+  }) => {
+    setLoading(true);
+    try {
+      if (editingTraining) {
+        await updateTraining.mutateAsync({
+          title: values.scenario,
+          description: values.description,
+        });
+        message.success("Custom training updated successfully!");
+      } else {
+        await createTraining.mutateAsync({
+          title: values.scenario,
+          description: values.description,
+          training_type: "custom",
+          practice: true,
+          active: true,
+          show_documents: false,
+          what_to_do: [],
+          what_not_to_do: [],
+          user_id: user?.id,
+        });
+        message.success("Custom training created successfully!");
+      }
+      form.resetFields();
+      onSuccess();
+    } catch {
+      message.error(
+        `Failed to ${editingTraining ? "update" : "create"} custom training`
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Set form values when editing
+  React.useEffect(() => {
+    if (editingTraining && visible) {
+      form.setFieldsValue({
+        scenario: editingTraining.title,
+        description: editingTraining.description || "",
+      });
+    } else if (!editingTraining && visible) {
+      form.resetFields();
+    }
+  }, [editingTraining, visible, form]);
+
+  return (
+    <Modal
+      title={
+        editingTraining ? "Edit Custom Training" : "Create Custom Training"
+      }
+      open={visible}
+      onCancel={onCancel}
+      footer={null}
+      width={600}
+      destroyOnClose
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleSubmit}
+        scrollToFirstError
+      >
+        <Form.Item
+          name="scenario"
+          label="Training Scenario"
+          rules={[
+            { required: true, message: "Please enter the training scenario" },
+            { min: 10, message: "Please provide at least 10 characters" },
+          ]}
+        >
+          <Input
+            placeholder="e.g., Performance Review Discussion, Client Negotiation, Team Conflict Resolution"
+            size="large"
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="description"
+          label="Description"
+          rules={[
+            { required: true, message: "Please enter a description" },
+            { min: 20, message: "Please provide at least 20 characters" },
+          ]}
+        >
+          <TextArea
+            rows={4}
+            placeholder="Describe what this training will help participants learn and practice..."
+          />
+        </Form.Item>
+
+        <Form.Item name="document" label="Supporting Document (Coming Soon)">
+          <Upload.Dragger disabled>
+            <p className="ant-upload-drag-icon">
+              <UploadOutlined />
+            </p>
+            <p className="ant-upload-text">
+              Click or drag file to this area to upload
+            </p>
+            <p className="ant-upload-hint">
+              Document upload functionality will be available soon
+            </p>
+          </Upload.Dragger>
+        </Form.Item>
+
+        <div style={{ textAlign: "right", marginTop: "24px" }}>
+          <Space>
+            <Button onClick={onCancel}>Cancel</Button>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={loading}
+              icon={<PlusOutlined />}
+            >
+              {editingTraining ? "Update Training" : "Create Training"}
+            </Button>
+          </Space>
+        </div>
+      </Form>
+    </Modal>
+  );
+}
+
+// Tab content component for each training type
+function TrainingTabContent({
+  type,
+  onCreateClick,
+  onEditClick,
+}: {
+  type: "standard" | "required" | "custom";
+  onCreateClick?: () => void;
+  onEditClick?: (training: {
+    id: string;
+    title: string;
+    description?: string | null;
+  }) => void;
+}) {
+  const { user } = useAuth();
+  const { data: trainings, isLoading, error } = useTrainingsByType(type);
+  const { data: customTrainings } = useCustomTrainingsForUser(user?.id);
 
   if (isLoading) {
     return (
       <div style={{ textAlign: "center", padding: "50px" }}>
         <Spin size="large" />
-        <div style={{ marginTop: "16px" }}>Loading training modules...</div>
+        <div style={{ marginTop: "16px" }}>Loading trainings...</div>
       </div>
     );
   }
@@ -249,85 +417,99 @@ export default function Trainings() {
   if (error) {
     return (
       <div style={{ textAlign: "center", padding: "50px" }}>
-        <Title level={3} type="danger">
-          Error loading training modules
+        <Title level={4} type="danger">
+          Error loading trainings
         </Title>
         <Paragraph type="secondary">Please try again later.</Paragraph>
       </div>
     );
   }
 
+  // Use custom trainings for custom tab, otherwise use regular trainings
+  const trainingsToShow = type === "custom" ? customTrainings : trainings;
+
+  const filteredTrainings =
+    trainingsToShow?.filter((training) => {
+      if (type === "standard") {
+        // Show only Critical Conversations, Interview, and Leadership Development
+        const title = training.title.toLowerCase();
+        return (
+          (title.includes("difficult conversations") ||
+            title.includes("critical conversations") ||
+            title.includes("interview") ||
+            title.includes("leadership development") ||
+            title.includes("leadership")) &&
+          // Filter out unwanted trainings
+          !title.includes("offboarding") &&
+          !title.includes("customer communication") &&
+          !title.includes("cross-cultural") &&
+          !title.includes("cross cultural")
+        );
+      }
+      return true;
+    }) || [];
+
+  const sortedTrainings =
+    type === "standard"
+      ? filteredTrainings.sort((a, b) => {
+          // Sort Critical Conversations first, then Interview, then Leadership Development
+          const aTitle = a.title.toLowerCase();
+          const bTitle = b.title.toLowerCase();
+
+          if (
+            aTitle.includes("difficult conversations") ||
+            aTitle.includes("critical conversations")
+          )
+            return -1;
+          if (
+            bTitle.includes("difficult conversations") ||
+            bTitle.includes("critical conversations")
+          )
+            return 1;
+
+          if (aTitle.includes("interview")) return -1;
+          if (bTitle.includes("interview")) return 1;
+
+          if (aTitle.includes("leadership")) return -1;
+          if (bTitle.includes("leadership")) return 1;
+
+          return 0;
+        })
+      : filteredTrainings;
+
   return (
     <div>
-      {/* Header Section */}
-      <div style={{ marginBottom: "32px" }}>
-        <Title level={2}>Professional Development Modules</Title>
-        <Text
-          type="secondary"
-          style={{ fontSize: "16px", marginTop: "8px", display: "block" }}
-        >
-          Master essential workplace skills through AI-powered simulations
-          designed for corporate environments
-        </Text>
-      </div>
-
-      {/* Training Cards Grid */}
       <Row gutter={[24, 24]}>
-        {trainings
-          ?.filter((training) => {
-            // Show only Critical Conversations, Interview, and Leadership Development
-            const title = training.title.toLowerCase();
-            return (
-              (title.includes("difficult conversations") ||
-                title.includes("critical conversations") ||
-                title.includes("interview") ||
-                title.includes("leadership development") ||
-                title.includes("leadership")) &&
-              // Filter out unwanted trainings
-              !title.includes("offboarding") &&
-              !title.includes("customer communication") &&
-              !title.includes("cross-cultural") &&
-              !title.includes("cross cultural")
-            );
-          })
-          .sort((a, b) => {
-            // Sort Critical Conversations first, then Interview, then Leadership Development
-            const aTitle = a.title.toLowerCase();
-            const bTitle = b.title.toLowerCase();
+        {sortedTrainings.map((training, index) => (
+          <TrainingCard
+            key={training.id}
+            training={training}
+            index={index}
+            isCustom={type === "custom"}
+            onEdit={
+              type === "custom" && onEditClick && training.id
+                ? () =>
+                    onEditClick({
+                      id: training.id!,
+                      title: training.title,
+                      description: training.description,
+                    })
+                : undefined
+            }
+          />
+        ))}
 
-            if (
-              aTitle.includes("difficult conversations") ||
-              aTitle.includes("critical conversations")
-            )
-              return -1;
-            if (
-              bTitle.includes("difficult conversations") ||
-              bTitle.includes("critical conversations")
-            )
-              return 1;
-
-            if (aTitle.includes("interview")) return -1;
-            if (bTitle.includes("interview")) return 1;
-
-            if (aTitle.includes("leadership")) return -1;
-            if (bTitle.includes("leadership")) return 1;
-
-            return 0;
-          })
-          .map((training, index) => (
-            <TrainingCard key={training.id} training={training} index={index} />
-          ))}
-        {/* Static card: Create your own trainings */}
-        <Col xs={24} sm={12} lg={8}>
-          <Badge.Ribbon text="Coming Soon" color="orange">
+        {type === "custom" && (
+          <Col xs={24} sm={12} lg={8}>
             <Card
-              hoverable={false}
+              hoverable
               style={{
                 height: "100%",
-                cursor: "default",
+                cursor: "pointer",
                 transition: "all 0.3s ease",
-                opacity: 1,
+                backgroundColor: "#fafafa",
               }}
+              onClick={onCreateClick}
             >
               <div style={{ textAlign: "center", marginBottom: "16px" }}>
                 <div
@@ -340,7 +522,7 @@ export default function Trainings() {
                   <PlusOutlined />
                 </div>
                 <Title level={4} style={{ margin: 0 }}>
-                  Create your own trainings
+                  Custom Training
                 </Title>
               </div>
 
@@ -364,42 +546,113 @@ export default function Trainings() {
                 </Paragraph>
               </div>
 
-              {/* Invisible spacer to match button height on other cards */}
               <div style={{ textAlign: "center" }}>
-                <Button style={{ visibility: "hidden" }}>Start Training</Button>
+                <Button
+                  type="primary"
+                  style={{
+                    backgroundColor: trainingColors[0],
+                    borderColor: trainingColors[0],
+                  }}
+                >
+                  Create Training
+                </Button>
               </div>
             </Card>
-          </Badge.Ribbon>
-        </Col>
-      </Row>
+          </Col>
+        )}
 
-      {/* Footer Information */}
-      {/* <Card
-        title="Advanced AI-Powered Learning"
-        style={{ marginTop: "32px" }}
-        type="inner"
-      >
-        <Row gutter={[24, 16]}>
-          <Col xs={24} md={12}>
-            <Title level={5}>Corporate-Ready Solutions</Title>
-            <Paragraph type="secondary">
-              Our training platform leverages cutting-edge artificial
-              intelligence to create realistic workplace scenarios. Each module
-              provides personalized feedback and comprehensive analytics to
-              accelerate your professional development.
-            </Paragraph>
+        {type === "required" && sortedTrainings.length === 0 && (
+          <Col span={24}>
+            <Card style={{ textAlign: "center", padding: "40px" }}>
+              <Title level={4} type="secondary">
+                No Required Trainings
+              </Title>
+              <Paragraph type="secondary">
+                HR has not assigned any required trainings at this time.
+              </Paragraph>
+            </Card>
           </Col>
-          <Col xs={24} md={12}>
-            <Title level={5}>Real-World Application</Title>
-            <Paragraph type="secondary">
-              Designed specifically for corporate environments, our modules
-              focus on real-world challenges that managers and leaders face
-              daily. Each scenario features focused AI personas for realistic
-              practice in a risk-free environment.
-            </Paragraph>
-          </Col>
-        </Row>
-      </Card> */}
+        )}
+      </Row>
+    </div>
+  );
+}
+
+export default function Trainings() {
+  const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [editingTraining, setEditingTraining] = useState<{
+    id: string;
+    title: string;
+    description?: string | null;
+  } | null>(null);
+
+  const handleCreateSuccess = () => {
+    setCreateModalVisible(false);
+    setEditingTraining(null);
+    // The query will automatically refetch due to invalidation
+  };
+
+  const handleEditClick = (training: {
+    id: string;
+    title: string;
+    description?: string | null;
+  }) => {
+    setEditingTraining(training);
+    setCreateModalVisible(true);
+  };
+
+  const handleCreateClick = () => {
+    setEditingTraining(null);
+    setCreateModalVisible(true);
+  };
+
+  const tabItems = [
+    {
+      key: "standard",
+      label: "Standard",
+      children: <TrainingTabContent type="standard" />,
+    },
+    {
+      key: "required",
+      label: "Required",
+      children: <TrainingTabContent type="required" />,
+    },
+    {
+      key: "custom",
+      label: "Custom",
+      children: (
+        <TrainingTabContent
+          type="custom"
+          onCreateClick={handleCreateClick}
+          onEditClick={handleEditClick}
+        />
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      {/* Training Tabs */}
+      <Tabs
+        defaultActiveKey="standard"
+        items={tabItems}
+        size="large"
+        tabBarStyle={{
+          marginBottom: "24px",
+          borderBottom: "1px solid #f0f0f0",
+        }}
+      />
+
+      {/* Create Custom Training Modal */}
+      <CreateCustomTrainingModal
+        visible={createModalVisible}
+        onCancel={() => {
+          setCreateModalVisible(false);
+          setEditingTraining(null);
+        }}
+        onSuccess={handleCreateSuccess}
+        editingTraining={editingTraining}
+      />
     </div>
   );
 }

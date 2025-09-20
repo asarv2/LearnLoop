@@ -37,10 +37,6 @@ const menuItems = [
     label: <Link href="/dashboard/history">History</Link>,
   },
   {
-    key: "/dashboard/requests",
-    label: <Link href="/dashboard/requests">Requests</Link>,
-  },
-  {
     key: "suggestions",
     label: "Suggestions",
   },
