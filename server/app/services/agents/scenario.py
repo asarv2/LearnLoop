@@ -323,15 +323,19 @@ async def create_document_generation_tool(
             # Extract text content from PDF
             text_content = _extract_text_from_pdf(pdf_bytes)
             
-            # Get filename from Content-Disposition header
-            content_disposition = resp.headers.get("content-disposition", "")
-            filename = "document"  # default
-            if "filename=" in content_disposition:
-                filename = content_disposition.split("filename=")[1].strip('"').replace(".pdf", "")
+            # Get document name from the doc_name field in validated_args
+            doc_name = getattr(validated_args, "doc_name", "")
+            if not doc_name or doc_name.strip() == "":
+                # Fallback to Content-Disposition header if doc_name is empty
+                content_disposition = resp.headers.get("content-disposition", "")
+                if "filename=" in content_disposition:
+                    doc_name = content_disposition.split("filename=")[1].strip('"').replace(".pdf", "")
+                else:
+                    doc_name = "document"  # final fallback
 
             document = Documents(
                 content=text_content,
-                title=filename,
+                title=doc_name,
                 profile_id=None
             )
 
@@ -357,9 +361,9 @@ async def create_document_generation_tool(
                 _emit_progress_fire_and_forget("scenario_progress", {
                     "type": "document",
                     "completed": True,
-                    "message": f"Generated document: {filename}",
+                    "message": f"Generated document: {doc_name}",
                     "document_id": str(document.id),
-                    "filename": filename,
+                    "filename": doc_name,
                     "parameter_name": parameter_name
                 })
                 
