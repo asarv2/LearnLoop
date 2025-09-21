@@ -330,48 +330,13 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         return true;
       });
 
-      // Create group field values with incremental numbering for name fields
-      const groupFieldValuesWithNumbering = filteredGroupFieldIds.map((fieldId: string) => {
-        const field = fields.find((f) => f.id === fieldId);
-        
-        // Check if this is a name field (persona_field_id) and if there are multiple instances
-        if (field && field.field_type === "text") {
-          // Find all groups that have this field_id as their persona_field_id
-          const groupsWithSameNameField = (scenario.group_ids || [])
-            .map((groupId: string) => groups.find((g) => g.id === groupId))
-            .filter((group) => group?.persona_field_id === fieldId);
-          
-          if (groupsWithSameNameField.length > 1) {
-            // Find which group this field belongs to and assign a number
-            const currentGroup = groups.find((g) => 
-              g.persona_field_id === fieldId || 
-              g.mood_field_id === fieldId || 
-              g.position_field_id === fieldId || 
-              g.level_field_id === fieldId ||
-              (g.field_ids || []).includes(fieldId)
-            );
-            
-            if (currentGroup) {
-              const groupIndex = groupsWithSameNameField.findIndex(g => g?.id === currentGroup.id);
-              const baseName = field.name || "Field";
-              return {
-                fieldId,
-                value: "",
-                parameterId: undefined,
-                displayName: `${baseName} ${groupIndex + 1}`,
-              };
-            }
-          }
-        }
-        
-        return {
+      setGroupFieldValues(
+        filteredGroupFieldIds.map((fieldId: string) => ({
           fieldId,
           value: "",
           parameterId: undefined,
-        };
-      });
-
-      setGroupFieldValues(groupFieldValuesWithNumbering);
+        }))
+      );
     }
   }, [scenario, fields, groups, training]);
 
@@ -1322,6 +1287,43 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                                 const isLast =
                                   index === orderedFieldIds.length - 1;
 
+                                // Check if this field needs numbering (persona_field_id with multiple instances)
+                                let customFieldName: string | undefined;
+                                if (field.field_type === "text") {
+                                  const groupsWithSameNameField = (
+                                    scenario.group_ids || []
+                                  )
+                                    .map((groupId: string) =>
+                                      groups.find((g) => g.id === groupId)
+                                    )
+                                    .filter(
+                                      (group) =>
+                                        group?.persona_field_id === fieldId
+                                    );
+
+                                  if (groupsWithSameNameField.length > 1) {
+                                    const currentGroup = groups.find(
+                                      (g) =>
+                                        g.persona_field_id === fieldId ||
+                                        g.mood_field_id === fieldId ||
+                                        g.position_field_id === fieldId ||
+                                        g.level_field_id === fieldId ||
+                                        (g.field_ids || []).includes(fieldId)
+                                    );
+
+                                    if (currentGroup) {
+                                      const groupIndex =
+                                        groupsWithSameNameField.findIndex(
+                                          (g) => g?.id === currentGroup.id
+                                        );
+                                      const baseName = field.name || "Field";
+                                      customFieldName = `${baseName} ${
+                                        groupIndex + 1
+                                      }`;
+                                    }
+                                  }
+                                }
+
                                 return (
                                   <FieldCard
                                     key={fieldId}
@@ -1347,6 +1349,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                                     setCustomVoiceType={setCustomVoiceType}
                                     hideBorder={true}
                                     hideDivider={true}
+                                    customFieldName={customFieldName}
                                   />
                                 );
                               }
