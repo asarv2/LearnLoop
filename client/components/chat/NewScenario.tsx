@@ -659,45 +659,41 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   };
 
   const allStepsComplete = (() => {
-    // Check individual fields
-    const individualFieldsComplete =
-      fieldValues.length > 0 &&
-      fieldValues.every((fv) => {
+    // Check individual fields - handle case where there are no individual fields
+    const individualFieldsComplete = (() => {
+      // If there are no individual field values, check if there should be any
+      if (fieldValues.length === 0) {
+        // Check if scenario has any individual field_ids that should be rendered
+        const scenarioIndividualFieldIds = scenario?.field_ids || [];
+        const visibleIndividualFieldIds = scenarioIndividualFieldIds.filter(
+          (fieldId: string) => {
+            const field = fields?.find((f) => f.id === fieldId);
+            if (!field) return false;
+            if (field.hidden) return false; // Hidden fields don't count
+            if (field.field_type === "document") {
+              return training?.show_documents === true;
+            }
+            return true;
+          }
+        );
+        // If no visible individual fields should exist, then individual fields are complete
+        return visibleIndividualFieldIds.length === 0;
+      }
+
+      // If there are individual field values, check they're all complete
+      return fieldValues.every((fv) => {
         const field = fields?.find((f) => f.id === fv.fieldId);
         if (!field) return false;
         if (field.hidden) return true; // hidden fields do not gate UI completion
         if (field.field_type === "document") return true;
         return isStepComplete(fv.fieldId);
       });
+    })();
 
     // Check group fields - only if there are groups with fields
     const groupFieldsComplete = (() => {
       if (!scenario?.group_ids || scenario.group_ids.length === 0) {
         return true; // No groups, so group fields are complete
-      }
-
-      // Get all field IDs from all groups (persona first, then mood, position, level, then additional field_ids)
-      const allGroupFieldIds = scenario.group_ids
-        .map((groupId: string) => {
-          const group = groups?.find((g) => g.id === groupId);
-          if (!group) return [];
-          return [
-            group.persona_field_id,
-            group.mood_field_id,
-            group.position_field_id,
-            group.level_field_id,
-            ...(group.field_ids || []),
-          ].filter((fieldId): fieldId is string => {
-            if (!fieldId) return false;
-            const field = fields?.find((f) => f.id === fieldId);
-            // Do not render hidden fields in the UI
-            return field ? !field.hidden : true;
-          });
-        })
-        .flat();
-
-      if (allGroupFieldIds.length === 0) {
-        return true; // No group fields to complete
       }
 
       // Check if all group fields are complete by iterating through each group
@@ -717,6 +713,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           // Do not render hidden fields in the UI
           return field ? !field.hidden : true;
         });
+
+        // If this group has no visible fields, skip it
+        if (groupFieldIds.length === 0) {
+          continue;
+        }
 
         // Check if all fields in this group are complete
         const groupComplete = groupFieldIds.every((fieldId) =>
