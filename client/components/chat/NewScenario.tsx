@@ -557,7 +557,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           // Exclude custom persona parameters and inactive personas from autofill
           const candidates = paramsForField
             .filter(
-              (p) => (p.description || "").toLowerCase() !== "custom persona"
+              (p) =>
+                (p.description || "").toLowerCase() !==
+                `custom ${field.name?.toLowerCase() || "persona"}`
             )
             .filter((p) => {
               const persona = personas?.find((pp) => pp.id === p.value);
@@ -896,7 +898,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 const createdParam = await createParameterGlobal.mutateAsync({
                   field_id: field.id,
                   name: customPersonaName,
-                  description: "Custom Persona",
+                  description: `Custom ${field.name || "Persona"}`,
                   value: newPersona.id,
                 });
                 if (createdParam?.id) {
@@ -998,7 +1000,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           case "persona": {
             const nonCustom = paramsForField
               .filter(
-                (p) => (p.description || "").toLowerCase() !== "custom persona"
+                (p) =>
+                  (p.description || "").toLowerCase() !==
+                  `custom ${field.name?.toLowerCase() || "persona"}`
               )
               .filter((p) => {
                 const persona = personas?.find((pp) => pp.id === p.value);
@@ -1031,7 +1035,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           const candidates = (allParameters || [])
             .filter((p) => p.field_id === f.id)
             .filter(
-              (p) => (p.description || "").toLowerCase() !== "custom persona"
+              (p) =>
+                (p.description || "").toLowerCase() !==
+                `custom ${f.name?.toLowerCase() || "persona"}`
             )
             .filter((p) => {
               const persona = personas?.find((pp) => pp.id === p.value);

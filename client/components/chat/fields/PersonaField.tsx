@@ -70,7 +70,9 @@ export default function PersonaField({
   ];
 
   const handlePersonaSelect = (parameterId: string) => {
-    if (parameterId === "custom") {
+    const p = parameters?.find((pp) => pp.id === parameterId);
+    if (p && p.value === null) {
+      // Select sentinel "Custom" and focus the custom input
       setIsCustomPersonaSelected(true);
       setSelectedPersonaId("");
       onChange("Custom", undefined);
@@ -185,7 +187,11 @@ export default function PersonaField({
     ?.filter((p) => {
       // Always include the currently selected parameter
       if (selectedParameterId && p.id === selectedParameterId) return true;
-      return (p.description || "").toLowerCase() !== "custom persona";
+      return (
+        (p.description || "").toLowerCase() !==
+          `custom ${field.name?.toLowerCase() || "persona"}` &&
+        (p.description || "").trim() !== ""
+      );
     })
     ?.filter((p) => {
       // Always include the currently selected parameter
@@ -199,7 +205,12 @@ export default function PersonaField({
       {displayedParameters
         ?.sort((a, b) => b.updated_at?.localeCompare(a.updated_at || "") || 0)
         .map((parameter, index) => {
-          const isSelected = selectedPersonaId === parameter.id;
+          // Custom sentinel is determined by value === null
+          const isCustom = parameter.value === null;
+          const isSelected =
+            selectedPersonaId === parameter.id ||
+            (isCustom &&
+              (selectedParameterId === undefined || isCustomPersonaSelected));
           const colorIndex = index % colors.length;
           // Remove "Employee" from the end of the parameter name for display
           const displayName = (parameter.name || "Unnamed Parameter").replace(
@@ -343,7 +354,13 @@ export default function PersonaField({
           cursor: "pointer",
           transition: "all 0.2s ease",
         }}
-        onClick={() => handlePersonaSelect("custom")}
+        onClick={() => {
+          // Find the sentinel parameter with value === null
+          const sentinelParam = parameters?.find((p) => p.value === null);
+          if (sentinelParam) {
+            handlePersonaSelect(sentinelParam.id!);
+          }
+        }}
       >
         <Box p="4">
           <Flex direction="column" gap="3">
@@ -376,7 +393,8 @@ export default function PersonaField({
                   Custom:
                 </Text>
                 <Text size="2" color="gray" style={{ paddingLeft: "4px" }}>
-                  Create employee with custom name and voice
+                  Create {field.name?.toLowerCase() || "persona"} with custom
+                  name and voice
                 </Text>
               </Box>
             </Flex>
@@ -392,7 +410,9 @@ export default function PersonaField({
                   <Box>
                     <input
                       type="text"
-                      placeholder="Enter employee name..."
+                      placeholder={`Enter ${
+                        field.name?.toLowerCase() || "persona"
+                      } name...`}
                       value={customPersonaName}
                       onChange={(e) => setCustomPersonaName(e.target.value)}
                       style={{
