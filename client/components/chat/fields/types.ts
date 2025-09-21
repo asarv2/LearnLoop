@@ -6,6 +6,7 @@ export type FieldValue = {
   parameterId?: string;
   file?: File; // Add file for document fields
   selectedPersonas?: string[]; // Array of selected persona parameter IDs
+  groupId?: string; // For group fields, stores the group ID to create unique identifiers
 };
 
 export type FieldProps = {
