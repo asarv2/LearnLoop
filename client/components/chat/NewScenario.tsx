@@ -1150,66 +1150,55 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     <Box style={{ minHeight: "100vh", background: "transparent" }}>
       {/* Header */}
 
-      {/* Back Button */}
-      <Container size="4" pt="4">
-        <Link href="/dashboard/trainings">
-          <Button variant="ghost" size="2" style={{ color: "black" }}>
-            <ArrowLeftIcon width="16" height="16" />
-            Back to Training Dashboard
+      {/* Back Button and Auto-Fill Button */}
+      <Container size="4" pt="4" pb="1">
+        <Flex justify="between" align="center">
+          <Link href="/dashboard/trainings">
+            <Button variant="ghost" size="2" style={{ color: "black" }}>
+              <ArrowLeftIcon width="16" height="16" />
+              Back to Training Dashboard
+            </Button>
+          </Link>
+          <Button
+            variant="solid"
+            size="3"
+            onClick={handleAutoFill}
+            style={{
+              backgroundColor: "var(--violet-9)",
+              color: "white",
+              border: "none",
+              borderRadius: "8px",
+              padding: "12px 20px",
+              fontSize: "14px",
+              fontWeight: "600",
+              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
+              transition: "all 0.2s ease",
+              cursor: "pointer",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--violet-10)";
+              e.currentTarget.style.transform = "translateY(-1px)";
+              e.currentTarget.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.2)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--violet-9)";
+              e.currentTarget.style.transform = "translateY(0px)";
+              e.currentTarget.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.15)";
+            }}
+          >
+            Auto-Fill
           </Button>
-        </Link>
+        </Flex>
       </Container>
 
       {/* Main Content */}
-      <Container size="4" py="8">
+      <Container size="4" pt="2" pb="8">
         {/* Hero Section */}
         <Box mb="10" style={{ textAlign: "center" }}>
-          {/* Title with Auto-Fill Button */}
-          <Box style={{ position: "relative", marginBottom: "16px" }}>
+          <Box style={{ marginBottom: "16px" }}>
             <Heading size="9" weight="bold">
               {scenario.title}
             </Heading>
-            {/* Auto-Fill Button */}
-            <Box
-              style={{
-                position: "absolute",
-                top: "50%",
-                right: "0",
-                transform: "translateY(-50%)",
-              }}
-            >
-              <Button
-                variant="solid"
-                size="3"
-                onClick={handleAutoFill}
-                style={{
-                  backgroundColor: "var(--violet-9)",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "12px 20px",
-                  fontSize: "14px",
-                  fontWeight: "600",
-                  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.15)",
-                  transition: "all 0.2s ease",
-                  cursor: "pointer",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "var(--violet-10)";
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                  e.currentTarget.style.boxShadow =
-                    "0 4px 12px rgba(0, 0, 0, 0.2)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "var(--violet-9)";
-                  e.currentTarget.style.transform = "translateY(0px)";
-                  e.currentTarget.style.boxShadow =
-                    "0 2px 8px rgba(0, 0, 0, 0.15)";
-                }}
-              >
-                Auto-Fill
-              </Button>
-            </Box>
           </Box>
           <Text size="4" color="gray">
             {scenario.description}
