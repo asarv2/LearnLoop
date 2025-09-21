@@ -497,111 +497,116 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     const pickRandom = <T,>(arr: T[]): T | undefined =>
       arr[Math.floor(Math.random() * arr.length)];
 
-    setFieldValues((prev) =>
-      prev.map((fv) => {
-        const field = fields?.find((f) => f.id === fv.fieldId);
-        if (!field) return fv;
+    // Helper function to auto-fill a single field value
+    const autoFillFieldValue = (fv: FieldValue) => {
+      const field = fields?.find((f) => f.id === fv.fieldId);
+      if (!field) return fv;
 
-        const paramsForField = (allParameters || []).filter(
-          (p) => p.field_id === field.id
+      const paramsForField = (allParameters || []).filter(
+        (p) => p.field_id === field.id
+      );
+
+      if (field.field_type === "text") {
+        const candidates = paramsForField.filter(
+          (p) => (p.value || "").trim() !== ""
         );
-
-        if (field.field_type === "text") {
-          const candidates = paramsForField.filter(
-            (p) => (p.value || "").trim() !== ""
-          );
-          if (candidates.length > 0) {
-            const choice = pickRandom(candidates)!;
-            return { ...fv, value: choice.value || "", parameterId: choice.id };
-          }
-          return fv;
+        if (candidates.length > 0) {
+          const choice = pickRandom(candidates)!;
+          return { ...fv, value: choice.value || "", parameterId: choice.id };
         }
-
-        if (field.field_type === "categorical") {
-          const customCandidates = paramsForField.filter(
-            (p) =>
-              (p.description || "").toLowerCase() ===
-              `custom ${field.name?.toLowerCase() || "option"}`
-          );
-          const normalCandidates = paramsForField.filter(
-            (p) =>
-              p.value !== null &&
-              (p.description || "").toLowerCase() !==
-                `custom ${field.name?.toLowerCase() || "option"}` &&
-              (p.description || "").trim() !== ""
-          );
-          // If both custom and normal candidates exist, randomly pick from all
-          if (customCandidates.length > 0 && normalCandidates.length > 0) {
-            // Combine both, but for custom, parameterId is undefined
-            const allCandidates = [
-              ...normalCandidates.map((p) => ({
-                value: p.name || "",
-                parameterId: p.id,
-              })),
-              ...customCandidates.map((p) => ({
-                value: p.name || "",
-                parameterId: undefined,
-              })),
-            ];
-            const choice = pickRandom(allCandidates)!;
-            return {
-              ...fv,
-              value: choice.value,
-              parameterId: choice.parameterId,
-            };
-          }
-          // If only custom candidates exist
-          if (customCandidates.length > 0) {
-            const choice = pickRandom(customCandidates)!;
-            return { ...fv, value: choice.name || "", parameterId: undefined };
-          }
-          // If only normal candidates exist
-          if (normalCandidates.length > 0) {
-            const choice = pickRandom(normalCandidates)!;
-            return { ...fv, value: choice.name || "", parameterId: choice.id };
-          }
-          return fv;
-        }
-
-        if (field.field_type === "persona") {
-          // Exclude custom persona parameters and inactive personas from autofill
-          const candidates = paramsForField
-            .filter(
-              (p) =>
-                (p.description || "").toLowerCase() !==
-                `custom ${field.name?.toLowerCase() || "persona"}`
-            )
-            .filter((p) => {
-              const persona = personas?.find((pp) => pp.id === p.value);
-              return persona?.active === true;
-            });
-          if (candidates.length > 0) {
-            const choice = pickRandom(candidates)!;
-            // If auto-fill chooses a concrete persona, ensure custom selections are cleared
-            return {
-              ...fv,
-              value: choice.name || "",
-              parameterId: choice.id,
-            };
-          }
-          return fv;
-        }
-
-        // Skip document and numerical by default
-        if (field.field_type === "numerical") {
-          const candidates = paramsForField.filter(
-            (p) => (p.value || "").trim() !== ""
-          );
-          if (candidates.length > 0) {
-            const choice = pickRandom(candidates)!;
-            return { ...fv, value: choice.value || "" };
-          }
-          return fv;
-        }
-
         return fv;
-      })
-    );
+      }
+
+      if (field.field_type === "categorical") {
+        const customCandidates = paramsForField.filter(
+          (p) =>
+            (p.description || "").toLowerCase() ===
+            `custom ${field.name?.toLowerCase() || "option"}`
+        );
+        const normalCandidates = paramsForField.filter(
+          (p) =>
+            p.value !== null &&
+            (p.description || "").toLowerCase() !==
+              `custom ${field.name?.toLowerCase() || "option"}` &&
+            (p.description || "").trim() !== ""
+        );
+        // If both custom and normal candidates exist, randomly pick from all
+        if (customCandidates.length > 0 && normalCandidates.length > 0) {
+          // Combine both, but for custom, parameterId is undefined
+          const allCandidates = [
+            ...normalCandidates.map((p) => ({
+              value: p.name || "",
+              parameterId: p.id,
+            })),
+            ...customCandidates.map((p) => ({
+              value: p.name || "",
+              parameterId: undefined,
+            })),
+          ];
+          const choice = pickRandom(allCandidates)!;
+          return {
+            ...fv,
+            value: choice.value,
+            parameterId: choice.parameterId,
+          };
+        }
+        // If only custom candidates exist
+        if (customCandidates.length > 0) {
+          const choice = pickRandom(customCandidates)!;
+          return { ...fv, value: choice.name || "", parameterId: undefined };
+        }
+        // If only normal candidates exist
+        if (normalCandidates.length > 0) {
+          const choice = pickRandom(normalCandidates)!;
+          return { ...fv, value: choice.name || "", parameterId: choice.id };
+        }
+        return fv;
+      }
+
+      if (field.field_type === "persona") {
+        // Exclude custom persona parameters and inactive personas from autofill
+        const candidates = paramsForField
+          .filter(
+            (p) =>
+              (p.description || "").toLowerCase() !==
+              `custom ${field.name?.toLowerCase() || "persona"}`
+          )
+          .filter((p) => {
+            const persona = personas?.find((pp) => pp.id === p.value);
+            return persona?.active === true;
+          });
+        if (candidates.length > 0) {
+          const choice = pickRandom(candidates)!;
+          // If auto-fill chooses a concrete persona, ensure custom selections are cleared
+          return {
+            ...fv,
+            value: choice.name || "",
+            parameterId: choice.id,
+          };
+        }
+        return fv;
+      }
+
+      // Skip document and numerical by default
+      if (field.field_type === "numerical") {
+        const candidates = paramsForField.filter(
+          (p) => (p.value || "").trim() !== ""
+        );
+        if (candidates.length > 0) {
+          const choice = pickRandom(candidates)!;
+          return { ...fv, value: choice.value || "" };
+        }
+        return fv;
+      }
+
+      return fv;
+    };
+
+    // Auto-fill individual fields
+    setFieldValues((prev) => prev.map(autoFillFieldValue));
+
+    // Auto-fill group fields
+    setGroupFieldValues((prev) => prev.map(autoFillFieldValue));
 
     // If auto-fill set a concrete persona, clear any "Custom" selection flags
     // by resetting the custom persona-related global state.
@@ -685,7 +690,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         const field = fields?.find((f) => f.id === fv.fieldId);
         if (!field) return false;
         if (field.hidden) return true; // hidden fields do not gate UI completion
-        if (field.field_type === "document") return true;
         return isStepComplete(fv.fieldId);
       });
     })();
