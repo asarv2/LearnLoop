@@ -24,7 +24,7 @@ import {
   Text,
 } from "@radix-ui/themes";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 // Hooks
@@ -297,46 +297,44 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         }))
       );
 
-      // Initialize group field values separately using specific field IDs
-      const groupFieldIds = (scenario.group_ids || [])
-        .map((groupId: string) => {
-          const group = groups.find((g) => g.id === groupId);
-          if (!group) return [];
+      // Create unique field values by combining groupId + fieldId
+      const uniqueGroupFieldValues: FieldValue[] = [];
+      (scenario.group_ids || []).forEach((groupId: string) => {
+        const group = groups.find((g) => g.id === groupId);
+        if (!group) return;
 
-          // Return field IDs in the specified order: persona first, then mood, position, level, then additional field_ids
-          const fieldIds = [
-            group.persona_field_id,
-            group.mood_field_id,
-            group.position_field_id,
-            group.level_field_id,
-            ...(group.field_ids || []),
-          ].filter((fieldId): fieldId is string => {
-            if (!fieldId) return false;
-            const field = fields?.find((f) => f.id === fieldId);
-            // Do not render hidden fields in the UI
-            return field ? !field.hidden : true;
+        const groupFieldIds = [
+          group.persona_field_id,
+          group.mood_field_id,
+          group.position_field_id,
+          group.level_field_id,
+          ...(group.field_ids || []),
+        ].filter((fieldId): fieldId is string => {
+          if (!fieldId) return false;
+          const field = fields?.find((f) => f.id === fieldId);
+          // Do not render hidden fields in the UI
+          return field ? !field.hidden : true;
+        });
+
+        groupFieldIds.forEach((fieldId: string) => {
+          const field = fields?.find((f) => f.id === fieldId);
+          if (!field) return;
+
+          // Check document field visibility
+          if (field.field_type === "document") {
+            if (!training?.show_documents) return;
+          }
+
+          uniqueGroupFieldValues.push({
+            fieldId,
+            value: "",
+            parameterId: undefined,
+            groupId, // Add groupId to create unique identifier
           });
-
-          return fieldIds;
-        })
-        .flat();
-
-      const filteredGroupFieldIds = groupFieldIds.filter((fieldId: string) => {
-        const field = fields.find((f) => f.id === fieldId);
-        if (!field) return false;
-        if (field.field_type === "document") {
-          return training?.show_documents === true;
-        }
-        return true;
+        });
       });
 
-      setGroupFieldValues(
-        filteredGroupFieldIds.map((fieldId: string) => ({
-          fieldId,
-          value: "",
-          parameterId: undefined,
-        }))
-      );
+      setGroupFieldValues(uniqueGroupFieldValues);
     }
   }, [scenario, fields, groups, training]);
 
@@ -483,11 +481,14 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     fieldId: string,
     value: string,
     parameterId?: string,
-    file?: File
+    file?: File,
+    groupId?: string
   ) => {
     setGroupFieldValues((prev) =>
       prev.map((fv) =>
-        fv.fieldId === fieldId ? { ...fv, value, parameterId, file } : fv
+        fv.fieldId === fieldId && fv.groupId === groupId
+          ? { ...fv, value, parameterId, file }
+          : fv
       )
     );
   };
@@ -608,10 +609,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     setCustomVoiceType("");
   };
 
-  const isStepComplete = (fieldId: string) => {
-    const fieldValue =
-      fieldValues.find((fv) => fv.fieldId === fieldId) ||
-      groupFieldValues.find((fv) => fv.fieldId === fieldId);
+  const isStepComplete = (fieldId: string, groupId?: string) => {
+    let fieldValue: FieldValue | undefined;
+
+    if (groupId) {
+      // For group fields, find by both fieldId and groupId
+      fieldValue = groupFieldValues.find(
+        (fv) => fv.fieldId === fieldId && fv.groupId === groupId
+      );
+    } else {
+      // For regular fields, find by fieldId only
+      fieldValue = fieldValues.find((fv) => fv.fieldId === fieldId);
+    }
+
     if (!fieldValue) return false;
 
     const field = fields?.find((f) => f.id === fieldId);
@@ -690,14 +700,35 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         return true; // No group fields to complete
       }
 
-      // Check if all group fields are complete
-      return allGroupFieldIds.every((fieldId) => {
-        const fieldValue = groupFieldValues.find(
-          (fv) => fv.fieldId === fieldId
+      // Check if all group fields are complete by iterating through each group
+      for (const groupId of scenario.group_ids) {
+        const group = groups?.find((g) => g.id === groupId);
+        if (!group) continue;
+
+        const groupFieldIds = [
+          group.persona_field_id,
+          group.mood_field_id,
+          group.position_field_id,
+          group.level_field_id,
+          ...(group.field_ids || []),
+        ].filter((fieldId): fieldId is string => {
+          if (!fieldId) return false;
+          const field = fields?.find((f) => f.id === fieldId);
+          // Do not render hidden fields in the UI
+          return field ? !field.hidden : true;
+        });
+
+        // Check if all fields in this group are complete
+        const groupComplete = groupFieldIds.every((fieldId) =>
+          isStepComplete(fieldId, groupId)
         );
-        if (!fieldValue) return false; // Field value not found
-        return isStepComplete(fieldId);
-      });
+
+        if (!groupComplete) {
+          return false; // If any group is incomplete, return false
+        }
+      }
+
+      return true; // All groups are complete
     })();
 
     // Both individual and group fields must be complete
@@ -1220,146 +1251,166 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         {/* Groups Section */}
         {scenario?.group_ids && scenario.group_ids.length > 0 && groups && (
           <Box maxWidth="800px" mx="auto" mt="4">
-            {scenario.group_ids.map((groupId: string) => {
+            {scenario.group_ids.map((groupId: string, groupIndex: number) => {
               const group = groups.find((g) => g.id === groupId);
               if (!group) return null;
 
               return (
-                <Card
-                  key={groupId}
-                  style={{
-                    background: "white",
-                    border: "1px solid var(--gray-6)",
-                    borderRadius: "12px",
-                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                    marginBottom: "16px",
-                  }}
-                >
-                  <Box p="4">
-                    {/* Group Field Cards */}
-                    {(() => {
-                      const hasFields = [
-                        group.persona_field_id,
-                        group.mood_field_id,
-                        group.position_field_id,
-                        group.level_field_id,
-                        ...(group.field_ids || []),
-                      ].some((fieldId) => {
-                        if (!fieldId) return false;
-                        const field = fields?.find((f) => f.id === fieldId);
-                        // Do not render hidden fields in the UI
-                        return field ? !field.hidden : true;
-                      });
-                      return hasFields;
-                    })() && (
-                      <Box>
-                        <Flex direction="column" gap="3">
-                          {(() => {
-                            // Get field IDs in the specified order: persona first, then mood, position, level, then additional field_ids
-                            const orderedFieldIds = [
-                              group.persona_field_id,
-                              group.mood_field_id,
-                              group.position_field_id,
-                              group.level_field_id,
-                              ...(group.field_ids || []),
-                            ].filter((fieldId): fieldId is string => {
-                              if (!fieldId) return false;
-                              const field = fields?.find(
-                                (f) => f.id === fieldId
-                              );
-                              // Do not render hidden fields in the UI
-                              return field ? !field.hidden : true;
-                            });
-
-                            return orderedFieldIds.map(
-                              (fieldId: string, index: number) => {
+                <React.Fragment key={groupId}>
+                  {/* Green divider between groups */}
+                  {groupIndex > 0 && (
+                    <Flex justify="center" mb="4">
+                      <Box
+                        style={{
+                          width: "2px",
+                          height: "24px",
+                          background: "var(--green-8)",
+                          borderRadius: "2px",
+                        }}
+                      />
+                    </Flex>
+                  )}
+                  <Card
+                    key={groupId}
+                    style={{
+                      background: "white",
+                      border: "1px solid var(--gray-6)",
+                      borderRadius: "12px",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <Box p="4">
+                      {/* Group Field Cards */}
+                      {(() => {
+                        const hasFields = [
+                          group.persona_field_id,
+                          group.mood_field_id,
+                          group.position_field_id,
+                          group.level_field_id,
+                          ...(group.field_ids || []),
+                        ].some((fieldId) => {
+                          if (!fieldId) return false;
+                          const field = fields?.find((f) => f.id === fieldId);
+                          // Do not render hidden fields in the UI
+                          return field ? !field.hidden : true;
+                        });
+                        return hasFields;
+                      })() && (
+                        <Box>
+                          <Flex direction="column" gap="3">
+                            {(() => {
+                              // Get field IDs in the specified order: persona first, then mood, position, level, then additional field_ids
+                              const orderedFieldIds = [
+                                group.persona_field_id,
+                                group.mood_field_id,
+                                group.position_field_id,
+                                group.level_field_id,
+                                ...(group.field_ids || []),
+                              ].filter((fieldId): fieldId is string => {
+                                if (!fieldId) return false;
                                 const field = fields?.find(
                                   (f) => f.id === fieldId
                                 );
-                                if (!field) return null;
+                                // Do not render hidden fields in the UI
+                                return field ? !field.hidden : true;
+                              });
 
-                                const fieldValue = groupFieldValues.find(
-                                  (fv) => fv.fieldId === fieldId
-                                );
-                                const isComplete = Boolean(
-                                  isStepComplete(fieldId)
-                                );
-                                const isLast =
-                                  index === orderedFieldIds.length - 1;
+                              return orderedFieldIds.map(
+                                (fieldId: string, index: number) => {
+                                  const field = fields?.find(
+                                    (f) => f.id === fieldId
+                                  );
+                                  if (!field) return null;
 
-                                // Check if this field needs numbering (persona_field_id with multiple instances)
-                                let customFieldName: string | undefined;
-                                if (field.field_type === "text") {
-                                  const groupsWithSameNameField = (
-                                    scenario.group_ids || []
-                                  )
-                                    .map((groupId: string) =>
-                                      groups.find((g) => g.id === groupId)
+                                  const fieldValue = groupFieldValues.find(
+                                    (fv) =>
+                                      fv.fieldId === fieldId &&
+                                      fv.groupId === groupId
+                                  );
+                                  const isComplete = Boolean(
+                                    isStepComplete(fieldId, groupId)
+                                  );
+                                  const isLast =
+                                    index === orderedFieldIds.length - 1;
+
+                                  // Check if this field needs numbering (persona_field_id with multiple instances)
+                                  let customFieldName: string | undefined;
+                                  if (field.field_type === "text") {
+                                    const groupsWithSameNameField = (
+                                      scenario.group_ids || []
                                     )
-                                    .filter(
-                                      (group) =>
-                                        group?.persona_field_id === fieldId
-                                    );
+                                      .map((groupId: string) =>
+                                        groups.find((g) => g.id === groupId)
+                                      )
+                                      .filter(
+                                        (group) =>
+                                          group?.persona_field_id === fieldId
+                                      );
 
-                                  if (groupsWithSameNameField.length > 1) {
-                                    const currentGroup = groups.find(
-                                      (g) =>
-                                        g.persona_field_id === fieldId ||
-                                        g.mood_field_id === fieldId ||
-                                        g.position_field_id === fieldId ||
-                                        g.level_field_id === fieldId ||
-                                        (g.field_ids || []).includes(fieldId)
-                                    );
+                                    if (groupsWithSameNameField.length > 1) {
+                                      const currentGroup = groups.find(
+                                        (g) =>
+                                          g.persona_field_id === fieldId ||
+                                          g.mood_field_id === fieldId ||
+                                          g.position_field_id === fieldId ||
+                                          g.level_field_id === fieldId ||
+                                          (g.field_ids || []).includes(fieldId)
+                                      );
 
-                                    if (currentGroup) {
-                                      const groupIndex =
-                                        groupsWithSameNameField.findIndex(
-                                          (g) => g?.id === currentGroup.id
-                                        );
-                                      const baseName = field.name || "Field";
-                                      customFieldName = `${baseName} ${
-                                        groupIndex + 1
-                                      }`;
+                                      if (currentGroup) {
+                                        const groupIndex =
+                                          groupsWithSameNameField.findIndex(
+                                            (g) => g?.id === currentGroup.id
+                                          );
+                                        const baseName = field.name || "Field";
+                                        customFieldName = `${baseName} ${
+                                          groupIndex + 1
+                                        }`;
+                                      }
                                     }
                                   }
-                                }
 
-                                return (
-                                  <FieldCard
-                                    key={fieldId}
-                                    fieldId={fieldId}
-                                    index={index}
-                                    isComplete={isComplete}
-                                    value={fieldValue?.value || ""}
-                                    onChange={(value, parameterId, file) =>
-                                      updateGroupFieldValue(
-                                        fieldId,
-                                        value,
-                                        parameterId,
-                                        file
-                                      )
-                                    }
-                                    isLast={isLast}
-                                    selectedParameterId={
-                                      fieldValue?.parameterId
-                                    }
-                                    customPersonaName={customPersonaName}
-                                    setCustomPersonaName={setCustomPersonaName}
-                                    customVoiceType={customVoiceType}
-                                    setCustomVoiceType={setCustomVoiceType}
-                                    hideBorder={true}
-                                    hideDivider={true}
-                                    customFieldName={customFieldName}
-                                  />
-                                );
-                              }
-                            );
-                          })()}
-                        </Flex>
-                      </Box>
-                    )}
-                  </Box>
-                </Card>
+                                  return (
+                                    <FieldCard
+                                      key={fieldId}
+                                      fieldId={fieldId}
+                                      index={index}
+                                      isComplete={isComplete}
+                                      value={fieldValue?.value || ""}
+                                      onChange={(value, parameterId, file) =>
+                                        updateGroupFieldValue(
+                                          fieldId,
+                                          value,
+                                          parameterId,
+                                          file,
+                                          groupId
+                                        )
+                                      }
+                                      isLast={isLast}
+                                      selectedParameterId={
+                                        fieldValue?.parameterId
+                                      }
+                                      customPersonaName={customPersonaName}
+                                      setCustomPersonaName={
+                                        setCustomPersonaName
+                                      }
+                                      customVoiceType={customVoiceType}
+                                      setCustomVoiceType={setCustomVoiceType}
+                                      hideBorder={true}
+                                      hideDivider={true}
+                                      customFieldName={customFieldName}
+                                    />
+                                  );
+                                }
+                              );
+                            })()}
+                          </Flex>
+                        </Box>
+                      )}
+                    </Box>
+                  </Card>
+                </React.Fragment>
               );
             })}
 
