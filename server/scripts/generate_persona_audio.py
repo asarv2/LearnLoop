@@ -138,7 +138,7 @@ class PersonaAudioGenerator:
                     "Content-Type": "application/json"
                 }
                 data = {
-                    "model": "tts-1",
+                    "model": "gpt-4o-mini-tts",
                     "voice": openai_voice,
                     "input": text_to_synthesize
                 }
