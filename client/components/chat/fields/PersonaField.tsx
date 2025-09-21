@@ -405,9 +405,9 @@ export default function PersonaField({
                 style={{ marginLeft: "44px" }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <Flex direction="column" gap="3">
-                  {/* Top row - Persona Name (full width) */}
-                  <Box>
+                <Flex direction="row" gap="3" align="center">
+                  {/* Name input - 60% width */}
+                  <Box style={{ flex: "0 0 60%" }}>
                     <input
                       type="text"
                       placeholder={`Enter ${
@@ -428,8 +428,8 @@ export default function PersonaField({
                       }}
                     />
                   </Box>
-                  {/* Bottom row - Voice Type only */}
-                  <Box>
+                  {/* Voice selector - 40% width */}
+                  <Box style={{ flex: "0 0 40%" }}>
                     <select
                       value={customVoiceType}
                       onChange={(e) => setCustomVoiceType(e.target.value)}
