@@ -28,8 +28,6 @@ export type PersonaFieldProps = {
   field: NonNullable<Tables<"fields">>;
   onChange: (value: string, parameterId?: string) => void;
   selectedParameterId?: string;
-  customPersonalityType: string;
-  setCustomPersonalityType: (value: string) => void;
   customPersonaName: string;
   setCustomPersonaName: (value: string) => void;
   customVoiceType: string;
@@ -44,8 +42,6 @@ export type FieldCardProps = {
   onChange: (value: string, parameterId?: string, file?: File) => void;
   isLast: boolean;
   selectedParameterId?: string;
-  customPersonalityType: string;
-  setCustomPersonalityType: (value: string) => void;
   customPersonaName: string;
   setCustomPersonaName: (value: string) => void;
   customVoiceType: string;

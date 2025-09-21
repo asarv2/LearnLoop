@@ -101,8 +101,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [savedScenarioId, setSavedScenarioId] = useState<string | null>(null);
 
   // Custom persona state for global access
-  const [customPersonalityType, setCustomPersonalityType] =
-    useState<string>("");
   const [customPersonaName, setCustomPersonaName] = useState<string>("");
   const [customVoiceType, setCustomVoiceType] = useState<string>("");
   const [customAssistantPersonaId, setCustomAssistantPersonaId] = useState<
@@ -156,13 +154,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         const group = groups.find((g) => g.id === groupId);
         if (!group) continue;
 
-        // Get all field values for this group
+        // Get all field values for this group (persona first, then mood, position and level)
         const currentGroupFieldValues = [
-          group.name_field_id,
-          group.voice_field_id,
+          group.persona_field_id,
+          group.mood_field_id,
           group.position_field_id,
           group.level_field_id,
-          group.personality_field_id,
         ]
           .map((fieldId) => {
             if (!fieldId) return null;
@@ -171,54 +168,81 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           .filter(Boolean);
 
         if (currentGroupFieldValues.length > 0) {
-          // Find the name field value for the persona name
-          const nameFieldValue =
+          // Find persona field value for persona name
+          const personaFieldValue =
             currentGroupFieldValues.find(
-              (gfv) => gfv?.fieldId === group.name_field_id
-            )?.value || `Group Persona ${groupId.slice(0, 8)}`;
+              (gfv) => gfv?.fieldId === group.persona_field_id
+            )?.value ||
+            group.name ||
+            `Group Persona ${groupId.slice(0, 8)}`;
 
-          // Find voice and personality field values
-          const voiceFieldValue = currentGroupFieldValues.find(
-            (gfv) => gfv?.fieldId === group.voice_field_id
+          // Find mood field value (required)
+          const moodFieldValue = currentGroupFieldValues.find(
+            (gfv) => gfv?.fieldId === group.mood_field_id
           );
-          const personalityFieldValue = currentGroupFieldValues.find(
-            (gfv) => gfv?.fieldId === group.personality_field_id
+
+          // Find level and position field values for enhanced persona description
+          const levelFieldValue = currentGroupFieldValues.find(
+            (gfv) => gfv?.fieldId === group.level_field_id
+          );
+          const positionFieldValue = currentGroupFieldValues.find(
+            (gfv) => gfv?.fieldId === group.position_field_id
           );
 
-          // Get the voice and personality personas
-          const voicePersona = voiceFieldValue?.parameterId
-            ? personas?.find((p) => p.id === voiceFieldValue.parameterId)
-            : null;
-          const personalityPersona = personalityFieldValue?.parameterId
-            ? personas?.find((p) => p.id === personalityFieldValue.parameterId)
-            : null;
+          // Only create persona if we have mood (required)
+          if (moodFieldValue) {
+            const moodPersona = moodFieldValue.parameterId
+              ? personas?.find((p) => p.id === moodFieldValue.parameterId)
+              : null;
 
-          if (voicePersona && personalityPersona) {
-            try {
-              // Create a new persona combining voice and personality
-              const newPersona = await createPersona.mutateAsync({
-                name: nameFieldValue,
-                description: `Generated persona from group: ${
-                  group.name || groupId
-                }`,
-                profile_id: null,
-                system_prompt: personalityPersona.system_prompt,
-                realtime_prompt: personalityPersona.realtime_prompt,
-                temperature: personalityPersona.temperature,
-                voice: voicePersona.voice,
-                active: false, // Don't show in dropdowns
-              });
+            if (moodPersona) {
+              try {
+                // Build enhanced description using level and position
+                const levelInfo = levelFieldValue?.value
+                  ? ` at ${levelFieldValue.value} level`
+                  : "";
+                const positionInfo = positionFieldValue?.value
+                  ? ` in ${positionFieldValue.value} position`
+                  : "";
 
-              // Add the persona ID to the payload
-              if (newPersona.id) {
-                payload.push({
-                  fieldId: group.personality_field_id || groupId,
-                  value: nameFieldValue,
-                  parameterId: newPersona.id,
+                // Enhance the realtime prompt with level and position context
+                const enhancedRealtimePrompt = [
+                  moodPersona.realtime_prompt || "",
+                  levelInfo
+                    ? `You are operating ${levelInfo.toLowerCase()}.`
+                    : "",
+                  positionInfo
+                    ? `Your role is ${positionInfo.toLowerCase()}.`
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+
+                // Create a new persona using mood with level and position context
+                const newPersona = await createPersona.mutateAsync({
+                  name: personaFieldValue,
+                  description: `Generated persona from group: ${
+                    group.name || groupId
+                  }${levelInfo}${positionInfo}`,
+                  profile_id: null,
+                  system_prompt: moodPersona.system_prompt,
+                  realtime_prompt: enhancedRealtimePrompt,
+                  temperature: moodPersona.temperature,
+                  voice: null, // No voice field used
+                  active: false, // Don't show in dropdowns
                 });
+
+                // Add the persona ID to the payload
+                if (newPersona.id) {
+                  payload.push({
+                    fieldId: group.mood_field_id || groupId,
+                    value: personaFieldValue,
+                    parameterId: newPersona.id,
+                  });
+                }
+              } catch (error) {
+                console.error("Failed to create persona from group:", error);
               }
-            } catch (error) {
-              console.error("Failed to create persona from group:", error);
             }
           }
         }
@@ -273,13 +297,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           const group = groups.find((g) => g.id === groupId);
           if (!group) return [];
 
-          // Return field IDs in the specified order: name, voice, position, level, personality
+          // Return field IDs in the specified order: persona first, then mood, position, level
           const fieldIds = [
-            group.name_field_id,
-            group.voice_field_id,
+            group.persona_field_id,
+            group.mood_field_id,
             group.position_field_id,
             group.level_field_id,
-            group.personality_field_id,
           ].filter(
             (fieldId): fieldId is string =>
               fieldId !== null && fieldId !== undefined
@@ -486,12 +509,15 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
         if (field.field_type === "categorical") {
           const customCandidates = paramsForField.filter(
-            (p) => (p.description || "").toLowerCase() === "custom scenario"
+            (p) =>
+              (p.description || "").toLowerCase() ===
+              `custom ${field.name?.toLowerCase() || "option"}`
           );
           const normalCandidates = paramsForField.filter(
             (p) =>
               p.value !== null &&
-              (p.description || "").toLowerCase() !== "custom scenario" &&
+              (p.description || "").toLowerCase() !==
+                `custom ${field.name?.toLowerCase() || "option"}` &&
               (p.description || "").trim() !== ""
           );
           // If both custom and normal candidates exist, randomly pick from all
@@ -567,7 +593,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
     // If auto-fill set a concrete persona, clear any "Custom" selection flags
     // by resetting the custom persona-related global state.
-    setCustomPersonalityType("");
     setCustomPersonaName("");
     setCustomVoiceType("");
   };
@@ -582,14 +607,14 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     if (!field) return false;
 
     if (field.field_type === "persona") {
-      // Optional unless "Custom" selected; then require custom fields
+      // Required: must have a value selected (either a persona or "Custom")
       if (fieldValue.value === "Custom") {
         const nameOk = (customPersonaName || "").trim().length > 0;
-        const personalityOk = (customPersonalityType || "").trim().length > 0;
         const voiceOk = (customVoiceType || "").trim().length > 0;
-        return nameOk && personalityOk && voiceOk;
+        return nameOk && voiceOk;
       }
-      return true;
+      // Must have selected a persona (not empty)
+      return fieldValue.value.trim() !== "" && fieldValue.parameterId;
     }
 
     if (field.field_type === "categorical") {
@@ -630,17 +655,16 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         return true; // No groups, so group fields are complete
       }
 
-      // Get all field IDs from all groups
+      // Get all field IDs from all groups (persona first, then mood, position and level)
       const allGroupFieldIds = scenario.group_ids
         .map((groupId: string) => {
           const group = groups?.find((g) => g.id === groupId);
           if (!group) return [];
           return [
-            group.name_field_id,
-            group.voice_field_id,
+            group.persona_field_id,
+            group.mood_field_id,
             group.position_field_id,
             group.level_field_id,
-            group.personality_field_id,
           ].filter(
             (fieldId): fieldId is string =>
               fieldId !== null && fieldId !== undefined
@@ -812,7 +836,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             const existingCustom = (allParameters || []).find(
               (p) =>
                 p.field_id === field.id &&
-                (p.description || "").toLowerCase() === "custom scenario" &&
+                (p.description || "").toLowerCase() ===
+                  `custom ${field.name?.toLowerCase() || "option"}` &&
                 (p.name || "") === fv.value
             );
             if (existingCustom) {
@@ -822,7 +847,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               const created = await createParameterGlobal.mutateAsync({
                 field_id: field.id,
                 name: fv.value,
-                description: "Custom Scenario",
+                description: `Custom ${field.name || "Option"}`,
                 value: fv.value
                   .normalize("NFKD")
                   .replace(/[^\p{L}\p{N}]+/gu, " ")
@@ -848,69 +873,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             !fv.parameterId
           ) {
             try {
-              const basePersona = personas?.find(
-                (p) => p.id === customPersonalityType
-              );
-              if (!basePersona) {
-                console.error("Could not find base persona for custom persona");
-                return fv;
-              }
               const voicePersona = personas?.find(
                 (p) => p.id === customVoiceType
               );
 
-              // Build fields based on requested behavior:
-              // - Use selected Voice's description and voice
-              // - Use selected Personality's realtime_prompt, but replace its first name with the custom name
-              const descriptionFromVoice =
-                voicePersona?.description ||
-                basePersona.description ||
-                `Custom persona based on ${basePersona.name}`;
-
-              const baseFirstName =
-                (basePersona.name || "").split(" ")[0] || "";
-              const escapeRegExp = (s: string) =>
-                s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-              const makeRealtimePrompt = (
-                prompt: string | null | undefined
-              ) => {
-                const text = prompt || "";
-                const baseFullName = (basePersona.name || "").trim();
-                const chosenFullName = (customPersonaName || "").trim();
-                const chosenFirstName = chosenFullName.split(/\s+/)[0] || "";
-                const baseOnlyFirstName = baseFirstName;
-                if (!baseOnlyFirstName || !chosenFirstName) return text;
-
-                let result = text;
-                // 1) Replace full name occurrences with full custom name
-                if (baseFullName && chosenFullName) {
-                  const fullPattern = new RegExp(
-                    `\\b${escapeRegExp(baseFullName)}\\b`,
-                    "g"
-                  );
-                  result = result.replace(fullPattern, chosenFullName);
-                }
-                // 2) Replace first-name-only occurrences with custom first name
-                const firstPattern = new RegExp(
-                  `\\b${escapeRegExp(baseOnlyFirstName)}\\b`,
-                  "g"
-                );
-                result = result.replace(firstPattern, chosenFirstName);
-
-                return result;
-              };
-              const realtimePromptFromPersonality = makeRealtimePrompt(
-                basePersona.realtime_prompt
-              );
-
+              // Create a simple custom persona with just name and voice
               const newPersona = await createPersona.mutateAsync({
                 name: customPersonaName,
-                description: descriptionFromVoice,
+                description: `Custom persona: ${customPersonaName}`,
                 profile_id: null,
-                system_prompt: basePersona.system_prompt,
-                realtime_prompt: realtimePromptFromPersonality,
-                temperature: basePersona.temperature,
-                voice: voicePersona?.voice || basePersona.voice,
+                system_prompt: `You are ${customPersonaName}, a professional employee.`,
+                realtime_prompt: `You are ${customPersonaName}. Respond naturally and professionally.`,
+                temperature: 0.7, // Default temperature
+                voice: voicePersona?.voice || null,
                 active: false, // so it does not show up in the persona dropdown
               });
 
@@ -918,14 +893,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
               // Create a parameter for this persona field referencing the new persona
               try {
-                // Find the base parameter used for the selected personality so we can mirror its label/description
-                const baseParameter = (allParameters || []).find(
-                  (p) => p.field_id === field.id && p.value === basePersona.id
-                );
                 const createdParam = await createParameterGlobal.mutateAsync({
                   field_id: field.id,
-                  name: baseParameter?.name || "Custom Persona",
-                  description: baseParameter?.description,
+                  name: customPersonaName,
+                  description: "Custom Persona",
                   value: newPersona.id,
                 });
                 if (createdParam?.id) {
@@ -993,12 +964,15 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           }
           case "categorical": {
             const customCandidates = paramsForField.filter(
-              (p) => (p.description || "").toLowerCase() === "custom scenario"
+              (p) =>
+                (p.description || "").toLowerCase() ===
+                `custom ${field.name?.toLowerCase() || "option"}`
             );
             const normalCandidates = paramsForField.filter(
               (p) =>
                 p.value !== null &&
-                (p.description || "").toLowerCase() !== "custom scenario" &&
+                (p.description || "").toLowerCase() !==
+                  `custom ${field.name?.toLowerCase() || "option"}` &&
                 (p.description || "").trim() !== ""
             );
             const pickables = [
@@ -1258,11 +1232,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                     {/* Group Field Cards */}
                     {(() => {
                       const hasFields = [
-                        group.name_field_id,
-                        group.voice_field_id,
+                        group.persona_field_id,
+                        group.mood_field_id,
                         group.position_field_id,
                         group.level_field_id,
-                        group.personality_field_id,
                       ].some(
                         (fieldId) => fieldId !== null && fieldId !== undefined
                       );
@@ -1271,13 +1244,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                       <Box>
                         <Flex direction="column" gap="3">
                           {(() => {
-                            // Get field IDs in the specified order: name, voice, position, level, personality
+                            // Get field IDs in the specified order: persona first, then mood, position, level
                             const orderedFieldIds = [
-                              group.name_field_id,
-                              group.voice_field_id,
+                              group.persona_field_id,
+                              group.mood_field_id,
                               group.position_field_id,
                               group.level_field_id,
-                              group.personality_field_id,
                             ].filter(
                               (fieldId): fieldId is string =>
                                 fieldId !== null && fieldId !== undefined
@@ -1293,7 +1265,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                                 const fieldValue = groupFieldValues.find(
                                   (fv) => fv.fieldId === fieldId
                                 );
-                                const isComplete = isStepComplete(fieldId);
+                                const isComplete = Boolean(
+                                  isStepComplete(fieldId)
+                                );
                                 const isLast =
                                   index === orderedFieldIds.length - 1;
 
@@ -1315,12 +1289,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                                     isLast={isLast}
                                     selectedParameterId={
                                       fieldValue?.parameterId
-                                    }
-                                    customPersonalityType={
-                                      customPersonalityType
-                                    }
-                                    setCustomPersonalityType={
-                                      setCustomPersonalityType
                                     }
                                     customPersonaName={customPersonaName}
                                     setCustomPersonaName={setCustomPersonaName}
@@ -1370,15 +1338,13 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 key={fieldValue.fieldId}
                 fieldId={fieldValue.fieldId}
                 index={index}
-                isComplete={isStepComplete(fieldValue.fieldId)}
+                isComplete={Boolean(isStepComplete(fieldValue.fieldId))}
                 value={fieldValue.value}
                 onChange={(value, parameterId, file) =>
                   updateFieldValue(fieldValue.fieldId, value, parameterId, file)
                 }
                 isLast={index === visibleArray.length - 1}
                 selectedParameterId={fieldValue.parameterId}
-                customPersonalityType={customPersonalityType}
-                setCustomPersonalityType={setCustomPersonalityType}
                 customPersonaName={customPersonaName}
                 setCustomPersonaName={setCustomPersonaName}
                 customVoiceType={customVoiceType}

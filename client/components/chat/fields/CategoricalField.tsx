@@ -64,16 +64,21 @@ export default function CategoricalField({
     // Always include the currently selected parameter so it stays visible
     if (selectedParameterId && p.id === selectedParameterId) return true;
     return (
-      (p.description || "").toLowerCase() !== "custom scenario" &&
+      (p.description || "").toLowerCase() !==
+        `custom ${field.name?.toLowerCase() || "option"}` &&
       (p.description || "").trim() !== ""
     );
   });
 
-  // Suggestions for custom entries (only parameters with description "Custom Scenario")
+  // Suggestions for custom entries (only parameters with field-specific custom description)
   const customSuggestions = (() => {
     const itemsMap = new Map<string, { id: string; updatedAt: string }>();
     (parameters || [])
-      .filter((p) => (p.description || "").toLowerCase() === "custom scenario")
+      .filter(
+        (p) =>
+          (p.description || "").toLowerCase() ===
+          `custom ${field.name?.toLowerCase() || "option"}`
+      )
       .forEach((p) => {
         const label = (p.name || "").trim();
         if (!label || !p.id) return;
@@ -196,7 +201,9 @@ export default function CategoricalField({
                     >
                       <input
                         type="text"
-                        placeholder="Enter your own custom scenario to practice..."
+                        placeholder={`Enter your own custom ${
+                          field.name?.toLowerCase() || "option"
+                        } to practice...`}
                         value={value === "Custom" ? customValue : value}
                         onChange={handleCustomInputChange}
                         onFocus={() => setIsCustomFocused(true)}
