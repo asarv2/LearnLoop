@@ -25,6 +25,7 @@ export default function FieldCard({
   setCustomVoiceType,
   hideBorder = false,
   hideDivider = false,
+  customFieldName,
 }: FieldCardProps) {
   const { data: field, isLoading } = useField(fieldId);
 
@@ -157,7 +158,7 @@ export default function FieldCard({
                 <Box style={{ flex: 1 }}>
                   <Flex align="center" gap="2" mb="3">
                     <Text size="4" weight="bold">
-                      {field.name}
+                      {customFieldName || field.name}
                     </Text>
                     {isOptionalField && (
                       <Text size="2" color="gray">
@@ -236,7 +237,7 @@ export default function FieldCard({
               <Box style={{ flex: 1 }}>
                 <Flex align="center" gap="2" mb="3">
                   <Text size="4" weight="bold">
-                    {field.name}
+                    {customFieldName || field.name}
                   </Text>
                   {isOptionalField && (
                     <Text size="2" color="gray">
