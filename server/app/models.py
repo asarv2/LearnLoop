@@ -91,6 +91,18 @@ class Fields(_Base, table=True):
     parameters: List['Parameters'] = Relationship(back_populates='field')
 
 
+class Groups(_Base, table=True):
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='groups_pkey'),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    field_ids: List[uuid.UUID] = Field(sa_column=Column('field_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
+    name: Optional[str] = Field(default=None, sa_column=Column('name', Text))
+    description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
+
+
 class Rubrics(_Base, table=True):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='rubrics_pkey'),

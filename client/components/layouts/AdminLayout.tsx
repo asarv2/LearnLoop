@@ -85,14 +85,42 @@ const adminMenuItems = [
   },
 ];
 
-const userMenuItems: MenuProps["items"] = [
-  {
+const getUserMenuItems = (
+  userRole: string | null,
+  currentView: "employee" | "admin",
+  switchToAdmin: () => void,
+  switchToEmployee: () => void
+): MenuProps["items"] => {
+  const items: MenuProps["items"] = [];
+
+  // Add view switch options for superadmin users
+  // Since we're in AdminLayout, we're always in admin view, so show employee switch
+  if (userRole === "superadmin") {
+    items.push({
+      key: "switch-to-employee",
+      icon: <SwapOutlined />,
+      label: "Switch to Employee View",
+      onClick: switchToEmployee,
+    });
+  }
+
+  // Add divider if we have switch options
+  if (items.length > 0) {
+    items.push({
+      type: "divider",
+    });
+  }
+
+  // Add logout option
+  items.push({
     key: "logout",
     icon: <LogoutOutlined />,
     label: "Logout",
     danger: true,
-  },
-];
+  });
+
+  return items;
+};
 
 export default function AdminLayout({
   children,
@@ -106,7 +134,8 @@ export default function AdminLayout({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, signOut } = useAuth();
-  const { userRole, switchToEmployee, currentView, loading } = useRole();
+  const { userRole, switchToEmployee, switchToAdmin, currentView, loading } =
+    useRole();
   theme.useToken();
 
   // Redirect superadmin users to employee interface when they switch views
@@ -130,6 +159,7 @@ export default function AdminLayout({
     if (e.key === "logout") {
       handleLogout();
     }
+    // Note: Switch actions are handled directly in the menu items via onClick
   };
 
   const handleNavMenuClick: MenuProps["onClick"] = (e) => {
@@ -203,24 +233,6 @@ export default function AdminLayout({
           </Link>
         </div>
 
-        {/* Role Switch for Superadmin */}
-        {userRole === "superadmin" && !collapsed && (
-          <div style={{ padding: "16px", borderBottom: "1px solid #f0f0f0" }}>
-            <Button
-              type={currentView === "employee" ? "primary" : "default"}
-              size="small"
-              icon={<SwapOutlined />}
-              onClick={switchToEmployee}
-              style={{ width: "100%", marginBottom: "8px" }}
-            >
-              Employee View
-            </Button>
-            <Text style={{ fontSize: "12px", color: "#666" }}>
-              Switch to employee interface
-            </Text>
-          </div>
-        )}
-
         {/* Navigation Menu */}
         <div style={{ flex: 1, overflow: "auto" }}>
           <Menu
@@ -271,7 +283,15 @@ export default function AdminLayout({
           }}
         >
           <Dropdown
-            menu={{ items: userMenuItems, onClick: handleMenuClick }}
+            menu={{
+              items: getUserMenuItems(
+                userRole,
+                currentView,
+                switchToAdmin,
+                switchToEmployee
+              ),
+              onClick: handleMenuClick,
+            }}
             placement="topRight"
           >
             <Space style={{ cursor: "pointer", width: "100%" }} size="small">
