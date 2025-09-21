@@ -212,7 +212,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               // Add the persona ID to the payload
               if (newPersona.id) {
                 payload.push({
-                  fieldId: group.personality_field_id || groupId, // Use personality field ID or group ID as field ID
+                  fieldId: group.personality_field_id || groupId,
                   value: nameFieldValue,
                   parameterId: newPersona.id,
                 });
@@ -624,16 +624,43 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         return isStepComplete(fv.fieldId);
       });
 
-    // Check group fields
-    const groupFieldsComplete =
-      groupFieldValues.length > 0 &&
-      groupFieldValues.every((fv) => {
-        const field = fields?.find((f) => f.id === fv.fieldId);
-        if (!field) return false;
-        if (field.hidden) return true; // hidden fields do not gate UI completion
-        if (field.field_type === "document") return true;
-        return isStepComplete(fv.fieldId);
+    // Check group fields - only if there are groups with fields
+    const groupFieldsComplete = (() => {
+      if (!scenario?.group_ids || scenario.group_ids.length === 0) {
+        return true; // No groups, so group fields are complete
+      }
+
+      // Get all field IDs from all groups
+      const allGroupFieldIds = scenario.group_ids
+        .map((groupId: string) => {
+          const group = groups?.find((g) => g.id === groupId);
+          if (!group) return [];
+          return [
+            group.name_field_id,
+            group.voice_field_id,
+            group.position_field_id,
+            group.level_field_id,
+            group.personality_field_id,
+          ].filter(
+            (fieldId): fieldId is string =>
+              fieldId !== null && fieldId !== undefined
+          );
+        })
+        .flat();
+
+      if (allGroupFieldIds.length === 0) {
+        return true; // No group fields to complete
+      }
+
+      // Check if all group fields are complete
+      return allGroupFieldIds.every((fieldId) => {
+        const fieldValue = groupFieldValues.find(
+          (fv) => fv.fieldId === fieldId
+        );
+        if (!fieldValue) return false; // Field value not found
+        return isStepComplete(fieldId);
       });
+    })();
 
     // Both individual and group fields must be complete
     return individualFieldsComplete && groupFieldsComplete;
@@ -1228,40 +1255,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   }}
                 >
                   <Box p="4">
-                    <Flex align="center" gap="3" mb="3">
-                      <Box
-                        style={{
-                          width: "24px",
-                          height: "24px",
-                          borderRadius: "50%",
-                          background: "var(--blue-9)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <Text size="1" weight="bold" style={{ color: "white" }}>
-                          G
-                        </Text>
-                      </Box>
-                      <Box style={{ flex: 1 }}>
-                        <Text size="3" weight="bold">
-                          {group.name || `Group ${groupId.slice(0, 8)}`}:
-                        </Text>
-                        {group.description && (
-                          <Text
-                            size="2"
-                            color="gray"
-                            mt="1"
-                            style={{ paddingLeft: "4px" }}
-                          >
-                            {group.description}
-                          </Text>
-                        )}
-                      </Box>
-                    </Flex>
-
                     {/* Group Field Cards */}
                     {(() => {
                       const hasFields = [
