@@ -154,15 +154,21 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         const group = groups.find((g) => g.id === groupId);
         if (!group) continue;
 
-        // Get all field values for this group (persona first, then mood, position and level)
+        // Get all field values for this group (persona first, then mood, position, level, then additional field_ids)
         const currentGroupFieldValues = [
           group.persona_field_id,
           group.mood_field_id,
           group.position_field_id,
           group.level_field_id,
+          ...(group.field_ids || []),
         ]
+          .filter((fieldId) => {
+            if (!fieldId) return false;
+            const field = fields?.find((f) => f.id === fieldId);
+            // Do not process hidden fields
+            return field ? !field.hidden : true;
+          })
           .map((fieldId) => {
-            if (!fieldId) return null;
             return groupFieldValues.find((gfv) => gfv.fieldId === fieldId);
           })
           .filter(Boolean);
@@ -297,16 +303,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           const group = groups.find((g) => g.id === groupId);
           if (!group) return [];
 
-          // Return field IDs in the specified order: persona first, then mood, position, level
+          // Return field IDs in the specified order: persona first, then mood, position, level, then additional field_ids
           const fieldIds = [
             group.persona_field_id,
             group.mood_field_id,
             group.position_field_id,
             group.level_field_id,
-          ].filter(
-            (fieldId): fieldId is string =>
-              fieldId !== null && fieldId !== undefined
-          );
+            ...(group.field_ids || []),
+          ].filter((fieldId): fieldId is string => {
+            if (!fieldId) return false;
+            const field = fields?.find((f) => f.id === fieldId);
+            // Do not render hidden fields in the UI
+            return field ? !field.hidden : true;
+          });
 
           return fieldIds;
         })
@@ -657,7 +666,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         return true; // No groups, so group fields are complete
       }
 
-      // Get all field IDs from all groups (persona first, then mood, position and level)
+      // Get all field IDs from all groups (persona first, then mood, position, level, then additional field_ids)
       const allGroupFieldIds = scenario.group_ids
         .map((groupId: string) => {
           const group = groups?.find((g) => g.id === groupId);
@@ -667,10 +676,13 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             group.mood_field_id,
             group.position_field_id,
             group.level_field_id,
-          ].filter(
-            (fieldId): fieldId is string =>
-              fieldId !== null && fieldId !== undefined
-          );
+            ...(group.field_ids || []),
+          ].filter((fieldId): fieldId is string => {
+            if (!fieldId) return false;
+            const field = fields?.find((f) => f.id === fieldId);
+            // Do not render hidden fields in the UI
+            return field ? !field.hidden : true;
+          });
         })
         .flat();
 
@@ -1231,24 +1243,33 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                         group.mood_field_id,
                         group.position_field_id,
                         group.level_field_id,
-                      ].some(
-                        (fieldId) => fieldId !== null && fieldId !== undefined
-                      );
+                        ...(group.field_ids || []),
+                      ].some((fieldId) => {
+                        if (!fieldId) return false;
+                        const field = fields?.find((f) => f.id === fieldId);
+                        // Do not render hidden fields in the UI
+                        return field ? !field.hidden : true;
+                      });
                       return hasFields;
                     })() && (
                       <Box>
                         <Flex direction="column" gap="3">
                           {(() => {
-                            // Get field IDs in the specified order: persona first, then mood, position, level
+                            // Get field IDs in the specified order: persona first, then mood, position, level, then additional field_ids
                             const orderedFieldIds = [
                               group.persona_field_id,
                               group.mood_field_id,
                               group.position_field_id,
                               group.level_field_id,
-                            ].filter(
-                              (fieldId): fieldId is string =>
-                                fieldId !== null && fieldId !== undefined
-                            );
+                              ...(group.field_ids || []),
+                            ].filter((fieldId): fieldId is string => {
+                              if (!fieldId) return false;
+                              const field = fields?.find(
+                                (f) => f.id === fieldId
+                              );
+                              // Do not render hidden fields in the UI
+                              return field ? !field.hidden : true;
+                            });
 
                             return orderedFieldIds.map(
                               (fieldId: string, index: number) => {

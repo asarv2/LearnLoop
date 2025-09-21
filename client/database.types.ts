@@ -298,6 +298,7 @@ export type Database = {
         Row: {
           created_at: string
           description: string | null
+          field_ids: string[]
           id: string
           level_field_id: string | null
           mood_field_id: string | null
@@ -308,6 +309,7 @@ export type Database = {
         Insert: {
           created_at?: string
           description?: string | null
+          field_ids?: string[]
           id?: string
           level_field_id?: string | null
           mood_field_id?: string | null
@@ -318,6 +320,7 @@ export type Database = {
         Update: {
           created_at?: string
           description?: string | null
+          field_ids?: string[]
           id?: string
           level_field_id?: string | null
           mood_field_id?: string | null
