@@ -16,6 +16,7 @@ export const GroupCreateSchema = z.object({
   position_field_id: z.string().nullable().optional(),
   level_field_id: z.string().nullable().optional(),
   mood_field_id: z.string().nullable().optional(),
+  field_ids: z.array(z.string()).optional(),
 });
 
 export const GroupUpdateSchema = z.object({
@@ -25,6 +26,7 @@ export const GroupUpdateSchema = z.object({
   position_field_id: z.string().nullable().optional(),
   level_field_id: z.string().nullable().optional(),
   mood_field_id: z.string().nullable().optional(),
+  field_ids: z.array(z.string()).optional(),
 });
 
 async function getSupabase() {
