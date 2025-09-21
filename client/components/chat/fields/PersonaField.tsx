@@ -11,8 +11,6 @@ export default function PersonaField({
   field,
   onChange,
   selectedParameterId,
-  customPersonalityType,
-  setCustomPersonalityType,
   customPersonaName,
   setCustomPersonaName,
   customVoiceType,
@@ -248,20 +246,7 @@ export default function PersonaField({
                     </Box>
                     <Box style={{ flex: 1 }}>
                       <Text size="3" weight="bold">
-                        {(() => {
-                          // Find the persona that matches this parameter's value
-                          const persona = personas?.find(
-                            (p) => p.id === parameter.value
-                          );
-                          const personaName = persona?.name;
-                          // just do first name for now
-                          const firstName = personaName?.split(" ")[0];
-
-                          if (personaName) {
-                            return `${displayName} (${firstName}):`;
-                          }
-                          return `${displayName}:`;
-                        })()}
+                        {displayName}:
                       </Text>
                       {parameter.description && (
                         <Text size="2" color="gray">
@@ -391,7 +376,7 @@ export default function PersonaField({
                   Custom:
                 </Text>
                 <Text size="2" color="gray" style={{ paddingLeft: "4px" }}>
-                  Design your own persona with custom personality and voice
+                  Create employee with custom name and voice
                 </Text>
               </Box>
             </Flex>
@@ -407,7 +392,7 @@ export default function PersonaField({
                   <Box>
                     <input
                       type="text"
-                      placeholder="Enter persona name..."
+                      placeholder="Enter employee name..."
                       value={customPersonaName}
                       onChange={(e) => setCustomPersonaName(e.target.value)}
                       style={{
@@ -423,71 +408,40 @@ export default function PersonaField({
                       }}
                     />
                   </Box>
-                  {/* Bottom row - Personality Type and Voice Type */}
-
-                  <Flex gap="3" align="end">
-                    {/* Personality Type Dropdown */}
-                    <Box style={{ flex: 1 }}>
-                      <select
-                        value={customPersonalityType}
-                        onChange={(e) =>
-                          setCustomPersonalityType(e.target.value)
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "12px 16px",
-                          borderRadius: "8px",
-                          border: `1px solid ${
-                            customPersonalityType
-                              ? "var(--green-7)"
-                              : "var(--gray-6)"
-                          }`,
-                          fontSize: "16px",
-                          outline: "none",
-                          background: "white",
-                        }}
-                      >
-                        <option value="">Select personality...</option>
-                        {displayedParameters?.map((param) => (
+                  {/* Bottom row - Voice Type only */}
+                  <Box>
+                    <select
+                      value={customVoiceType}
+                      onChange={(e) => setCustomVoiceType(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "12px 16px",
+                        borderRadius: "8px",
+                        border: `1px solid ${
+                          customVoiceType ? "var(--green-7)" : "var(--gray-6)"
+                        }`,
+                        fontSize: "16px",
+                        outline: "none",
+                        background: "white",
+                      }}
+                    >
+                      <option value="">Select voice...</option>
+                      {displayedParameters?.map((param) => {
+                        const persona = personas?.find(
+                          (p) => p.id === param.value
+                        );
+                        const firstName = persona?.name?.split(" ")[0];
+                        return (
                           <option key={param.id} value={String(param.value)}>
-                            {param.name?.replace(/\s+Employee$/i, "")}
+                            {firstName ||
+                              param.name?.replace(/\s+Employee$/i, "") ||
+                              "Unknown"}
+                            &apos;s Voice
                           </option>
-                        ))}
-                      </select>
-                    </Box>
-
-                    {/* Voice Type Dropdown */}
-                    <Box style={{ flex: 1 }}>
-                      <select
-                        value={customVoiceType}
-                        onChange={(e) => setCustomVoiceType(e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "12px 16px",
-                          borderRadius: "8px",
-                          border: `1px solid ${
-                            customVoiceType ? "var(--green-7)" : "var(--gray-6)"
-                          }`,
-                          fontSize: "16px",
-                          outline: "none",
-                          background: "white",
-                        }}
-                      >
-                        <option value="">Select voice...</option>
-                        {displayedParameters?.map((param) => {
-                          const persona = personas?.find(
-                            (p) => p.id === param.value
-                          );
-                          const firstName = persona?.name?.split(" ")[0];
-                          return (
-                            <option key={param.id} value={String(param.value)}>
-                              {firstName || "Unknown"}&apos;s Voice
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </Box>
-                  </Flex>
+                        );
+                      })}
+                    </select>
+                  </Box>
                 </Flex>
               </Box>
             )}

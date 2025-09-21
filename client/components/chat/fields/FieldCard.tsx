@@ -19,8 +19,6 @@ export default function FieldCard({
   onChange,
   isLast,
   selectedParameterId,
-  customPersonalityType,
-  setCustomPersonalityType,
   customPersonaName,
   setCustomPersonaName,
   customVoiceType,
@@ -107,8 +105,6 @@ export default function FieldCard({
             field={safeField as NonNullable<Tables<"fields">>}
             onChange={handleChange}
             selectedParameterId={selectedParameterId}
-            customPersonalityType={customPersonalityType}
-            setCustomPersonalityType={setCustomPersonalityType}
             customPersonaName={customPersonaName}
             setCustomPersonaName={setCustomPersonaName}
             customVoiceType={customVoiceType}
@@ -120,8 +116,7 @@ export default function FieldCard({
     }
   };
 
-  const isOptionalField =
-    field.field_type === "persona" || field.field_type === "document";
+  const isOptionalField = field.field_type === "document";
 
   if (hideBorder) {
     return (

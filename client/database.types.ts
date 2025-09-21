@@ -300,33 +300,30 @@ export type Database = {
           description: string | null
           id: string
           level_field_id: string | null
+          mood_field_id: string | null
           name: string | null
-          name_field_id: string | null
-          personality_field_id: string | null
+          persona_field_id: string | null
           position_field_id: string | null
-          voice_field_id: string | null
         }
         Insert: {
           created_at?: string
           description?: string | null
           id?: string
           level_field_id?: string | null
+          mood_field_id?: string | null
           name?: string | null
-          name_field_id?: string | null
-          personality_field_id?: string | null
+          persona_field_id?: string | null
           position_field_id?: string | null
-          voice_field_id?: string | null
         }
         Update: {
           created_at?: string
           description?: string | null
           id?: string
           level_field_id?: string | null
+          mood_field_id?: string | null
           name?: string | null
-          name_field_id?: string | null
-          personality_field_id?: string | null
+          persona_field_id?: string | null
           position_field_id?: string | null
-          voice_field_id?: string | null
         }
         Relationships: [
           {
@@ -337,15 +334,15 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "groups_name_field_id_fkey"
-            columns: ["name_field_id"]
+            foreignKeyName: "groups_mood_field_id_fkey"
+            columns: ["mood_field_id"]
             isOneToOne: false
             referencedRelation: "fields"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "groups_personality_field_id_fkey"
-            columns: ["personality_field_id"]
+            foreignKeyName: "groups_persona_field_id_fkey"
+            columns: ["persona_field_id"]
             isOneToOne: false
             referencedRelation: "fields"
             referencedColumns: ["id"]
@@ -353,13 +350,6 @@ export type Database = {
           {
             foreignKeyName: "groups_position_field_id_fkey"
             columns: ["position_field_id"]
-            isOneToOne: false
-            referencedRelation: "fields"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "groups_voice_field_id_fkey"
-            columns: ["voice_field_id"]
             isOneToOne: false
             referencedRelation: "fields"
             referencedColumns: ["id"]

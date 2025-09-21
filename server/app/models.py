@@ -84,23 +84,10 @@ class Fields(_Base, table=True):
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
 
     groups: List['Groups'] = Relationship(back_populates='level_field')
-    groups_: List['Groups'] = Relationship(back_populates='name_field')
-    groups1: List['Groups'] = Relationship(back_populates='personality_field')
+    groups_: List['Groups'] = Relationship(back_populates='mood_field')
+    groups1: List['Groups'] = Relationship(back_populates='persona_field')
     groups2: List['Groups'] = Relationship(back_populates='position_field')
-    groups3: List['Groups'] = Relationship(back_populates='voice_field')
     parameters: List['Parameters'] = Relationship(back_populates='field')
-
-
-class Groups(_Base, table=True):
-    __table_args__ = (
-        PrimaryKeyConstraint('id', name='groups_pkey'),
-    )
-
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
-    field_ids: List[uuid.UUID] = Field(sa_column=Column('field_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
-    name: Optional[str] = Field(default=None, sa_column=Column('name', Text))
-    description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
 
 
 class Rubrics(_Base, table=True):
@@ -123,10 +110,9 @@ class Rubrics(_Base, table=True):
 class Groups(_Base, table=True):
     __table_args__ = (
         ForeignKeyConstraint(['level_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_level_field_id_fkey'),
-        ForeignKeyConstraint(['name_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_name_field_id_fkey'),
-        ForeignKeyConstraint(['personality_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_personality_field_id_fkey'),
+        ForeignKeyConstraint(['mood_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_mood_field_id_fkey'),
+        ForeignKeyConstraint(['persona_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_persona_field_id_fkey'),
         ForeignKeyConstraint(['position_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_position_field_id_fkey'),
-        ForeignKeyConstraint(['voice_field_id'], ['fields.id'], ondelete='SET NULL', onupdate='CASCADE', name='groups_voice_field_id_fkey'),
         PrimaryKeyConstraint('id', name='groups_pkey')
     )
 
@@ -134,17 +120,15 @@ class Groups(_Base, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     name: Optional[str] = Field(default=None, sa_column=Column('name', Text))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
-    name_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('name_field_id', Uuid(as_uuid=True)))
     level_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('level_field_id', Uuid(as_uuid=True)))
-    voice_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('voice_field_id', Uuid(as_uuid=True)))
     position_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('position_field_id', Uuid(as_uuid=True)))
-    personality_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('personality_field_id', Uuid(as_uuid=True)))
+    mood_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('mood_field_id', Uuid(as_uuid=True)))
+    persona_field_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('persona_field_id', Uuid(as_uuid=True)))
 
     level_field: Optional['Fields'] = Relationship(back_populates='groups')
-    name_field: Optional['Fields'] = Relationship(back_populates='groups_')
-    personality_field: Optional['Fields'] = Relationship(back_populates='groups1')
+    mood_field: Optional['Fields'] = Relationship(back_populates='groups_')
+    persona_field: Optional['Fields'] = Relationship(back_populates='groups1')
     position_field: Optional['Fields'] = Relationship(back_populates='groups2')
-    voice_field: Optional['Fields'] = Relationship(back_populates='groups3')
 
 
 class Parameters(_Base, table=True):

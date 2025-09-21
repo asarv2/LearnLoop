@@ -12,21 +12,19 @@ export type GroupUpdate = Database["public"]["Tables"]["groups"]["Update"];
 export const GroupCreateSchema = z.object({
   name: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
-  name_field_id: z.string().nullable().optional(),
-  voice_field_id: z.string().nullable().optional(),
+  persona_field_id: z.string().nullable().optional(),
   position_field_id: z.string().nullable().optional(),
   level_field_id: z.string().nullable().optional(),
-  personality_field_id: z.string().nullable().optional(),
+  mood_field_id: z.string().nullable().optional(),
 });
 
 export const GroupUpdateSchema = z.object({
   name: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
-  name_field_id: z.string().nullable().optional(),
-  voice_field_id: z.string().nullable().optional(),
+  persona_field_id: z.string().nullable().optional(),
   position_field_id: z.string().nullable().optional(),
   level_field_id: z.string().nullable().optional(),
-  personality_field_id: z.string().nullable().optional(),
+  mood_field_id: z.string().nullable().optional(),
 });
 
 async function getSupabase() {
