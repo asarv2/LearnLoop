@@ -254,7 +254,7 @@ services:
   docker-gen-beta:
     image: jwilder/docker-gen:0.7.6
     restart: unless-stopped
-    # default profile; runs when prod profile is not specified
+    profiles: [beta]
     environment:
       - PROJECT_NAME=${COMPOSE_PROJECT_NAME}
     volumes:
