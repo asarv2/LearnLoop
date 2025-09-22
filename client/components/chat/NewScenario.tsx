@@ -169,28 +169,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     if (scenario?.group_ids && groups) {
       // First pass: collect all personas and map groupId to persona_id
       const group_persona_map = new Map<string, string>();
-
-      for (const groupId of scenario.group_ids) {
-        const group = groups.find((g) => g.id === groupId);
-        if (!group) continue;
-
-        const personaFieldValue = groupFieldValues.find(
-          (gfv) => gfv?.fieldId === group.persona_field_id
-        )?.value;
-
-        if (personaFieldValue) {
-          const parentPersona = personas?.find(
-            (p) => p.name === personaFieldValue
-          );
-          if (parentPersona && parentPersona.id) {
-            group_persona_map.set(groupId, parentPersona.id);
-            // Add to personaIds if not already added
-            if (!personaIds.includes(parentPersona.id)) {
-              personaIds.push(parentPersona.id);
-            }
-          }
-        }
-      }
       for (const groupId of scenario.group_ids) {
         const group = groups.find((g) => g.id === groupId);
         if (!group) continue;
@@ -280,8 +258,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   p.position === positionFieldValue?.value
               );
 
+              let finalPersonaId: string | undefined;
+
               if (existingPersona) {
                 // Use existing persona
+                finalPersonaId = existingPersona.id;
                 console.log(
                   `Using existing persona: ${existingPersona.name} (${existingPersona.id})`
                 );
@@ -312,9 +293,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   })(),
                   position: positionFieldValue?.value || null,
                 });
+                finalPersonaId = newPersona.id;
                 console.log(
                   `Created new persona: ${newPersona.name} (${newPersona.id}) with parent: ${parentPersona.id}`
                 );
+              }
+
+              // Store the final persona ID (either existing or newly created) in the map
+              if (finalPersonaId) {
+                group_persona_map.set(groupId, finalPersonaId);
+                // Add to personaIds if not already added
+                if (!personaIds.includes(finalPersonaId)) {
+                  personaIds.push(finalPersonaId);
+                }
               }
 
               // Get the persona_id for this group
