@@ -153,6 +153,7 @@ services:
       - AUDIO_SECRET=${AUDIO_SECRET}
       - MODEL_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-model:8000
       - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - ./recordings:/app/recordings
     healthcheck:
