@@ -39,7 +39,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 
-# Seed entrypoint + gunicorn
+# Seed entrypoint + uvicorn
 COPY docker/entrypoint-docs.sh /usr/local/bin/entrypoint-docs.sh
 USER root && chmod +x /usr/local/bin/entrypoint-docs.sh && chown appuser:appuser /usr/local/bin/entrypoint-docs.sh && \
      chown -R appuser:appuser /app && \
@@ -47,4 +47,4 @@ USER root && chmod +x /usr/local/bin/entrypoint-docs.sh && chown appuser:appuser
 USER appuser
 
 ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint-docs.sh"]
-CMD ["gunicorn","app.main:app","-w","1","-k","uvicorn.workers.UvicornWorker","-b","0.0.0.0:8000","--log-level","info"]
+CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000","--log-level","info"]
