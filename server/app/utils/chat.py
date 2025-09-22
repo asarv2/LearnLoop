@@ -173,22 +173,28 @@ def get_parameter_history_from_field_values(
                 if not persona:
                     continue
                 
-                persona_info = f"**{persona_alias}:** {persona.name}"
+                persona_info = f"**Alias:** {persona_alias}\n**Name:** {persona.name}"
                 
                 # Add description from persona record
                 if persona.description:
-                    persona_info += f"\n{persona.description}"
-                
-                # Add level from persona record
-                if persona.level:
-                    level_display = persona.level.title()  # Convert 'junior' to 'Junior', etc.
-                    if persona.level == 'mid':
-                        level_display = 'Mid-level'
-                    persona_info += f"\n**Level:** {level_display}"
+                    persona_info += f"\n**Description:** {persona.description}"
                 
                 # Add position from persona record
                 if persona.position:
                     persona_info += f"\n**Position:** {persona.position}"
+                
+                # Add level from persona record
+                if persona.level:
+                    level_display = persona.level.title()  # Convert 'junior' to 'Junior', etc.
+                    if persona.level == 'junior':
+                        level_display = 'Junior: New employee or individual contributor (0-3 years)'
+                    elif persona.level == 'mid':
+                        level_display = 'Mid-Level: Experienced team member or specialist (3-7 years)'
+                    elif persona.level == 'senior':
+                        level_display = 'Senior: Senior professional or team lead (7+ years)'
+                    elif persona.level == 'executive':
+                        level_display = 'Executive: Director, VP, or C-level executive'
+                    persona_info += f"\n**Level:** {level_display}"
                 
                 persona_info_lines.append(persona_info)
             
@@ -196,7 +202,7 @@ def get_parameter_history_from_field_values(
                 persona_content = "\n\n".join(persona_info_lines)
                 messages.append({
                     "role": "developer",
-                    "content": f"# Available Personas\n\n{persona_content}"
+                    "content": f"### Available Personas\n\n{persona_content}"
                 })
 
         # Build additional information message
@@ -206,7 +212,25 @@ def get_parameter_history_from_field_values(
         if parent_scenario_id:
             parent_scenario = session.exec(select(Scenarios).where(Scenarios.id == parent_scenario_id)).one_or_none()
             if parent_scenario:
-                scenario_info = f"**Scenario:** {parent_scenario.title}"
+                # Build persona context string with actual user names
+                persona_context = ""
+                if persona_ids and persona_aliases:
+                    user_names = []
+                    for persona_id in persona_ids:
+                        persona_alias = persona_aliases.get(persona_id)
+                        if persona_alias:
+                            # Get the actual persona name from the database
+                            persona = fresh_session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+                            if persona and persona.profile_id is not None:  # Only include users (not agents)
+                                user_names.append(persona.name)
+                    
+                    if user_names:
+                        if len(user_names) == 1:
+                            persona_context = f" (for {user_names[0]})"
+                        elif len(user_names) > 1:
+                            persona_context = f" (for users: {', '.join(user_names)})"
+                
+                scenario_info = f"**Scenario{persona_context}:** {parent_scenario.title}"
                 if parent_scenario.description:
                     scenario_info += f"\n**Description:** {parent_scenario.description}"
                 additional_info_lines.append(scenario_info)
@@ -286,7 +310,7 @@ def get_parameter_history_from_field_values(
             additional_content = "\n\n".join(additional_info_lines)
             messages.append({
                 "role": "developer",
-                "content": f"# Additional Information\n\n{additional_content}"
+                "content": f"### Additional Information\n\n{additional_content}"
             })
 
         return messages
