@@ -277,7 +277,15 @@ jobs:
         run: |
           mkdir -p "$DEST"
 
-          # Write rsync filter: protect persistent/generated artifacts; exclude junk
+          # 0) Ensure these persistent dirs exist
+          mkdir -p "$DEST/web/generated" "$DEST/prompts" "$DEST/templates" "$DEST/files"
+          mkdir -p "$DEST/recordings"
+
+          # 1) Seed missing files ONLY (won't overwrite or delete)
+          rsync -a --ignore-existing ./prompts/   "$DEST/prompts"/   || true
+          rsync -a --ignore-existing ./templates/ "$DEST/templates"/ || true
+
+          # 2) Write rsync filter: protect persistent/generated artifacts; exclude junk
           cat > .rsync-filter <<'EOF'
           # Exclude VCS and build caches
           - .git/
@@ -292,17 +300,18 @@ jobs:
           - **/.env.local
           - **/.envrc
 
-          # Protect persistent runtime dirs on the server (keep them even if absent in repo)
+          # Protect runtime/persistent dirs in DEST (do NOT delete)
           P web/generated/
-          # (Add more "P <path>/" lines if you have other persistent dirs under $DEST)
+          P prompts/
+          P templates/
+          P files/
+          P recordings/
           EOF
 
-          # Mirror repo -> DEST. --delete removes files no longer in repo.
-          # --delete-excluded ensures excluded files in DEST are removed (except "P" protected)
+          # 3) Mirror repo -> DEST (without touching protected dirs)
           rsync -a --delete --delete-excluded --filter="merge .rsync-filter" ./ "$DEST/"
 
-          # Make sure persistent dir exists and is writable (in case of first run)
-          mkdir -p "$DEST/web/generated"
+          # 4) Make sure generated dir stays writable
           chmod 777 "$DEST/web/generated"
 
           # Sanity check: ensure nginx template is a file
@@ -317,7 +326,7 @@ jobs:
             exit 1
           fi
 
-          # Stamp for traceability
+          # Optional traceability
           echo "${GITHUB_SHA}" > "$DEST/DEPLOYED_SHA"
 
       - name: Deploy
@@ -373,8 +382,9 @@ jobs:
           mkdir -p web/generated \
                    prompts \
                    templates \
-                   files
-          chmod -R a+rwX web/generated prompts templates files
+                   files \
+                   recordings
+          chmod -R a+rwX web/generated prompts templates files recordings
 
           # Final sanity check before starting containers
           echo "== Pre-deployment nginx files check =="

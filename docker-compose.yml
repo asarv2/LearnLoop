@@ -100,7 +100,6 @@ services:
       - WHISPER_DEVICE=cuda
     volumes:
       - ../model_cache:/app/model_cache
-      - model_audio:/app/audio
     deploy:
       resources:
         limits:
@@ -155,7 +154,7 @@ services:
       - MODEL_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-model:8000
       - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL}
     volumes:
-      - model_audio:/app/recordings
+      - ../recordings:/app/recordings
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -249,9 +248,3 @@ services:
       /etc/docker-gen/templates/next_client.upstream.tmpl
       /etc/nginx/conf.d/generated/next_client.upstream.conf
     networks: [web]
-
-volumes:
-  model_cache:
-    driver: local
-  model_audio:
-    driver: local
