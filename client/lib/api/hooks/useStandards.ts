@@ -37,7 +37,7 @@ export function useStandardGrades(standardId: string, enabled = true) {
 export function useAllStandardGrades() {
   return useQuery({
     queryKey: ["standard_grades", "all"],
-    queryFn: () => api<any[]>("/api/v1/standards/grades"),
+    queryFn: () => api<StandardGrade[]>("/api/v1/standards/grades"),
     staleTime: 5 * 60_000, // 5 minutes
   });
 }

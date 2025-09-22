@@ -74,12 +74,14 @@ const columns = [
     title: "Employee",
     dataIndex: "name",
     key: "name",
-    render: (text: string, record: any) => (
+    render: (text: string, record: Record<string, unknown>) => (
       <Space>
         <Avatar icon={<UserOutlined />} />
         <div>
           <div style={{ fontWeight: "bold" }}>{text}</div>
-          <div style={{ color: "#666", fontSize: "12px" }}>{record.email}</div>
+          <div style={{ color: "#666", fontSize: "12px" }}>
+            {String(record.email)}
+          </div>
         </div>
       </Space>
     ),
@@ -154,7 +156,7 @@ const columns = [
   {
     title: "Actions",
     key: "actions",
-    render: (_, record: any) => (
+    render: () => (
       <Space size="small">
         <Button type="text" icon={<EditOutlined />} size="small">
           Edit

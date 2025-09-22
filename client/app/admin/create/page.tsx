@@ -20,7 +20,7 @@ const { Option } = Select;
 export default function AdminCreatePage() {
   const [form] = Form.useForm();
 
-  const onFinish = (values: any) => {
+  const onFinish = () => {
     // Handle form submission
   };
 

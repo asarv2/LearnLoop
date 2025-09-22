@@ -67,11 +67,11 @@ const columns = [
     title: "Rubric Name",
     dataIndex: "name",
     key: "name",
-    render: (text: string, record: any) => (
+    render: (text: string, record: Record<string, unknown>) => (
       <div>
         <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{text}</div>
         <div style={{ color: "#666", fontSize: "12px" }}>
-          {record.description}
+          {String(record.description)}
         </div>
       </div>
     ),
@@ -112,7 +112,7 @@ const columns = [
   {
     title: "Actions",
     key: "actions",
-    render: (_, record: any) => (
+    render: () => (
       <Space size="small">
         <Button type="text" icon={<EyeOutlined />} size="small">
           View

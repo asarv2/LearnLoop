@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/select";
 import { useChats } from "@/lib/api/hooks/useChats";
 import { useAllRubricGrades } from "@/lib/api/hooks/useRubrics";
-import { useTrainings } from "@/lib/api/hooks/useTrainings";
 import { useCallback, useMemo, useState } from "react";
 import {
   Area,
@@ -29,20 +28,13 @@ import {
   YAxis,
 } from "recharts";
 
-type TrainingTypeOption = "Critical Conversations" | "Interview" | "Leadership";
 
-const TRAINING_TYPES: TrainingTypeOption[] = [
-  "Critical Conversations",
-  "Interview",
-  "Leadership",
-];
 
 export default function Overview() {
   const { user } = useAuth();
   const { data: chats } = useChats();
   const { data: rubricGrades, isLoading: rubricGradesLoading } =
     useAllRubricGrades();
-  const { data: trainings } = useTrainings();
 
   const [range, setRange] = useState<"weekly" | "monthly">("weekly");
 

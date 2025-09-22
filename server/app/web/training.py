@@ -1195,15 +1195,6 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 except Exception: pass
         except Exception:
             logger.exception("client_interrupted handler failed")
-        # Also forward an interrupt to the audio service to flush any agent/human audio buffers
-        try:
-            from app.bridge import get_bridge
-            from app.main import get_socketio_instance
-            sio2 = get_socketio_instance()
-            bridge = get_bridge(sio2)
-            await bridge._client.emit("s2s_interrupt", bridge._with_auth({"room_id": str(chat_id)}))
-        except Exception:
-            logger.exception("failed to forward interrupt to audio")
     
     logger.info("Successfully registered training WebSocket event handlers")
     register_training_events._registered = True  # type: ignore[attr-defined]
