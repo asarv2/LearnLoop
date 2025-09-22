@@ -328,36 +328,7 @@ export type Database = {
           persona_field_id?: string | null
           position_field_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "groups_level_field_id_fkey"
-            columns: ["level_field_id"]
-            isOneToOne: false
-            referencedRelation: "fields"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "groups_mood_field_id_fkey"
-            columns: ["mood_field_id"]
-            isOneToOne: false
-            referencedRelation: "fields"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "groups_persona_field_id_fkey"
-            columns: ["persona_field_id"]
-            isOneToOne: false
-            referencedRelation: "fields"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "groups_position_field_id_fkey"
-            columns: ["position_field_id"]
-            isOneToOne: false
-            referencedRelation: "fields"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       hints: {
         Row: {
