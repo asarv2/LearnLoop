@@ -235,4 +235,3 @@ volumes:
     driver: local
   model_audio:
     driver: local
-
