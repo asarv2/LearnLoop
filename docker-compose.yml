@@ -197,6 +197,7 @@ services:
       - "${CLIENT_PORT}:80"
     environment:
       - NGINX_CLIENT_UPSTREAM=${COMPOSE_PROJECT_NAME}-client-1:3000
+      - PROJECT_NAME=${COMPOSE_PROJECT_NAME}
     volumes:
       - ./web/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       # Share the generated upstream with nginx
@@ -217,6 +218,8 @@ services:
   docker-gen:
     image: jwilder/docker-gen:0.7.6
     restart: unless-stopped
+    environment:
+      - PROJECT_NAME=${COMPOSE_PROJECT_NAME}
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
       # template in, generated file out
@@ -227,6 +230,9 @@ services:
       -watch
       /etc/docker-gen/templates/api_socketio.upstream.tmpl
       /etc/nginx/conf.d/generated/api_socketio.upstream.conf
+      -watch
+      /etc/docker-gen/templates/next_client.upstream.tmpl
+      /etc/nginx/conf.d/generated/next_client.upstream.conf
     networks: [web]
 
 volumes:
