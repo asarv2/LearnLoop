@@ -950,6 +950,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
 
             parent_id = data.get("scenario_id")
             field_values = data.get("field_values", [])
+            persona_ids_from_payload = data.get("persona_ids", [])
             additional_prompt = (data.get("additional_prompt") or "").strip()
 
             if not parent_id:
@@ -979,44 +980,54 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     await emit_error(sid, "Scenario not found")
                     return
 
-                # Extract persona_ids from field_values
-                persona_ids_from_fields = []
-                for fv in field_values:
-                    field_id = fv.get("fieldId")
-                    parameter_id = fv.get("parameterId")
-                    if field_id and parameter_id:
-                        # Check if this field is a persona field
-                        field = db_session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
-                        if field and getattr(field, "field_type", None) == "persona":
-                            # For persona fields, parameter_id points to Parameters record, 
-                            # and the actual persona_id is in Parameters.value
-                            param = db_session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
-                            if param and param.value:
-                                try:
-                                    persona_ids_from_fields.append(uuid.UUID(str(param.value)))
-                                    logger.info(f"Added persona_id {param.value} from parameter {parameter_id}")
-                                except Exception:
-                                    logger.warning(f"Invalid persona UUID in parameter {parameter_id}: {param.value}")
+                # Use persona_ids from payload (sent from frontend)
+                persona_ids_from_payload_uuids = []
+                if persona_ids_from_payload:
+                    try:
+                        persona_ids_from_payload_uuids = [uuid.UUID(pid) for pid in persona_ids_from_payload]
+                        logger.info(f"Using persona_ids from payload: {[str(p) for p in persona_ids_from_payload_uuids]}")
+                    except Exception as e:
+                        logger.warning(f"Error parsing persona_ids from payload: {e}")
+                
+                # If no persona_ids in payload, fall back to extracting from field_values
+                if not persona_ids_from_payload_uuids:
+                    logger.info("No persona_ids in payload, extracting from field_values")
+                    for fv in field_values:
+                        field_id = fv.get("fieldId")
+                        parameter_id = fv.get("parameterId")
+                        if field_id and parameter_id:
+                            # Check if this field is a persona field
+                            field = db_session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
+                            if field and getattr(field, "field_type", None) == "persona":
+                                # For persona fields, parameter_id points to Parameters record, 
+                                # and the actual persona_id is in Parameters.value
+                                param = db_session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
+                                if param and param.value:
+                                    try:
+                                        persona_ids_from_payload_uuids.append(uuid.UUID(str(param.value)))
+                                        logger.info(f"Added persona_id {param.value} from parameter {parameter_id}")
+                                    except Exception:
+                                        logger.warning(f"Invalid persona UUID in parameter {parameter_id}: {param.value}")
 
-                # Add the user's persona if they have one
+                # Add the user's persona if they have one and not already included
                 if profile_id:
                     user_persona = db_session.exec(select(Personas).where(Personas.profile_id == profile_id)).one_or_none()
                     if user_persona:
-                        if user_persona.id not in persona_ids_from_fields:
-                            persona_ids_from_fields.append(user_persona.id)
+                        if user_persona.id not in persona_ids_from_payload_uuids:
+                            persona_ids_from_payload_uuids.append(user_persona.id)
                             logger.info(f"Added user persona {user_persona.id} for profile {profile_id}")
                         else:
                             logger.info(f"User persona {user_persona.id} already in persona_ids")
                     else:
                         logger.warning(f"No persona found for profile_id {profile_id}")
 
-                logger.info(f"Final persona_ids for scenario generation: {[str(p) for p in persona_ids_from_fields]}")
+                logger.info(f"Final persona_ids for scenario generation: {[str(p) for p in persona_ids_from_payload_uuids]}")
 
                 # Use the centralized scenario agent - it will handle everything including child scenario creation
                 result = await run_scenario_agent(
                     scenario_id=uuid.UUID(parent_id),
                     field_values=field_values,
-                    persona_ids=persona_ids_from_fields,
+                    persona_ids=persona_ids_from_payload_uuids,
                     additional_context=additional_prompt,
                     create_child=True,
                     session=db_session
@@ -1062,6 +1073,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
         try:
             scenario_id = data.get("scenario_id")
             field_values = data.get("field_values", [])
+            persona_ids = data.get("persona_ids", [])
             if not scenario_id:
                 await emit_error(sid, "Missing scenario_id")
                 return

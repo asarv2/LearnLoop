@@ -129,18 +129,34 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   };
 
   // Create personas from group field values and return payload with persona IDs
-  const createPersonasFromGroupsAndGetPayload = async (): Promise<
-    {
+  const createPersonasFromGroupsAndGetPayload = async (): Promise<{
+    fieldValues: {
       fieldId: string;
       value: string;
       parameterId?: string;
-    }[]
-  > => {
-    const payload: { fieldId: string; value: string; parameterId?: string }[] =
-      [];
+      personaId?: string;
+    }[];
+    personaIds: string[];
+  }> => {
+    const payload: {
+      fieldId: string;
+      value: string;
+      parameterId?: string;
+      personaId?: string;
+    }[] = [];
+
+    const personaIds: string[] = [];
+
+    // Add user persona ID (from logged-in user)
+    if (user?.id) {
+      // Find the user persona for this profile
+      const userPersona = personas?.find((p) => p.profile_id === user.id);
+      if (userPersona && userPersona.id) {
+        personaIds.push(userPersona.id);
+      }
+    }
 
     // Add individual field values
-
     payload.push(
       ...fieldValues.map((fv) => ({
         fieldId: fv.fieldId,
@@ -150,8 +166,31 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     );
 
     // Create personas from group field values
-
     if (scenario?.group_ids && groups) {
+      // First pass: collect all personas and map groupId to persona_id
+      const group_persona_map = new Map<string, string>();
+
+      for (const groupId of scenario.group_ids) {
+        const group = groups.find((g) => g.id === groupId);
+        if (!group) continue;
+
+        const personaFieldValue = groupFieldValues.find(
+          (gfv) => gfv?.fieldId === group.persona_field_id
+        )?.value;
+
+        if (personaFieldValue) {
+          const parentPersona = personas?.find(
+            (p) => p.name === personaFieldValue
+          );
+          if (parentPersona && parentPersona.id) {
+            group_persona_map.set(groupId, parentPersona.id);
+            // Add to personaIds if not already added
+            if (!personaIds.includes(parentPersona.id)) {
+              personaIds.push(parentPersona.id);
+            }
+          }
+        }
+      }
       for (const groupId of scenario.group_ids) {
         const group = groups.find((g) => g.id === groupId);
         if (!group) continue;
@@ -241,10 +280,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   p.position === positionFieldValue?.value
               );
 
-              let personaToUse;
               if (existingPersona) {
                 // Use existing persona
-                personaToUse = existingPersona;
                 console.log(
                   `Using existing persona: ${existingPersona.name} (${existingPersona.id})`
                 );
@@ -275,50 +312,13 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   })(),
                   position: positionFieldValue?.value || null,
                 });
-                personaToUse = newPersona;
                 console.log(
                   `Created new persona: ${newPersona.name} (${newPersona.id}) with parent: ${parentPersona.id}`
                 );
               }
 
-              // Create a parameter record that references this persona
-              if (personaToUse?.id) {
-                try {
-                  if (group.persona_field_id) {
-                    const createdParam =
-                      await createParameterGlobal.mutateAsync({
-                        field_id: group.persona_field_id,
-                        name: personaName,
-                        description: `Generated persona parameter for ${
-                          group.name || groupId
-                        }`,
-                        value: personaToUse.id, // Store the persona ID in the parameter value
-                      });
-
-                    // Add the parameter ID to the payload (not the persona ID directly)
-                    if (createdParam?.id) {
-                      payload.push({
-                        fieldId: group.persona_field_id,
-                        value: personaName,
-                        parameterId: createdParam.id, // Use parameter ID, not persona ID
-                      });
-                    }
-                  }
-                } catch (paramError) {
-                  console.error(
-                    "Failed to create parameter for persona:",
-                    paramError
-                  );
-                  // Fallback: use persona ID directly (this will cause the server issue)
-                  if (group.persona_field_id) {
-                    payload.push({
-                      fieldId: group.persona_field_id,
-                      value: personaName,
-                      parameterId: personaToUse.id,
-                    });
-                  }
-                }
-              }
+              // Get the persona_id for this group
+              const personaId = group_persona_map.get(groupId);
 
               // Add other field values to payload (mood, level, position) - these are just string values
               if (moodFieldValue?.value && group.mood_field_id) {
@@ -326,23 +326,25 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   fieldId: group.mood_field_id,
                   value: moodFieldValue.value,
                   parameterId: moodFieldValue.parameterId, // Use existing parameter ID if available
+                  personaId: personaId, // Map to persona_id
                 });
               }
 
-              if (levelFieldValue?.value && group.level_field_id) {
-                payload.push({
-                  fieldId: group.level_field_id,
-                  value: levelFieldValue.value,
-                  parameterId: levelFieldValue.parameterId, // Use existing parameter ID if available
-                });
-              }
-
-              if (positionFieldValue?.value && group.position_field_id) {
-                payload.push({
-                  fieldId: group.position_field_id,
-                  value: positionFieldValue.value,
-                  parameterId: positionFieldValue.parameterId, // Use existing parameter ID if available
-                });
+              // Add additional group field_ids that are mapped to this persona
+              if (group.field_ids) {
+                for (const additionalFieldId of group.field_ids) {
+                  const additionalFieldValue = currentGroupFieldValues.find(
+                    (gfv) => gfv?.fieldId === additionalFieldId
+                  );
+                  if (additionalFieldValue?.value) {
+                    payload.push({
+                      fieldId: additionalFieldId,
+                      value: additionalFieldValue.value,
+                      parameterId: additionalFieldValue.parameterId,
+                      personaId: personaId, // Map to persona_id
+                    });
+                  }
+                }
               }
             } catch (error) {
               console.error("Failed to create persona from group:", error);
@@ -352,7 +354,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       }
     }
 
-    return payload;
+    return {
+      fieldValues: payload,
+      personaIds: personaIds,
+    };
   };
 
   // Compute current signature from the visible fieldValues
@@ -1209,7 +1214,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       }
 
       // 5) Create personas from groups and update scenario parameters on server
-      const payloadFieldValues = await createPersonasFromGroupsAndGetPayload();
+      const { fieldValues: payloadFieldValues, personaIds } =
+        await createPersonasFromGroupsAndGetPayload();
 
       // Record this generation's parameters for change detection
       setLastGeneratedSignature(makeSignatureFromPayload(payloadFieldValues));
@@ -1217,6 +1223,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
         field_values: payloadFieldValues,
+        persona_ids: personaIds,
       });
 
       // 6) Trigger generation
@@ -1244,11 +1251,13 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     try {
       // Update active scenario's parameter ids before starting
       const scenarioToUse = savedScenarioId || scenarioId;
-      const updateFieldValues = await createPersonasFromGroupsAndGetPayload();
+      const { fieldValues: updateFieldValues, personaIds } =
+        await createPersonasFromGroupsAndGetPayload();
 
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
         field_values: updateFieldValues,
+        persona_ids: personaIds,
       });
 
       // Start training with only scenario_id
