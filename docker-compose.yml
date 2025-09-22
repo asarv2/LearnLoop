@@ -20,7 +20,7 @@ services:
       - TURN_URI=${TURN_URI}
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
-      - INTERNAL_API_BASE=http://learnloop-server:8000
+      - INTERNAL_API_BASE=http://learnloop-prod-server-1:8000
       - HOSTNAME=0.0.0.0
       - PORT=3000
     healthcheck:
@@ -53,14 +53,14 @@ services:
 
       # api + socket.io
       - ORIGIN=${ORIGIN}
-      - REDIS_URL=redis://learnloop-redis:6379
-      - MODEL_SERVICE_URL=http://learnloop-model:8000
-      - DOCUMENTS_SERVICE_URL=http://learnloop-documents:8000
-      - AUDIO_SERVICE_URL=http://learnloop-audio:8000
+      - REDIS_URL=redis://learnloop-prod-redis-1:6379
+      - MODEL_SERVICE_URL=http://learnloop-prod-model-1:8000
+      - DOCUMENTS_SERVICE_URL=http://learnloop-prod-documents-1:8000
+      - AUDIO_SERVICE_URL=http://learnloop-prod-audio-1:8000
 
       # webrtc
-      - STUN_URI=stun:learnloop-webrtc:3479
-      - TURN_URI=turn:learnloop-webrtc:3479?transport=udp
+      - STUN_URI=stun:learnloop-prod-webrtc-1:3479
+      - TURN_URI=turn:learnloop-prod-webrtc-1:3479?transport=udp
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
       - AUDIO_SECRET=${AUDIO_SECRET}
@@ -140,7 +140,7 @@ services:
       - PORT=8000
       - HOST=0.0.0.0
       - AUDIO_SECRET=${AUDIO_SECRET}
-      - MODEL_SERVICE_URL=http://learnloop-model:8000
+      - MODEL_SERVICE_URL=http://learnloop-prod-model-1:8000
       - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
