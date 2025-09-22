@@ -140,14 +140,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       [];
 
     // Add individual field values
-    console.log("🔍 Debug: Individual field values", {
-      fieldValuesCount: fieldValues.length,
-      fieldValues: fieldValues.map((fv) => ({
-        fieldId: fv.fieldId,
-        value: fv.value,
-        parameterId: fv.parameterId,
-      })),
-    });
 
     payload.push(
       ...fieldValues.map((fv) => ({
@@ -158,46 +150,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     );
 
     // Create personas from group field values
-    console.log("🔍 Debug: Checking for group persona creation", {
-      hasScenario: !!scenario,
-      hasGroupIds: !!scenario?.group_ids,
-      groupIds: scenario?.group_ids,
-      hasGroups: !!groups,
-      groupsCount: groups?.length,
-      groupFieldValuesCount: groupFieldValues.length,
-      groupFieldValues: groupFieldValues.map((gfv) => ({
-        fieldId: gfv.fieldId,
-        value: gfv.value,
-        parameterId: gfv.parameterId,
-        groupId: gfv.groupId,
-      })),
-      scenarioData: scenario
-        ? {
-            id: scenario.id,
-            title: scenario.title,
-            group_ids: scenario.group_ids,
-            field_ids: scenario.field_ids,
-          }
-        : null,
-    });
 
     if (scenario?.group_ids && groups) {
       for (const groupId of scenario.group_ids) {
         const group = groups.find((g) => g.id === groupId);
-        console.log("🔍 Debug: Processing group", {
-          groupId,
-          group: group
-            ? {
-                id: group.id,
-                name: group.name,
-                persona_field_id: group.persona_field_id,
-                mood_field_id: group.mood_field_id,
-                position_field_id: group.position_field_id,
-                level_field_id: group.level_field_id,
-                field_ids: group.field_ids,
-              }
-            : null,
-        });
         if (!group) continue;
 
         // Get all field values for this group (persona first, then mood, position, level, then additional field_ids)
@@ -219,15 +175,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           })
           .filter(Boolean);
 
-        console.log("🔍 Debug: Group field values", {
-          groupId,
-          currentGroupFieldValues: currentGroupFieldValues.map((gfv) => ({
-            fieldId: gfv?.fieldId,
-            value: gfv?.value,
-            parameterId: gfv?.parameterId,
-          })),
-        });
-
         if (currentGroupFieldValues.length > 0) {
           // Find persona field value for persona name
           const personaFieldValue =
@@ -242,18 +189,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             (gfv) => gfv?.fieldId === group.mood_field_id
           );
 
-          console.log("🔍 Debug: Field values found", {
-            groupId,
-            personaFieldValue,
-            moodFieldValue: moodFieldValue
-              ? {
-                  fieldId: moodFieldValue.fieldId,
-                  value: moodFieldValue.value,
-                  parameterId: moodFieldValue.parameterId,
-                }
-              : null,
-          });
-
           // Find level and position field values for enhanced persona description
           const levelFieldValue = currentGroupFieldValues.find(
             (gfv) => gfv?.fieldId === group.level_field_id
@@ -264,13 +199,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
           // Create persona based on persona_field_id, level_field_id, and position_field_id
           // Mood is just a regular parameter, not a persona reference
-          console.log("🔍 Debug: Persona field values", {
-            groupId,
-            personaFieldValue,
-            levelFieldValue,
-            positionFieldValue,
-            moodFieldValue,
-          });
 
           // Only create persona if we have the persona field value
           if (personaFieldValue) {
@@ -279,19 +207,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               const parentPersona = personas?.find(
                 (p) => p.name === personaFieldValue
               );
-
-              console.log("🔍 Debug: Parent persona lookup", {
-                groupId,
-                personaFieldValue,
-                parentPersona: parentPersona
-                  ? {
-                      id: parentPersona.id,
-                      name: parentPersona.name,
-                      voice: parentPersona.voice,
-                    }
-                  : null,
-                allPersonasCount: personas?.length,
-              });
 
               if (!parentPersona) {
                 console.warn(
@@ -616,8 +531,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   useEffect(() => {
     const handleScenarioGenerated = (e: CustomEvent) => {
       const d = e.detail || {};
-      // Ensure this is for our parent scenario id
-      if (!scenario) return;
+      console.log("🎉 Scenario generated event received:", d);
       // Accept any generated child and store its id for Start/Regenerate chaining
       setSavedScenarioId(d.scenario_id || null);
       if (preparingModelTimerRef.current) {
@@ -644,7 +558,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         handleScenarioGenerated as EventListener
       );
     };
-  }, [scenario]);
+  }, []);
 
   const updateFieldValue = (
     fieldId: string,
@@ -929,9 +843,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     ""
   ).trim();
   const scenarioObjectives =
-    draftObjectives && draftObjectives.length > 0
-      ? draftObjectives
-      : scenario?.objectives || [];
+    draftObjectives.length > 0 ? draftObjectives : scenario?.objectives || [];
   const scenarioReady =
     scenarioProblem.length > 0 && scenarioObjectives.length >= 1;
 
@@ -1299,15 +1211,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       // 5) Create personas from groups and update scenario parameters on server
       const payloadFieldValues = await createPersonasFromGroupsAndGetPayload();
 
-      console.log("🔍 Debug: Final payload being sent to server", {
-        payloadFieldValuesCount: payloadFieldValues.length,
-        payloadFieldValues: payloadFieldValues.map((pfv) => ({
-          fieldId: pfv.fieldId,
-          value: pfv.value,
-          parameterId: pfv.parameterId,
-        })),
-      });
-
       // Record this generation's parameters for change detection
       setLastGeneratedSignature(makeSignatureFromPayload(payloadFieldValues));
 
@@ -1342,16 +1245,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       // Update active scenario's parameter ids before starting
       const scenarioToUse = savedScenarioId || scenarioId;
       const updateFieldValues = await createPersonasFromGroupsAndGetPayload();
-
-      console.log("🔍 Debug: Start scenario payload", {
-        scenarioToUse,
-        updateFieldValuesCount: updateFieldValues.length,
-        updateFieldValues: updateFieldValues.map((ufv) => ({
-          fieldId: ufv.fieldId,
-          value: ufv.value,
-          parameterId: ufv.parameterId,
-        })),
-      });
 
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
