@@ -524,6 +524,7 @@ async def create_child_scenario(
     prompt_mapping: Dict[str, str],
     document_ids: List[str],
     parameter_ids: List[str],
+    persona_ids: List[uuid.UUID],
     session: Session
 ) -> Any:
     """Create a child scenario with all the generated data."""
@@ -543,6 +544,7 @@ async def create_child_scenario(
         prompts=prompts,
         prompt_mapping=prompt_mapping,
         document_ids=document_ids,
+        persona_ids=persona_ids,
     )
     session.add(child)
     session.commit()
@@ -624,7 +626,13 @@ async def run_scenario_agent(
         
         # Create all scenario tools (scenario, objectives, persona prompts, and document generation)
         # Use the parent scenario ID as template_id for document generation
-        scenario_tools, document_tool_metadata = await create_scenario_tools(scenario_id, persona_ids, session)
+        # Use a fresh session to avoid prepared statement conflicts
+        from app.db import get_session
+        fresh_session = next(get_session())
+        try:
+            scenario_tools, document_tool_metadata = await create_scenario_tools(scenario_id, persona_ids, fresh_session)
+        finally:
+            fresh_session.close()
         logger.info(f"Created {len(scenario_tools)} scenario tools")
         
         # Add tools information for the model to understand what's available
@@ -787,6 +795,7 @@ async def run_scenario_agent(
                 prompt_mapping=prompt_mapping,
                 document_ids=document_ids,
                 parameter_ids=parameter_ids,
+                persona_ids=persona_ids,
                 session=session
         )
 
