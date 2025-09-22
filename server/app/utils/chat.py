@@ -1,7 +1,7 @@
 import logging
 import random
 import uuid
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from agents.items import TResponseInputItem
 from agents.realtime.items import (AssistantMessageItem, AssistantText,
@@ -132,33 +132,25 @@ def get_parameter_history_from_field_values(
     field_values: List[dict],
     session: Session,
     parent_scenario_id: Optional[uuid.UUID] = None,
+    persona_ids: Optional[List[uuid.UUID]] = None,
+    persona_aliases: Optional[Dict[uuid.UUID, str]] = None,
 ) -> list[TResponseInputItem]:
     """
-    Get parameter history directly from field_values (like in generate_scenario).
-    This is a simpler approach that builds parameter lines directly from the field values
-    rather than going through the complex parameter/field lookup process.
+    Get parameter history directly from field_values with improved structure.
+    Creates two developer messages:
+    1. Persona information with aliases, names, descriptions, levels, and positions
+    2. Additional information including scenario details and non-persona field values
 
     Args:
-        field_values: List of field value dictionaries with fieldId, value, parameterId
+        field_values: List of field value dictionaries with fieldId, value, parameterId, personaAlias
         session: Database session for lookups
         parent_scenario_id: Optional parent scenario ID to include context
+        persona_ids: Optional list of persona IDs to get persona information directly
 
     Returns:
         List of parameter messages formatted for agent consumption
     """
     messages: list[TResponseInputItem] = []
-    
-    # Add parent scenario information if provided
-    if parent_scenario_id:
-        parent_scenario = session.exec(select(Scenarios).where(Scenarios.id == parent_scenario_id)).one_or_none()
-        if parent_scenario:
-            parent_info = f"**Scenario:** {parent_scenario.title}"
-            if parent_scenario.description:
-                parent_info += f"\n**Description:** {parent_scenario.description}"
-            messages.append({
-                "role": "developer",
-                "content": f"The following is the scenario that user1, user2, etc. will be practicing in this training session:\n{parent_info}"
-            })
     
     if not field_values:
         return messages
@@ -166,48 +158,98 @@ def get_parameter_history_from_field_values(
     # Use a fresh session for this operation to avoid prepared statement conflicts
     fresh_session = next(get_session())
     try:
-        param_lines: list[str] = []
+        # Build persona information message using persona_ids and persona_aliases
+        if persona_ids and persona_aliases:
+            persona_info_lines = []
+            
+            from app.models import Personas
+            
+            for persona_id in persona_ids:
+                persona_alias = persona_aliases.get(persona_id)
+                if not persona_alias:
+                    continue
+                    
+                persona = fresh_session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+                if not persona:
+                    continue
+                
+                persona_info = f"**{persona_alias}:** {persona.name}"
+                
+                # Add description from persona record
+                if persona.description:
+                    persona_info += f"\n{persona.description}"
+                
+                # Add level from persona record
+                if persona.level:
+                    level_display = persona.level.title()  # Convert 'junior' to 'Junior', etc.
+                    if persona.level == 'mid':
+                        level_display = 'Mid-level'
+                    persona_info += f"\n**Level:** {level_display}"
+                
+                # Add position from persona record
+                if persona.position:
+                    persona_info += f"\n**Position:** {persona.position}"
+                
+                persona_info_lines.append(persona_info)
+            
+            if persona_info_lines:
+                persona_content = "\n\n".join(persona_info_lines)
+                messages.append({
+                    "role": "developer",
+                    "content": f"# Available Personas\n\n{persona_content}"
+                })
 
+        # Build additional information message
+        additional_info_lines = []
+        
+        # Add scenario information if provided
+        if parent_scenario_id:
+            parent_scenario = session.exec(select(Scenarios).where(Scenarios.id == parent_scenario_id)).one_or_none()
+            if parent_scenario:
+                scenario_info = f"**Scenario:** {parent_scenario.title}"
+                if parent_scenario.description:
+                    scenario_info += f"\n**Description:** {parent_scenario.description}"
+                additional_info_lines.append(scenario_info)
+        
+        # Add field values - check if they're mapped to personas or are general context
         for fv in field_values:
             field_id = fv.get("fieldId")
-            value = fv.get("value", "").strip()
-            parameter_id = fv.get("parameterId")
-
             if not field_id:
                 continue
-
-            # Get the field to understand its type and name
+                
             field = fresh_session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
             if not field:
                 continue
-
-            field_name = field.name or "parameter"
-            field_description = field.description or ""
-
+            
+            # Check if this field is mapped to a persona (from frontend personaId)
+            persona_id_str = fv.get("personaId")
+            if persona_id_str:
+                # This field is mapped to a specific persona - find the persona name
+                persona_name = "Unknown Persona"
+                try:
+                    persona_id = uuid.UUID(persona_id_str)
+                    from app.models import Personas
+                    persona = fresh_session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+                    if persona:
+                        persona_name = persona.name
+                except (ValueError, TypeError):
+                    # Invalid UUID format
+                    pass
+                
+                field_info = f"**{field.name or field.field_type} (for {persona_name}):**"
+            else:
+                # This is general conversation context
+                field_info = f"**{field.name or field.field_type}:**"
+            
+            # Process the field value
+            value = fv.get("value", "").strip()
+            parameter_id = fv.get("parameterId")
+            
+            if not value and not parameter_id:
+                continue
+                
             # Handle different field types
-            if field.field_type == 'persona' and parameter_id:
-                # For persona fields, the field_values carry a parameterId that points to Parameters;
-                # resolve the underlying Persona via Parameters.value
-                from app.models import Parameters as _Parameters
-                from app.models import Personas
-                param_row = fresh_session.exec(select(_Parameters).where(_Parameters.id == parameter_id)).one_or_none()
-                persona = None
-                if param_row and param_row.value:
-                    try:
-                        persona = fresh_session.exec(select(Personas).where(Personas.id == param_row.value)).one_or_none()
-                    except Exception:
-                        persona = None
-                if persona:
-                    persona_desc = persona.description if persona.description else "No description available"
-                    param_lines.append(
-                        f"- **{field_name}**: {persona.name}\n  - {persona_desc}"
-                    )
-                else:
-                    param_lines.append(f"- **{field_name}**: {value}")
-
-            elif field.field_type == 'document':
-                # For document fields, prefer the explicit value (document id) from field_values;
-                # if missing, fall back to resolving via parameterId → Parameters.value
+            if field.field_type == 'document':
                 doc_id = value
                 if not doc_id and parameter_id:
                     from app.models import Parameters as _Parameters
@@ -218,35 +260,33 @@ def get_parameter_history_from_field_values(
                     document = fresh_session.exec(select(Documents).where(Documents.id == doc_id)).one_or_none()
                     if document:
                         doc_content = document.content if document.content else "No content available"
-                        param_lines.append(f"- **{field_name}**: document `{str(doc_id)[:8]}`\n  - {doc_content}")
+                        field_info += f" document `{str(doc_id)[:8]}`\n{doc_content}"
                     else:
-                        param_lines.append(f"- **{field_name}**: {doc_id}")
-
+                        field_info += f" {doc_id}"
+                        
             elif field.field_type == 'categorical' and parameter_id:
-                # For categorical fields, use the parameter name and append the description after a colon
                 param = fresh_session.exec(select(Parameters).where(Parameters.id == parameter_id)).one_or_none()
                 if param:
-                    param_desc = param.description if param.description else "No description available"
-                    param_lines.append(
-                        f"- **{field_name}**: {param.name}\n  - {param_desc}"
-                    )
+                    field_info += f" {param.name}"
+                    if param.description:
+                        field_info += f"\n{param.description}"
                 else:
-                    param_lines.append(f"- **{field_name}**: {value}")
-
+                    field_info += f" {value}"
+                    
             else:
-                # For text, numerical, or other fields, use the value directly and append the description after a colon
-                if value:
-                    desc = field_description if field_description else "No description available"
-                    param_lines.append(
-                        f"- **{field_name}**: {value}\n  - {desc}"
-                    )
-
-        # Return as a single user message with all parameters, formatted in markdown
-        if param_lines:
-            content = "\n".join(param_lines)
+                # For text, numerical, or other fields
+                field_info += f" {value}"
+                if field.description:
+                    field_info += f"\n{field.description}"
+            
+            additional_info_lines.append(field_info)
+        
+        # Add additional information message if we have content
+        if additional_info_lines:
+            additional_content = "\n\n".join(additional_info_lines)
             messages.append({
                 "role": "developer",
-                "content": f"The following are the parameters for this training session. These parameters should be used for agent1, agent2, etc.:\n\n{content}"
+                "content": f"# Additional Information\n\n{additional_content}"
             })
 
         return messages

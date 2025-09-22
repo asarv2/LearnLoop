@@ -79,6 +79,7 @@ interface WebSocketContextType {
       parameterId?: string;
       file?: File;
     }>;
+    persona_ids?: string[];
     additional_prompt?: string;
     current_draft_objectives?: string[];
   }) => void;
@@ -90,6 +91,7 @@ interface WebSocketContextType {
       parameterId?: string;
       file?: File;
     }>;
+    persona_ids?: string[];
   }) => void;
   emitJoinTraining: (data: {
     attempt_id: string;
@@ -1112,6 +1114,7 @@ export function WebSocketProvider({
         parameterId?: string;
         file?: File;
       }>;
+      persona_ids?: string[];
     }) => {
       if (!socketRef.current?.connected) {
         logError("Cannot update scenario parameters - WebSocket not connected");

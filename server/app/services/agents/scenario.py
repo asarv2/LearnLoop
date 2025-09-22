@@ -441,20 +441,18 @@ async def create_document_tool_for_scenario(scenario_id: uuid.UUID, session: Ses
     return tools, tool_metadata
 
 
-async def create_scenario_tools(scenario_id: uuid.UUID, persona_ids: List[uuid.UUID], session: Session) -> tuple[List[Any], List[Dict[str, str]]]:
-    """Create all scenario function tools including scenario, objectives, persona prompts, and document generation.
+def calculate_persona_aliases(persona_ids: List[uuid.UUID], session: Session) -> Dict[uuid.UUID, str]:
+    """Calculate persona aliases (user1, agent1, etc.) for a list of persona IDs.
     
+    Args:
+        persona_ids: List of persona UUIDs
+        session: Database session
+        
     Returns:
-        tuple: (tools_list, document_tool_metadata_list) where document_tool_metadata_list contains dicts with 'name' and 'description' keys for document tools only
+        Dictionary mapping persona_id to alias (e.g., {persona_id: "user1"})
     """
-    tools: List[Any] = []
-    
-    # Add core scenario tools
-    tools.append(create_scenario_tool())
-    tools.append(create_objectives_tool())
-    
-    # Add persona prompt tools for each persona with aliases
     from app.models import Personas
+    persona_aliases = {}
     user_count = 1
     agent_count = 1
     
@@ -471,12 +469,39 @@ async def create_scenario_tools(scenario_id: uuid.UUID, persona_ids: List[uuid.U
                 persona_alias = f"agent{agent_count}"
                 agent_count += 1
             
-            persona_tool = create_persona_prompt_tool(persona_id, persona_alias, persona.name)
-            tools.append(persona_tool)
-            logger.info(f"Created persona prompt tool for {persona_alias} ({persona.name})")
+            persona_aliases[persona_id] = persona_alias
+    
+    return persona_aliases
+
+
+async def create_scenario_tools(scenario_id: uuid.UUID, persona_ids: List[uuid.UUID], session: Session) -> tuple[List[Any], List[Dict[str, str]]]:
+    """Create all scenario function tools including scenario, objectives, persona prompts, and document generation.
+    
+    Returns:
+        tuple: (tools_list, document_tool_metadata_list) where document_tool_metadata_list contains dicts with 'name' and 'description' keys for document tools only
+    """
+    tools: List[Any] = []
+    
+    # Add core scenario tools
+    tools.append(create_scenario_tool())
+    tools.append(create_objectives_tool())
+    
+    # Add persona prompt tools for each persona with aliases
+    persona_aliases = calculate_persona_aliases(persona_ids, session)
+    
+    for persona_id in persona_ids:
+        persona_alias = persona_aliases.get(persona_id)
+        if persona_alias:
+            from app.models import Personas
+            persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+            if persona:
+                persona_tool = create_persona_prompt_tool(persona_id, persona_alias, persona.name)
+                tools.append(persona_tool)
+                logger.info(f"Created persona prompt tool for {persona_alias} ({persona.name})")
+            else:
+                logger.error(f"Persona {persona_id} not found in database - this will cause scenario generation to fail")
         else:
-            logger.error(f"Persona {persona_id} not found in database - this will cause scenario generation to fail")
-            # Continue without this persona rather than failing completely
+            logger.error(f"Could not calculate alias for persona {persona_id}")
     
     # Add document generation tool for scenario (using scenario.id as template_id)
     document_tools, document_tool_metadata = await create_document_tool_for_scenario(scenario_id, session)
@@ -570,52 +595,19 @@ async def run_scenario_agent(
                 "message": f"Scenario {scenario_id} not found",
             }
 
+        # Calculate persona aliases using shared function
+        persona_aliases = calculate_persona_aliases(persona_ids, session)
+        
         # Use field_values to create parameter history
         from app.utils.chat import get_parameter_history_from_field_values
-        parameter_history = get_parameter_history_from_field_values(field_values, session, scenario_id)
+        parameter_history = get_parameter_history_from_field_values(field_values, session, scenario_id, persona_ids, persona_aliases)
 
         # Build context from persona_ids and additional_context
         from agents.items import TResponseInputItem
         context_items: list[TResponseInputItem] = []
         
-        # Add persona information for the model to understand who each persona is
-        from app.models import Personas
-        persona_info_lines = []
-        user_count = 1
-        agent_count = 1
-        
-        # Separate user and agent personas to put users first
-        user_personas = []
-        agent_personas = []
-        
-        for persona_id in persona_ids:
-            persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
-            if persona:
-                if persona.profile_id:
-                    # User persona
-                    user_personas.append(persona)
-                else:
-                    # Agent persona
-                    agent_personas.append(persona)
-        
-        # Add user personas first
-        for persona in user_personas:
-            persona_alias = f"user{user_count}"
-            user_count += 1
-            persona_info_lines.append(f"- {persona_alias}: {persona.name} - {persona.description or 'No description available'}")
-        
-        # Add agent personas second
-        for persona in agent_personas:
-            persona_alias = f"agent{agent_count}"
-            agent_count += 1
-            persona_info_lines.append(f"- {persona_alias}: {persona.name} - {persona.description or 'No description available'}")
-        
-        if persona_info_lines:
-            persona_info_content = "Available personas for this scenario:\n" + "\n".join(persona_info_lines)
-            context_items.append({
-                "role": "developer",
-                "content": persona_info_content
-            })
+        # The persona information will now be handled by the improved get_parameter_history_from_field_values function
+        # which creates structured markdown with persona aliases, names, descriptions, levels, and positions
         
         # Add additional context if provided
         if additional_context:
