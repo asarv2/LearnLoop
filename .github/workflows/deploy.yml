@@ -255,32 +255,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           clean: true
+
+      - name: Prep filesystem
+        run: |
+          sudo mkdir -p /srv/deploy/.docker-ghcr
+          sudo mkdir -p /srv/deploy/learnloop/prod /srv/deploy/learnloop/beta
+          # runner user should own them; replace 'runner' with your service user
+          sudo chown -R "$USER":"$USER" /srv/deploy
 
       - name: Login GHCR
         env:
           DOCKER_CONFIG: /srv/deploy/.docker-ghcr
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        run: |
+          mkdir -p "$DOCKER_CONFIG"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Stage release to /srv/deploy/learnloop/{prod|beta}
+        env:
+          DEST: /srv/deploy/learnloop/${{ env.CHANNEL }}
         run: |
-          DEST="/srv/deploy/learnloop/${{ env.CHANNEL }}"
           mkdir -p "$DEST"
+          # Sync top-level items you actually need. --delete prevents stale files.
+          rsync -a --delete docker-compose.yml "$DEST"/
+
+          rsync -a --delete --exclude 'node_modules' client/     "$DEST/client"/     || true
+          rsync -a --delete server/                               "$DEST/server"/     || true
+          rsync -a --delete model/                                "$DEST/model"/      || true
+          rsync -a --delete documents/                            "$DEST/documents"/  || true
+          rsync -a --delete audio/                                "$DEST/audio"/      || true
+          rsync -a --delete web/                                  "$DEST/web"/        || true
+          rsync -a --delete turn/                                 "$DEST/turn"/       || true
+
+          mkdir -p "$DEST/web/generated"
+          chmod 777 "$DEST/web/generated"
           
-          # Copy files one by one to ensure all directories are copied
-          cp docker-compose.yml "$DEST"/
-          cp -r web/ "$DEST"/
-          cp -r server/ "$DEST"/
-          cp -r client/ "$DEST"/
-          cp -r model/ "$DEST"/
-          cp -r documents/ "$DEST"/
-          cp -r audio/ "$DEST"/
-          cp -r turn/ "$DEST"/
-          
-          # Ensure web/generated directory exists with proper permissions
-          mkdir -p "$DEST/web/generated" && chmod 777 "$DEST/web/generated"
+          # Add deployment stamp for tracking
+          echo "${GITHUB_SHA}" > "$DEST/DEPLOYED_SHA"
 
       - name: Deploy
         working-directory: /srv/deploy/learnloop/${{ env.CHANNEL }}
