@@ -212,35 +212,29 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                     
                     logger.info(f"Transformed {len(transformed_prompts)} prompts from alias format to persona_id format")
 
-                # Update chat fields via raw SQL
+                # Update chat fields via parameterized query
                 try:
-                    # Set persona_ids
-                    if persona_ids:
-                        array_sql = "ARRAY[" + ", ".join([f"'{p}'" for p in persona_ids]) + "]::uuid[]"
-                    else:
-                        array_sql = "NULL"
-                    
-                    # Set transformed prompts
-                    prompts_json = "NULL"
-                    if transformed_prompts:
-                        import json
-                        prompts_json = f"'{json.dumps(transformed_prompts)}'::jsonb"
-                    
-                    # Set max_turns
-                    max_turns_json = "NULL"
-                    if max_turns:
-                        import json
-                        max_turns_json = f"'{json.dumps(max_turns)}'::jsonb"
+                    import json
+
+                    # Prepare data for parameterized query
+                    persona_ids_array = persona_ids if persona_ids else []
+                    prompts_data = json.dumps(transformed_prompts) if transformed_prompts else None
+                    max_turns_data = json.dumps(max_turns) if max_turns else None
                     
                     conn.execute(
-                        text(f"""
+                        text("""
                             UPDATE chats 
-                            SET persona_ids = {array_sql},
-                                prompts = {prompts_json},
-                                max_turns = {max_turns_json}
+                            SET persona_ids = :persona_ids,
+                                prompts = :prompts,
+                                max_turns = :max_turns
                             WHERE id = :id
                         """),
-                        {"id": str(chat.id)},
+                        {
+                            "id": str(chat.id),
+                            "persona_ids": persona_ids_array,
+                            "prompts": prompts_data,
+                            "max_turns": max_turns_data
+                        },
                     )
                     db_session.commit()
                     logger.info(f"Updated chat {chat.id} with {len(persona_ids)} personas, {len(transformed_prompts)} prompts, and max_turns: {max_turns}")
@@ -1107,7 +1101,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     if parameter_ids:
                         array_sql = "ARRAY[" + ", ".join([f"'{p}'" for p in parameter_ids]) + "]::uuid[]"
                     else:
-                        array_sql = "NULL"
+                        array_sql = "'{}'::uuid[]"  # Empty array instead of NULL
                     conn = db_session.connection()
                     conn.execute(
                         text(f"UPDATE scenarios SET parameter_ids = {array_sql} WHERE id = :id"),
