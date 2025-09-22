@@ -125,6 +125,7 @@ def render(args: Args) -> bytes:
     doc.preamble.append(NoEscape(r"\fancyhf{}"))
     doc.preamble.append(NoEscape(r"\fancyhead[L]{\small " + _escape_latex(args.company_name) + r"}"))
     doc.preamble.append(NoEscape(r"\fancyhead[R]{\small Pitch Deck}"))
+    doc.preamble.append(NoEscape(r"\fancyfoot[R]{\small Page \thepage{} of \pageref{LastPage}}"))
     
     # Improve table row spacing
     doc.preamble.append(NoEscape(r"\renewcommand{\arraystretch}{1.4}"))
@@ -254,6 +255,7 @@ def render(args: Args) -> bytes:
   \vspace{0.2cm}
   {\small """ + _escape_latex(args.presenter_name) + r""" - """ + _escape_latex(args.presenter_title) + r"""}\par
 }
+\label{LastPage}
 """)
     doc.append(contact_info)
 

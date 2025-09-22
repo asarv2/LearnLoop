@@ -170,6 +170,7 @@ def render(args: Args) -> bytes:
 \end{tabularx}
 
 \vspace{0.6cm}
+\label{LastPage}
 """)
     doc.append(incident_details)
 
