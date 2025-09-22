@@ -1,6 +1,8 @@
-{{/* emit upstreams for running server containers */}}
+{{/* emit upstreams for running learnloop server containers */}}
 {{ range $c := . }}
-  {{ if and $c.State.Running (eq (index $c.Labels "com.docker.compose.service") "server") -}}
+  {{ $svc  := index $c.Labels "com.docker.compose.service" }}
+  {{ $proj := index $c.Labels "com.docker.compose.project" }}
+  {{ if and $c.State.Running (eq $proj "learnloop-prod") (eq $svc "server") -}}
 server {{ $c.Name }}:8000 max_fails=3 fail_timeout=30s;
   {{- end }}
 {{ end }}
