@@ -105,10 +105,10 @@ def render(args: Args) -> bytes:
     doc.preamble.append(NoEscape(r"\definecolor{primary}{RGB}{14,104,202}    % blue used for section titles"))
     doc.preamble.append(NoEscape(r"\definecolor{labelbg}{RGB}{242,242,242}    % light grey for label cells"))
     
-    # Configure headers and footers (no footer)
+    # Configure headers and footers
     doc.preamble.append(NoEscape(r"\pagestyle{fancy}"))
     doc.preamble.append(NoEscape(r"\fancyhf{}"))
-    # Footer lines removed to remove footer
+    doc.preamble.append(NoEscape(r"\fancyfoot[R]{\small Page \thepage{} of \pageref{LastPage}}"))
     
     # Improve table row spacing
     doc.preamble.append(NoEscape(r"\renewcommand{\arraystretch}{1.3}"))
@@ -186,6 +186,7 @@ def render(args: Args) -> bytes:
   """ + _escape_latex(args.next_goals) + r""" \\
   \hline
 \end{tabularx}
+\label{LastPage}
 """)
     doc.append(goals_section)
 

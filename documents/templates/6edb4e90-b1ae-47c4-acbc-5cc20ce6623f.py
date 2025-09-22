@@ -270,6 +270,7 @@ def render(args: Args) -> bytes:
   \small Technical Lead & & & \\
   \hline
 \end{tabularx}
+\label{LastPage}
 """)
     doc.append(approval_section)
 

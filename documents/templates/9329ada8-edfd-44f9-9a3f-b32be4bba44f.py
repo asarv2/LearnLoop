@@ -214,6 +214,7 @@ def render(args: Args) -> bytes:
   \cellcolor{labelbg}\small Response from Affected Parties & """ + _escape_latex(args.response_from_affected) + r""" \\
   \hline
 \end{tabularx}
+\label{LastPage}
 """)
     doc.append(acknowledgment)
 
