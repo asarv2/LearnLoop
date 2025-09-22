@@ -131,6 +131,7 @@ def get_dynamic_rubric(
 def get_parameter_history_from_field_values(
     field_values: List[dict],
     session: Session,
+    parent_scenario_id: Optional[uuid.UUID] = None,
 ) -> list[TResponseInputItem]:
     """
     Get parameter history directly from field_values (like in generate_scenario).
@@ -140,12 +141,27 @@ def get_parameter_history_from_field_values(
     Args:
         field_values: List of field value dictionaries with fieldId, value, parameterId
         session: Database session for lookups
+        parent_scenario_id: Optional parent scenario ID to include context
 
     Returns:
         List of parameter messages formatted for agent consumption
     """
+    messages: list[TResponseInputItem] = []
+    
+    # Add parent scenario information if provided
+    if parent_scenario_id:
+        parent_scenario = session.exec(select(Scenarios).where(Scenarios.id == parent_scenario_id)).one_or_none()
+        if parent_scenario:
+            parent_info = f"**Scenario:** {parent_scenario.title}"
+            if parent_scenario.description:
+                parent_info += f"\n**Description:** {parent_scenario.description}"
+            messages.append({
+                "role": "developer",
+                "content": f"The following is the scenario that user1, user2, etc. will be practicing in this training session:\n{parent_info}"
+            })
+    
     if not field_values:
-        return []
+        return messages
 
     # Use a fresh session for this operation to avoid prepared statement conflicts
     fresh_session = next(get_session())
@@ -228,16 +244,16 @@ def get_parameter_history_from_field_values(
         # Return as a single user message with all parameters, formatted in markdown
         if param_lines:
             content = "\n".join(param_lines)
-            return [{
+            messages.append({
                 "role": "developer",
-                "content": f"The following are the parameters for this training session. These apply to the AGENTS in this training session, not the USER:\n\n{content}"
-            }]
+                "content": f"The following are the parameters for this training session. These parameters should be used for agent1, agent2, etc.:\n\n{content}"
+            })
 
-        return []
+        return messages
 
     except Exception as e:
         logger.error(f"Error building parameter history from field values: {e}")
-        return []
+        return messages
     finally:
         fresh_session.close()
 def get_audio_config(chat_id: str) -> dict:

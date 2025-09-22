@@ -572,7 +572,7 @@ async def run_scenario_agent(
 
         # Use field_values to create parameter history
         from app.utils.chat import get_parameter_history_from_field_values
-        parameter_history = get_parameter_history_from_field_values(field_values, session)
+        parameter_history = get_parameter_history_from_field_values(field_values, session, scenario_id)
 
         # Build context from persona_ids and additional_context
         from agents.items import TResponseInputItem
@@ -584,20 +584,31 @@ async def run_scenario_agent(
         user_count = 1
         agent_count = 1
         
+        # Separate user and agent personas to put users first
+        user_personas = []
+        agent_personas = []
+        
         for persona_id in persona_ids:
             persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
             if persona:
-                # Determine if this is a user persona (has profile_id) or agent persona
                 if persona.profile_id:
                     # User persona
-                    persona_alias = f"user{user_count}"
-                    user_count += 1
+                    user_personas.append(persona)
                 else:
                     # Agent persona
-                    persona_alias = f"agent{agent_count}"
-                    agent_count += 1
-                
-                persona_info_lines.append(f"- {persona_alias}: {persona.name} - {persona.description or 'No description available'}")
+                    agent_personas.append(persona)
+        
+        # Add user personas first
+        for persona in user_personas:
+            persona_alias = f"user{user_count}"
+            user_count += 1
+            persona_info_lines.append(f"- {persona_alias}: {persona.name} - {persona.description or 'No description available'}")
+        
+        # Add agent personas second
+        for persona in agent_personas:
+            persona_alias = f"agent{agent_count}"
+            agent_count += 1
+            persona_info_lines.append(f"- {persona_alias}: {persona.name} - {persona.description or 'No description available'}")
         
         if persona_info_lines:
             persona_info_content = "Available personas for this scenario:\n" + "\n".join(persona_info_lines)
