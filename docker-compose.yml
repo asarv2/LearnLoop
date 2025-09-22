@@ -225,6 +225,9 @@ services:
       -watch
       /etc/docker-gen/templates/api_socketio.upstream.tmpl
       /etc/nginx/conf.d/generated/api_socketio.upstream.conf
+      -watch
+      /etc/docker-gen/templates/next_client.upstream.tmpl
+      /etc/nginx/conf.d/generated/next_client.upstream.conf
     networks: [web]
 
 volumes:
