@@ -218,6 +218,7 @@ class AudioBridge:
                     text = payload.get("text") or ""
                     chunk_idx = int(payload.get("chunk_idx", 0))
                     is_final = bool(payload.get("is_final", False))
+                    created_ms = payload.get("created_ms") or payload.get("created_at_ms")
                     await _store_upsert(
                         room_id=str(room_id),
                         message_id=str(msg_id) if msg_id else None,
@@ -227,6 +228,7 @@ class AudioBridge:
                         chunk_idx=int(chunk_idx),
                         is_final=bool(is_final),
                         persona_id=payload.get("persona_id"),
+                        created_ms=int(created_ms) if isinstance(created_ms, int) else None,
                     )
                 except Exception:
                     # Do not fail the bridge if persistence has issues; still forward to clients

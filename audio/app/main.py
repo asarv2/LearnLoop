@@ -393,6 +393,21 @@ async def s2s_stop_room(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
+@sio.event
+async def s2s_interrupt(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    if not _check_secret_from_data(data):
+        return {"error": "unauthorized"}
+    try:
+        room_id_val = data.get("room_id")
+        if not isinstance(room_id_val, str):
+            return {"error": "room_id required"}
+        room = get_room(room_id_val)
+        await room.interrupt()
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # Background mixed-audio egress tasks keyed by (sid, room_id, subscriber_id)
 MIX_TASKS: _Dict[_Tuple[str, str, str], asyncio.Task] = {}
 

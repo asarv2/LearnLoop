@@ -1427,38 +1427,47 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                                   const isLast =
                                     index === orderedFieldIds.length - 1;
 
-                                  // Check if this field needs numbering (persona_field_id with multiple instances)
+                                  // Check if this field needs numbering (when multiple groups have the same field)
                                   let customFieldName: string | undefined;
-                                  if (field.field_type === "text") {
-                                    const groupsWithSameNameField = (
+                                  if (field.field_type === "persona") {
+                                    // Find all group indices that have this specific fieldId
+                                    const groupIndicesWithSameField = (
                                       scenario.group_ids || []
                                     )
-                                      .map((groupId: string) =>
-                                        groups.find((g) => g.id === groupId)
+                                      .map(
+                                        (groupId: string, index: number) => ({
+                                          groupId,
+                                          index,
+                                          group: groups.find(
+                                            (g) => g.id === groupId
+                                          ),
+                                        })
                                       )
-                                      .filter(
-                                        (group) =>
-                                          group?.persona_field_id === fieldId
-                                      );
+                                      .filter(({ group }) => {
+                                        if (!group) return false;
+                                        return (
+                                          group.persona_field_id === fieldId ||
+                                          group.mood_field_id === fieldId ||
+                                          group.position_field_id === fieldId ||
+                                          group.level_field_id === fieldId ||
+                                          (group.field_ids || []).includes(
+                                            fieldId
+                                          )
+                                        );
+                                      })
+                                      .map(({ index }) => index);
 
-                                    if (groupsWithSameNameField.length > 1) {
-                                      const currentGroup = groups.find(
-                                        (g) =>
-                                          g.persona_field_id === fieldId ||
-                                          g.mood_field_id === fieldId ||
-                                          g.position_field_id === fieldId ||
-                                          g.level_field_id === fieldId ||
-                                          (g.field_ids || []).includes(fieldId)
-                                      );
+                                    if (groupIndicesWithSameField.length > 1) {
+                                      // Find the position of the current groupIndex among those with the same field
+                                      const currentFieldIndex =
+                                        groupIndicesWithSameField.indexOf(
+                                          groupIndex
+                                        );
 
-                                      if (currentGroup) {
-                                        const groupIndex =
-                                          groupsWithSameNameField.findIndex(
-                                            (g) => g?.id === currentGroup.id
-                                          );
+                                      if (currentFieldIndex !== -1) {
                                         const baseName = field.name || "Field";
                                         customFieldName = `${baseName} ${
-                                          groupIndex + 1
+                                          currentFieldIndex + 1
                                         }`;
                                       }
                                     }
@@ -1466,7 +1475,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
                                   return (
                                     <FieldCard
-                                      key={fieldId}
+                                      key={`${groupId}-${fieldId}`}
                                       fieldId={fieldId}
                                       index={index}
                                       isComplete={isComplete}
