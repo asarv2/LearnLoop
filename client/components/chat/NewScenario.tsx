@@ -300,36 +300,30 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 continue; // Skip this group if parent persona not found
               }
 
-              // Build enhanced description using level and position
-              const levelInfo = levelFieldValue?.value
-                ? ` at ${levelFieldValue.value} level`
-                : "";
-              const positionInfo = positionFieldValue?.value
-                ? ` in ${positionFieldValue.value} position`
-                : "";
-
-              // Create a more descriptive persona name using position and level
-              const enhancedPersonaName = [
-                personaFieldValue,
-                positionFieldValue?.value,
-                levelFieldValue?.value,
-              ]
-                .filter(Boolean)
-                .join(" - ");
-
-              // Create a base description for the persona
-              const baseDescription = `A ${
-                group.name || "group member"
-              }${levelInfo}${positionInfo}`;
-
-              // Note: Not creating realtime prompt as it's left empty
+              // Use parent persona's name, voice, and description
+              const personaName = parentPersona.name;
+              const personaVoice = parentPersona.voice || "alloy";
+              const personaDescription = parentPersona.description || "";
 
               // Check if a similar persona already exists to avoid duplicates
               const existingPersona = personas?.find(
                 (p) =>
                   p.parent_id === parentPersona.id &&
-                  p.name === enhancedPersonaName &&
-                  p.description?.includes(group.name || groupId)
+                  p.name === personaName &&
+                  p.level ===
+                    (() => {
+                      const levelValue = levelFieldValue?.value?.toLowerCase();
+                      if (levelValue === "mid-level") return "mid";
+                      if (
+                        levelValue === "junior" ||
+                        levelValue === "senior" ||
+                        levelValue === "executive"
+                      ) {
+                        return levelValue as "junior" | "senior" | "executive";
+                      }
+                      return null;
+                    })() &&
+                  p.position === positionFieldValue?.value
               );
 
               let personaToUse;
@@ -340,23 +334,30 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   `Using existing persona: ${existingPersona.name} (${existingPersona.id})`
                 );
               } else {
-                // Create a new persona with parent persona's voice and ID
+                // Create a new persona with parent persona's name, voice, and description
                 const newPersona = await createPersona.mutateAsync({
-                  name: enhancedPersonaName,
-                  description: baseDescription,
+                  name: personaName,
+                  description: personaDescription,
                   profile_id: null,
                   system_prompt: "", // Leave empty
                   realtime_prompt: "", // Leave empty
                   temperature: 0, // Set to 0
-                  voice: parentPersona.voice || "alloy", // Use parent's voice
+                  voice: personaVoice, // Use parent's voice
                   active: false, // Don't show in dropdowns
                   parent_id: parentPersona.id, // Link to the parent persona
-                  level:
-                    (levelFieldValue?.value as
-                      | "junior"
-                      | "mid"
-                      | "senior"
-                      | "executive") || null,
+                  level: (() => {
+                    const levelValue = levelFieldValue?.value?.toLowerCase();
+                    // Map database values to schema values
+                    if (levelValue === "mid-level") return "mid";
+                    if (
+                      levelValue === "junior" ||
+                      levelValue === "senior" ||
+                      levelValue === "executive"
+                    ) {
+                      return levelValue as "junior" | "senior" | "executive";
+                    }
+                    return null;
+                  })(),
                   position: positionFieldValue?.value || null,
                 });
                 personaToUse = newPersona;
@@ -372,7 +373,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                     const createdParam =
                       await createParameterGlobal.mutateAsync({
                         field_id: group.persona_field_id,
-                        name: enhancedPersonaName,
+                        name: personaName,
                         description: `Generated persona parameter for ${
                           group.name || groupId
                         }`,
@@ -383,7 +384,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                     if (createdParam?.id) {
                       payload.push({
                         fieldId: group.persona_field_id,
-                        value: enhancedPersonaName,
+                        value: personaName,
                         parameterId: createdParam.id, // Use parameter ID, not persona ID
                       });
                     }
@@ -397,7 +398,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   if (group.persona_field_id) {
                     payload.push({
                       fieldId: group.persona_field_id,
-                      value: enhancedPersonaName,
+                      value: personaName,
                       parameterId: personaToUse.id,
                     });
                   }
