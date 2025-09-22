@@ -282,8 +282,8 @@ jobs:
           mkdir -p "$DEST/recordings"
 
           # 1) Seed missing files ONLY (won't overwrite or delete)
-          rsync -a --ignore-existing ./prompts/   "$DEST/prompts"/   || true
-          rsync -a --ignore-existing ./templates/ "$DEST/templates"/ || true
+          [ -d ./prompts ]   && rsync -a --ignore-existing ./prompts/   "$DEST/prompts"/   || true
+          [ -d ./templates ] && rsync -a --ignore-existing ./templates/ "$DEST/templates"/ || true
 
           # 2) Write rsync filter: protect persistent/generated artifacts; exclude junk
           cat > .rsync-filter <<'EOF'
@@ -379,12 +379,12 @@ jobs:
           # Scale
           SERVER_REPLICAS: ${{ env.CHANNEL == 'beta' && secrets.BETA_SERVER_REPLICAS || secrets.SERVER_REPLICAS }}
         run: |
-          mkdir -p web/generated \
-                   prompts \
-                   templates \
-                   files \
-                   recordings
-          chmod -R a+rwX web/generated prompts templates files recordings
+          mkdir -p web/generated prompts templates files recordings
+
+          # Only web/generated must be writable by nginx/docker-gen
+          chmod -R a+rwX web/generated || true
+
+          # Do NOT chmod prompts/templates/files/recordings; they may be RO/immutable/foreign FS
 
           # Seed upstream files with fallback servers to prevent nginx crashes
           echo "server ${COMPOSE_PROJECT_NAME}-client:3000 max_fails=3 fail_timeout=30s;" > web/generated/next_client.upstream.conf
