@@ -418,5 +418,3 @@ jobs:
 
           # Optional cleanup
           docker image prune -f
-
-          

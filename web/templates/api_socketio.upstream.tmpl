@@ -1,6 +1,6 @@
 {{/* dynamic upstream: running server replicas for THIS compose project */}}
-{{ $project := env "PROJECT_NAME" }}
-{{ range $c := $ }}
+{{ $project := .Env.PROJECT_NAME }}
+{{ range $c := .Containers }}
   {{ if and $c.State.Running
            (eq (index $c.Labels "com.docker.compose.service") "server")
            (eq (index $c.Labels "com.docker.compose.project") $project) -}}
