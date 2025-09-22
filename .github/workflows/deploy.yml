@@ -268,11 +268,19 @@ jobs:
         run: |
           DEST="/srv/deploy/learnloop/${{ env.CHANNEL }}"
           mkdir -p "$DEST"
-          rsync -a --delete \
-            docker-compose.yml web/ server/ client/ model/ documents/ audio/ turn/ \
-            "$DEST"/
-          # optional: include web/templates, nginx templates, etc.
-          if [ -d web/templates ]; then rsync -a web/templates "$DEST"/web/; fi
+          
+          # Copy files one by one to ensure all directories are copied
+          cp docker-compose.yml "$DEST"/
+          cp -r web/ "$DEST"/
+          cp -r server/ "$DEST"/
+          cp -r client/ "$DEST"/
+          cp -r model/ "$DEST"/
+          cp -r documents/ "$DEST"/
+          cp -r audio/ "$DEST"/
+          cp -r turn/ "$DEST"/
+          
+          # Ensure web/generated directory exists with proper permissions
+          mkdir -p "$DEST/web/generated" && chmod 777 "$DEST/web/generated"
 
       - name: Deploy
         working-directory: /srv/deploy/learnloop/${{ env.CHANNEL }}
