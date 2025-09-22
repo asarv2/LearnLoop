@@ -20,7 +20,7 @@ services:
       - TURN_URI=${TURN_URI}
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
-      - INTERNAL_API_BASE=http://learnloop-prod-server-1:8000
+      - INTERNAL_API_BASE=http://${COMPOSE_PROJECT_NAME}-server-1:8000
       - HOSTNAME=0.0.0.0
       - PORT=3000
     healthcheck:
@@ -53,14 +53,14 @@ services:
 
       # api + socket.io
       - ORIGIN=${ORIGIN}
-      - REDIS_URL=redis://learnloop-prod-redis-1:6379
-      - MODEL_SERVICE_URL=http://learnloop-prod-model-1:8000
-      - DOCUMENTS_SERVICE_URL=http://learnloop-prod-documents-1:8000
-      - AUDIO_SERVICE_URL=http://learnloop-prod-audio-1:8000
+      - REDIS_URL=redis://${COMPOSE_PROJECT_NAME}-redis-1:6379
+      - MODEL_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-model-1:8000
+      - DOCUMENTS_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-documents-1:8000
+      - AUDIO_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-audio-1:8000
 
       # webrtc
-      - STUN_URI=stun:learnloop-prod-webrtc-1:3479
-      - TURN_URI=turn:learnloop-prod-webrtc-1:3479?transport=udp
+      - STUN_URI=stun:${COMPOSE_PROJECT_NAME}-webrtc-1:3479
+      - TURN_URI=turn:${COMPOSE_PROJECT_NAME}-webrtc-1:3479?transport=udp
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
       - AUDIO_SECRET=${AUDIO_SECRET}
@@ -140,7 +140,7 @@ services:
       - PORT=8000
       - HOST=0.0.0.0
       - AUDIO_SECRET=${AUDIO_SECRET}
-      - MODEL_SERVICE_URL=http://learnloop-prod-model-1:8000
+      - MODEL_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-model-1:8000
       - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -196,7 +196,6 @@ services:
     ports:
       - "${CLIENT_PORT}:80"
     environment:
-      - NGINX_CLIENT_UPSTREAM=${COMPOSE_PROJECT_NAME}-client-1:3000
       - PROJECT_NAME=${COMPOSE_PROJECT_NAME}
     volumes:
       - ./web/default.conf.template:/etc/nginx/templates/default.conf.template:ro
@@ -226,7 +225,7 @@ services:
       - ./web/templates:/etc/docker-gen/templates:ro
       - ./web/generated:/etc/nginx/conf.d/generated:rw
     command: >
-      -notify-sighup nginx
+      -notify-sighup ${COMPOSE_PROJECT_NAME}-nginx-1
       -watch
       /etc/docker-gen/templates/api_socketio.upstream.tmpl
       /etc/nginx/conf.d/generated/api_socketio.upstream.conf
