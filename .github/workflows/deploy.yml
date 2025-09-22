@@ -413,7 +413,7 @@ jobs:
           if [ "${{ env.CHANNEL }}" = "prod" ]; then
             docker compose --profile prod up -d --scale server="${SERVER_REPLICAS:-1}"
           else
-            docker compose up -d --scale server="${SERVER_REPLICAS:-1}"
+            docker compose --profile beta up -d --scale server="${SERVER_REPLICAS:-1}"
           fi
 
           # Optional cleanup
