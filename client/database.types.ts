@@ -723,6 +723,7 @@ export type Database = {
           objectives: string[]
           parameter_ids: string[]
           parent_id: string | null
+          persona_ids: string[]
           problem_statement: string | null
           prompt_mapping: Json
           prompts: Json
@@ -741,6 +742,7 @@ export type Database = {
           objectives?: string[]
           parameter_ids?: string[]
           parent_id?: string | null
+          persona_ids?: string[]
           problem_statement?: string | null
           prompt_mapping?: Json
           prompts?: Json
@@ -759,6 +761,7 @@ export type Database = {
           objectives?: string[]
           parameter_ids?: string[]
           parent_id?: string | null
+          persona_ids?: string[]
           problem_statement?: string | null
           prompt_mapping?: Json
           prompts?: Json

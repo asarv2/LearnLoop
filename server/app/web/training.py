@@ -135,41 +135,34 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
 
             # Populate chat.persona_ids, prompts, and max_turns from scenario
             try:
+                # Get persona_ids directly from scenario
                 persona_ids: list[str] = []
                 max_turns: dict[str, Optional[int]] = {}
                 transformed_prompts: dict[str, str] = {}
 
-                # Get scenario parameter_ids to find persona fields
-                conn = db_session.connection()
-                row = conn.execute(
-                    text("SELECT parameter_ids FROM scenarios WHERE id = :id"),
-                    {"id": str(scenario.id)},
-                ).fetchone()
-                scenario_parameter_ids: list[str] = list(row[0]) if row and row[0] else []
+                # Copy persona_ids from scenario
+                if hasattr(scenario, 'persona_ids') and scenario.persona_ids:
+                    persona_ids = [str(pid) for pid in scenario.persona_ids]
+                    logger.info(f"Using persona_ids from scenario: {persona_ids}")
+                else:
+                    logger.warning(f"No persona_ids found in scenario {scenario.id}")
 
-                # Extract persona_ids from scenario parameters
-                for pid in scenario_parameter_ids:
-                    param = db_session.exec(select(Parameters).where(Parameters.id == pid)).one_or_none()
-                    if not param or not param.field_id:
-                        continue
-                    fld = db_session.exec(select(Fields).where(Fields.id == param.field_id)).one_or_none()
-                    if fld and getattr(fld, "field_type", None) == "persona" and param.value:
-                        try:
-                            persona_id = str(param.value)
-                            _ = uuid.UUID(persona_id)  # Validate UUID format
-                            persona_ids.append(persona_id)
-                            
-                            # Get persona to check if it's a user (has profile_id)
-                            persona = db_session.exec(select(Personas).where(Personas.id == param.value)).one_or_none()
-                            if persona and persona.profile_id:
+                # Set max_turns based on persona types
+                for persona_id_str in persona_ids:
+                    try:
+                        persona_id = uuid.UUID(persona_id_str)
+                        persona = db_session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+                        if persona:
+                            if persona.profile_id:
                                 # User persona - infinite turns
-                                max_turns[persona_id] = None
+                                max_turns[persona_id_str] = None
                             else:
                                 # Assistant persona - 1 turn
-                                max_turns[persona_id] = 1
-                                
-                        except Exception:
-                            logger.warning(f"Invalid persona UUID in parameter {param.id}: {param.value}")
+                                max_turns[persona_id_str] = 1
+                        else:
+                            logger.warning(f"Persona {persona_id_str} not found in database")
+                    except Exception as e:
+                        logger.warning(f"Invalid persona UUID {persona_id_str}: {e}")
 
                 # Ensure the user's persona is included if they have one
                 if profile_id:
@@ -208,7 +201,7 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                             for ref_alias, persona_name in alias_to_persona_name.items():
                                 transformed_text = transformed_text.replace(ref_alias, persona_name)
                             
-                            transformed_prompts[persona_id] = transformed_text
+                            transformed_prompts[str(persona_id)] = transformed_text
                     
                     logger.info(f"Transformed {len(transformed_prompts)} prompts from alias format to persona_id format")
 
@@ -221,6 +214,7 @@ async def handle_start_training(sid: str, data: Dict[str, Any]) -> None:
                     prompts_data = json.dumps(transformed_prompts) if transformed_prompts else None
                     max_turns_data = json.dumps(max_turns) if max_turns else None
                     
+                    conn = db_session.connection()
                     conn.execute(
                         text("""
                             UPDATE chats 

@@ -1230,6 +1230,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       emitGenerateScenario({
         scenario_id: scenarioToUse,
         field_values: payloadFieldValues,
+        persona_ids: personaIds,
         additional_prompt: opts?.additionalPrompt || undefined,
         current_draft_objectives: draftObjectives || [],
       });
