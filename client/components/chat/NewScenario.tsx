@@ -263,9 +263,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               if (existingPersona) {
                 // Use existing persona
                 finalPersonaId = existingPersona.id;
-                console.log(
-                  `Using existing persona: ${existingPersona.name} (${existingPersona.id})`
-                );
               } else {
                 // Create a new persona with parent persona's name, voice, and description
                 const newPersona = await createPersona.mutateAsync({
@@ -294,9 +291,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   position: positionFieldValue?.value || null,
                 });
                 finalPersonaId = newPersona.id;
-                console.log(
-                  `Created new persona: ${newPersona.name} (${newPersona.id}) with parent: ${parentPersona.id}`
-                );
               }
 
               // Store the final persona ID (either existing or newly created) in the map
@@ -527,7 +521,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   useEffect(() => {
     const handleScenarioGenerated = (e: CustomEvent) => {
       const d = e.detail || {};
-      console.log("🎉 Scenario generated event received:", d);
       // Accept any generated child and store its id for Start/Regenerate chaining
       setSavedScenarioId(d.scenario_id || null);
       if (preparingModelTimerRef.current) {

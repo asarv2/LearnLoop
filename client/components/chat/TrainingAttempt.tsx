@@ -127,16 +127,6 @@ function TrainingAttemptContent() {
     const hasOldFeedback =
       chatWithIncludes.feedback && chatWithIncludes.feedback.length > 0;
 
-    console.log("🔍 hasFeedback Debug:", {
-      chatId: chat.id,
-      hasRubricGrades,
-      hasOldFeedback,
-      rubricGrades: chatWithIncludes.rubric_grades,
-      feedback: chatWithIncludes.feedback,
-      rawChat: chat,
-      chatWithIncludes: chatWithIncludes,
-    });
-
     return hasRubricGrades || hasOldFeedback;
   };
 

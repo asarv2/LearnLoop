@@ -946,23 +946,6 @@ export default function ChatArea({
                                     // interruption_ms is already relative to message created_at (stored in DB)
                                     const cutoffRel = interruption;
 
-                                    // Debug logging for troubleshooting
-                                    if (
-                                      process.env.NODE_ENV === "development"
-                                    ) {
-                                      console.log(
-                                        `[ChatArea] Processing interruption for message ${message.id}:`,
-                                        {
-                                          interruption_ms: interruption,
-                                          cutoffRel,
-                                          wordCount: Array.isArray(wtAny)
-                                            ? wtAny.length
-                                            : 0,
-                                          hasWordTimestamps: hasWT,
-                                        }
-                                      );
-                                    }
-
                                     const words: {
                                       start_ms: number;
                                       end_ms: number;
@@ -1008,26 +991,6 @@ export default function ChatArea({
                                           .map((w) => w.text)
                                           .join(" ")
                                           .replace(/\s+([,.;!?])/g, "$1");
-
-                                        // Debug logging for troubleshooting
-                                        if (
-                                          process.env.NODE_ENV === "development"
-                                        ) {
-                                          console.log(
-                                            `[ChatArea] Interruption result for message ${message.id}:`,
-                                            {
-                                              visibleWordsCount:
-                                                visibleWords.length,
-                                              totalWordsCount:
-                                                sortedWords.length,
-                                              result:
-                                                result.substring(0, 100) +
-                                                (result.length > 100
-                                                  ? "..."
-                                                  : ""),
-                                            }
-                                          );
-                                        }
 
                                         return result;
                                       }
