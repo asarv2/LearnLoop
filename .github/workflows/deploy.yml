@@ -294,6 +294,8 @@ jobs:
 
           # Protect persistent runtime dirs on the server (keep them even if absent in repo)
           P web/generated/
+          # Ensure nginx template is included
+          + web/default.conf.template
           # (Add more "P <path>/" lines if you have other persistent dirs under $DEST)
           EOF
 
@@ -359,6 +361,13 @@ jobs:
           SERVER_REPLICAS: ${{ env.CHANNEL == 'beta' && secrets.BETA_SERVER_REPLICAS || secrets.SERVER_REPLICAS }}
         run: |
           mkdir -p web/generated && chmod 777 web/generated
+          
+          # Ensure nginx template file exists and has correct permissions
+          if [ ! -f "web/default.conf.template" ]; then
+            echo "ERROR: web/default.conf.template file not found!"
+            exit 1
+          fi
+          chmod 644 web/default.conf.template
 
           # Pull & up
           docker compose pull
