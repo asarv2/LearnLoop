@@ -1,6 +1,7 @@
-{{/* dynamic upstream: running server replicas for compose project "learnloop" */}}
+{{/* server upstream for compose project "learnloop-prod" */}}
 {{ range $c := $ }}
-{{ if and $c.State.Running (eq (index $c.Labels "com.docker.compose.service") "server") (eq (index $c.Labels "com.docker.compose.project") "learnloop") }}
+{{ if and $c.State.Running (eq (index $c.Labels "com.docker.compose.service") "server")
+                         (eq (index $c.Labels "com.docker.compose.project") "learnloop-prod") }}
 server {{ $c.Name }}:8000 max_fails=3 fail_timeout=30s;
 {{ end }}
 {{ end }}
