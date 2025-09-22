@@ -130,7 +130,7 @@ services:
       - HOST=0.0.0.0
     volumes:
       - ./templates:/app/templates
-      - ../files:/app/files
+      - ./files:/app/files
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -154,7 +154,7 @@ services:
       - MODEL_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-model:8000
       - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL}
     volumes:
-      - ../recordings:/app/recordings
+      - ./recordings:/app/recordings
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
