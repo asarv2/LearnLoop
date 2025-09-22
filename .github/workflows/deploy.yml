@@ -261,10 +261,8 @@ jobs:
 
       - name: Prep filesystem
         run: |
-          sudo mkdir -p /srv/deploy/.docker-ghcr
-          sudo mkdir -p /srv/deploy/learnloop/prod /srv/deploy/learnloop/beta
-          # runner user should own them; replace 'runner' with your service user
-          sudo chown -R "$USER":"$USER" /srv/deploy
+          mkdir -p /srv/deploy/.docker-ghcr
+          mkdir -p /srv/deploy/learnloop/prod /srv/deploy/learnloop/beta
 
       - name: Login GHCR
         env:
