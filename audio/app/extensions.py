@@ -26,9 +26,8 @@ import warnings
 # Suppress any model-related warnings since models are handled by the model service
 warnings.filterwarnings("ignore", message=".*masked_spec_embed.*")
 
-BASE = Path(__file__).resolve().parents[2]
-AUDIO_DIR = BASE / "audio"
-
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+AUDIO_DIR = PROJECT_ROOT / "recordings"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 
