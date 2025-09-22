@@ -89,8 +89,8 @@ You have access to the following tools to generate the scenario:
   *For interviews:* Focus on what the candidate should demonstrate or communicate to show they meet role requirements (without disclosing cheating info). Include quantifiable expectations.
 
 **Use the persona prompt tools to create:**
-* **User Persona Prompts:** Define how user personas (candidates/trainees) should behave in the conversation
-* **Agent Persona Prompts:** Define how agent personas (trainers/coaches/supervisors) should behave in the conversation
+* **User Persona Prompts:** Define how user personas (candidates/trainees) should behave in the conversation. **IMPORTANT**: The user persona is ALWAYS the one practicing the skill (e.g., delivering the apology, receiving feedback, etc.)
+* **Agent Persona Prompts:** Define how agent personas (trainers/coaches/supervisors) should behave in the conversation. **IMPORTANT**: The agent persona is ALWAYS the one the user is practicing with (e.g., receiving the apology, giving feedback, etc.)
 
 **Use ALL available document generation tools:**
 * **Look for ANY tool ending in `_doc`** - these are all document generation tools that MUST be called
@@ -288,10 +288,10 @@ You must call these tools to complete the scenario generation:
    ]
 
 3. `create_user1_prompt`:
-   - `prompt`: "You are user1, a manager responsible for delivering an apology for a data breach incident. Be sincere, take full accountability, and demonstrate commitment to preventing future incidents."
+   - `prompt`: "You are user1, the manager who must deliver an apology for a data breach incident. You are the one practicing how to apologize and take responsibility. Be sincere, take full accountability for the incident, demonstrate commitment to preventing future incidents, and be prepared to answer tough questions from stakeholders."
 
 4. `create_agent1_prompt`:
-   - `prompt`: "You are agent1, an affected stakeholder receiving an apology for the data breach. Be concerned about the incident, ask specific questions about data protection, and expect concrete action plans."
+   - `prompt`: "You are agent1, an affected stakeholder who is receiving an apology for the data breach. You are the one the user is practicing with - you are being apologized to. Be concerned about the incident, ask specific questions about data protection, expect concrete action plans, and challenge the apologizer to ensure they understand the full impact."
 
 5. `apology_report_doc` (REQUIRED - this tool ends in `_doc`):
    - `doc_name`: "Data Breach Incident Apology Report"
