@@ -21,7 +21,6 @@ export default function AdminCreatePage() {
   const [form] = Form.useForm();
 
   const onFinish = (values: any) => {
-    console.log("Form values:", values);
     // Handle form submission
   };
 

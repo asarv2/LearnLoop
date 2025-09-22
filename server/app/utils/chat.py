@@ -71,6 +71,51 @@ def get_conversation_history(
     )
 
     return conversation_history
+
+
+def get_formatted_conversation_history_with_personas(
+    messages: Sequence[Messages],
+    session: Session,
+) -> str:
+    """
+    Get the conversation history formatted with persona names instead of roles.
+    
+    Args:
+        messages: List of Messages objects from the database
+        session: Database session for persona lookups
+        
+    Returns:
+        Formatted conversation string like "Ashok:\nHi, how are you?\nSarah:\nI'm well, what about you."
+    """
+    if not messages:
+        return ""
+    
+    # Sort messages by created_at
+    sorted_messages = sorted(messages, key=lambda x: x.created_at)
+    
+    conversation_lines = []
+    
+    for message in sorted_messages:
+        if not message.content or not message.content.strip():
+            continue
+            
+        # Get persona name from persona_id
+        persona_name = "Unknown"
+        if message.persona_id:
+            try:
+                persona = session.exec(select(Personas).where(Personas.id == message.persona_id)).one_or_none()
+                if persona and persona.name:
+                    persona_name = persona.name
+            except Exception as e:
+                logger.warning(f"Failed to lookup persona {message.persona_id}: {e}")
+        
+        # Format: "PersonaName:\nMessage content"
+        conversation_lines.append(f"{persona_name}:\n{message.content.strip()}")
+    
+    formatted_history = "\n".join(conversation_lines)
+    logger.info(f"Generated formatted conversation history with {len(conversation_lines)} messages")
+    
+    return formatted_history
 def get_dynamic_rubric(
     rubric: Rubrics,
     standards: List[Standards],
@@ -369,6 +414,12 @@ def get_audio_config(chat_id: str) -> dict:
                     "objectives": [],
                 })
             
+            # Get conversation messages for history
+            messages = fresh_session.exec(select(Messages).where(Messages.chat_id == chat.id)).all()
+            
+            # Format conversation history with persona names
+            formatted_history = get_formatted_conversation_history_with_personas(messages, fresh_session)
+            
             # Build agents from persona_ids
             agents = []
             if chat.persona_ids:
@@ -379,6 +430,26 @@ def get_audio_config(chat_id: str) -> dict:
                         is_user = persona.profile_id is not None
                         prefix = "user" if is_user else "agent"
                         
+                        # Build enhanced instructions: persona prompt + description + history
+                        instructions_parts = []
+                        
+                        # 1. Get persona-specific prompt from chat.prompts
+                        chat_prompts = chat.prompts or {}
+                        persona_prompt = chat_prompts.get(str(persona_id))
+                        if persona_prompt:
+                            instructions_parts.append(persona_prompt)
+                        
+                        # 2. Add persona description
+                        if persona.description:
+                            instructions_parts.append(persona.description)
+                        
+                        # 3. Add formatted conversation history if available
+                        if formatted_history:
+                            instructions_parts.append(f"Conversation history:\n{formatted_history}")
+                        
+                        # Join all parts with double newlines for clarity
+                        final_instructions = "\n\n".join(instructions_parts) if instructions_parts else "Be helpful and respond to the user's messages."
+                        
                         agent = {
                             "id": f"{prefix}:{persona.name}",
                             "name": persona.name,
@@ -387,7 +458,7 @@ def get_audio_config(chat_id: str) -> dict:
                             "profile_id": str(persona.profile_id) if persona.profile_id else None,
                             "user": is_user,
                             "persona_id": str(persona.id),
-                            "instructions": persona.realtime_prompt or persona.description or "Be helpful and respond to the user's messages.",
+                            "instructions": final_instructions,
                         }
                         agents.append(agent)
             

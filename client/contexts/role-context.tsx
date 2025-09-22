@@ -49,9 +49,6 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
             error.message?.includes("column") &&
             error.message?.includes("does not exist")
           ) {
-            console.log(
-              "Role column doesn't exist yet, defaulting to employee"
-            );
             setUserRole("employee");
             setCurrentView("employee");
           } else {
