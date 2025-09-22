@@ -12,19 +12,17 @@ export type ParameterUpdate =
 
 // Runtime validators for API requests
 export const ParameterCreateSchema = z.object({
-  field_id: z.string().min(1, "Field ID is required"),
+  field_id: z.string().nullable().optional(),
   name: z.string().min(1, "Name is required"),
-  value: z.string().optional(),
-  type: z.string().optional(),
-  description: z.string().optional(),
+  value: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
 });
 
 export const ParameterUpdateSchema = z.object({
-  field_id: z.string().min(1, "Field ID is required").optional(),
+  field_id: z.string().nullable().optional(),
   name: z.string().min(1, "Name is required").optional(),
-  value: z.string().optional(),
-  type: z.string().optional(),
-  description: z.string().optional(),
+  value: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
 });
 
 async function getSupabase() {

@@ -35,7 +35,8 @@ export const TrainingCreateSchema = z.object({
   what_not_to_do: z.array(z.string()).nullable().optional(),
   active: z.boolean().nullable().optional(),
   practice: z.boolean().optional(),
-  training_type: z.enum(["standard", "required", "custom"]).optional(),
+  show_documents: z.boolean().optional(),
+  training_type: z.string().nullable().optional(),
   user_id: z.string().nullable().optional(),
   updated_at: z.string().optional(),
 });
@@ -47,7 +48,8 @@ export const TrainingUpdateSchema = z.object({
   what_not_to_do: z.array(z.string()).nullable().optional(),
   active: z.boolean().nullable().optional(),
   practice: z.boolean().optional(),
-  training_type: z.enum(["standard", "required", "custom"]).optional(),
+  show_documents: z.boolean().optional(),
+  training_type: z.string().nullable().optional(),
   user_id: z.string().nullable().optional(),
   updated_at: z.string().optional(),
 });
