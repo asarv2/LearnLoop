@@ -90,7 +90,7 @@ def render(args: Args) -> bytes:
         document_options=["11pt"],
         page_numbers=True,
         indent=False,
-        lmodern=False,
+        lmodern=True,
     )
 
     # Page geometry: wider margins for presentation format
@@ -111,7 +111,7 @@ def render(args: Args) -> bytes:
     doc.packages.append(Package("lastpage"))
     
     # Core packages
-    doc.packages.append(Package("fontspec"))
+    # doc.packages.append(Package("fontspec"))  # removed to avoid NFSS conflicts
     doc.packages.append(Package("microtype"))
     doc.packages.append(Package("hyperref"))
 
