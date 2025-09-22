@@ -127,7 +127,6 @@ def render(args: Args) -> bytes:
     doc.preamble.append(NoEscape(r"\fancyhf{}"))
     doc.preamble.append(NoEscape(r"\fancyhead[L]{\small " + _escape_latex(args.project_name) + r" - Project Specification}"))
     doc.preamble.append(NoEscape(r"\fancyhead[R]{\small Version " + _escape_latex(args.version) + r"}"))
-    doc.preamble.append(NoEscape(r"\fancyfoot[R]{\small Page \thepage{} of \pageref{LastPage}}"))
     
     # Improve table row spacing
     doc.preamble.append(NoEscape(r"\renewcommand{\arraystretch}{1.4}"))
@@ -270,7 +269,6 @@ def render(args: Args) -> bytes:
   \small Technical Lead & & & \\
   \hline
 \end{tabularx}
-\label{LastPage}
 """)
     doc.append(approval_section)
 
