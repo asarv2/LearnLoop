@@ -294,8 +294,6 @@ jobs:
 
           # Protect persistent runtime dirs on the server (keep them even if absent in repo)
           P web/generated/
-          # Ensure nginx template is included
-          + web/default.conf.template
           # (Add more "P <path>/" lines if you have other persistent dirs under $DEST)
           EOF
 
@@ -306,6 +304,18 @@ jobs:
           # Make sure persistent dir exists and is writable (in case of first run)
           mkdir -p "$DEST/web/generated"
           chmod 777 "$DEST/web/generated"
+
+          # Sanity check: ensure nginx template is a file
+          echo "== Nginx files check =="
+          ls -ld "$DEST/web" "$DEST/web/default.conf.template" "$DEST/web/generated" || true
+          if [ ! -f "$DEST/web/default.conf.template" ]; then
+            echo "ERROR: web/default.conf.template is missing or not a file"
+            echo "File type:"
+            file "$DEST/web/default.conf.template" || true
+            echo "Directory contents:"
+            ls -la "$DEST/web/" || true
+            exit 1
+          fi
 
           # Stamp for traceability
           echo "${GITHUB_SHA}" > "$DEST/DEPLOYED_SHA"
@@ -361,13 +371,24 @@ jobs:
           SERVER_REPLICAS: ${{ env.CHANNEL == 'beta' && secrets.BETA_SERVER_REPLICAS || secrets.SERVER_REPLICAS }}
         run: |
           mkdir -p web/generated && chmod 777 web/generated
+
+          # Final sanity check before starting containers
+          echo "== Pre-deployment nginx files check =="
+          ls -ld web web/default.conf.template web/generated || true
+          file web/default.conf.template || true
           
-          # Ensure nginx template file exists and has correct permissions
-          if [ ! -f "web/default.conf.template" ]; then
-            echo "ERROR: web/default.conf.template file not found!"
-            exit 1
+          # Ensure template file is not a directory (common Docker bind mount issue)
+          if [ -d web/default.conf.template ]; then
+            echo "ERROR: web/default.conf.template is a directory, not a file!"
+            echo "This usually happens when Docker creates a directory for a missing bind mount."
+            echo "Removing the directory and recreating from repo..."
+            rm -rf web/default.conf.template
+            # The file should be restored from git checkout
+            if [ ! -f web/default.conf.template ]; then
+              echo "ERROR: Still missing web/default.conf.template after cleanup"
+              exit 1
+            fi
           fi
-          chmod 644 web/default.conf.template
 
           # Pull & up
           docker compose pull

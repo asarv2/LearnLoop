@@ -22,7 +22,7 @@ map $http_x_forwarded_proto $forwarded_proto {
 
 # ----------  upstreams -------------
 upstream next_client  {
-  server learnloop-prod-client:3000 max_fails=3 fail_timeout=30s;
+  server ${NGINX_CLIENT_UPSTREAM} max_fails=3 fail_timeout=30s;
 }
 
 upstream api_socketio {
