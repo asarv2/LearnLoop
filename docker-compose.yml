@@ -196,7 +196,7 @@ services:
     ports:
       - "${CLIENT_PORT}:80"
     environment:
-      - NGINX_CLIENT_UPSTREAM=${COMPOSE_PROJECT_NAME}-client:3000
+      - NGINX_CLIENT_UPSTREAM=${COMPOSE_PROJECT_NAME}-client-1:3000
     volumes:
       - ./web/default.conf.template:/etc/nginx/templates/default.conf.template:ro
       # Share the generated upstream with nginx
