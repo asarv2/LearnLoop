@@ -276,21 +276,36 @@ jobs:
           DEST: /srv/deploy/learnloop/${{ env.CHANNEL }}
         run: |
           mkdir -p "$DEST"
-          # Sync top-level items you actually need. --delete prevents stale files.
-          rsync -a --delete docker-compose.yml "$DEST"/
 
-          rsync -a --delete --exclude 'node_modules' client/     "$DEST/client"/     || true
-          rsync -a --delete server/                               "$DEST/server"/     || true
-          rsync -a --delete model/                                "$DEST/model"/      || true
-          rsync -a --delete documents/                            "$DEST/documents"/  || true
-          rsync -a --delete audio/                                "$DEST/audio"/      || true
-          rsync -a --delete web/                                  "$DEST/web"/        || true
-          rsync -a --delete turn/                                 "$DEST/turn"/       || true
+          # Write rsync filter: protect persistent/generated artifacts; exclude junk
+          cat > .rsync-filter <<'EOF'
+          # Exclude VCS and build caches
+          - .git/
+          - .github/
+          - **/.DS_Store
+          - **/node_modules/
+          - **/.venv/
+          - **/.pytest_cache/
+          - **/__pycache__/
 
+          # Exclude local env/secrets you might keep in repo working copies
+          - **/.env.local
+          - **/.envrc
+
+          # Protect persistent runtime dirs on the server (keep them even if absent in repo)
+          P web/generated/
+          # (Add more "P <path>/" lines if you have other persistent dirs under $DEST)
+          EOF
+
+          # Mirror repo -> DEST. --delete removes files no longer in repo.
+          # --delete-excluded ensures excluded files in DEST are removed (except "P" protected)
+          rsync -a --delete --delete-excluded --filter="merge .rsync-filter" ./ "$DEST/"
+
+          # Make sure persistent dir exists and is writable (in case of first run)
           mkdir -p "$DEST/web/generated"
           chmod 777 "$DEST/web/generated"
-          
-          # Add deployment stamp for tracking
+
+          # Stamp for traceability
           echo "${GITHUB_SHA}" > "$DEST/DEPLOYED_SHA"
 
       - name: Deploy
