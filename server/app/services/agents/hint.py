@@ -158,10 +158,13 @@ async def run_hint_agent(
         
         # Create tool use behavior to wait for both tools to be called
         def tool_use_behavior(context: Any, tool_results: list[Any]) -> ToolsToFinalOutputResult:
-            expected_tool_count = 2  # dif_low + dif_high
-            return ToolsToFinalOutputResult(
-                is_final_output=len(tool_results) >= expected_tool_count
-            )
+            # Build list of required tools
+            required_tools = ['dif_low', 'dif_high']
+            
+            # Check if all required tools have been called
+            completed_required = all(hint_progress.get(tool, False) for tool in required_tools)
+            logger.info(f"Tool use behavior check: required_tools={required_tools}, completed_required={completed_required}, hint_progress={hint_progress}")
+            return ToolsToFinalOutputResult(is_final_output=completed_required)
         
         hint_agent = GenericAgent(
             agent_name="Hint Generator",
@@ -183,13 +186,15 @@ async def run_hint_agent(
             f"Successfully generated hints for message {message_id}"
         )
         
-        # Check if both tools were called
-        expected_tools = 2  # dif_low + dif_high
-        completed_tools = len(hint_progress)
-        logger.info(f"Hint generation completed: {completed_tools}/{expected_tools} tools called")
+        # Check if all required tools were called
+        required_tools = ['dif_low', 'dif_high']
+        completed_tools = [tool for tool in required_tools if hint_progress.get(tool, False)]
+        logger.info(f"Hint generation completed: {len(completed_tools)}/{len(required_tools)} required tools called")
+        logger.info(f"Required tools: {required_tools}")
+        logger.info(f"Completed tools: {completed_tools}")
         
-        if completed_tools < expected_tools:
-            missing_tools = [name for name, completed in hint_progress.items() if not completed]
+        if len(completed_tools) < len(required_tools):
+            missing_tools = [tool for tool in required_tools if not hint_progress.get(tool, False)]
             logger.warning(f"Missing tool calls for: {missing_tools}")
         
         # Extract results from the global storage
