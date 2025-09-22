@@ -1,10 +1,6 @@
-{{/* Find this compose project's name by looking at the nginx container */}}
-{{ $nginx := first (whereLabel . "com.docker.compose.service" "nginx") }}
-{{ $project := index $nginx.Labels "com.docker.compose.project" }}
-
-{{/* Emit all running client replicas for THIS compose project */}}
-{{ range $c := whereLabel . "com.docker.compose.service" "client" }}
-  {{ if and $c.State.Running (eq (index $c.Labels "com.docker.compose.project") $project) -}}
+{{/* emit upstreams for running client containers */}}
+{{ range $c := . }}
+  {{ if and $c.State.Running (eq (index $c.Labels "com.docker.compose.service") "client") -}}
 server {{ $c.Name }}:3000 max_fails=3 fail_timeout=30s;
   {{- end }}
 {{ end }}
