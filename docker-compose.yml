@@ -229,16 +229,40 @@ services:
       retries: 3
       start_period: 10s
 
-  docker-gen:
+  docker-gen-prod:
     image: jwilder/docker-gen:0.7.6
     restart: unless-stopped
+    profiles: [prod]
+    environment:
+      - PROJECT_NAME=${COMPOSE_PROJECT_NAME}    # ok to keep; templates don't use it
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - ./web/generated:/etc/nginx/conf.d/generated:rw
+      # mount the PROD templates
+      - ./web/templates/api_socketio.upstream.prod.tmpl:/etc/docker-gen/templates/api_socketio.upstream.tmpl:ro
+      - ./web/templates/next_client.upstream.prod.tmpl:/etc/docker-gen/templates/next_client.upstream.tmpl:ro
+    command: >
+      -notify-sighup ${COMPOSE_PROJECT_NAME}-nginx-1
+      -watch
+      /etc/docker-gen/templates/api_socketio.upstream.tmpl
+      /etc/nginx/conf.d/generated/api_socketio.upstream.conf
+      -watch
+      /etc/docker-gen/templates/next_client.upstream.tmpl
+      /etc/nginx/conf.d/generated/next_client.upstream.conf
+    networks: [web]
+
+  docker-gen-beta:
+    image: jwilder/docker-gen:0.7.6
+    restart: unless-stopped
+    # default profile; runs when prod profile is not specified
     environment:
       - PROJECT_NAME=${COMPOSE_PROJECT_NAME}
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
-      # template in, generated file out
-      - ./web/templates:/etc/docker-gen/templates:ro
       - ./web/generated:/etc/nginx/conf.d/generated:rw
+      # mount the BETA templates
+      - ./web/templates/api_socketio.upstream.beta.tmpl:/etc/docker-gen/templates/api_socketio.upstream.tmpl:ro
+      - ./web/templates/next_client.upstream.beta.tmpl:/etc/docker-gen/templates/next_client.upstream.tmpl:ro
     command: >
       -notify-sighup ${COMPOSE_PROJECT_NAME}-nginx-1
       -watch
