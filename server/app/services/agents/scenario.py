@@ -646,7 +646,7 @@ async def run_scenario_agent(
                 tool_desc = ' '.join(tool_desc.split()) if tool_desc else 'No description available'
                 tools_info_lines.append(f"- {tool_name}: {tool_desc}")
             
-            tools_info_content = "Available document generation tools:\n" + "\n".join(tools_info_lines)
+            tools_info_content = "### Available document generation tools:\n" + "\n".join(tools_info_lines)
             context_items.append({
                 "role": "developer",
                 "content": tools_info_content
