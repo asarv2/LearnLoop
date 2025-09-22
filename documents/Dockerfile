@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-lang-european texlive-lang-cjk texlive-lang-greek texlive-lang-cyrillic \
     latexmk \
     fonts-lmodern \
+    lmodern \
     fonts-noto fonts-noto-cjk fonts-noto-color-emoji fonts-dejavu \
     curl ca-certificates tini \
  && rm -rf /var/lib/apt/lists/*
