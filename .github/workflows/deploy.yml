@@ -386,6 +386,10 @@ jobs:
                    recordings
           chmod -R a+rwX web/generated prompts templates files recordings
 
+          # Seed upstream files with fallback servers to prevent nginx crashes
+          echo "server ${COMPOSE_PROJECT_NAME}-client:3000 max_fails=3 fail_timeout=30s;" > web/generated/next_client.upstream.conf
+          echo "server ${COMPOSE_PROJECT_NAME}-server:8000 max_fails=3 fail_timeout=30s;" > web/generated/api_socketio.upstream.conf
+
           # Final sanity check before starting containers
           echo "== Pre-deployment nginx files check =="
           ls -ld web web/default.conf.template web/generated || true
