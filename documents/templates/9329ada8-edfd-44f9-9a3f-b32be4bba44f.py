@@ -119,7 +119,6 @@ def render(args: Args) -> bytes:
     # Configure headers and footers
     doc.preamble.append(NoEscape(r"\pagestyle{fancy}"))
     doc.preamble.append(NoEscape(r"\fancyhf{}"))
-    doc.preamble.append(NoEscape(r"\fancyfoot[R]{\small Page \thepage{} of \pageref{LastPage}}"))
     
     # Improve table row spacing
     doc.preamble.append(NoEscape(r"\renewcommand{\arraystretch}{1.3}"))
@@ -214,7 +213,6 @@ def render(args: Args) -> bytes:
   \cellcolor{labelbg}\small Response from Affected Parties & """ + _escape_latex(args.response_from_affected) + r""" \\
   \hline
 \end{tabularx}
-\label{LastPage}
 """)
     doc.append(acknowledgment)
 

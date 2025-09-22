@@ -24,7 +24,7 @@ import { useState } from "react";
 import ScoreDisplay from "./ScoreDisplay";
 
 const SUBTLE_TEXT = "#64748b"; // Subtle gray for secondary text
-const TEXT_COLOR = "#1e293b"; // Dark blue-gray for text
+const TEXT_COLOR = "#000000"; // Black text for all content
 
 interface FeedbackModalProps {
   isOpen: boolean;
@@ -103,18 +103,11 @@ export default function FeedbackModal({
               style={{ textAlign: "center" }}
             >
               <Dialog.Title asChild>
-                <Heading
-                  size="5"
-                  weight="medium"
-                  style={{ color: "var(--gray-12)" }}
-                >
+                <Heading size="5" weight="medium" style={{ color: "#000000" }}>
                   No Feedback Available
                 </Heading>
               </Dialog.Title>
-              <Text
-                size="3"
-                style={{ color: "var(--gray-11)", lineHeight: "1.6" }}
-              >
+              <Text size="3" style={{ color: "#000000", lineHeight: "1.6" }}>
                 Feedback for {chat?.title} is not available yet. Please complete
                 the session first to generate feedback.
               </Text>
@@ -155,11 +148,14 @@ export default function FeedbackModal({
           />
           {standardGrades && standardGrades.length > 0 && (
             <>
-              <Box style={{ marginTop: "16px" }}>
-                <Heading size="3" style={{ marginBottom: "8px" }}>
+              <Box style={{ marginTop: "24px", marginBottom: "12px" }}>
+                <Heading
+                  size="3"
+                  style={{ marginBottom: "8px", color: "#000000" }}
+                >
                   Standards
                 </Heading>
-                <Flex direction="column" gap="2">
+                <Flex direction="column" gap="4">
                   {standardGrades.map((sg) => (
                     <Flex
                       key={sg.id}
@@ -168,11 +164,14 @@ export default function FeedbackModal({
                       style={{
                         border: "1px solid var(--gray-6)",
                         borderRadius: 8,
-                        padding: "8px 12px",
+                        padding: "12px 16px",
+                        marginBottom: "8px",
                       }}
                     >
                       <Flex align="center" gap="2">
-                        <Text size="2">{sg.name}</Text>
+                        <Text size="2" style={{ color: "#000000" }}>
+                          {sg.name}
+                        </Text>
                         <HoverCard.Root>
                           <HoverCard.Trigger asChild>
                             <Box
@@ -220,11 +219,14 @@ export default function FeedbackModal({
                   ))}
                 </Flex>
               </Box>
-              <Box style={{ marginTop: "16px" }}>
-                <Heading size="3" style={{ marginBottom: "8px" }}>
+              <Box style={{ marginTop: "24px", marginBottom: "12px" }}>
+                <Heading
+                  size="3"
+                  style={{ marginBottom: "8px", color: "#000000" }}
+                >
                   Summary
                 </Heading>
-                <Text size="2">
+                <Text size="2" style={{ color: "#000000" }}>
                   {bestRubricGrade?.description ||
                     "No feedback available for this standard."}
                 </Text>
@@ -249,7 +251,7 @@ export default function FeedbackModal({
           <Flex direction="column" gap="6">
             {bestRubricGrade?.strengths &&
             bestRubricGrade.strengths.length > 0 ? (
-              <Flex direction="column" gap="4">
+              <Flex direction="column" gap="6">
                 {bestRubricGrade.strengths.map(
                   (strength: string, index: number) => (
                     <Box
@@ -257,6 +259,7 @@ export default function FeedbackModal({
                       style={{
                         position: "relative",
                         padding: "28px 32px",
+                        marginBottom: "16px",
                         backgroundColor: "white",
                         borderRadius: "16px",
                         boxShadow:
@@ -276,29 +279,17 @@ export default function FeedbackModal({
                           "0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06)";
                       }}
                     >
-                      <Flex align="start" gap="4">
-                        <Box
-                          style={{
-                            width: "6px",
-                            height: "6px",
-                            backgroundColor: "#16a34a",
-                            borderRadius: "50%",
-                            marginTop: "12px",
-                            flexShrink: 0,
-                          }}
-                        />
-                        <Text
-                          size="3"
-                          style={{
-                            lineHeight: "1.7",
-                            color: "#1f2937",
-                            fontWeight: "400",
-                            fontSize: "15px",
-                          }}
-                        >
-                          {cleanText(strength)}
-                        </Text>
-                      </Flex>
+                      <Text
+                        size="3"
+                        style={{
+                          lineHeight: "1.7",
+                          color: "#000000",
+                          fontWeight: "400",
+                          fontSize: "15px",
+                        }}
+                      >
+                        {cleanText(strength)}
+                      </Text>
                       <Box
                         style={{
                           position: "absolute",
@@ -327,7 +318,7 @@ export default function FeedbackModal({
               >
                 <Text
                   size="3"
-                  style={{ color: "#6b7280", fontStyle: "italic" }}
+                  style={{ color: "#000000", fontStyle: "italic" }}
                 >
                   No specific strengths identified in this session.
                 </Text>
@@ -352,7 +343,7 @@ export default function FeedbackModal({
           <Flex direction="column" gap="6">
             {bestRubricGrade?.improvements &&
             bestRubricGrade.improvements.length > 0 ? (
-              <Flex direction="column" gap="4">
+              <Flex direction="column" gap="6">
                 {bestRubricGrade.improvements.map(
                   (improvement: string, index: number) => (
                     <Box
@@ -360,6 +351,7 @@ export default function FeedbackModal({
                       style={{
                         position: "relative",
                         padding: "28px 32px",
+                        marginBottom: "16px",
                         backgroundColor: "white",
                         borderRadius: "16px",
                         boxShadow:
@@ -383,7 +375,7 @@ export default function FeedbackModal({
                         size="3"
                         style={{
                           lineHeight: "1.7",
-                          color: "#1f2937",
+                          color: "#000000",
                           fontWeight: "400",
                           fontSize: "15px",
                         }}
@@ -418,7 +410,7 @@ export default function FeedbackModal({
               >
                 <Text
                   size="3"
-                  style={{ color: "#6b7280", fontStyle: "italic" }}
+                  style={{ color: "#000000", fontStyle: "italic" }}
                 >
                   No specific improvements identified.
                 </Text>
@@ -484,13 +476,13 @@ export default function FeedbackModal({
                   <Heading
                     size="4"
                     weight="medium"
-                    style={{ color: "var(--gray-12)" }}
+                    style={{ color: "#000000" }}
                   >
                     Assessment Feedback
                   </Heading>
                 </Dialog.Title>
                 <Flex direction="column" align="center" gap="2">
-                  <Text size="2" style={{ color: "var(--gray-11)" }}>
+                  <Text size="2" style={{ color: "#000000" }}>
                     Session: {chat?.title}
                   </Text>
                 </Flex>
@@ -541,9 +533,7 @@ export default function FeedbackModal({
                     size="2"
                     style={{
                       color:
-                        currentPage === index
-                          ? "var(--blue-11)"
-                          : "var(--gray-11)",
+                        currentPage === index ? "var(--blue-11)" : "#000000",
                     }}
                   >
                     {page.title}

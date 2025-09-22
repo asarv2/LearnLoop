@@ -336,7 +336,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
     
     yield
     
-    # Shutdown: cleanup bridge connection
+    # Shutdown: cleanup connections
     try:
         bridge_task.cancel()
         await bridge_task
@@ -344,6 +344,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
         pass
     except Exception:
         logger.exception("Error during bridge shutdown")
+    
+    # Cleanup HTTPX client
+    try:
+        from app.services.agents.scenario import cleanup_http_client
+        await cleanup_http_client()
+    except Exception:
+        logger.exception("Error during HTTPX client cleanup")
+    
+    # Cleanup Redis client
+    try:
+        from app.extensions import cleanup_redis_client
+        await cleanup_redis_client()
+    except Exception:
+        logger.exception("Error during Redis client cleanup")
 
 # Apply lifespan to FastAPI app
 fastapi_app.router.lifespan_context = lifespan

@@ -120,7 +120,6 @@ def render(args: Args) -> bytes:
     
     # Configure headers and footers (for potential future use)
     doc.packages.append(Package("fancyhdr"))
-    doc.packages.append(Package("lastpage"))
 
     # Define custom colours for resume
     doc.preamble.append(NoEscape(r"\definecolor{primary}{RGB}{51,51,51}     % dark gray for headers"))
@@ -249,7 +248,6 @@ def render(args: Args) -> bytes:
   \cellcolor{labelbg}\small Interests & """ + _escape_latex(args.interests) + r""" \\
   \hline
 \end{tabularx}
-\label{LastPage}
 """)
     doc.append(additional_info)
 
