@@ -653,7 +653,7 @@ async def run_scenario_agent(
             })
         
         # Update history with tools information
-        history = context_items + parameter_history
+        history = parameter_history + context_items
         
         # Build persona existence map from the personas we already fetched for context
         persona_exists_map = {}
