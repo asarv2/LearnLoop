@@ -230,7 +230,7 @@ def get_parameter_history_from_field_values(
             content = "\n".join(param_lines)
             return [{
                 "role": "developer",
-                "content": f"The following are the parameters for this training session:\n\n{content}"
+                "content": f"The following are the parameters for this training session. These apply to the AGENTS in this training session, not the USER:\n\n{content}"
             }]
 
         return []
