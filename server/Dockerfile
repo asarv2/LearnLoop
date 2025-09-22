@@ -12,10 +12,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y --no-install-recommends build-essential gcc && \
     rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml README.md ./
+COPY requirements.txt ./
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install --prefer-binary --prefix=/install .
+    pip install --prefer-binary --prefix=/install -r requirements.txt
 
 ############################################
 # 3️⃣  runtime image  (what you actually deploy)

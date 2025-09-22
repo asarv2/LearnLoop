@@ -518,17 +518,15 @@ class OpenAIAgent(Agent):
                                 pass
                             else:
                                 audio_arr = self._resp_audio.get(rid) or self._resp_audio.get("_default")
-                                # Emit earlier partial CTC around ~0.5s to improve perceived responsiveness
-                                PARTIAL_CHUNKS = 25  # 25 * 20ms = 500ms
-                                if isinstance(audio_arr, np.ndarray) and audio_arr.size >= (SAMPLES_PER_CHUNK * PARTIAL_CHUNKS) and bool(getattr(self.room, "word_timestamps_enabled", True)):
+                                if isinstance(audio_arr, np.ndarray) and audio_arr.size >= (SAMPLES_PER_CHUNK * 50) and bool(getattr(self.room, "word_timestamps_enabled", True)):
                                     # Only once per response id
                                     key = f"partial_done::{rid}"
                                     if key not in self._processed_done:
                                         self._processed_done.add(key)
-                                        # take first ~0.5s (25 chunks @ 20ms)
-                                        limit = SAMPLES_PER_CHUNK * PARTIAL_CHUNKS
+                                        # take first ~1s (50 chunks @ 20ms)
+                                        limit = SAMPLES_PER_CHUNK * 50
                                         first_sec = audio_arr[:limit]
-                                        tr = await align_via_model_service(first_sec, PCM_SR, joined_so_far, stage="partial", num_chunks=PARTIAL_CHUNKS, chunk_ms=20)
+                                        tr = await align_via_model_service(first_sec, PCM_SR, joined_so_far, stage="partial", num_chunks=50, chunk_ms=20)
                                         words_payload = [{"start_ms": w.start_ms, "end_ms": w.end_ms, "text": w.text} for w in tr.words]
                                         msg_id_for_partial: Optional[str] = self._rid_to_msg.get(rid) or self._current_msg_id
                                         if msg_id_for_partial is None:

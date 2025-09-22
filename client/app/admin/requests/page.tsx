@@ -15,7 +15,6 @@ import {
   Card,
   Col,
   DatePicker,
-  Form,
   Input,
   Modal,
   Row,
@@ -63,14 +62,14 @@ const columns = [
     title: "Employee",
     dataIndex: "employee",
     key: "employee",
-    render: (text: string, record: any) => (
+    render: (text: string, record: Record<string, unknown>) => (
       <Space>
         <UserOutlined />
         <div>
           <Text strong>{text}</Text>
           <br />
           <Text type="secondary" style={{ fontSize: "12px" }}>
-            {record.department}
+            {String(record.department)}
           </Text>
         </div>
       </Space>
@@ -134,7 +133,7 @@ const columns = [
   {
     title: "Actions",
     key: "actions",
-    render: (record: any) => (
+    render: (record: Record<string, unknown>) => (
       <Space>
         <Button type="link" size="small" icon={<EyeOutlined />}>
           View
@@ -169,10 +168,8 @@ export default function AdminRequestsPage() {
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
-  const [selectedRequest, setSelectedRequest] = useState<any>(null);
+  const [selectedRequest] = useState<Record<string, unknown> | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [rejectModalVisible, setRejectModalVisible] = useState(false);
-  const [rejectForm] = Form.useForm();
 
   const filteredData = requestsData.filter((item) => {
     const matchesSearch =
@@ -295,18 +292,19 @@ export default function AdminRequestsPage() {
                 <Text strong>Employee:</Text>
                 <br />
                 <Text>
-                  {selectedRequest.employee} ({selectedRequest.email})
+                  {String(selectedRequest.employee)} (
+                  {String(selectedRequest.email)})
                 </Text>
               </Col>
               <Col span={12}>
                 <Text strong>Department:</Text>
                 <br />
-                <Text>{selectedRequest.department}</Text>
+                <Text>{String(selectedRequest.department)}</Text>
               </Col>
               <Col span={12}>
                 <Text strong>Training Type:</Text>
                 <br />
-                <Text>{selectedRequest.trainingType}</Text>
+                <Text>{String(selectedRequest.trainingType)}</Text>
               </Col>
               <Col span={12}>
                 <Text strong>Status:</Text>
@@ -322,14 +320,14 @@ export default function AdminRequestsPage() {
                       : "orange"
                   }
                 >
-                  {selectedRequest.status}
+                  {String(selectedRequest.status)}
                 </Tag>
               </Col>
             </Row>
             <div style={{ marginTop: "16px" }}>
               <Text strong>Reason:</Text>
               <Paragraph style={{ marginTop: "8px" }}>
-                {selectedRequest.reason}
+                {String(selectedRequest.reason)}
               </Paragraph>
             </div>
           </div>

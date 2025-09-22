@@ -234,7 +234,7 @@ async def run_grading_agent(
             tools=grading_tools,
             parallel_tool_calls=True,
             tool_use_behavior=tool_use_behavior,
-            model="gpt-4.1-nano",
+            model="gpt-4.1",
         )
 
         agent_instance = grading_agent.agent()

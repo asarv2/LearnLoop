@@ -6,7 +6,6 @@ import time
 import uuid
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, cast
 from uuid import UUID
 
@@ -99,15 +98,8 @@ def _ensure_chat_exists(db: Any, chat_id: str) -> Optional[Chats]:
         return None
 
 def _upsert_db_message(
-    db: Any,
-    *,
-    chat_id: str,
-    role: str,
-    msg_id: str,
-    text: str,
-    is_final: bool,
-    persona_id: Optional[str] = None,
-    created_ms: Optional[int] = None,
+    db: Any, *, chat_id: str, role: str, msg_id: str, text: str,
+    is_final: bool, persona_id: Optional[str] = None
 ) -> Tuple[DBMessage, str]:
     """
     Create/update a DB message row. We store the concatenated content so fetches are simple.
@@ -126,12 +118,6 @@ def _upsert_db_message(
             completed=is_final,
             persona_id=_uuid_or_none(persona_id),
         )
-        # Preserve causal ordering from audio service if provided
-        try:
-            if created_ms is not None:
-                m.created_at = datetime.fromtimestamp(created_ms / 1000.0, tz=timezone.utc)
-        except Exception:
-            pass
         db.add(m)
         db.commit()
         db.refresh(m)
@@ -190,8 +176,7 @@ async def _flush_pending_writes(message_id: str, force: bool = False) -> Optiona
             return _upsert_db_message(
                 db,
                 chat_id=room_id, role=msg.role, msg_id=message_id,
-                text=pending_text, is_final=force, persona_id=msg.persona_id,
-                created_ms=msg.created_ms,
+                text=pending_text, is_final=force, persona_id=msg.persona_id
             )
         except Exception:
             # Make sure the aborted txn is rolled back before returning the conn to the pool
@@ -215,7 +200,6 @@ async def upsert_text_chunk(
     chunk_idx: int,
     is_final: bool,
     persona_id: Optional[str] = None,   # optional: allow caller to tag persona
-    created_ms: Optional[int] = None,   # optional: preserve causal ordering from audio
 ) -> Message:
     """
     1) Update in-memory store (for streaming UX)
@@ -226,10 +210,9 @@ async def upsert_text_chunk(
     mid = message_id or gen_id(None)  # first chunk gets a UUID, later chunks reuse the same message_id
     msg = room.messages.get(mid)
     created_ms_now = int(time.time()*1000)
-    created_ms_new = int(created_ms) if isinstance(created_ms, int) else created_ms_now
 
     if msg is None:
-        msg = Message(id=mid, source_id=source_id, role=role, created_ms=created_ms_new, persona_id=persona_id)
+        msg = Message(id=mid, source_id=source_id, role=role, created_ms=created_ms_now, persona_id=persona_id)
         room.messages[mid] = msg
         logger.debug(f"Created new message: mid={mid}, role={role}, chunk_idx={chunk_idx}")
     else:
@@ -260,8 +243,7 @@ async def upsert_text_chunk(
                         return _upsert_db_message(
                             db,
                             chat_id=room_id, role=role, msg_id=mid,
-                            text=text, is_final=is_final, persona_id=persona_id,
-                            created_ms=msg.created_ms,
+                            text=text, is_final=is_final, persona_id=persona_id
                         )
                     except Exception:
                         try: db.rollback()

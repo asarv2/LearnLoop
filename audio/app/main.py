@@ -393,21 +393,6 @@ async def s2s_stop_room(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-@sio.event
-async def s2s_interrupt(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
-    if not _check_secret_from_data(data):
-        return {"error": "unauthorized"}
-    try:
-        room_id_val = data.get("room_id")
-        if not isinstance(room_id_val, str):
-            return {"error": "room_id required"}
-        room = get_room(room_id_val)
-        await room.interrupt()
-        return {"ok": True}
-    except Exception as e:
-        return {"error": str(e)}
-
-
 # Background mixed-audio egress tasks keyed by (sid, room_id, subscriber_id)
 MIX_TASKS: _Dict[_Tuple[str, str, str], asyncio.Task] = {}
 
@@ -423,12 +408,7 @@ async def s2s_subscribe_mix(sid: str, data: Dict[str, Any]) -> Dict[str, Any]:
         room = get_room(room_id)
         # subscribe with the provided subscriber_id; this controls self-echo suppression
         sub = room.bus.subscribe(subscriber_id)
-        # default ignore: own id and beep
-        try:
-            base = set([subscriber_id, "agent:beep"])  # ignore own mic and beep by default
-            room.bus.set_ignore(subscriber_id, base)
-        except Exception:
-            pass
+        # Note: subscribe() now automatically handles ignoring own audio and beep
 
         key = (sid, room.id, subscriber_id)
         if key in MIX_TASKS:

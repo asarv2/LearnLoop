@@ -42,7 +42,7 @@ export default function AdminAnalyticsPage() {
           <Card>
             <Statistic
               title="Completed Sessions"
-              value={(1, 234)}
+              value={234}
               prefix={<CheckCircleOutlined />}
               valueStyle={{ color: "#722ed1" }}
             />

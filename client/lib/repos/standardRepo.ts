@@ -110,7 +110,7 @@ export const standardRepo = {
     return data;
   },
 
-  async getAllGrades(): Promise<any[]> {
+  async getAllGrades(): Promise<StandardGrade[]> {
     const supabase = await getSupabase();
     const { data, error } = await supabase
       .from("standard_grades")

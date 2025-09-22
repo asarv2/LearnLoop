@@ -145,14 +145,14 @@ const columns = [
     title: "Employee",
     dataIndex: "user",
     key: "user",
-    render: (text: string, record: any) => (
+    render: (text: string, record: Record<string, unknown>) => (
       <Space>
         <UserOutlined />
         <div>
           <Text strong>{text}</Text>
           <br />
           <Text type="secondary" style={{ fontSize: "12px" }}>
-            {record.email}
+            {String(record.email)}
           </Text>
         </div>
       </Space>
@@ -252,7 +252,7 @@ const columns = [
   {
     title: "Actions",
     key: "actions",
-    render: (record: any) => (
+    render: () => (
       <Space>
         <Button type="link" size="small">
           View Details

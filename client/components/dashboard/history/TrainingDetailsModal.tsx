@@ -87,7 +87,7 @@ export default function TrainingDetailsModal({
   const formattedMessages = useMemo(() => {
     if (!messages) return [];
 
-    return messages.map((message, index) => ({
+    return messages.map((message) => ({
       key: message.id,
       sender: message.role === "user" ? "You" : "AI Trainer",
       content: message.content,
@@ -96,30 +96,6 @@ export default function TrainingDetailsModal({
     }));
   }, [messages]);
 
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const formatDuration = (startTime: string, endTime?: string | null) => {
-    const start = new Date(startTime);
-    const end = endTime ? new Date(endTime) : new Date();
-    const diffInMinutes = Math.floor(
-      (end.getTime() - start.getTime()) / (1000 * 60)
-    );
-    const hours = Math.floor(diffInMinutes / 60);
-    const minutes = diffInMinutes % 60;
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
-  };
 
   return (
     <Modal
@@ -173,7 +149,7 @@ export default function TrainingDetailsModal({
                     {scenario?.title || chat.title || "Untitled Scenario"}
                   </Title>
                   <Text type="secondary">
-                    Training: {chat.training?.title || "Unknown Training"}
+                    Training: {chat?.title || "Unknown Training"}
                   </Text>
                 </div>
 

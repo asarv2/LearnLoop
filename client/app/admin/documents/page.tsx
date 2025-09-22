@@ -97,7 +97,7 @@ const columns = [
   {
     title: "Actions",
     key: "actions",
-    render: (_, record: any) => (
+    render: () => (
       <Space size="small">
         <Button type="text" icon={<EyeOutlined />} size="small">
           View
