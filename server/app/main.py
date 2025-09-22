@@ -44,12 +44,16 @@ if redis_url and socketio.AsyncRedisManager:
     )
 else:
     logger.info("Socket.IO using in-memory manager")
+    manager = None
     sio = socketio.AsyncServer(
         async_mode="asgi",
         cors_allowed_origins=allowed_origins,
         transports=["websocket", "polling"],
         logger=True  # Keep useful Socket.IO logging
     )
+
+# Log manager info for debugging
+logger.info("bridge using sio manager=%r", getattr(sio, "manager", None))
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
 fastapi_app = FastAPI(title="GLOW API")
@@ -325,6 +329,30 @@ async def health_check() -> JSONResponse:
         "status": status,
         "audio_service": "connected" if audio_healthy else "disconnected"
     })
+
+@fastapi_app.post("/debug/emit-test")
+async def debug_emit_test(room_id: str, event: str = "text_chunk", text: str = "ping") -> JSONResponse:
+    """Manual emit sanity check - test if this server replica can emit to a room."""
+    try:
+        payload = {
+            "room_id": room_id,
+            "text": text,
+            "role": "agent",
+            "source_id": "debug:test",
+            "chunk_idx": 0,
+            "is_final": True
+        }
+        await sio.emit(event, payload, room=room_id)
+        return JSONResponse(content={
+            "status": "success",
+            "message": f"Emitted {event} to room {room_id}",
+            "payload": payload
+        })
+    except Exception as e:
+        return JSONResponse(content={
+            "status": "error",
+            "message": f"Failed to emit to room {room_id}: {str(e)}"
+        }, status_code=500)
 
 
 # ── Lifespan management ───────────────────────────────────────────────────

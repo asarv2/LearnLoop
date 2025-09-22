@@ -57,7 +57,12 @@ class AudioBridge:
             raise Exception("AUDIO_SERVICE_URL not configured")
         try:
             log.info(f"Connecting to audio service at {self.url}")
-            await self._client.connect(self.url, socketio_path="socket.io")
+            await self._client.connect(
+                self.url,
+                socketio_path="socket.io",
+                transports=["websocket"],
+                auth={"token": self.secret} if self.secret else None,
+            )
             await self._connected.wait()
             log.info("Successfully connected to audio service")
         except Exception as e:
@@ -206,6 +211,7 @@ class AudioBridge:
         try:
             room_id = payload.get("room_id")
             if isinstance(room_id, str):
+                log.debug("forwarded text_chunk to room=%s", room_id)
                 # Persist assistant/user text into DB using the server store so the
                 # frontend message list reflects the same message_id as transcripts.
                 try:
@@ -244,6 +250,7 @@ class AudioBridge:
             agent_id = payload.get("agent_id", "unknown")
             log.info(f"Server received transcript: room_id={room_id}, agent_id={agent_id}, words_count={len(words)}")
             if isinstance(room_id, str):
+                log.debug("forwarded transcript to room=%s", room_id)
                 await self.server_sio.emit("transcript", payload, room=room_id)
                 log.info(f"Server forwarded transcript to room {room_id}")
         except Exception:
