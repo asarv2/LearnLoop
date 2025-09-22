@@ -14,10 +14,17 @@ import {
   PersonIcon,
 } from "@radix-ui/react-icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { Box, Button, Card, Flex, Switch, Text } from "@radix-ui/themes";
+import {
+  Box,
+  Button,
+  Card,
+  Flex,
+  Heading,
+  Switch,
+  Text,
+} from "@radix-ui/themes";
 // Removed mic icons in favor of a consistent "Voice Mode" label
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import IntroMessageModal from "./IntroMessageModal";
 
 // Import necessary hooks
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -25,6 +32,13 @@ import { useWebSocket } from "@/contexts/websocket-context";
 import { useLatestMessageHints } from "@/lib/api/hooks/useHints";
 import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
+
+const INTRO_MESSAGES = [
+  "Hey, how's your day been?",
+  "Hi! How are you doing?",
+  "Hey, how's everything going?",
+];
+
 interface ChatAreaProps {
   displayMessages: Message[];
   isSendingMessage: boolean;
@@ -55,7 +69,6 @@ export default function ChatArea({
     enableVoiceMode,
     connectRTC,
     joinRoom,
-    isRoomJoined,
     toggleMic,
     sendWebRTCMessage,
     getLocalMicStream,
@@ -565,80 +578,39 @@ export default function ChatArea({
   );
 
   // Send message handler
-  const onSend = useCallback(async () => {
-    const message = currentMessage.trim();
-    if (!message || !chat?.id) return;
+  const onSend = useCallback(
+    async (messageOverride?: string) => {
+      const message = (messageOverride || currentMessage).trim();
+      if (!message || !chat?.id) return;
 
-    // Try to unlock audio on first user interaction
-    try {
-      const el = document.querySelector("audio") as HTMLAudioElement;
-      if (el) {
-        el.muted = false;
-        await el.play();
-      }
-    } catch (error) {
-      console.error("Failed to unlock audio on message send", error);
-    }
-
-    // Ensure room join just in case (idempotent, cheap)
-    joinRoom(chat.id);
-    // Prefer to wait briefly for RTC setup so we don't miss audio reply
-    await waitForVoiceReady(1500);
-    // sendWebRTCMessage will still fallback to socket if DC isn't ready
-    sendWebRTCMessage(chat.id, message);
-    setCurrentMessage("");
-  }, [
-    chat?.id,
-    currentMessage,
-    joinRoom,
-    sendWebRTCMessage,
-    setCurrentMessage,
-    waitForVoiceReady,
-  ]);
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // Intro Message Modal (moved from TrainingAttempt)
-  // ────────────────────────────────────────────────────────────────────────────
-  const [showIntroModal, setShowIntroModal] = useState(false);
-  const hasShownIntroModalRef = React.useRef<string | null>(null);
-
-  // Open intro modal once per chat when there are zero messages, AFTER confirmed room join
-  useEffect(() => {
-    if (!chat?.id) return;
-    if (hasShownIntroModalRef.current === chat.id) return;
-    // Debounce to allow messages to sync and room ack to arrive
-    const t = setTimeout(() => {
-      if (displayMessages.length === 0 && isRoomJoined(chat.id)) {
-        hasShownIntroModalRef.current = chat.id;
-        setShowIntroModal(true);
-      }
-    }, 150);
-    return () => clearTimeout(t);
-  }, [chat?.id, displayMessages.length, isRoomJoined]);
-
-  const handleIntroMessageSelect = useCallback(
-    async (message: string) => {
-      if (!chat?.id) return;
+      // Try to unlock audio on first user interaction
       try {
-        // Ensure room membership
-        joinRoom(chat.id);
-        // Ensure RTC/audio is ready so we hear the first response
-        await waitForVoiceReady(1500);
-        // Send (RTC DC preferred, websocket fallback ok)
-        sendWebRTCMessage(chat.id, message);
-      } finally {
-        setShowIntroModal(false);
+        const el = document.querySelector("audio") as HTMLAudioElement;
+        if (el) {
+          el.muted = false;
+          await el.play();
+        }
+      } catch (error) {
+        console.error("Failed to unlock audio on message send", error);
       }
-    },
-    [chat?.id, joinRoom, sendWebRTCMessage, waitForVoiceReady]
-  );
 
-  // Close intro modal automatically if messages appear (e.g., from another tab or delayed fetch)
-  useEffect(() => {
-    if (showIntroModal && displayMessages.length > 0) {
-      setShowIntroModal(false);
-    }
-  }, [showIntroModal, displayMessages.length]);
+      // Ensure room join just in case (idempotent, cheap)
+      joinRoom(chat.id);
+      // Prefer to wait briefly for RTC setup so we don't miss audio reply
+      await waitForVoiceReady(1500);
+      // sendWebRTCMessage will still fallback to socket if DC isn't ready
+      sendWebRTCMessage(chat.id, message);
+      setCurrentMessage("");
+    },
+    [
+      chat?.id,
+      currentMessage,
+      joinRoom,
+      sendWebRTCMessage,
+      setCurrentMessage,
+      waitForVoiceReady,
+    ]
+  );
 
   // Removed auto-show feedback modal useEffect - modal should only show when user clicks button
 
@@ -682,6 +654,7 @@ export default function ChatArea({
         style={{
           flex: 1,
           display: "flex",
+          flexDirection: "column",
           background: "transparent",
           overflow: "hidden",
           height: "100%",
@@ -701,6 +674,84 @@ export default function ChatArea({
           }}
         >
           <Flex direction="column" gap="4">
+            {/* Show starter prompts when there are no messages and session is active */}
+            {displayMessages.length === 0 && isSessionActive && (
+              <Box
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flex: 1,
+                  padding: "40px 20px",
+                }}
+              >
+                <Box mb="4">
+                  <Heading
+                    size="4"
+                    weight="medium"
+                    style={{
+                      textAlign: "center",
+                      color: "var(--gray-11)",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    Select a prompt or type your own
+                  </Heading>
+                </Box>
+
+                <Flex
+                  direction="column"
+                  gap="2"
+                  style={{ maxWidth: "480px", width: "100%" }}
+                >
+                  {INTRO_MESSAGES.map((message, index) => (
+                    <Button
+                      key={index}
+                      variant="outline"
+                      size="4"
+                      onClick={() => onSend(message)}
+                      style={{
+                        background: "white",
+                        border: "2px solid var(--gray-6)",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                        textAlign: "center",
+                        justifyContent: "center",
+                        padding: "20px 24px",
+                        height: "auto",
+                        minHeight: "72px",
+                        borderRadius: "12px",
+                        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.06)",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "var(--blue-1)";
+                        e.currentTarget.style.borderColor = "var(--blue-7)";
+                        e.currentTarget.style.transform = "translateY(-2px)";
+                        e.currentTarget.style.boxShadow =
+                          "0 4px 16px rgba(0, 0, 0, 0.12)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "white";
+                        e.currentTarget.style.borderColor = "var(--gray-6)";
+                        e.currentTarget.style.transform = "translateY(0px)";
+                        e.currentTarget.style.boxShadow =
+                          "0 2px 8px rgba(0, 0, 0, 0.06)";
+                      }}
+                    >
+                      <Text
+                        size="4"
+                        weight="medium"
+                        style={{ lineHeight: "1.4" }}
+                      >
+                        {message}
+                      </Text>
+                    </Button>
+                  ))}
+                </Flex>
+              </Box>
+            )}
+
             {displayMessages.map((message) => {
               const isUserMessage =
                 message.role === "user" ||
@@ -1215,7 +1266,7 @@ export default function ChatArea({
                           }}
                         />
                         <Button
-                          onClick={onSend}
+                          onClick={() => onSend()}
                           disabled={!currentMessage.trim() || isSendingMessage}
                           size="1"
                           style={{
@@ -1423,12 +1474,6 @@ export default function ChatArea({
           </Box>
         )}
       </Box>
-      {/* Intro Message Modal */}
-      <IntroMessageModal
-        isOpen={showIntroModal}
-        onClose={() => setShowIntroModal(false)}
-        onSelectMessage={handleIntroMessageSelect}
-      />
     </>
   );
 }
