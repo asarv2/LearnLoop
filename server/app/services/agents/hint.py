@@ -6,7 +6,7 @@ from agents import (Runner, ToolsToFinalOutputResult, TResponseInputItem,
                     function_tool, trace)
 from app.db import get_session
 from app.extensions import load_prompt
-from app.models import Chats, Hints, Messages
+from app.models import Chats, Hints, Messages, Personas, Scenarios
 from app.services.agents.generic import GenericAgent
 from app.utils.chat import get_conversation_history
 from pydantic import Field
@@ -23,15 +23,15 @@ def create_hint_dif_low_function() -> Any:
     """Create a function tool for generating low difficulty hints."""
     
     async def hints_dif_low(
-        hints: List[str] = Field(description="List of low difficulty hints that are copy-paste ready for the manager to say")
+        hints: List[str] = Field(description="List of low difficulty hints using 'Say: \"[exact quote]\"' format for direct speech")
     ) -> str:
         """Generate low difficulty hints for the user.
         
-        These hints should be copy-paste ready phrases and questions that the manager
-        can use directly in their conversation.
+        These hints should use the exact format: Say: "[exact quote]" where the quote
+        is a complete sentence the manager can speak immediately in their conversation.
         
         Args:
-            hints: List of copy-paste ready hints that guide the user's next steps
+            hints: List of hints in "Say: '[quote]'" format that can be spoken directly
             
         Returns:
             Confirmation message
@@ -48,15 +48,15 @@ def create_hint_dif_high_function() -> Any:
     """Create a function tool for generating high difficulty hints."""
     
     async def hints_dif_high(
-        hints: List[str] = Field(description="List of high difficulty hints that explain abstract concepts and what is happening in the conversation")
+        hints: List[str] = Field(description="List of high difficulty hints that provide specific, actionable guidance for complex situations")
     ) -> str:
         """Generate high difficulty hints for the user.
         
-        These hints should be more abstract and explain what is currently happening
-        in the conversation, providing deeper insights.
+        These hints should be specific guidance that addresses particular issues, concerns,
+        or dynamics mentioned in the conversation, telling the manager exactly what to focus on.
         
         Args:
-            hints: List of high difficulty hints that explain current situation and abstract concepts
+            hints: List of specific guidance that addresses concrete issues or concerns raised
             
         Returns:
             Confirmation message
@@ -136,6 +136,60 @@ async def run_hint_agent(
                 "hint_id": None,
             }
 
+        # Get scenario information if available
+        scenario = None
+        if chat.scenario_id:
+            scenario = session.exec(select(Scenarios).where(Scenarios.id == chat.scenario_id)).first()
+
+        # Get persona information
+        personas: List[Personas] = []
+        user_persona: Optional[Personas] = None
+        assistant_personas: List[Personas] = []
+        
+        if chat.persona_ids:
+            # Get personas individually to avoid SQLModel issues with array queries
+            for persona_id in chat.persona_ids:
+                persona = session.exec(select(Personas).where(Personas.id == persona_id)).one_or_none()
+                if persona:
+                    personas.append(persona)
+                    # Identify user persona (has profile_id) and assistant personas (no profile_id)
+                    if persona.profile_id is not None:
+                        user_persona = persona
+                    else:
+                        assistant_personas.append(persona)
+
+        # Build context information for hint generation
+        context_parts = []
+        
+        # Add scenario information
+        if scenario:
+            context_parts.append(f"SCENARIO: {scenario.title}")
+            if scenario.problem_statement:
+                context_parts.append(f"PROBLEM STATEMENT: {scenario.problem_statement}")
+            if scenario.objectives:
+                context_parts.append(f"OBJECTIVES: {', '.join(scenario.objectives)}")
+        
+        # Add persona information
+        if user_persona:
+            context_parts.append(f"USER PERSONA: {user_persona.name} (the person practicing)")
+            if user_persona.description:
+                context_parts.append(f"USER DESCRIPTION: {user_persona.description}")
+        
+        if assistant_personas:
+            assistant_names = [p.name for p in assistant_personas]
+            context_parts.append(f"ASSISTANT PERSONAS: {', '.join(assistant_names)} (the people the user is practicing with)")
+            for assistant in assistant_personas:
+                if assistant.description:
+                    context_parts.append(f"{assistant.name} DESCRIPTION: {assistant.description}")
+
+        context_info = "\n".join(context_parts) if context_parts else "No additional context available."
+
+        # Create context message first
+        context_message: TResponseInputItem = {
+            "role": "developer",
+            "content": f"CONTEXT FOR HINT GENERATION:\n{context_info}"
+        }
+
         # Get all messages from the chat
         all_messages = session.exec(
             select(Messages).where(Messages.chat_id == message.chat_id)
@@ -143,12 +197,13 @@ async def run_hint_agent(
         
         conversation_history = get_conversation_history(all_messages)
 
-        hint_extra: TResponseInputItem = {
-            "role": "user",
-            "content": "Look back at the previous conversation and provide hints for the next message. Generate both low difficulty hints (easy to understand what to do next) and high difficulty hints (abstract concepts about what's happening now)."
+        # Create task message at the end
+        task_message: TResponseInputItem = {
+            "role": "developer",
+            "content": "TASK: Look back at the previous conversation and provide hints for the next message. Generate both low difficulty hints (easy to understand what to do next) and high difficulty hints (specific guidance for complex situations)."
         }
 
-        full_conversation_history = [*conversation_history, hint_extra]
+        full_conversation_history = [context_message, *conversation_history, task_message]
 
         # Get the hint prompt from the markdown file
         system_prompt = await get_hint_prompt()
@@ -173,7 +228,7 @@ async def run_hint_agent(
             tools=hint_tools,
             parallel_tool_calls=True,
             tool_use_behavior=tool_use_behavior,
-            model="gpt-4.1-nano",
+            model="gpt-4o-mini",
         )
 
         with trace("Hint"):

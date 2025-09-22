@@ -29,6 +29,7 @@ import {
   UploadOutlined,
   UserDeleteOutlined,
 } from "@ant-design/icons";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import {
   Badge,
   Button,
@@ -46,7 +47,7 @@ import {
   Upload,
 } from "antd";
 import Link from "next/link";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 
 const { Title, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -78,13 +79,18 @@ const trainingIcons = [
   <RocketOutlined key="rocket" />,
 ];
 
-// Helper function to get comprehensive description based on training type
+// Helper function to get training description from Supabase data
 function getTrainingDescription(training: {
   title: string;
   description?: string | null;
 }) {
-  const title = training.title.toLowerCase();
+  // Use database description if available
+  if (training.description) {
+    return training.description;
+  }
 
+  // Fallback based on title if no database description
+  const title = training.title.toLowerCase();
   if (
     title.includes("difficult conversations") ||
     title.includes("critical conversations")
@@ -100,11 +106,7 @@ function getTrainingDescription(training: {
     return "Build essential leadership capabilities through immersive training experiences. Practice decision-making, team management, strategic thinking, and employee development in scenarios designed to prepare you for senior management roles.";
   }
 
-  // Fallback to database description or default
-  return (
-    training.description ||
-    "Comprehensive professional development training designed to enhance your workplace skills and career advancement potential."
-  );
+  return "Comprehensive professional development training designed to enhance your workplace skills and career advancement potential.";
 }
 
 // Helper component to handle training card with scenario routing
@@ -132,6 +134,18 @@ function TrainingCard({
   const color = trainingColors[index % trainingColors.length];
   const icon = trainingIcons[index % trainingIcons.length];
 
+  // Calculate if training has multiple AI personas
+  const hasMultiplePersonas = useMemo(() => {
+    if (!scenarios) return false;
+
+    const rootScenarios = scenarios.filter(
+      (scenario) => scenario.parent_id === null
+    );
+    return rootScenarios.some(
+      (scenario) => scenario.group_ids && scenario.group_ids.length > 1
+    );
+  }, [scenarios]);
+
   // Get the root scenario (parent_id = null) if available, otherwise fallback to first scenario
   const rootScenario = scenarios?.find(
     (scenario) => scenario.parent_id === null
@@ -155,6 +169,60 @@ function TrainingCard({
           position: "relative",
         }}
       >
+        {/* Multiple Persona Icon */}
+        {hasMultiplePersonas && (
+          <div
+            style={{
+              position: "absolute",
+              top: "12px",
+              right: isCustom && onEdit ? "48px" : "12px",
+              zIndex: 10,
+            }}
+          >
+            <Tooltip.Provider>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "50%",
+                      backgroundColor: "#1890ff",
+                      color: "white",
+                      cursor: "pointer",
+                      fontSize: "16px",
+                    }}
+                  >
+                    <TeamOutlined />
+                  </div>
+                </Tooltip.Trigger>
+                <Tooltip.Portal>
+                  <Tooltip.Content
+                    className="TooltipContent"
+                    sideOffset={5}
+                    style={{
+                      backgroundColor: "var(--gray-12)",
+                      color: "white",
+                      borderRadius: "6px",
+                      padding: "8px 12px",
+                      fontSize: "14px",
+                      lineHeight: "1.4",
+                      boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+                      zIndex: 1000,
+                    }}
+                  >
+                    Multiple AI personas
+                    <Tooltip.Arrow style={{ fill: "var(--gray-12)" }} />
+                  </Tooltip.Content>
+                </Tooltip.Portal>
+              </Tooltip.Root>
+            </Tooltip.Provider>
+          </div>
+        )}
+
         {/* Edit button for custom trainings */}
         {isCustom && onEdit && (
           <Button
