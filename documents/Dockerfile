@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-lang-european texlive-lang-cjk texlive-lang-greek texlive-lang-cyrillic \
     latexmk \
     fonts-noto fonts-noto-cjk fonts-noto-color-emoji fonts-dejavu \
-    curl ca-certificates tini gosu \
+    curl ca-certificates tini \
  && rm -rf /var/lib/apt/lists/*
 
 # Make files dir for output
@@ -26,19 +26,25 @@ RUN mkdir -p /app/files
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app
+# Copy app + **bake defaults** for templates
 COPY app/ ./app/
-COPY templates/ ./templates/
+COPY --chown=10001:10001 templates/ /opt/defaults/templates/
 
 # Non-root user
 RUN useradd -m -u 10001 appuser
-USER appuser
 
 EXPOSE 8000
 
-# Healthcheck (FastAPI health)
+# Healthcheck remains fine for gunicorn/uvicorn
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["python", "-m", "app.main"]
+# Seed entrypoint + gunicorn
+COPY docker/entrypoint-docs.sh /usr/local/bin/entrypoint-docs.sh
+USER root && chmod +x /usr/local/bin/entrypoint-docs.sh && chown appuser:appuser /usr/local/bin/entrypoint-docs.sh && \
+     chown -R appuser:appuser /app && \
+     true
+USER appuser
+
+ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint-docs.sh"]
+CMD ["gunicorn","app.main:app","-w","1","-k","uvicorn.workers.UvicornWorker","-b","0.0.0.0:8000","--log-level","info"]

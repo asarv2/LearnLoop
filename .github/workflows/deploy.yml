@@ -370,7 +370,11 @@ jobs:
           # Scale
           SERVER_REPLICAS: ${{ env.CHANNEL == 'beta' && secrets.BETA_SERVER_REPLICAS || secrets.SERVER_REPLICAS }}
         run: |
-          mkdir -p web/generated && chmod 777 web/generated
+          mkdir -p web/generated \
+                   prompts \
+                   templates \
+                   files
+          chmod -R a+rwX web/generated prompts templates files
 
           # Final sanity check before starting containers
           echo "== Pre-deployment nginx files check =="

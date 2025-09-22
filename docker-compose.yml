@@ -9,7 +9,9 @@ services:
     pull_policy: always
     restart: unless-stopped
     networks:
-      - web
+      web:
+        aliases:
+          - ${COMPOSE_PROJECT_NAME}-client
     environment:
       - NODE_ENV=production
       - SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
@@ -20,7 +22,7 @@ services:
       - TURN_URI=${TURN_URI}
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
-      - INTERNAL_API_BASE=http://${COMPOSE_PROJECT_NAME}-server-1:8000
+      - INTERNAL_API_BASE=http://${COMPOSE_PROJECT_NAME}-server:8000
       - HOSTNAME=0.0.0.0
       - PORT=3000
     healthcheck:
@@ -38,7 +40,9 @@ services:
     pull_policy: always
     restart: unless-stopped
     networks:
-      - web
+      web:
+        aliases:
+          - ${COMPOSE_PROJECT_NAME}-server
     environment:
       # ai
       - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
@@ -53,10 +57,10 @@ services:
 
       # api + socket.io
       - ORIGIN=${ORIGIN}
-      - REDIS_URL=redis://${COMPOSE_PROJECT_NAME}-redis-1:6379
-      - MODEL_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-model-1:8000
-      - DOCUMENTS_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-documents-1:8000
-      - AUDIO_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-audio-1:8000
+      - REDIS_URL=redis://${COMPOSE_PROJECT_NAME}-redis:6379
+      - MODEL_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-model:8000
+      - DOCUMENTS_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-documents:8000
+      - AUDIO_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-audio:8000
 
       # webrtc
       - STUN_URI=stun:${COMPOSE_PROJECT_NAME}-webrtc-1:3479
@@ -85,8 +89,11 @@ services:
     image: ${LEARNLOOP_MODEL_IMAGE:-ghcr.io/ashokhomepc/learnloop-model:latest}
     pull_policy: always
     restart: unless-stopped
+    init: true
     networks:
-      - web
+      web:
+        aliases:
+          - ${COMPOSE_PROJECT_NAME}-model
     environment:
       - PORT=8000
       - HOST=0.0.0.0
@@ -116,7 +123,9 @@ services:
     pull_policy: always
     restart: unless-stopped
     networks:
-      - web
+      web:
+        aliases:
+          - ${COMPOSE_PROJECT_NAME}-documents
     environment:
       - PORT=8000
       - HOST=0.0.0.0
@@ -134,14 +143,19 @@ services:
     image: ${LEARNLOOP_AUDIO_IMAGE:-ghcr.io/ashokhomepc/learnloop-audio:latest}
     pull_policy: always
     restart: unless-stopped
+    init: true
     networks:
-      - web
+      web:
+        aliases:
+          - ${COMPOSE_PROJECT_NAME}-audio
     environment:
       - PORT=8000
       - HOST=0.0.0.0
       - AUDIO_SECRET=${AUDIO_SECRET}
-      - MODEL_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-model-1:8000
+      - MODEL_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-model:8000
       - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL}
+    volumes:
+      - model_audio:/app/recordings
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -153,7 +167,9 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     networks:
-      - web
+      web:
+        aliases:
+          - ${COMPOSE_PROJECT_NAME}-redis
 
   acme-extractor:
     image: ghcr.io/kereis/traefik-certs-dumper:latest
