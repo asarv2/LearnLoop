@@ -281,6 +281,7 @@ class Personas(_Base, table=True):
     realtime_prompt: Optional[str] = Field(default=None, sa_column=Column('realtime_prompt', Text))
     level: Optional[str] = Field(default=None, sa_column=Column('level', Enum('junior', 'mid', 'senior', 'executive', name='level')))
     position: Optional[str] = Field(default=None, sa_column=Column('position', Text))
+    parent_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('parent_id', Uuid(as_uuid=True)))
 
     profile: Optional['Profiles'] = Relationship(back_populates='personas')
     messages: List['Messages'] = Relationship(back_populates='persona')

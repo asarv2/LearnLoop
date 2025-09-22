@@ -19,6 +19,12 @@ export const ScenarioCreateSchema = z.object({
   parent_id: z.string().nullable().optional(),
   rubric_id: z.string().nullable().optional(),
   training_id: z.string().nullable().optional(),
+  document_ids: z.array(z.string()).optional(),
+  field_ids: z.array(z.string()).nullable().optional(),
+  group_ids: z.array(z.string()).optional(),
+  parameter_ids: z.array(z.string()).optional(),
+  prompt_mapping: z.any().optional(), // Json type
+  prompts: z.any().optional(), // Json type
 });
 
 export const ScenarioUpdateSchema = z.object({
@@ -29,6 +35,12 @@ export const ScenarioUpdateSchema = z.object({
   parent_id: z.string().nullable().optional(),
   rubric_id: z.string().nullable().optional(),
   training_id: z.string().nullable().optional(),
+  document_ids: z.array(z.string()).optional(),
+  field_ids: z.array(z.string()).nullable().optional(),
+  group_ids: z.array(z.string()).optional(),
+  parameter_ids: z.array(z.string()).optional(),
+  prompt_mapping: z.any().optional(), // Json type
+  prompts: z.any().optional(), // Json type
 });
 
 async function getSupabase() {

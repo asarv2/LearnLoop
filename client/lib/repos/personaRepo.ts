@@ -20,6 +20,9 @@ export const PersonaCreateSchema = z.object({
   avatar_url: z.string().optional(),
   metadata: z.any().optional(), // Json type
   active: z.boolean().optional(),
+  parent_id: z.string().nullable().optional(),
+  level: z.enum(["junior", "mid", "senior", "executive"]).nullable().optional(),
+  position: z.string().nullable().optional(),
 });
 
 export const PersonaUpdateSchema = z.object({
@@ -33,6 +36,9 @@ export const PersonaUpdateSchema = z.object({
   avatar_url: z.string().optional(),
   metadata: z.any().optional(), // Json type
   active: z.boolean().optional(),
+  parent_id: z.string().nullable().optional(),
+  level: z.enum(["junior", "mid", "senior", "executive"]).nullable().optional(),
+  position: z.string().nullable().optional(),
 });
 
 async function getSupabase() {

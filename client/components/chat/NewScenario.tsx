@@ -140,6 +140,15 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       [];
 
     // Add individual field values
+    console.log("🔍 Debug: Individual field values", {
+      fieldValuesCount: fieldValues.length,
+      fieldValues: fieldValues.map((fv) => ({
+        fieldId: fv.fieldId,
+        value: fv.value,
+        parameterId: fv.parameterId,
+      })),
+    });
+
     payload.push(
       ...fieldValues.map((fv) => ({
         fieldId: fv.fieldId,
@@ -149,9 +158,46 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     );
 
     // Create personas from group field values
+    console.log("🔍 Debug: Checking for group persona creation", {
+      hasScenario: !!scenario,
+      hasGroupIds: !!scenario?.group_ids,
+      groupIds: scenario?.group_ids,
+      hasGroups: !!groups,
+      groupsCount: groups?.length,
+      groupFieldValuesCount: groupFieldValues.length,
+      groupFieldValues: groupFieldValues.map((gfv) => ({
+        fieldId: gfv.fieldId,
+        value: gfv.value,
+        parameterId: gfv.parameterId,
+        groupId: gfv.groupId,
+      })),
+      scenarioData: scenario
+        ? {
+            id: scenario.id,
+            title: scenario.title,
+            group_ids: scenario.group_ids,
+            field_ids: scenario.field_ids,
+          }
+        : null,
+    });
+
     if (scenario?.group_ids && groups) {
       for (const groupId of scenario.group_ids) {
         const group = groups.find((g) => g.id === groupId);
+        console.log("🔍 Debug: Processing group", {
+          groupId,
+          group: group
+            ? {
+                id: group.id,
+                name: group.name,
+                persona_field_id: group.persona_field_id,
+                mood_field_id: group.mood_field_id,
+                position_field_id: group.position_field_id,
+                level_field_id: group.level_field_id,
+                field_ids: group.field_ids,
+              }
+            : null,
+        });
         if (!group) continue;
 
         // Get all field values for this group (persona first, then mood, position, level, then additional field_ids)
@@ -173,6 +219,15 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           })
           .filter(Boolean);
 
+        console.log("🔍 Debug: Group field values", {
+          groupId,
+          currentGroupFieldValues: currentGroupFieldValues.map((gfv) => ({
+            fieldId: gfv?.fieldId,
+            value: gfv?.value,
+            parameterId: gfv?.parameterId,
+          })),
+        });
+
         if (currentGroupFieldValues.length > 0) {
           // Find persona field value for persona name
           const personaFieldValue =
@@ -187,6 +242,18 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             (gfv) => gfv?.fieldId === group.mood_field_id
           );
 
+          console.log("🔍 Debug: Field values found", {
+            groupId,
+            personaFieldValue,
+            moodFieldValue: moodFieldValue
+              ? {
+                  fieldId: moodFieldValue.fieldId,
+                  value: moodFieldValue.value,
+                  parameterId: moodFieldValue.parameterId,
+                }
+              : null,
+          });
+
           // Find level and position field values for enhanced persona description
           const levelFieldValue = currentGroupFieldValues.find(
             (gfv) => gfv?.fieldId === group.level_field_id
@@ -195,60 +262,174 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             (gfv) => gfv?.fieldId === group.position_field_id
           );
 
-          // Only create persona if we have mood (required)
-          if (moodFieldValue) {
-            const moodPersona = moodFieldValue.parameterId
-              ? personas?.find((p) => p.id === moodFieldValue.parameterId)
-              : null;
+          // Create persona based on persona_field_id, level_field_id, and position_field_id
+          // Mood is just a regular parameter, not a persona reference
+          console.log("🔍 Debug: Persona field values", {
+            groupId,
+            personaFieldValue,
+            levelFieldValue,
+            positionFieldValue,
+            moodFieldValue,
+          });
 
-            if (moodPersona) {
-              try {
-                // Build enhanced description using level and position
-                const levelInfo = levelFieldValue?.value
-                  ? ` at ${levelFieldValue.value} level`
-                  : "";
-                const positionInfo = positionFieldValue?.value
-                  ? ` in ${positionFieldValue.value} position`
-                  : "";
+          // Only create persona if we have the persona field value
+          if (personaFieldValue) {
+            try {
+              // Find the parent persona based on the persona field value
+              const parentPersona = personas?.find(
+                (p) => p.name === personaFieldValue
+              );
 
-                // Enhance the realtime prompt with level and position context
-                const enhancedRealtimePrompt = [
-                  moodPersona.realtime_prompt || "",
-                  levelInfo
-                    ? `You are operating ${levelInfo.toLowerCase()}.`
-                    : "",
-                  positionInfo
-                    ? `Your role is ${positionInfo.toLowerCase()}.`
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ");
+              console.log("🔍 Debug: Parent persona lookup", {
+                groupId,
+                personaFieldValue,
+                parentPersona: parentPersona
+                  ? {
+                      id: parentPersona.id,
+                      name: parentPersona.name,
+                      voice: parentPersona.voice,
+                    }
+                  : null,
+                allPersonasCount: personas?.length,
+              });
 
-                // Create a new persona using mood with level and position context
-                const newPersona = await createPersona.mutateAsync({
-                  name: personaFieldValue,
-                  description: `Generated persona from group: ${
-                    group.name || groupId
-                  }${levelInfo}${positionInfo}`,
-                  profile_id: null,
-                  system_prompt: moodPersona.system_prompt,
-                  realtime_prompt: enhancedRealtimePrompt,
-                  temperature: moodPersona.temperature,
-                  voice: null, // No voice field used
-                  active: false, // Don't show in dropdowns
-                });
-
-                // Add the persona ID to the payload
-                if (newPersona.id) {
-                  payload.push({
-                    fieldId: group.mood_field_id || groupId,
-                    value: personaFieldValue,
-                    parameterId: newPersona.id,
-                  });
-                }
-              } catch (error) {
-                console.error("Failed to create persona from group:", error);
+              if (!parentPersona) {
+                console.warn(
+                  `Parent persona "${personaFieldValue}" not found for group ${groupId}`
+                );
+                continue; // Skip this group if parent persona not found
               }
+
+              // Build enhanced description using level and position
+              const levelInfo = levelFieldValue?.value
+                ? ` at ${levelFieldValue.value} level`
+                : "";
+              const positionInfo = positionFieldValue?.value
+                ? ` in ${positionFieldValue.value} position`
+                : "";
+
+              // Create a more descriptive persona name using position and level
+              const enhancedPersonaName = [
+                personaFieldValue,
+                positionFieldValue?.value,
+                levelFieldValue?.value,
+              ]
+                .filter(Boolean)
+                .join(" - ");
+
+              // Create a base description for the persona
+              const baseDescription = `A ${
+                group.name || "group member"
+              }${levelInfo}${positionInfo}`;
+
+              // Note: Not creating realtime prompt as it's left empty
+
+              // Check if a similar persona already exists to avoid duplicates
+              const existingPersona = personas?.find(
+                (p) =>
+                  p.parent_id === parentPersona.id &&
+                  p.name === enhancedPersonaName &&
+                  p.description?.includes(group.name || groupId)
+              );
+
+              let personaToUse;
+              if (existingPersona) {
+                // Use existing persona
+                personaToUse = existingPersona;
+                console.log(
+                  `Using existing persona: ${existingPersona.name} (${existingPersona.id})`
+                );
+              } else {
+                // Create a new persona with parent persona's voice and ID
+                const newPersona = await createPersona.mutateAsync({
+                  name: enhancedPersonaName,
+                  description: baseDescription,
+                  profile_id: null,
+                  system_prompt: "", // Leave empty
+                  realtime_prompt: "", // Leave empty
+                  temperature: 0, // Set to 0
+                  voice: parentPersona.voice || "alloy", // Use parent's voice
+                  active: false, // Don't show in dropdowns
+                  parent_id: parentPersona.id, // Link to the parent persona
+                  level:
+                    (levelFieldValue?.value as
+                      | "junior"
+                      | "mid"
+                      | "senior"
+                      | "executive") || null,
+                  position: positionFieldValue?.value || null,
+                });
+                personaToUse = newPersona;
+                console.log(
+                  `Created new persona: ${newPersona.name} (${newPersona.id}) with parent: ${parentPersona.id}`
+                );
+              }
+
+              // Create a parameter record that references this persona
+              if (personaToUse?.id) {
+                try {
+                  if (group.persona_field_id) {
+                    const createdParam =
+                      await createParameterGlobal.mutateAsync({
+                        field_id: group.persona_field_id,
+                        name: enhancedPersonaName,
+                        description: `Generated persona parameter for ${
+                          group.name || groupId
+                        }`,
+                        value: personaToUse.id, // Store the persona ID in the parameter value
+                      });
+
+                    // Add the parameter ID to the payload (not the persona ID directly)
+                    if (createdParam?.id) {
+                      payload.push({
+                        fieldId: group.persona_field_id,
+                        value: enhancedPersonaName,
+                        parameterId: createdParam.id, // Use parameter ID, not persona ID
+                      });
+                    }
+                  }
+                } catch (paramError) {
+                  console.error(
+                    "Failed to create parameter for persona:",
+                    paramError
+                  );
+                  // Fallback: use persona ID directly (this will cause the server issue)
+                  if (group.persona_field_id) {
+                    payload.push({
+                      fieldId: group.persona_field_id,
+                      value: enhancedPersonaName,
+                      parameterId: personaToUse.id,
+                    });
+                  }
+                }
+              }
+
+              // Add other field values to payload (mood, level, position) - these are just string values
+              if (moodFieldValue?.value && group.mood_field_id) {
+                payload.push({
+                  fieldId: group.mood_field_id,
+                  value: moodFieldValue.value,
+                  parameterId: moodFieldValue.parameterId, // Use existing parameter ID if available
+                });
+              }
+
+              if (levelFieldValue?.value && group.level_field_id) {
+                payload.push({
+                  fieldId: group.level_field_id,
+                  value: levelFieldValue.value,
+                  parameterId: levelFieldValue.parameterId, // Use existing parameter ID if available
+                });
+              }
+
+              if (positionFieldValue?.value && group.position_field_id) {
+                payload.push({
+                  fieldId: group.position_field_id,
+                  value: positionFieldValue.value,
+                  parameterId: positionFieldValue.parameterId, // Use existing parameter ID if available
+                });
+              }
+            } catch (error) {
+              console.error("Failed to create persona from group:", error);
             }
           }
         }
@@ -1117,6 +1298,15 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       // 5) Create personas from groups and update scenario parameters on server
       const payloadFieldValues = await createPersonasFromGroupsAndGetPayload();
 
+      console.log("🔍 Debug: Final payload being sent to server", {
+        payloadFieldValuesCount: payloadFieldValues.length,
+        payloadFieldValues: payloadFieldValues.map((pfv) => ({
+          fieldId: pfv.fieldId,
+          value: pfv.value,
+          parameterId: pfv.parameterId,
+        })),
+      });
+
       // Record this generation's parameters for change detection
       setLastGeneratedSignature(makeSignatureFromPayload(payloadFieldValues));
 
@@ -1151,6 +1341,16 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       // Update active scenario's parameter ids before starting
       const scenarioToUse = savedScenarioId || scenarioId;
       const updateFieldValues = await createPersonasFromGroupsAndGetPayload();
+
+      console.log("🔍 Debug: Start scenario payload", {
+        scenarioToUse,
+        updateFieldValuesCount: updateFieldValues.length,
+        updateFieldValues: updateFieldValues.map((ufv) => ({
+          fieldId: ufv.fieldId,
+          value: ufv.value,
+          parameterId: ufv.parameterId,
+        })),
+      });
 
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,

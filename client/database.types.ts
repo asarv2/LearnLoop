@@ -513,6 +513,7 @@ export type Database = {
           id: string
           level: Database["public"]["Enums"]["level"] | null
           name: string
+          parent_id: string | null
           position: string | null
           profile_id: string | null
           realtime_prompt: string | null
@@ -528,6 +529,7 @@ export type Database = {
           id?: string
           level?: Database["public"]["Enums"]["level"] | null
           name: string
+          parent_id?: string | null
           position?: string | null
           profile_id?: string | null
           realtime_prompt?: string | null
@@ -543,6 +545,7 @@ export type Database = {
           id?: string
           level?: Database["public"]["Enums"]["level"] | null
           name?: string
+          parent_id?: string | null
           position?: string | null
           profile_id?: string | null
           realtime_prompt?: string | null
