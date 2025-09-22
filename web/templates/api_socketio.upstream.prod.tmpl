@@ -1,4 +1,4 @@
-{{/* emit upstreams for running learnloop server containers */}}
+{{/* emit upstreams for running learnloop server containers (PROD) */}}
 {{ range $c := . }}
   {{ $svc  := index $c.Labels "com.docker.compose.service" }}
   {{ $proj := index $c.Labels "com.docker.compose.project" }}
