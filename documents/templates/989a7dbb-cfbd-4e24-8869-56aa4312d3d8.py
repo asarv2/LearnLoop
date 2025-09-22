@@ -254,6 +254,7 @@ def render(args: Args) -> bytes:
     # Generate PDF using FILES_DIR
     import os
     import time
+    from subprocess import CalledProcessError
     
     try:
         # Generate filename with template name and timestamp
@@ -262,13 +263,21 @@ def render(args: Args) -> bytes:
         pdf_path = FILES_DIR / pdf_filename
         
         # Generate PDF to FILES_DIR
-        doc.generate_pdf(
-            filepath=str(pdf_path),
-            clean=True,
-            clean_tex=True,
-            compiler="xelatex",
-            silent=True,
-        )
+        try:
+            doc.generate_pdf(
+                filepath=str(pdf_path),
+                clean=True,
+                clean_tex=True,
+                compiler="xelatex",
+                silent=True,
+            )
+        except CalledProcessError as e:
+            # Check if PDF was created despite non-zero exit
+            pdf_file_path = pdf_path.with_suffix('.pdf')
+            if pdf_file_path.exists() and pdf_file_path.stat().st_size > 0:
+                print(f"XeLaTeX returned {e.returncode} but PDF exists; returning it.")
+            else:
+                raise  # re-raise if no usable PDF
         
         # Check if file was created and has content (PyLaTeX adds .pdf extension)
         pdf_file_path = pdf_path.with_suffix('.pdf')
