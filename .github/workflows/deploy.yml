@@ -284,6 +284,8 @@ jobs:
           # Match container users so entrypoints can seed/copy:
           chown -R 1001:1001 "$DEST/prompts"    || true   # server appuser
           chown -R 10001:10001 "$DEST/templates" || true  # documents appuser
+          chown -R 10001:10001 "$DEST/files"      || true  # documents appuser needs write
+          chmod -R u+rwX,go+rX "$DEST/files"      || true  # keep it readable, only owner writes
 
           # 1) Seed missing files ONLY (won't overwrite or delete)
           [ -d ./server/prompts ]     && rsync -a --ignore-existing ./server/prompts/         "$DEST/prompts"/     || true
