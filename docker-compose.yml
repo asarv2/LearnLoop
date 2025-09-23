@@ -125,7 +125,6 @@ services:
       web:
         aliases:
           - ${COMPOSE_PROJECT_NAME}-documents
-    user: "10001:10001"                 # ensure non-root uid matches image
     environment:
       - PORT=8000
       - HOST=0.0.0.0
