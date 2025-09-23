@@ -316,13 +316,6 @@ export default function History() {
     <div>
       <div style={{ marginBottom: "24px" }}>
         <Title level={2}>Training Performance History</Title>
-        <Text
-          type="secondary"
-          style={{ fontSize: "16px", marginTop: "8px", display: "block" }}
-        >
-          Track your progress, review completed sessions, and analyze
-          performance trends across all training modules
-        </Text>
       </div>
 
       {/* Summary Statistics removed as requested */}

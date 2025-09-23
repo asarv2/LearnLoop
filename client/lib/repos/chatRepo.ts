@@ -78,12 +78,18 @@ export const chatRepo = {
     return data;
   },
 
-  async list() {
+  async list(profileId?: string) {
     const supabase = await getSupabase();
-    const { data, error } = await supabase
-      .from("chats")
-      .select("*")
-      .order("created_at", { ascending: false });
+    let query = supabase.from("chats").select("*");
+
+    // Filter by profile_id if provided
+    if (profileId) {
+      query = query.eq("profile_id", profileId);
+    }
+
+    const { data, error } = await query.order("created_at", {
+      ascending: false,
+    });
     if (error) throw new HttpError(500, error.message);
     return data;
   },
