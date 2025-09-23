@@ -17,7 +17,7 @@ import uvicorn
 # Add the app directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.api import app
+from app.api import socket_app as app
 
 # Configure logging
 logging.basicConfig(

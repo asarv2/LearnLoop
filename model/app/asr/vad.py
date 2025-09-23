@@ -6,13 +6,33 @@ SAMPLE_RATE = 16000
 
 class SileroGate:
     def __init__(self, threshold: float = 0.5):
-        self.model = torch.hub.load(
+        # Load Silero VAD model - it returns a tuple with the model function
+        model_tuple = torch.hub.load(
             'snakers4/silero-vad', 'silero_vad', force_reload=False, trust_repo=True
         )
+        
+        # Extract the model function from the tuple
+        if isinstance(model_tuple, tuple):
+            self.model = model_tuple[0]  # The model function is the first element
+        else:
+            self.model = model_tuple
         self.threshold = threshold
 
     def is_speech(self, pcm16_bytes: bytes) -> bool:
         audio = np.frombuffer(pcm16_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        
+        # Silero VAD expects exactly 512 samples for 16kHz audio
+        expected_samples = 512 if SAMPLE_RATE == 16000 else 256
+        
+        if len(audio) != expected_samples:
+            # If we don't have the right number of samples, we can't use VAD
+            # Return True to be safe (assume speech)
+            return True
+        
         with torch.no_grad():
-            conf = float(self.model(torch.from_numpy(audio), SAMPLE_RATE).item())
+            # Convert to torch tensor - Silero VAD expects 1D tensor
+            audio_tensor = torch.from_numpy(audio)
+            
+            # Call the model - it expects (audio_tensor, sample_rate)
+            conf = float(self.model(audio_tensor, SAMPLE_RATE).item())
         return conf >= self.threshold
