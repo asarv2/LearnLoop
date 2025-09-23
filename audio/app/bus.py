@@ -235,13 +235,7 @@ class AudioBus:
                 seq=max((c.seq for c in subset.values()), default=0),
                 meta={"n": 0, "interrupted": True, "sources": [], "includes_beep": False},
             )
-        # If a speaker is selected, gate the mix to that speaker (and optional beep handling below)
-        if self._current_speaker is not None:
-            subset = {
-                k: v
-                for k, v in subset.items()
-                if (k == self._current_speaker) or (k == "agent:beep")
-            }
+        # Speaker gating is applied per-subscriber in the caller; here we just mix the provided subset
         actives = []
         for c in subset.values():
             if c.source_id.startswith("agent:"):
@@ -359,6 +353,21 @@ class AudioBus:
                     for sub_id, sub in list(self._subs.items()):
                         ignore = self._ignore.get(sub_id, set())
                         subset = {k: v for k, v in snapshot.items() if k != sub_id and k not in ignore}
+                        # Apply per-subscriber gating: do not send a subscriber their own mic; during human speaking,
+                        # allow the human to hear agents while others hear only the human; during agent speaking, gate to that agent.
+                        curr = self._current_speaker
+                        if curr:
+                            if not curr.startswith("agent:"):
+                                # Human is current speaker
+                                if sub_id == curr:
+                                    # The speaking human should hear agents (not self)
+                                    subset = {k: v for k, v in subset.items() if k.startswith("agent:")}
+                                else:
+                                    # Others hear the human speaker only
+                                    subset = {k: v for k, v in subset.items() if k == curr}
+                            else:
+                                # Agent is current speaker → everyone hears that agent only
+                                subset = {k: v for k, v in subset.items() if k == curr}
                         if not subset:
                             continue
                         max_seq = max(v.seq for v in subset.values())

@@ -396,6 +396,9 @@ class Room:
         await self.bus.ingest_i16(agent_id, i16, PCM_SR)
 
     async def broadcast_transcript(self, *, agent_id: str, message_id: Optional[str], start_ts_ms: int, words: List[Dict[str, Any]], full_text: str) -> None:
+        # Do not emit transcripts for the continuous beep agent
+        if agent_id == "agent:beep":
+            return
         if (not self.word_timestamps_enabled) or self.on_transcript is None:
             return
         payload = {

@@ -477,11 +477,17 @@ class OpenAIAgent(Agent):
                         else:
                             log.info(f"Skipping alignment: tr_text_len={len(tr_text)}, audio_size={getattr(audio_arr, 'size', None)}, enabled={word_timestamps_enabled}")
 
-                        # Broadcast transcript → include message_id so UI can attach it
+                        # Broadcast transcript → include message_id so UI can attach it. Guard against duplicate emits for same rid.
                         try:
                             bc = getattr(self.room, "broadcast_transcript", None)
                             log.info(f"broadcast_transcript callable={callable(bc)}, word_timestamps_enabled={getattr(self.room, 'word_timestamps_enabled', True)}, words_count={len(words_payload)}")
                             if callable(bc) and getattr(self.room, "word_timestamps_enabled", True) and words_payload and (msg_id_final or "").strip():
+                                # prevent duplicate broadcast for this response id if loop races
+                                dupe_key = f"final_broadcast::{rid}"
+                                if dupe_key in self._processed_done:
+                                    log.info(f"Skipping duplicate final broadcast for rid={rid}")
+                                else:
+                                    self._processed_done.add(dupe_key)
                                 log.info(f"Broadcasting transcript words={len(words_payload)} msg_id={msg_id_final} start_ts={start_ts} current_time={int(time.time() * 1000)}")
                                 await bc(
                                     agent_id=self.id,
