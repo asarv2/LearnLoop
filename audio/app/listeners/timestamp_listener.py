@@ -464,7 +464,17 @@ class TimestampListenerManager:
                         full_text=tr.text or final_text,
                     )
                 else:
-                    # Finalize the user turn
+                    # Emit final, aligned user transcript for persistence and UI, then finalize the text message
+                    try:
+                        await self._room.broadcast_transcript(
+                            agent_id=st.source_id,
+                            message_id=st.message_id,
+                            start_ts_ms=st.start_ts_ms,
+                            words=words,
+                            full_text=tr.text or final_text,
+                        )
+                    except Exception:
+                        pass
                     try:
                         if st.message_id:
                             await self._room.append_text_chunk(
