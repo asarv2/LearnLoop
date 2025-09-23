@@ -416,12 +416,6 @@ class OpenAIAgent(Agent):
                                     msg_id_final = msg_id_new3
                                 except Exception:
                                     pass
-                            # If we have final text but no audio/words to align, still persist final text
-                            if (effective_text or "").strip():
-                                try:
-                                    await self.publish_text_chunk(text=effective_text, message_id=msg_id_final or None, chunk_idx=9999, is_final=True)
-                                except Exception:
-                                    pass
                         # clear current active message id if it matches
                         if msg_id_final and self._current_msg_id == msg_id_final:
                             self._current_msg_id = None
@@ -499,6 +493,18 @@ class OpenAIAgent(Agent):
                                 log.info(f"Successfully broadcast transcript")
                             else:
                                 log.info(f"NOT broadcasting transcript: callable={callable(bc)}, enabled={getattr(self.room, 'word_timestamps_enabled', True)}, words={len(words_payload)}")
+                                # Fallback: if no transcript was broadcast (e.g., alignment failed or disabled),
+                                # persist the final text so the UI still shows the assistant message.
+                                try:
+                                    if (effective_text or "").strip() and (msg_id_final or "").strip():
+                                        await self.publish_text_chunk(
+                                            text=effective_text,
+                                            message_id=msg_id_final,  # finalize existing placeholder
+                                            chunk_idx=9999,
+                                            is_final=True,
+                                        )
+                                except Exception:
+                                    pass
                         except Exception as e:
                             log.error(f"Failed to broadcast transcript: {e}")
                             pass
