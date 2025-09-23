@@ -135,12 +135,42 @@ run: check-venv
 # Stop all services (for cleanup)
 stop:
 	@echo "🛑 Stopping all LearnLoop services..."
-	@pkill -f "redis-server.*$(REDIS_PORT)" 2>/dev/null && echo "✅ Redis stopped" || true
-	@pkill -f "uvicorn.*$(SERVER_PORT)" 2>/dev/null && echo "✅ Server stopped" || true
-	@pkill -f "uvicorn.*$(MODEL_PORT)" 2>/dev/null && echo "✅ Model service stopped" || true
-	@pkill -f "uvicorn.*$(DOCUMENTS_PORT)" 2>/dev/null && echo "✅ Documents service stopped" || true
-	@pkill -f "uvicorn.*$(AUDIO_PORT)" 2>/dev/null && echo "✅ Audio service stopped" || true
-	@pkill -f "next dev" 2>/dev/null && echo "✅ Client stopped" || true
+	@echo "Stopping Redis on port $(REDIS_PORT)..."
+	@if lsof -ti:$(REDIS_PORT) >/dev/null 2>&1; then \
+		kill -9 $$(lsof -ti:$(REDIS_PORT)) 2>/dev/null && echo "✅ Redis stopped" || echo "⚠️  Redis process not found"; \
+	else \
+		echo "⚠️  No process found on port $(REDIS_PORT)"; \
+	fi
+	@echo "Stopping Server on port $(SERVER_PORT)..."
+	@if lsof -ti:$(SERVER_PORT) >/dev/null 2>&1; then \
+		kill -9 $$(lsof -ti:$(SERVER_PORT)) 2>/dev/null && echo "✅ Server stopped" || echo "⚠️  Server process not found"; \
+	else \
+		echo "⚠️  No process found on port $(SERVER_PORT)"; \
+	fi
+	@echo "Stopping Model service on port $(MODEL_PORT)..."
+	@if lsof -ti:$(MODEL_PORT) >/dev/null 2>&1; then \
+		kill -9 $$(lsof -ti:$(MODEL_PORT)) 2>/dev/null && echo "✅ Model service stopped" || echo "⚠️  Model service process not found"; \
+	else \
+		echo "⚠️  No process found on port $(MODEL_PORT)"; \
+	fi
+	@echo "Stopping Documents service on port $(DOCUMENTS_PORT)..."
+	@if lsof -ti:$(DOCUMENTS_PORT) >/dev/null 2>&1; then \
+		kill -9 $$(lsof -ti:$(DOCUMENTS_PORT)) 2>/dev/null && echo "✅ Documents service stopped" || echo "⚠️  Documents service process not found"; \
+	else \
+		echo "⚠️  No process found on port $(DOCUMENTS_PORT)"; \
+	fi
+	@echo "Stopping Audio service on port $(AUDIO_PORT)..."
+	@if lsof -ti:$(AUDIO_PORT) >/dev/null 2>&1; then \
+		kill -9 $$(lsof -ti:$(AUDIO_PORT)) 2>/dev/null && echo "✅ Audio service stopped" || echo "⚠️  Audio service process not found"; \
+	else \
+		echo "⚠️  No process found on port $(AUDIO_PORT)"; \
+	fi
+	@echo "Stopping Client on port $(CLIENT_PORT)..."
+	@if lsof -ti:$(CLIENT_PORT) >/dev/null 2>&1; then \
+		kill -9 $$(lsof -ti:$(CLIENT_PORT)) 2>/dev/null && echo "✅ Client stopped" || echo "⚠️  Client process not found"; \
+	else \
+		echo "⚠️  No process found on port $(CLIENT_PORT)"; \
+	fi
 	@echo "✅ All services stopped"
 
 # Start FastAPI via Gunicorn+Uvicorn for production

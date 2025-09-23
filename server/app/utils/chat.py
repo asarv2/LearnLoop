@@ -443,12 +443,49 @@ def get_audio_config(chat_id: str) -> dict:
                         if persona.description:
                             instructions_parts.append(persona.description)
                         
-                        # 3. Add formatted conversation history if available
+                        # 3. Add relevant documents from scenario
+                        if scenario and scenario.document_ids:
+                            try:
+                                logger.info(f"Fetching documents for scenario {scenario.id}, document_ids: {scenario.document_ids}")
+                                # Fetch documents from the database
+                                from app.models import Documents
+                                documents = []
+                                for doc_id in scenario.document_ids:
+                                    doc = fresh_session.exec(select(Documents).where(Documents.id == doc_id)).one_or_none()
+                                    if doc:
+                                        documents.append(doc)
+                                        logger.info(f"Found document: {doc.title}")
+                                    else:
+                                        logger.warning(f"Document not found: {doc_id}")
+                                
+                                if documents:
+                                    doc_info = []
+                                    doc_info.append("These are the relevant documents for this scenario:")
+                                    for doc in documents:
+                                        if doc.title and doc.content:
+                                            doc_info.append(f"Document: {doc.title}")
+                                            doc_info.append(f"Content: {doc.content}")
+                                            doc_info.append("")  # Empty line for separation
+                                    
+                                    if doc_info:
+                                        instructions_parts.append("\n".join(doc_info))
+                                        logger.info(f"Added {len(documents)} documents to instructions")
+                                else:
+                                    logger.info("No documents found or documents have no title/content")
+                            except Exception as e:
+                                logger.warning(f"Failed to fetch documents for scenario {scenario.id}: {e}")
+                        else:
+                            logger.info(f"No scenario or document_ids found. Scenario: {scenario is not None}, document_ids: {scenario.document_ids if scenario else None}")
+                        
+                        # 4. Add formatted conversation history if available
                         if formatted_history:
                             instructions_parts.append(f"Conversation history:\n{formatted_history}")
                         
                         # Join all parts with double newlines for clarity
                         final_instructions = "\n\n".join(instructions_parts) if instructions_parts else "Be helpful and respond to the user's messages."
+                        
+                        # Log the final instructions for debugging
+                        logger.info(f"Final instructions for persona {persona.name}: {final_instructions[:200]}...")
                         
                         agent = {
                             "id": f"{prefix}:{persona.name}",

@@ -34,6 +34,19 @@ Example of INCORRECT prompt:
 "You are user1, John Doe, the supervisor of Jane Smith..."
 ```
 
+## 🎯 CRITICAL ROLE ASSIGNMENT RULES
+
+**The user persona is ALWAYS the one practicing the skill being trained:**
+
+- **Feedback scenarios**: User = manager/supervisor giving feedback, Agent = employee receiving feedback
+- **Interview scenarios**: User = candidate being interviewed, Agent = interviewer  
+- **Apology scenarios**: User = person delivering apology, Agent = person receiving apology
+- **Pitching scenarios**: User = person giving pitch, Agent = audience receiving pitch
+- **Termination scenarios**: User = manager conducting termination, Agent = employee being terminated
+- **Performance review scenarios**: User = manager conducting review, Agent = employee being reviewed
+
+**Remember**: The user is the one who needs to practice and improve their skills!
+
 ---
 
 ### Available Tools
@@ -89,8 +102,14 @@ You have access to the following tools to generate the scenario:
   *For interviews:* Focus on what the candidate should demonstrate or communicate to show they meet role requirements (without disclosing cheating info). Include quantifiable expectations.
 
 **Use the persona prompt tools to create:**
-* **User Persona Prompts:** Define how user personas (candidates/trainees) should behave in the conversation. **IMPORTANT**: The user persona is ALWAYS the one practicing the skill (e.g., delivering the apology, receiving feedback, etc.)
-* **Agent Persona Prompts:** Define how agent personas (trainers/coaches/supervisors) should behave in the conversation. **IMPORTANT**: The agent persona is ALWAYS the one the user is practicing with (e.g., receiving the apology, giving feedback, etc.)
+* **User Persona Prompts:** Define how user personas (candidates/trainees) should behave in the conversation. **IMPORTANT**: The user persona is ALWAYS the one practicing the skill being trained (e.g., delivering feedback, giving apologies, conducting interviews, etc.)
+* **Agent Persona Prompts:** Define how agent personas (trainers/coaches/supervisors) should behave in the conversation. **IMPORTANT**: The agent persona is ALWAYS the one the user is practicing with (e.g., receiving feedback, being apologized to, being interviewed, etc.)
+
+**CRITICAL ROLE CLARIFICATION:**
+- For **feedback scenarios**: User = manager giving feedback, Agent = employee receiving feedback
+- For **interview scenarios**: User = candidate being interviewed, Agent = interviewer
+- For **apology scenarios**: User = person delivering apology, Agent = person receiving apology
+- For **pitching scenarios**: User = person giving pitch, Agent = audience receiving pitch
 
 **Use ALL available document generation tools:**
 * **Look for ANY tool ending in `_doc`** - these are all document generation tools that MUST be called
@@ -168,21 +187,21 @@ You must call these tools to complete the scenario generation:
 **Tool Calls:**
 
 1. `generate_scenario`:
-   - `title`: "Taylor's Year-End Performance Review on Project Delivery"
-   - `problem_statement`: "Taylor delivered 8 of 12 assigned projects this year (67%), but two high-priority projects were delayed over three weeks. Client satisfaction also fell 15% compared to last year. The supervisor has scheduled a review to address performance gaps and set targets for the next year."
+   - `title`: "Sarah Conducts Year-End Performance Review with Taylor"
+   - `problem_statement`: "Taylor delivered 8 of 12 assigned projects this year (67%), but two high-priority projects were delayed over three weeks. Client satisfaction also fell 15% compared to last year. Sarah, as the supervisor, must conduct a performance review to address these gaps and set targets for the next year."
 
 2. `generate_objectives`:
    - `objectives`: [
-     "Analyze causes of missed deadlines",
-     "Plan to raise on-time delivery to 90% next year",
-     "Commit to improving client satisfaction scores by 20%"
+     "Address performance gaps with specific data and examples",
+     "Set clear, measurable goals for the next year",
+     "Create a supportive environment for improvement and growth"
    ]
 
 3. `create_user1_prompt`:
-   - `prompt`: "You are user1, an employee receiving a year-end performance review. You've had some challenges with project delivery this year. Be honest about the issues, show accountability, and demonstrate commitment to improvement."
+   - `prompt`: "You are user1, a supervisor conducting a year-end performance review with a team member who has had some challenges with project delivery. Focus on addressing performance gaps constructively, setting clear goals for next year, and maintaining a supportive but firm tone."
 
 4. `create_agent1_prompt`:
-   - `prompt`: "You are agent1, user1's supervisor conducting a year-end performance review. Focus on addressing performance gaps constructively, setting clear goals for next year, and maintaining a supportive but firm tone."
+   - `prompt`: "You are agent1, an employee receiving a year-end performance review. You've had some challenges with project delivery this year. Be honest about the issues, show accountability, and demonstrate commitment to improvement."
 
 5. `perf_review_doc` (REQUIRED - this tool ends in `_doc`):
    - `doc_name`: "Taylor Johnson Q4 2024 Performance Review"
@@ -206,8 +225,8 @@ You must call these tools to complete the scenario generation:
 **Tool Calls:**
 
 1. `generate_scenario`:
-   - `title`: "Morgan's Exit Discussion Following Performance Declines"
-   - `problem_statement`: "Over 12 months, Morgan missed 9 of 15 key deadlines and averaged an 18% error rate, more than triple the 5% benchmark. Two improvement plans failed, and client complaints rose 25%. The supervisor must now conduct a respectful termination conversation aligned with company policy."
+   - `title`: "Alex Conducts Termination Discussion with Morgan"
+   - `problem_statement`: "Over 12 months, Morgan missed 9 of 15 key deadlines and averaged an 18% error rate, more than triple the 5% benchmark. Two improvement plans failed, and client complaints rose 25%. Alex, as the supervisor, must conduct a respectful termination conversation aligned with company policy."
 
 2. `generate_objectives`:
    - `objectives`: [
@@ -217,10 +236,10 @@ You must call these tools to complete the scenario generation:
    ]
 
 3. `create_user1_prompt`:
-   - `prompt`: "You are user1, an employee being terminated due to performance issues. You're disappointed but understand the decision. Be respectful, ask questions about next steps, and maintain professionalism."
+   - `prompt`: "You are user1, a supervisor conducting a termination conversation with an employee due to performance issues. Be respectful but firm, provide clear documentation of performance issues, and ensure all company policies are followed."
 
 4. `create_agent1_prompt`:
-   - `prompt`: "You are agent1, user1's supervisor conducting a termination conversation. Be respectful but firm, provide clear documentation of performance issues, and ensure all company policies are followed."
+   - `prompt`: "You are agent1, an employee being terminated due to performance issues. You're disappointed but understand the decision. Be respectful, ask questions about next steps, and maintain professionalism."
 
 5. `incident_report_doc` (REQUIRED - this tool ends in `_doc`):
    - `doc_name`: "Morgan Davis Performance Termination Report"
@@ -243,21 +262,21 @@ You must call these tools to complete the scenario generation:
 **Tool Calls:**
 
 1. `generate_scenario`:
-   - `title`: "Riley Receives Feedback on Presentation Skills in Quarterly Review"
-   - `problem_statement`: "This quarter, Riley's presentations averaged a 3.2/5 satisfaction score, below the team's 4.4 average. Client feedback noted jargon-heavy explanations and limited engagement, contributing to two lost renewals. The supervisor has arranged a session to address communication effectiveness."
+   - `title`: "Jordan Delivers Constructive Feedback on Presentation Skills"
+   - `problem_statement`: "This quarter, team member Riley's presentations averaged a 3.2/5 satisfaction score, below the team's 4.4 average. Client feedback noted jargon-heavy explanations and limited engagement, contributing to two lost renewals. Jordan, as the supervisor, must deliver constructive feedback to address communication effectiveness and help Riley improve."
 
 2. `generate_objectives`:
    - `objectives`: [
-     "Review and discuss client survey feedback",
-     "Adopt client-friendly language in all Q3 presentations",
-     "Set a target to raise satisfaction scores to 4.5 by year-end"
+     "Deliver specific, actionable feedback about presentation skills",
+     "Create a supportive environment for improvement and growth",
+     "Establish clear expectations and measurable goals for improvement"
    ]
 
 3. `create_user1_prompt`:
-   - `prompt`: "You are user1, an employee receiving constructive feedback on presentation skills. You want to improve and are open to feedback. Ask questions about specific improvements and show commitment to change."
+   - `prompt`: "You are user1, a supervisor delivering constructive feedback to a team member about presentation skills. You want to help them improve while being supportive and specific. Focus on providing actionable suggestions and creating a positive environment for growth."
 
 4. `create_agent1_prompt`:
-   - `prompt`: "You are agent1, user1's supervisor providing constructive feedback on presentation skills. Be supportive but specific about areas for improvement, provide actionable suggestions, and set clear expectations for improvement."
+   - `prompt`: "You are agent1, a team member receiving constructive feedback on presentation skills. You want to improve and are open to feedback. Ask questions about specific improvements and show commitment to change."
 
 5. `perf_review_doc` (REQUIRED - this tool ends in `_doc`):
    - `doc_name`: "Riley Communication Skills Quarterly Review"
