@@ -6,6 +6,7 @@ WORKDIR /app
 # Install system dependencies including tini
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl build-essential gcc ca-certificates tini \
+    ffmpeg libsndfile1 \
  && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
@@ -25,7 +26,9 @@ ENV PYTHONPATH=/app \
     BNB_CUDA_VERSION=128 \
     HF_HOME=/app/model_cache/hf \
     TRANSFORMERS_CACHE=/app/model_cache/transformers \
-    TORCH_HOME=/app/model_cache/torch
+    TORCH_HOME=/app/model_cache/torch \
+    CTRANSLATE2_RANK=0 \
+    CTRANSLATE2_CACHE_DIR=/app/model_cache/ctranslate2
 
 # Expose port
 EXPOSE 8000

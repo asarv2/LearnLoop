@@ -1,0 +1,163 @@
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies including tini
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl build-essential gcc ca-certificates tini \
+    ffmpeg libsndfile1 \
+ && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -U pip setuptools wheel packaging ninja einops && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+
+# Copy application code
+COPY app/ ./app/
+
+# Runtime dirs (will be bind-mounted)
+RUN mkdir -p /app/model_cache
+
+# Keep HF caches inside the mounted model_cache
+ENV PYTHONPATH=/app \
+    BNB_CUDA_VERSION=128 \
+    HF_HOME=/app/model_cache/hf \
+    TRANSFORMERS_CACHE=/app/model_cache/transformers \
+    TORCH_HOME=/app/model_cache/torch \
+    CTRANSLATE2_RANK=0 \
+    CTRANSLATE2_CACHE_DIR=/app/model_cache/ctranslate2
+
+# Expose port
+EXPOSE 8000
+
+# Healthcheck (same)
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+ENTRYPOINT ["/usr/bin/tini","--"]
+# GPU services: keep a single worker to avoid double-allocating VRAM
+CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000","--workers","1"]# LearnLoop Model Service
+
+A centralized FastAPI service for running ML models, specifically focused on CTC transcription and audio processing.
+
+## Features
+
+- **CTC Transcription**: Audio-text alignment using Wav2Vec2 and CTC segmentation
+- **Whisper Transcription**: Audio transcription using Faster-Whisper
+- **FastAPI Server**: RESTful API endpoints for model inference
+- **Docker Support**: Containerized deployment with PyTorch base image
+- **Health Monitoring**: Model status and health check endpoints
+
+## API Endpoints
+
+- `GET /` - Service information
+- `GET /health` - Health check and model status
+- `POST /transcribe` - Transcribe audio (with optional reference text)
+- `POST /align` - Align audio with reference text using CTC
+- `GET /docs` - Interactive API documentation
+
+## Installation
+
+### Local Development (CPU)
+
+```bash
+pip install -e ".[local]"
+```
+
+### Production (GPU)
+
+```bash
+pip install -e ".[prod]"
+```
+
+## Running the Service
+
+### Local Development
+
+```bash
+python -m app.main
+```
+
+### Docker
+
+```bash
+docker build -t learnloop-model-service .
+docker run -p 8000:8000 learnloop-model-service
+```
+
+## Environment Variables
+
+- `PORT`: Server port (default: 8000)
+- `HOST`: Server host (default: 0.0.0.0)
+- `WHISPER_DEVICE`: Device for Whisper model (cpu/cuda, default: auto)
+
+## Usage Examples
+
+### Transcribe Audio
+
+```bash
+curl -X POST "http://localhost:8000/transcribe" \
+  -F "audio_file=@audio.wav"
+```
+
+### Align Audio with Reference Text
+
+```bash
+curl -X POST "http://localhost:8000/align" \
+  -F "audio_file=@audio.wav" \
+  -F "reference_text=Hello world this is a test"
+```
+
+### Health Check
+
+```bash
+curl "http://localhost:8000/health"
+```
+
+## Models
+
+- **Wav2Vec2**: `facebook/wav2vec2-base-960h` for CTC alignment
+- **Whisper**: `tiny` model via Faster-Whisper for transcription
+
+## Development
+
+```bash
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Format code
+ruff format .
+
+# Lint code
+ruff check .
+```
+fastapi>=0.111.0,<0.112.0
+uvicorn[standard]>=0.29.0,<0.30.0
+gunicorn>=22.0.0,<23.0.0
+
+# Data
+numpy>=1.26.4,<2.0.0
+soundfile>=0.12.1,<1.0.0
+librosa>=0.10.1,<1.0.0
+
+# ML stack
+transformers>=4.51.0
+peft>=0.15.2
+accelerate>=1.8.0
+bitsandbytes>=0.43.1
+ctc-segmentation>=1.7.0,<2.0.0
+faster-whisper>=1.0.0,<2.0.0
+kokoro>=0.9.4,<1.0.0
+spacy>=3.8.0,<4.0.0
+silero-vad>=6.0.0
+
+# Utils
+python-dotenv>=1.0.1,<1.1.0
+httpx>=0.27.0,<0.28.0
+orjson>=3.9.7,<4.0.0

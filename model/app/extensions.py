@@ -175,3 +175,23 @@ def warm_all_models() -> None:
         get_kokoro_pipeline("a")
     except Exception:
         pass
+    try:
+        # Warm up faster-whisper streamer
+        warm_faster_whisper_streamer()
+    except Exception:
+        pass
+
+
+def warm_faster_whisper_streamer() -> None:
+    """Warm up the faster-whisper streamer for WebSocket endpoint."""
+    try:
+        from .routers.stream_ws import streamer
+        
+        logger.info("Warming up faster-whisper streamer...")
+        silence = (np.zeros(16000, dtype=np.int16)).tobytes()
+        for _ in range(50):  # ~1s
+            streamer.feed_pcm16(silence)
+        streamer.poll()
+        logger.info("Streamer warmup complete")
+    except Exception as e:
+        logger.warning(f"Streamer warmup failed: {e}")

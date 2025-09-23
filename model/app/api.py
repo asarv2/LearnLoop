@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import logging
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Any, AsyncIterator, Optional
 
 import numpy as np
 import soundfile as sf  # type: ignore
@@ -13,15 +14,30 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from . import extensions  # type: ignore
+from .routers import stream_ws  # type: ignore
 from .transcripts import Transcript, align_audio  # type: ignore
 
 logger = logging.getLogger("model_service")
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
+    async with contextlib.AsyncExitStack() as stack:
+        # Startup: warm up all models
+        logger.info("Starting up model service...")
+        extensions.warm_all_models()
+        logger.info("Model service startup complete")
+        
+        yield
+        
+        # Shutdown: cleanup if needed
+        # Models will be cleaned up automatically when the process exits
 
 # Create FastAPI app
 app = FastAPI(
     title="LearnLoop Model Service",
     description="CTC Transcription and Audio Processing API",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Add CORS middleware
@@ -32,6 +48,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include streaming routers
+app.include_router(stream_ws.router)
 
 
 class TranscriptResponse(BaseModel):
@@ -65,12 +84,6 @@ class TTSResponse(BaseModel):
     duration_ms: int
 
 
-@app.on_event("startup")
-async def startup_event() -> None:
-    """Warm up models on startup."""
-    logger.info("Starting up model service...")
-    extensions.warm_all_models()
-    logger.info("Model service startup complete")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -82,12 +95,21 @@ async def health_check() -> HealthResponse:
         whisper_model = extensions.get_whisper_tiny("auto")
         kokoro_model = extensions.get_kokoro_pipeline("a")
         
+        # Check if streamer is available
+        streamer_available = False
+        try:
+            from .routers.stream_ws import streamer
+            streamer_available = streamer is not None
+        except Exception:
+            pass
+        
         return HealthResponse(
             status="healthy",
             models_loaded={
                 "wav2vec2": wav2vec2_processor is not None and wav2vec2_model is not None,
                 "whisper": whisper_model is not None,
                 "kokoro": kokoro_model is not None,
+                "streamer": streamer_available,
             }
         )
     except Exception as e:
@@ -279,6 +301,7 @@ async def root() -> dict[str, str | dict[str, str]]:
             "transcribe": "/transcribe",
             "align": "/align",
             "synthesize": "/synthesize",
+            "stream": "/ws/stream",
             "docs": "/docs"
         }
     }
