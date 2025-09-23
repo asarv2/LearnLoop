@@ -196,10 +196,10 @@ class Room:
 
     def _ensure_ts_manager(self) -> None:
         if self._ts_manager is None:
-            # Agents stream, users finalize-only by default
+            # Users stream via faster-whisper; agents do NOT stream (agents handle CTC themselves)
             self._ts_manager = TimestampListenerManager(
                 room=self,
-                streaming_enabled_for_agents=True,
+                streaming_enabled_for_agents=False,
                 streaming_enabled_for_users=True,
                 language="auto",
             )
