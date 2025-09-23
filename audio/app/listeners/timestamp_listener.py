@@ -64,6 +64,9 @@ class WhisperStreamingBackend(StreamingASRBackend):
         self._finalized_words: list[Word] = []
         self._model_service_url = None
         self._connected = False
+        # High-quality utterance pass captured on VAD stop from model service
+        self._final_pass_text: Optional[str] = None
+        self._final_pass_words: list[Word] = []
         # VAD event counters (edge-triggered consumption)
         self._speech_started_count = 0
         self._speech_stopped_count = 0
@@ -101,8 +104,13 @@ class WhisperStreamingBackend(StreamingASRBackend):
                 @self._sio_client.event
                 async def partial_result(data: Dict[str, Any]) -> None:
                     """Handle partial transcription results."""
-                    # Could be used for real-time display
-                    pass
+                    try:
+                        # Treat partial text as the current accumulated hypothesis
+                        txt = str(data.get("text") or "")
+                        if txt:
+                            self._accumulated_text = txt
+                    except Exception:
+                        pass
                 
                 @self._sio_client.event
                 async def final_result(data: Dict[str, Any]) -> None:
@@ -116,6 +124,28 @@ class WhisperStreamingBackend(StreamingASRBackend):
                                 start_ms=int(w["start"] * 1000),
                                 end_ms=int(w["end"] * 1000)
                             ))
+
+                # Utterance-level final (high-quality) emitted by model service after VAD stop
+                @self._sio_client.event
+                async def utterance_final(data: Dict[str, Any]) -> None:
+                    try:
+                        txt = str(data.get("text") or "")
+                        words_raw = data.get("words") or []
+                        self._final_pass_text = txt
+                        self._final_pass_words = []
+                        for w in words_raw:
+                            self._final_pass_words.append(Word(
+                                text=str(w.get("text", "")),
+                                start_ms=int(w.get("start_ms", 0)),
+                                end_ms=int(w.get("end_ms", 0)),
+                            ))
+                        # Replace accumulated text/words with final pass for consumers
+                        if txt:
+                            self._accumulated_text = txt
+                        if self._final_pass_words:
+                            self._finalized_words = list(self._final_pass_words)
+                    except Exception:
+                        pass
 
                 # VAD start/stop events from model service
                 @self._sio_client.event
@@ -136,6 +166,38 @@ class WhisperStreamingBackend(StreamingASRBackend):
                 return False
         return self._connected
 
+    async def await_final_utterance(self, timeout_s: float = 0.35) -> None:
+        """Push a short burst of silence and wait briefly for utterance_final to arrive.
+
+        This helps the model service VAD detect the end-of-speech when the upstream
+        stops sending frames abruptly. Best-effort only; safe to call anytime.
+        """
+        if not self._ok:
+            return
+        try:
+            ok = await self._ensure_sio_connection()
+            if not ok or not self._sio_client:
+                return
+            import numpy as _np
+
+            # Send ~3 frames of 20ms silence at 16kHz to advance VAD
+            samples_per_frame = int(16000 * 0.02)
+            zero = _np.zeros(samples_per_frame, dtype=_np.int16).tobytes()
+            for _ in range(3):
+                try:
+                    await self._sio_client.emit("audio_data", zero)
+                except Exception:
+                    break
+            # Wait up to timeout for utterance_final
+            import time as _time
+            start = _time.time()
+            while (_time.time() - start) < float(timeout_s):
+                if (self._final_pass_text and self._final_pass_text.strip()) or (len(self._final_pass_words) > 0):
+                    break
+                await asyncio.sleep(0.02)
+        except Exception:
+            pass
+
     def reset(self) -> None:
         if self._ok:
             try:
@@ -144,6 +206,8 @@ class WhisperStreamingBackend(StreamingASRBackend):
                 self._finalized_words.clear()
                 self._speech_started_count = 0
                 self._speech_stopped_count = 0
+                self._final_pass_text = None
+                self._final_pass_words = []
                 # Disconnect Socket.IO client
                 if self._connected and self._sio_client:
                     asyncio.create_task(self._sio_client.disconnect())
@@ -190,6 +254,9 @@ class WhisperStreamingBackend(StreamingASRBackend):
             if self._connected and self._sio_client:
                 asyncio.create_task(self._sio_client.disconnect())
                 self._connected = False
+            # Prefer utterance-level final pass if available
+            if (self._final_pass_text and self._final_pass_text.strip()) or self._final_pass_words:
+                return self._final_pass_text or self._accumulated_text, (self._final_pass_words or self._finalized_words)
             return self._accumulated_text, self._finalized_words
         except Exception:
             return "", []
@@ -437,19 +504,38 @@ class TimestampListenerManager:
             st.last_emit_ms = 0.0
             st.last_words_len = 0
             # Explicitly finish and disconnect streaming backend so Whisper doesn't continue post-utterance
+            backend_text: str = ""
+            backend_words: list[Word] = []
             try:
                 if st.backend is not None:
-                    _ = st.backend.finish()
+                    # Give the model service a moment to emit utterance_final and capture it
+                    try:
+                        await getattr(st.backend, "await_final_utterance")(0.4)  # type: ignore[misc]
+                    except Exception:
+                        pass
+                    try:
+                        backend_text, backend_words = st.backend.finish()
+                    except Exception:
+                        backend_text, backend_words = "", []
                     # drop the backend instance after finishing to force fresh init next turn
                     st.backend = None
             except Exception:
-                pass
+                backend_text, backend_words = "", []
             if (st.is_agent and self._stream_agents) or ((not st.is_agent) and self._stream_users):
                 # We already streamed partials; still realign for higher quality if we have text
                 pass
+            # Prefer backend utterance-final text when available; else use streamed accumulation
+            authoritative_text = None
+            try:
+                if backend_text and backend_text.strip():
+                    authoritative_text = backend_text.strip()
+                elif final_text and final_text.strip():
+                    authoritative_text = final_text.strip()
+            except Exception:
+                authoritative_text = final_text
             # If we have some text, run CTC realignment; else skip
-            if final_text:
-                tr: Transcript = await align_via_model_service(audio, PCM_SR, final_text, stage="final")
+            if authoritative_text:
+                tr: Transcript = await align_via_model_service(audio, PCM_SR, authoritative_text, stage="final")
                 # IMPORTANT: Keep word times RELATIVE; client combines with start_ts_ms.
                 words = [
                     {"start_ms": int(w.start_ms), "end_ms": int(w.end_ms), "text": w.text}
@@ -461,9 +547,49 @@ class TimestampListenerManager:
                         message_id=st.message_id,
                         start_ts_ms=st.start_ts_ms,
                         words=words,
-                        full_text=tr.text or final_text,
+                        full_text=tr.text or authoritative_text,
                     )
                 else:
+                    # Ensure a user message exists even if no streaming deltas were emitted
+                    if (not st.message_id) and (tr.text or authoritative_text):
+                        try:
+                            st.message_id = await self._room.append_text_chunk(
+                                source_id=st.source_id,
+                                role="user",
+                                text=(tr.text or authoritative_text),
+                                message_id=None,
+                                chunk_idx=0,
+                                is_final=False,
+                            )
+                            st.partial_text = tr.text or authoritative_text
+                            st.partial_chunk_idx = 1
+                        except Exception:
+                            pass
+                    else:
+                        # If a message already exists, append only the delta needed to reach the authoritative text
+                        try:
+                            existing = st.partial_text or ""
+                            target = (tr.text or authoritative_text) or ""
+                            if target and (target != existing):
+                                # Append the minimal suffix (longest common prefix heuristic)
+                                i = 0
+                                n = min(len(existing), len(target))
+                                while i < n and existing[i] == target[i]:
+                                    i += 1
+                                delta = target[i:]
+                                if delta:
+                                    await self._room.append_text_chunk(
+                                        source_id=st.source_id,
+                                        role="user",
+                                        text=delta,
+                                        message_id=st.message_id,
+                                        chunk_idx=st.partial_chunk_idx,
+                                        is_final=False,
+                                    )
+                                    st.partial_chunk_idx += 1
+                                    st.partial_text = target
+                        except Exception:
+                            pass
                     # Emit final, aligned user transcript for persistence and UI, then finalize the text message
                     try:
                         await self._room.broadcast_transcript(
@@ -471,7 +597,7 @@ class TimestampListenerManager:
                             message_id=st.message_id,
                             start_ts_ms=st.start_ts_ms,
                             words=words,
-                            full_text=tr.text or final_text,
+                            full_text=tr.text or authoritative_text,
                         )
                     except Exception:
                         pass
