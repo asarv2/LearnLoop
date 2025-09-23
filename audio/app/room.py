@@ -17,6 +17,7 @@ from .agents.beep import BeepAgent
 from .agents.openai import OpenAIAgent
 from .bus import PCM_SR, SAMPLES_PER_CHUNK, AudioBus
 from .extensions import AUDIO_DIR
+from .listeners.timestamp_listener import TimestampListenerManager
 # Removed specific room imports - now using generic room creation from rooms.json
 from .store import create_room
 from .store import get_room as _get_room
@@ -116,6 +117,9 @@ class Room:
     # For dynamic config path: map user profile_id -> pseudo agent id
     _pseudo_user_by_profile_id: Dict[str, str] = field(default_factory=dict)
 
+    # timestamp listener manager (per-source whisper streaming + final CTC)
+    _ts_manager: Optional[TimestampListenerManager] = None
+
     def register_agent(self, agent_id: str, description: str = "") -> None:
         self.agent_meta[agent_id] = ("human" if description == "human" else "agent")
         self.agent_weights.setdefault(agent_id, 1.0)
@@ -189,6 +193,28 @@ class Room:
     def start_monitor(self) -> None:
         if self._monitor_task is None or self._monitor_task.done():
             self._monitor_task = asyncio.create_task(self._monitor_loop())
+
+    def _ensure_ts_manager(self) -> None:
+        if self._ts_manager is None:
+            # Agents stream, users finalize-only by default
+            self._ts_manager = TimestampListenerManager(
+                room=self,
+                streaming_enabled_for_agents=True,
+                streaming_enabled_for_users=True,
+                language="auto",
+            )
+            # tap all sources on the bus
+            try:
+                from .bus import \
+                    AudioChunk as _BusAudioChunk  # local import for typing
+                async def _tap(chunk: _BusAudioChunk) -> None:
+                    mgr = self._ts_manager
+                    if mgr is None:
+                        return
+                    await mgr.on_chunk(chunk)  # type: ignore[arg-type]
+                self.bus.add_source_tap("*", _tap)  # type: ignore[arg-type]
+            except Exception:
+                pass
 
     async def _monitor_loop(self) -> None:
         HUMAN_GRACE = 0.35  # seconds after last user frame still considered "speaking"
@@ -314,6 +340,13 @@ class Room:
         }
         if self.on_text_chunk:
             await self.on_text_chunk(payload)
+        # feed timestamp manager with message_id/text association
+        try:
+            self._ensure_ts_manager()
+            if self._ts_manager:
+                await self._ts_manager.on_text_chunk(payload)
+        except Exception:
+            pass
         if self.on_agent_message and role == "agent":
             await self.on_agent_message(self.id, msg.id)
         if self.on_full_chat and is_final:

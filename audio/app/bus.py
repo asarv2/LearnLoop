@@ -83,6 +83,10 @@ class AudioBus:
         self._last_human_speaker: Optional[str] = None
         self._last_human_ts: float = 0.0
 
+        # per-source tap callbacks: source_id -> list[callback]
+        # special key "*" registers for all sources
+        self._source_taps: Dict[str, list[Callable[[AudioChunk], Awaitable[None]]]] = {}
+
     def set_ignore(self, subscriber_id: str, sources: set[str]) -> None:
         self._ignore[subscriber_id] = set(sources)
 
@@ -103,6 +107,23 @@ class AudioBus:
 
     def set_speaker_change_hook(self, hook: Optional[SpeakerChangeHook]) -> None:
         self._speaker_change_hook = hook
+
+    # --- Source taps API (for per-speaker listeners) ---
+    def add_source_tap(self, source_id: str, cb: Callable[[AudioChunk], Awaitable[None]]) -> None:
+        key = source_id if source_id else "*"
+        self._source_taps.setdefault(key, []).append(cb)
+
+    def remove_source_tap(self, source_id: str, cb: Callable[[AudioChunk], Awaitable[None]]) -> None:
+        key = source_id if source_id else "*"
+        lst = self._source_taps.get(key)
+        if not lst:
+            return
+        try:
+            lst.remove(cb)
+        except ValueError:
+            pass
+        if not lst:
+            self._source_taps.pop(key, None)
 
     async def interrupt(self) -> None:
         # Clear all subscriber queues and mark interrupted so mixer inserts silence until reset
@@ -172,17 +193,32 @@ class AudioBus:
         rms = float(np.sqrt(np.mean(data * data))) if data.size else 0.0
         async with self._lock:
             self._seq += 1
-            self._latest[source_id] = AudioChunk(
+            chunk = AudioChunk(
                 data=data,
                 sr=sr,
                 source_id=source_id,
                 seq=self._seq,
                 meta={"rms": rms, "ts": time.time()},
             )
+            self._latest[source_id] = chunk
         # write to per-message segment if one is active
         try:
             if self.recorder and source_id != "agent:beep":
                 await self.recorder.write_source_float(source_id, data)
+        except Exception:
+            pass
+        # fan-out to source taps (wildcard first, then specific)
+        try:
+            for cb in list(self._source_taps.get("*", [])):
+                try:
+                    await cb(chunk)
+                except Exception:
+                    pass
+            for cb in list(self._source_taps.get(source_id, [])):
+                try:
+                    await cb(chunk)
+                except Exception:
+                    pass
         except Exception:
             pass
 
