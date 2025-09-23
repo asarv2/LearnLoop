@@ -603,18 +603,10 @@ async def handle_training_message_rtc(sid: str, data: Dict[str, Any]) -> None:
                 except Exception:
                     pass
 
-        # Use room system with store function
-        from app.store import upsert_text_chunk
-        await upsert_text_chunk(
-            room_id=str(chat_id),
-            source_id=sid,     # or profile id
-            role="user",
-            text=message,
-            message_id=None,
-            chunk_idx=0,
-            is_final=True,
-            persona_id=persona_id,
-        )
+        # Avoid double-creating the user message: let the audio service create and finalize
+        # the user message (including transcripts) so a single message id is used end-to-end.
+        # If we need persona tagging for user messages later, we can thread it through the
+        # audio pipeline explicitly.
 
         # Trigger audio service TTS + streaming of user's typed text into the room bus
         try:

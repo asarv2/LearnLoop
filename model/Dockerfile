@@ -28,12 +28,13 @@ RUN pip install --no-cache-dir -U pip setuptools wheel packaging ninja einops &&
     pip install --no-cache-dir https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
 
 # Comprehensive sanity check for cuDNN 9 split libs
-RUN ldconfig -p | grep -E 'libcudnn_(ops|cnn|adv|cnh|cnn_infer|ops_infer|cnn_train)\.so\.9' || true
+RUN ldconfig -p | grep -E 'libcudnn_(ops|cnn|adv)\.so\.9' || true
 RUN python - <<'PY'
 import ctypes
-ctypes.CDLL('libcudnn_ops_infer.so.9')
+ctypes.CDLL('libcudnn_ops.so.9')
 ctypes.CDLL('libcudnn_cnn.so.9')
-print("cuDNN split libs resolved ✓")
+ctypes.CDLL('libcudnn_adv.so.9')
+print("cuDNN 9 split libs resolved ✓")
 PY
 
 # Copy application code
