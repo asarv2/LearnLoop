@@ -55,6 +55,8 @@ async def audio_data(sid: str, data: bytes) -> None:
         streamer.feed_pcm16(data)
         
         # Poll for results
+        print(f"DEBUG: streamer type: {type(streamer)}")
+        print(f"DEBUG: streamer.poll type: {type(streamer.poll)}")
         partial, finals = streamer.poll()
         if partial:
             await sio.emit("partial_result", {"text": partial}, room=sid)
@@ -69,6 +71,8 @@ async def audio_data(sid: str, data: bytes) -> None:
             await sio.emit("final_result", payload, room=sid)
     except Exception as e:
         print(f"Error processing audio data: {e}")
+        import traceback
+        traceback.print_exc()
 
 @router.websocket("/ws/whisper")
 async def ws_whisper(ws: WebSocket) -> None:
