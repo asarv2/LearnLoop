@@ -280,10 +280,14 @@ jobs:
           # 0) Ensure these persistent dirs exist
           mkdir -p "$DEST/web/generated" "$DEST/prompts" "$DEST/templates" "$DEST/files"
           mkdir -p "$DEST/recordings"
+          
+          # Match container users so entrypoints can seed/copy:
+          chown -R 1001:1001 "$DEST/prompts"    || true   # server appuser
+          chown -R 10001:10001 "$DEST/templates" || true  # documents appuser
 
           # 1) Seed missing files ONLY (won't overwrite or delete)
-          [ -d ./prompts ]   && rsync -a --ignore-existing ./prompts/   "$DEST/prompts"/   || true
-          [ -d ./templates ] && rsync -a --ignore-existing ./templates/ "$DEST/templates"/ || true
+          [ -d ./server/prompts ]     && rsync -a --ignore-existing ./server/prompts/         "$DEST/prompts"/     || true
+          [ -d ./documents/templates ] && rsync -a --ignore-existing ./documents/templates/   "$DEST/templates"/   || true
 
           # 2) Write rsync filter: protect persistent/generated artifacts; exclude junk
           cat > .rsync-filter <<'EOF'

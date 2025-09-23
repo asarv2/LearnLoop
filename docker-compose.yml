@@ -74,7 +74,7 @@ services:
       - SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
 
     volumes:
-      - ./prompts:/app/prompts
+      - ./server/prompts:/app/prompts
     depends_on:
       redis:
         condition: service_started
@@ -129,7 +129,7 @@ services:
       - PORT=8000
       - HOST=0.0.0.0
     volumes:
-      - ./templates:/app/templates
+      - ./documents/templates:/app/templates
       - ./files:/app/files
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
