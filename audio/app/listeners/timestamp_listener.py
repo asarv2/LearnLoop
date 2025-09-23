@@ -308,10 +308,12 @@ class TimestampListenerManager:
                             tokens = [w.text for w in words] if words else txt.split()
                             n = max(1, len(tokens))
                             per = max(1, dur_ms // n)
+                            # IMPORTANT: Emit word times RELATIVE to utterance start.
+                            # The client uses start_ts_ms separately and expects word times to be relative.
                             st.cumulative_words = [
                                 {
-                                    "start_ms": st.start_ts_ms + i * per,
-                                    "end_ms": st.start_ts_ms + (dur_ms if i == n - 1 else (i + 1) * per),
+                                    "start_ms": i * per,
+                                    "end_ms": (dur_ms if i == n - 1 else (i + 1) * per),
                                     "text": tokens[i],
                                 }
                                 for i in range(n)
@@ -369,8 +371,9 @@ class TimestampListenerManager:
             # If we have some text, run CTC realignment; else skip
             if final_text:
                 tr: Transcript = await align_via_model_service(audio, PCM_SR, final_text, stage="final")
+                # IMPORTANT: Keep word times RELATIVE; client combines with start_ts_ms.
                 words = [
-                    {"start_ms": st.start_ts_ms + int(w.start_ms), "end_ms": st.start_ts_ms + int(w.end_ms), "text": w.text}
+                    {"start_ms": int(w.start_ms), "end_ms": int(w.end_ms), "text": w.text}
                     for w in tr.words
                 ]
                 if st.is_agent:
