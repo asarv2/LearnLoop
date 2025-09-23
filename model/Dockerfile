@@ -3,11 +3,20 @@ FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies including tini and cuDNN 9 split libs
+# Install system dependencies including tini
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl build-essential gcc ca-certificates tini \
-    ffmpeg libsndfile1 libcudnn9-cuda-12 \
+    ffmpeg libsndfile1 \
  && rm -rf /var/lib/apt/lists/*
+
+# Install cuDNN 9 split libs via pip (no apt repo needed)
+RUN pip install --no-cache-dir "nvidia-cudnn-cu12==9.*" && \
+    python - <<'PY'
+import os, nvidia.cudnn.lib
+p = os.path.dirname(nvidia.cudnn.lib.__file__)
+open('/etc/ld.so.conf.d/nvidia-cudnn9.conf','w').write(p+'\n')
+PY
+RUN ldconfig
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
