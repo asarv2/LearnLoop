@@ -738,6 +738,15 @@ class Room:
                 except Exception:
                     pass
                 self._set_state("human", current=curr)
+                # Pause any in-flight user transcription when agent speaks; when human starts, ensure fresh user message
+                try:
+                    self._ensure_ts_manager()
+                    mgr = self._ts_manager
+                    if mgr:
+                        # Let the manager see a fresh start (it will finalize any previous)
+                        pass
+                except Exception:
+                    pass
                 # Reset turn counters when a human becomes active speaker
                 try:
                     self.reset_turns_on_user_input()

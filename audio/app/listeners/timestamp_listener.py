@@ -82,6 +82,13 @@ class WhisperStreamingBackend(StreamingASRBackend):
             print(f"Failed to initialize whisper streaming backend: {e}")
             self._ok = False
 
+    async def ensure_connected(self) -> bool:
+        """Public helper to ensure connection; wraps private method for external callers."""
+        try:
+            return await self._ensure_sio_connection()
+        except Exception:
+            return False
+
     async def _ensure_sio_connection(self) -> bool:
         """Ensure Socket.IO connection to model service is established."""
         if not self._sio_client:
@@ -248,7 +255,8 @@ class TimestampListenerManager:
             st = _PerSourceState(
                 source_id=source_id,
                 is_agent=is_agent,
-                backend=(WhisperStreamingBackend(language=self._language) if ((self._stream_agents and is_agent) or (self._stream_users and (not is_agent))) else None),
+                # Backend is created fresh per turn to avoid stale connections
+                backend=None,
             )
             self._states[source_id] = st
         return st
@@ -278,46 +286,52 @@ class TimestampListenerManager:
                 return
             now = time.time()
             rms = float(chunk.meta.get("rms", 0.0))
-            # If backend VAD is available (for users), use its speech start/stop edges
-            if st.backend and (not st.is_agent):
+
+            # If an agent just became active (audio arrived), immediately finalize any in-flight user message
+            if st.is_agent and rms >= self._active_rms:
                 try:
-                    if st.backend.pop_speech_started():
-                        st.started = True
-                        st.start_ts_ms = int(now * 1000)
-                        st.last_active_ts = now
-                        st.audio_buf = np.zeros(0, dtype=np.float32)
-                        # Ensure a placeholder user message exists immediately on VAD start
-                        if not st.message_id:
-                            try:
-                                st.message_id = await self._room.append_text_chunk(
-                                    source_id=st.source_id,
-                                    role="user",
-                                    text="",
-                                    message_id=None,
-                                    chunk_idx=0,
-                                    is_final=False,
-                                )
-                                st.partial_text = ""
-                                st.partial_chunk_idx = 0
-                            except Exception:
-                                pass
-                    if st.started and st.backend.pop_speech_stopped():
-                        # finalize turn immediately on VAD stop
-                        await self._finalize(st)
-                        return
+                    for other_id, other in list(self._states.items()):
+                        if (not other.is_agent) and other.started and other.message_id:
+                            await self._finalize(other)
                 except Exception:
                     pass
-            # start session
+            # NOTE: Do not use backend VAD edges to drive lifecycle anymore. Bus RMS + agent starts/stops control turns.
+            # start session (bus-based)
             if (not st.started) and rms >= self._active_rms:
+                # If an old user message is still open (edge case), finalize it before starting a new turn
+                if (not st.is_agent) and st.message_id:
+                    try:
+                        await self._room.append_text_chunk(
+                            source_id=st.source_id,
+                            role="user",
+                            text="",
+                            message_id=st.message_id,
+                            chunk_idx=9999,
+                            is_final=True,
+                        )
+                    except Exception:
+                        pass
+                    st.message_id = None
                 st.started = True
                 st.start_ts_ms = int(now * 1000)
                 st.last_active_ts = now
                 st.audio_buf = np.zeros(0, dtype=np.float32)
-                if st.backend:
-                    try:
-                        st.backend.reset()
-                    except Exception:
-                        pass
+                # Create a fresh streaming backend per turn and connect (for users/agents as configured)
+                try:
+                    if ((self._stream_agents and st.is_agent) or (self._stream_users and (not st.is_agent))):
+                        st.backend = WhisperStreamingBackend(language=self._language)
+                        # best-effort connect; audio path will also try
+                        try:
+                            # ensure connection at turn start for stability
+                            loop = asyncio.get_running_loop()
+                            # run ensure_connected without blocking this path if needed
+                            loop.create_task(st.backend.ensure_connected())  # type: ignore[attr-defined]
+                        except Exception:
+                            pass
+                        st.partial_text = ""
+                        st.partial_chunk_idx = 0
+                except Exception:
+                    pass
             # if not started, ignore until speech begins
             if not st.started:
                 return
@@ -337,31 +351,31 @@ class TimestampListenerManager:
                         # If this is USER speech, stream as text chunks (create/append a user turn)
                         if not st.is_agent:
                             try:
-                                # Ensure we have a message id placeholder
-                                if not st.message_id:
-                                    st.message_id = await self._room.append_text_chunk(
-                                        source_id=st.source_id,
-                                        role="user",
-                                        text="",
-                                        message_id=None,
-                                        chunk_idx=0,
-                                        is_final=False,
-                                    )
-                                    st.partial_text = ""
-                                    st.partial_chunk_idx = 0
                                 # Compute delta since last partial
                                 if len(txt) > len(st.partial_text):
                                     delta = txt[len(st.partial_text):]
                                     if delta.strip():
-                                        await self._room.append_text_chunk(
-                                            source_id=st.source_id,
-                                            role="user",
-                                            text=delta,
-                                            message_id=st.message_id,
-                                            chunk_idx=st.partial_chunk_idx,
-                                            is_final=False,
-                                        )
-                                        st.partial_chunk_idx += 1
+                                        # Create message on first non-empty delta; else append
+                                        if not st.message_id:
+                                            st.message_id = await self._room.append_text_chunk(
+                                                source_id=st.source_id,
+                                                role="user",
+                                                text=delta,
+                                                message_id=None,
+                                                chunk_idx=0,
+                                                is_final=False,
+                                            )
+                                            st.partial_chunk_idx = 1
+                                        else:
+                                            await self._room.append_text_chunk(
+                                                source_id=st.source_id,
+                                                role="user",
+                                                text=delta,
+                                                message_id=st.message_id,
+                                                chunk_idx=st.partial_chunk_idx,
+                                                is_final=False,
+                                            )
+                                            st.partial_chunk_idx += 1
                                     st.partial_text = txt
                             except Exception:
                                 pass
@@ -426,6 +440,8 @@ class TimestampListenerManager:
             try:
                 if st.backend is not None:
                     _ = st.backend.finish()
+                    # drop the backend instance after finishing to force fresh init next turn
+                    st.backend = None
             except Exception:
                 pass
             if (st.is_agent and self._stream_agents) or ((not st.is_agent) and self._stream_users):
