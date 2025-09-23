@@ -509,6 +509,19 @@ class OpenAIAgent(Agent):
                             log.error(f"Failed to broadcast transcript: {e}")
                             pass
 
+                        # Ensure DB message is finalized when timestamps mode is enabled
+                        try:
+                            if bool(getattr(self.room, "word_timestamps_enabled", True)):
+                                if (msg_id_final or "").strip():
+                                    await self.publish_text_chunk(
+                                        text=(tr_text or effective_text or ""),
+                                        message_id=cast(str, msg_id_final),
+                                        chunk_idx=9999,
+                                        is_final=True,
+                                    )
+                        except Exception:
+                            pass
+
                         # cleanup
                         self._resp_audio.pop(rid, None)
                         self._resp_text.pop(rid, None)

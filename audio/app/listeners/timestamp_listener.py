@@ -47,6 +47,13 @@ class StreamingASRBackend:
     def finish(self) -> tuple[str, list[Word]]:
         raise NotImplementedError
 
+    # Optional VAD edge APIs; backends that support VAD can override
+    def pop_speech_started(self) -> bool:
+        return False
+
+    def pop_speech_stopped(self) -> bool:
+        return False
+
 
 class WhisperStreamingBackend(StreamingASRBackend):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -57,6 +64,9 @@ class WhisperStreamingBackend(StreamingASRBackend):
         self._finalized_words: list[Word] = []
         self._model_service_url = None
         self._connected = False
+        # VAD event counters (edge-triggered consumption)
+        self._speech_started_count = 0
+        self._speech_stopped_count = 0
         
         try:
             import os
@@ -99,6 +109,15 @@ class WhisperStreamingBackend(StreamingASRBackend):
                                 start_ms=int(w["start"] * 1000),
                                 end_ms=int(w["end"] * 1000)
                             ))
+
+                # VAD start/stop events from model service
+                @self._sio_client.event
+                async def speech_started(data: Dict[str, Any]) -> None:
+                    self._speech_started_count += 1
+
+                @self._sio_client.event
+                async def speech_stopped(data: Dict[str, Any]) -> None:
+                    self._speech_stopped_count += 1
                 
                 self._connected = True
                 return True
@@ -116,6 +135,8 @@ class WhisperStreamingBackend(StreamingASRBackend):
                 # Reset accumulated state
                 self._accumulated_text = ""
                 self._finalized_words.clear()
+                self._speech_started_count = 0
+                self._speech_stopped_count = 0
                 # Disconnect Socket.IO client
                 if self._connected and self._sio_client:
                     asyncio.create_task(self._sio_client.disconnect())
@@ -165,6 +186,19 @@ class WhisperStreamingBackend(StreamingASRBackend):
             return self._accumulated_text, self._finalized_words
         except Exception:
             return "", []
+
+    # ---- VAD event consumption API ----
+    def pop_speech_started(self) -> bool:
+        if self._speech_started_count > 0:
+            self._speech_started_count -= 1
+            return True
+        return False
+
+    def pop_speech_stopped(self) -> bool:
+        if self._speech_stopped_count > 0:
+            self._speech_stopped_count -= 1
+            return True
+        return False
 
 
 @dataclass
@@ -244,6 +278,35 @@ class TimestampListenerManager:
                 return
             now = time.time()
             rms = float(chunk.meta.get("rms", 0.0))
+            # If backend VAD is available (for users), use its speech start/stop edges
+            if st.backend and (not st.is_agent):
+                try:
+                    if st.backend.pop_speech_started():
+                        st.started = True
+                        st.start_ts_ms = int(now * 1000)
+                        st.last_active_ts = now
+                        st.audio_buf = np.zeros(0, dtype=np.float32)
+                        # Ensure a placeholder user message exists immediately on VAD start
+                        if not st.message_id:
+                            try:
+                                st.message_id = await self._room.append_text_chunk(
+                                    source_id=st.source_id,
+                                    role="user",
+                                    text="",
+                                    message_id=None,
+                                    chunk_idx=0,
+                                    is_final=False,
+                                )
+                                st.partial_text = ""
+                                st.partial_chunk_idx = 0
+                            except Exception:
+                                pass
+                    if st.started and st.backend.pop_speech_stopped():
+                        # finalize turn immediately on VAD stop
+                        await self._finalize(st)
+                        return
+                except Exception:
+                    pass
             # start session
             if (not st.started) and rms >= self._active_rms:
                 st.started = True
