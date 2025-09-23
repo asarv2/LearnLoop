@@ -45,10 +45,11 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
 
 # Seed entrypoint + uvicorn
 COPY docker/entrypoint-docs.sh /usr/local/bin/entrypoint-docs.sh
-USER root && chmod +x /usr/local/bin/entrypoint-docs.sh && chown appuser:appuser /usr/local/bin/entrypoint-docs.sh && \
-     chown -R appuser:appuser /app && \
-     true
-USER appuser
+RUN chmod +x /usr/local/bin/entrypoint-docs.sh \
+ && chown appuser:appuser /usr/local/bin/entrypoint-docs.sh \
+ && chown -R appuser:appuser /app || true
+
+# Stay root for entrypoint (so it can chown the mounted volume)
+USER root
 
 ENTRYPOINT ["/usr/bin/tini","--","/usr/local/bin/entrypoint-docs.sh"]
-CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000","--log-level","info"]
