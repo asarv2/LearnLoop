@@ -125,12 +125,13 @@ services:
       web:
         aliases:
           - ${COMPOSE_PROJECT_NAME}-documents
+    user: "10001:10001"                 # ensure non-root uid matches image
     environment:
       - PORT=8000
       - HOST=0.0.0.0
     volumes:
-      - ./documents/templates:/app/templates
-      - ./files:/app/files
+      - ./documents/templates:/app/templates:ro    # bind RO is fine for reading templates
+      - documents_files:/app/files                 # named volume for writable outputs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -273,3 +274,6 @@ services:
       /etc/docker-gen/templates/next_client.upstream.tmpl
       /etc/nginx/conf.d/generated/next_client.upstream.conf
     networks: [web]
+
+volumes:
+  documents_files: {}
