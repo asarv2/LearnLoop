@@ -54,7 +54,7 @@ class WhisperStreamingBackend(StreamingASRBackend):
         self._ok = False
         self._sio_client = None
         self._accumulated_text = ""
-        self._finalized_words = []
+        self._finalized_words: list[Word] = []
         self._model_service_url = None
         self._connected = False
         
@@ -77,6 +77,27 @@ class WhisperStreamingBackend(StreamingASRBackend):
         if not self._connected and self._sio_client:
             try:
                 await self._sio_client.connect(self._model_service_url)
+                
+                # Set up event handlers
+                @self._sio_client.event
+                async def partial_result(data: Dict[str, Any]) -> None:
+                    """Handle partial transcription results."""
+                    # Could be used for real-time display
+                    pass
+                
+                @self._sio_client.event
+                async def final_result(data: Dict[str, Any]) -> None:
+                    """Handle final transcription results."""
+                    # Add to accumulated text and words
+                    self._accumulated_text += data.get("text", "")
+                    if data.get("words"):
+                        for w in data["words"]:
+                            self._finalized_words.append(Word(
+                                text=w["word"],
+                                start_ms=int(w["start"] * 1000),
+                                end_ms=int(w["end"] * 1000)
+                            ))
+                
                 self._connected = True
                 return True
             except Exception as e:
@@ -89,7 +110,7 @@ class WhisperStreamingBackend(StreamingASRBackend):
             try:
                 # Reset accumulated state
                 self._accumulated_text = ""
-                self._finalized_words = []
+                self._finalized_words.clear()
                 # Disconnect Socket.IO client
                 if self._connected and self._sio_client:
                     asyncio.create_task(self._sio_client.disconnect())
@@ -109,93 +130,35 @@ class WhisperStreamingBackend(StreamingASRBackend):
             pass
 
     async def _send_audio_async(self, pcm16_bytes: bytes) -> None:
-        """Send audio data to model service via WebSocket."""
+        """Send audio data to model service via Socket.IO."""
         try:
-            if await self._ensure_ws_connection():
-                await self._ws_connection.send(pcm16_bytes)
+            if await self._ensure_sio_connection() and self._sio_client:
+                await self._sio_client.emit("audio_data", pcm16_bytes)
         except Exception:
             # Connection failed, reset it
-            self._ws_connection = None
+            self._connected = False
 
     def process_iter(self) -> tuple[str, list[Word]]:
         if not self._ok:
             return "", []
         try:
-            # Poll for new results (async operation)
-            asyncio.create_task(self._poll_results_async())
+            # With Socket.IO, results come via events, so just return current state
             return self._accumulated_text, self._finalized_words[-10:]  # Return recent words
         except Exception:
             return "", []
-
-    async def _poll_results_async(self) -> None:
-        """Poll for transcription results from model service."""
-        try:
-            if await self._ensure_ws_connection():
-                # Check for messages (non-blocking)
-                try:
-                    message = await asyncio.wait_for(self._ws_connection.recv(), timeout=0.01)
-                    import json
-                    data = json.loads(message)
-                    
-                    if data.get("type") == "partial":
-                        # Update partial text (could be used for real-time display)
-                        pass
-                    elif data.get("type") == "final":
-                        # Add to accumulated text and words
-                        self._accumulated_text += data.get("text", "")
-                        if data.get("words"):
-                            for w in data["words"]:
-                                self._finalized_words.append(Word(
-                                    text=w["word"],
-                                    start_ms=int(w["start"] * 1000),
-                                    end_ms=int(w["end"] * 1000)
-                                ))
-                except asyncio.TimeoutError:
-                    # No message available, that's fine
-                    pass
-        except Exception:
-            # Connection failed, reset it
-            self._ws_connection = None
 
     def finish(self) -> tuple[str, list[Word]]:
         if not self._ok:
             return "", []
         try:
-            # Final poll for any remaining results
-            asyncio.create_task(self._final_poll_async())
+            # With Socket.IO, final results come via events
+            # Disconnect after finishing
+            if self._connected and self._sio_client:
+                asyncio.create_task(self._sio_client.disconnect())
+                self._connected = False
             return self._accumulated_text, self._finalized_words
         except Exception:
             return "", []
-
-    async def _final_poll_async(self) -> None:
-        """Final poll to get any remaining transcription results."""
-        try:
-            if await self._ensure_ws_connection():
-                # Wait a bit longer for final results
-                try:
-                    while True:
-                        message = await asyncio.wait_for(self._ws_connection.recv(), timeout=0.1)
-                        import json
-                        data = json.loads(message)
-                        
-                        if data.get("type") == "final":
-                            self._accumulated_text += data.get("text", "")
-                            if data.get("words"):
-                                for w in data["words"]:
-                                    self._finalized_words.append(Word(
-                                        text=w["word"],
-                                        start_ms=int(w["start"] * 1000),
-                                        end_ms=int(w["end"] * 1000)
-                                    ))
-                except asyncio.TimeoutError:
-                    # No more messages
-                    pass
-                finally:
-                    # Close connection
-                    await self._ws_connection.close()
-                    self._ws_connection = None
-        except Exception:
-            self._ws_connection = None
 
 
 @dataclass
