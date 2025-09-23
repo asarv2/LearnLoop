@@ -12,9 +12,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install cuDNN 9 split libs via pip (no apt repo needed)
 RUN pip install --no-cache-dir "nvidia-cudnn-cu12==9.*" && \
     python - <<'PY'
-import os, nvidia.cudnn.lib
-p = os.path.dirname(nvidia.cudnn.lib.__file__)
-open('/etc/ld.so.conf.d/nvidia-cudnn9.conf','w').write(p+'\n')
+import os, sys
+import nvidia.cudnn
+libdir = os.path.join(nvidia.cudnn.__path__[0], 'lib')
+print("cuDNN libdir:", libdir)
+# register with the dynamic linker
+open('/etc/ld.so.conf.d/nvidia-cudnn9.conf','w').write(libdir + '\n')
 PY
 RUN ldconfig
 
@@ -24,8 +27,14 @@ RUN pip install --no-cache-dir -U pip setuptools wheel packaging ninja einops &&
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
 
-# Verify cuDNN 9 split libs are available
+# Comprehensive sanity check for cuDNN 9 split libs
 RUN ldconfig -p | grep -E 'libcudnn_(ops|cnn|adv|cnh|cnn_infer|ops_infer|cnn_train)\.so\.9' || true
+RUN python - <<'PY'
+import ctypes
+ctypes.CDLL('libcudnn_ops_infer.so.9')
+ctypes.CDLL('libcudnn_cnn.so.9')
+print("cuDNN split libs resolved ✓")
+PY
 
 # Copy application code
 COPY app/ ./app/
@@ -39,7 +48,8 @@ ENV PYTHONPATH=/app \
     HF_HOME=/app/model_cache/hf \
     TORCH_HOME=/app/model_cache/torch \
     CTRANSLATE2_RANK=0 \
-    CTRANSLATE2_CACHE_DIR=/app/model_cache/ctranslate2
+    CTRANSLATE2_CACHE_DIR=/app/model_cache/ctranslate2 \
+    LD_LIBRARY_PATH=/opt/conda/lib/python3.11/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH
 
 # Expose port
 EXPOSE 8000
