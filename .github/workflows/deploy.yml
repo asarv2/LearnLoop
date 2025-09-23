@@ -278,14 +278,12 @@ jobs:
           mkdir -p "$DEST"
 
           # 0) Ensure these persistent dirs exist
-          mkdir -p "$DEST/web/generated" "$DEST/prompts" "$DEST/templates" "$DEST/files"
+          mkdir -p "$DEST/web/generated" "$DEST/prompts" "$DEST/templates"
           mkdir -p "$DEST/recordings"
           
           # Match container users so entrypoints can seed/copy:
           chown -R 1001:1001 "$DEST/prompts"    || true   # server appuser
           chown -R 10001:10001 "$DEST/templates" || true  # documents appuser
-          chown -R 10001:10001 "$DEST/files"      || true  # documents appuser needs write
-          chmod -R u+rwX,go+rX "$DEST/files"      || true  # keep it readable, only owner writes
 
           # 1) Seed missing files ONLY (won't overwrite or delete)
           [ -d ./server/prompts ]     && rsync -a --ignore-existing ./server/prompts/         "$DEST/prompts"/     || true
@@ -310,7 +308,6 @@ jobs:
           P web/generated/
           P prompts/
           P templates/
-          P files/
           P recordings/
           EOF
 
