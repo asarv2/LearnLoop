@@ -1,44 +1,47 @@
 "use client";
 
+import { useAuth } from "@/components/auth/AuthProvider";
 import LandingPage from "@/components/LandingPage";
 import { useRole } from "@/contexts/role-context";
-import useSupabaseBrowser from "@/utils/supabase/supabase-browser";
-import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef } from "react";
 
 export default function Home() {
-  const supabase = useSupabaseBrowser();
+  const { user, loading: authLoading } = useAuth();
   const { userRole, loading: roleLoading, currentView } = useRole();
-
-  const { data: session, isLoading: sessionLoading } = useQuery({
-    queryKey: ["session"],
-    queryFn: async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      return session;
-    },
-  });
-  const user = session?.user;
   const router = useRouter();
+  const pathname = usePathname();
+  const redirectedRef = useRef(false);
+
+  // Decide the destination once
+  const targetPath = useMemo(() => {
+    if (!user) return null;
+    const isAdminView =
+      userRole === "admin" ||
+      (userRole === "superadmin" && currentView === "admin");
+    return isAdminView ? "/admin/analytics" : "/dashboard/trainings";
+  }, [user, userRole, currentView]);
 
   useEffect(() => {
-    // If user is authenticated and role is loaded, redirect based on role and view
-    if (user && !sessionLoading && !roleLoading) {
-      if (
-        userRole === "admin" ||
-        (userRole === "superadmin" && currentView === "admin")
-      ) {
-        router.push("/admin/analytics");
-      } else {
-        router.push("/dashboard/trainings");
-      }
+    // Only redirect:
+    // - once
+    // - when auth + role are settled
+    // - when we're actually on the home page
+    if (
+      !redirectedRef.current &&
+      !authLoading &&
+      !roleLoading &&
+      user &&
+      targetPath &&
+      pathname === "/"
+    ) {
+      redirectedRef.current = true;
+      router.replace(targetPath);
     }
-  }, [user, sessionLoading, roleLoading, userRole, currentView, router]);
+  }, [authLoading, roleLoading, user, targetPath, pathname, router]);
 
-  // Show loading while checking auth status
-  if (sessionLoading || roleLoading) {
+  // Loading states while we wait for auth/role to settle
+  if (authLoading || roleLoading) {
     return (
       <div
         style={{
@@ -103,7 +106,10 @@ export default function Home() {
           >
             L
           </div>
-          <p style={{ color: "#8c8c8c" }}>Redirecting to Training...</p>
+          <p style={{ color: "#8c8c8c" }}>
+            Redirecting to{" "}
+            {targetPath === "/admin/analytics" ? "Admin" : "Training"}…
+          </p>
         </div>
       </div>
     );
