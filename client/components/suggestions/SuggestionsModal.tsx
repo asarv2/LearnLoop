@@ -28,12 +28,12 @@ export default function SuggestionsModal({
 
     setLoading(true);
     try {
-      const response = await fetch("/api/v1/suggestions", {
+      const response = await fetch("/api/v1/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: user.id,
-          suggestion_text: values.suggestion,
+          feedback_text: values.suggestion,
         }),
       });
       if (!response.ok) throw new Error("Failed to submit suggestion");
