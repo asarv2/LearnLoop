@@ -23,8 +23,9 @@ import torch
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 streamer = FasterWhisperStreamer(
-    model_name="small.en",   # small/medium for live, large-v3 for offline
+    model_name="tiny.en",    # tiny for fastest real-time processing
     device=device,           # auto-detect CUDA/CPU
+    beam_size=3,            # optimal balance of speed and accuracy
     word_timestamps_live=True,
 )
 
