@@ -36,10 +36,10 @@ class FasterWhisperStreamer:
     """
     def __init__(
         self,
-        model_name: str = "small.en",
-        device: str = "cuda",
+        model_name: str = "tiny.en",
+        device: str = "cpu",
         compute_type: Optional[str] = None,
-        beam_size: int = 5,
+        beam_size: int = 3,
         temperature: float = 0.0,
         word_timestamps_live: bool = True,
     ) -> None:
