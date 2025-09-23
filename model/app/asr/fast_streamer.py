@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from faster_whisper import WhisperModel
+from faster_whisper import WhisperModel  # type: ignore
 
 SAMPLE_RATE = 16000
 INT16_MAX = 32768.0
@@ -23,7 +23,7 @@ class FinalChunk:
     text: str
     start: float
     end: float
-    words: Optional[List[Dict]] = None
+    words: Optional[List[Dict[str, Any]]] = None
 
 class FasterWhisperStreamer:
     """

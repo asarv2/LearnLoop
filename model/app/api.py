@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
 import numpy as np
+import socketio
 import soundfile as sf  # type: ignore
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,6 +52,9 @@ app.add_middleware(
 
 # Include streaming routers
 app.include_router(stream_ws.router)
+
+# Mount Socket.IO app
+socket_app = socketio.ASGIApp(stream_ws.sio, app)
 
 
 class TranscriptResponse(BaseModel):
