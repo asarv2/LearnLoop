@@ -220,7 +220,7 @@ class WebRTCSession:
                 if self._mixed_sub is not None:
                     from app.main import get_socketio_instance
                     bridge = get_bridge(get_socketio_instance())
-                    await bridge.unsubscribe_mix(room_id=self.room_id, subscriber_id=self.sid)
+                    await bridge.unsubscribe_mix(room_id=self.room_id, subscriber_id=self.human_id)
             except Exception:
                 pass
 
@@ -228,7 +228,8 @@ class WebRTCSession:
         try:
             from app.main import get_socketio_instance
             bridge = get_bridge(get_socketio_instance())
-            sub = await bridge.subscribe_mix(room_id=self.room_id, subscriber_id=self.sid)
+            # Subscribe to mixed audio using the human_id so self-echo suppression and gating apply correctly
+            sub = await bridge.subscribe_mix(room_id=self.room_id, subscriber_id=self.human_id)
             self._mixed_sub = sub
             self.out_track = OutboundTrack(sub)
         except Exception:

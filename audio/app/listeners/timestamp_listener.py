@@ -74,7 +74,9 @@ class WhisperStreamingBackend(StreamingASRBackend):
 
     async def _ensure_sio_connection(self) -> bool:
         """Ensure Socket.IO connection to model service is established."""
-        if not self._connected and self._sio_client:
+        if not self._sio_client:
+            return False
+        if not self._connected:
             try:
                 await self._sio_client.connect(self._model_service_url)
                 
@@ -101,7 +103,10 @@ class WhisperStreamingBackend(StreamingASRBackend):
                 self._connected = True
                 return True
             except Exception as e:
-                print(f"Failed to connect to model service: {e}")
+                # Avoid log spam by only printing the first failure until we successfully connect
+                if not getattr(self, "_logged_connect_error", False):
+                    print(f"Failed to connect to model service: {e}")
+                    self._logged_connect_error = True
                 return False
         return self._connected
 
@@ -132,7 +137,8 @@ class WhisperStreamingBackend(StreamingASRBackend):
     async def _send_audio_async(self, pcm16_bytes: bytes) -> None:
         """Send audio data to model service via Socket.IO."""
         try:
-            if await self._ensure_sio_connection() and self._sio_client:
+            ok = await self._ensure_sio_connection()
+            if ok and self._sio_client:
                 await self._sio_client.emit("audio_data", pcm16_bytes)
         except Exception:
             # Connection failed, reset it
@@ -172,9 +178,14 @@ class _PerSourceState:
     # streaming state
     backend: Optional[StreamingASRBackend] = None
     partial_text: str = ""
+    partial_chunk_idx: int = 0
     # message mapping and final text
     message_id: Optional[str] = None
     final_text_accum: list[str] = field(default_factory=list)
+    # progressive transcript emission
+    cumulative_words: list[Dict[str, Any]] = field(default_factory=list)
+    last_emit_ms: float = 0.0
+    last_words_len: int = 0
 
 
 class TimestampListenerManager:
@@ -228,6 +239,9 @@ class TimestampListenerManager:
     async def on_chunk(self, chunk: AudioChunk) -> None:
         try:
             st = self._get_state(chunk.source_id)
+            # Ignore beep source entirely for transcripts
+            if st.source_id == "agent:beep":
+                return
             now = time.time()
             rms = float(chunk.meta.get("rms", 0.0))
             # start session
@@ -254,26 +268,66 @@ class TimestampListenerManager:
                     st.backend.insert_audio_chunk(x16)
                     txt, words = st.backend.process_iter()
                     if txt:
-                        # naive timing: spread words across observed duration so far (placeholder before CTC)
-                        dur_ms = int(round((st.audio_buf.size / PCM_SR) * 1000.0))
-                        tokens = [w.text for w in words] if words else txt.split()
-                        n = max(1, len(tokens))
-                        per = max(1, dur_ms // n)
-                        out_words = [
-                            {
-                                "start_ms": st.start_ts_ms + i * per,
-                                "end_ms": st.start_ts_ms + (dur_ms if i == n - 1 else (i + 1) * per),
-                                "text": tokens[i],
-                            }
-                            for i in range(n)
-                        ]
-                        await self._room.broadcast_transcript(
-                            agent_id=st.source_id,
-                            message_id=st.message_id,
-                            start_ts_ms=st.start_ts_ms,
-                            words=out_words,
-                            full_text=txt,
-                        )
+                        # Skip streaming transcripts for beep (safety)
+                        if st.source_id == "agent:beep":
+                            return
+                        # If this is USER speech, stream as text chunks (create/append a user turn)
+                        if not st.is_agent:
+                            try:
+                                # Ensure we have a message id placeholder
+                                if not st.message_id:
+                                    st.message_id = await self._room.append_text_chunk(
+                                        source_id=st.source_id,
+                                        role="user",
+                                        text="",
+                                        message_id=None,
+                                        chunk_idx=0,
+                                        is_final=False,
+                                    )
+                                    st.partial_text = ""
+                                    st.partial_chunk_idx = 0
+                                # Compute delta since last partial
+                                if len(txt) > len(st.partial_text):
+                                    delta = txt[len(st.partial_text):]
+                                    if delta.strip():
+                                        await self._room.append_text_chunk(
+                                            source_id=st.source_id,
+                                            role="user",
+                                            text=delta,
+                                            message_id=st.message_id,
+                                            chunk_idx=st.partial_chunk_idx,
+                                            is_final=False,
+                                        )
+                                        st.partial_chunk_idx += 1
+                                    st.partial_text = txt
+                            except Exception:
+                                pass
+                        else:
+                            # Agent: build cumulative, time-based word list across full partial text
+                            dur_ms = int(round((st.audio_buf.size / PCM_SR) * 1000.0))
+                            tokens = [w.text for w in words] if words else txt.split()
+                            n = max(1, len(tokens))
+                            per = max(1, dur_ms // n)
+                            st.cumulative_words = [
+                                {
+                                    "start_ms": st.start_ts_ms + i * per,
+                                    "end_ms": st.start_ts_ms + (dur_ms if i == n - 1 else (i + 1) * per),
+                                    "text": tokens[i],
+                                }
+                                for i in range(n)
+                            ]
+                            now_ms = now * 1000.0
+                            grew = len(st.cumulative_words) > st.last_words_len
+                            if grew and (now_ms - st.last_emit_ms) >= 120.0:
+                                st.last_emit_ms = now_ms
+                                st.last_words_len = len(st.cumulative_words)
+                                await self._room.broadcast_transcript(
+                                    agent_id=st.source_id,
+                                    message_id=st.message_id,
+                                    start_ts_ms=st.start_ts_ms,
+                                    words=st.cumulative_words,
+                                    full_text=txt,
+                                )
                 except Exception:
                     pass
             # activity tracking
@@ -289,11 +343,26 @@ class TimestampListenerManager:
 
     async def _finalize(self, st: _PerSourceState) -> None:
         try:
+            # Skip beep on finalize as well
+            if st.source_id == "agent:beep":
+                st.started = False
+                st.audio_buf = np.zeros(0, dtype=np.float32)
+                st.final_text_accum.clear()
+                st.message_id = None
+                return
             audio = st.audio_buf.astype(np.float32)
             st.started = False
             st.audio_buf = np.zeros(0, dtype=np.float32)
             final_text = " ".join([t for t in st.final_text_accum if t]).strip()
             st.final_text_accum.clear()
+            st.last_emit_ms = 0.0
+            st.last_words_len = 0
+            # Explicitly finish and disconnect streaming backend so Whisper doesn't continue post-utterance
+            try:
+                if st.backend is not None:
+                    _ = st.backend.finish()
+            except Exception:
+                pass
             if (st.is_agent and self._stream_agents) or ((not st.is_agent) and self._stream_users):
                 # We already streamed partials; still realign for higher quality if we have text
                 pass
@@ -304,13 +373,28 @@ class TimestampListenerManager:
                     {"start_ms": st.start_ts_ms + int(w.start_ms), "end_ms": st.start_ts_ms + int(w.end_ms), "text": w.text}
                     for w in tr.words
                 ]
-                await self._room.broadcast_transcript(
-                    agent_id=st.source_id,
-                    message_id=st.message_id,
-                    start_ts_ms=st.start_ts_ms,
-                    words=words,
-                    full_text=tr.text or final_text,
-                )
+                if st.is_agent:
+                    await self._room.broadcast_transcript(
+                        agent_id=st.source_id,
+                        message_id=st.message_id,
+                        start_ts_ms=st.start_ts_ms,
+                        words=words,
+                        full_text=tr.text or final_text,
+                    )
+                else:
+                    # Finalize the user turn
+                    try:
+                        if st.message_id:
+                            await self._room.append_text_chunk(
+                                source_id=st.source_id,
+                                role="user",
+                                text="",
+                                message_id=st.message_id,
+                                chunk_idx=9999,
+                                is_final=True,
+                            )
+                    except Exception:
+                        pass
             # notify stop to clamp UI if we had a message id
             try:
                 if getattr(self._room, "on_transcript_stop", None) and st.message_id:

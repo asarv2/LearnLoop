@@ -4,6 +4,7 @@ import asyncio
 import base64
 import logging
 import os
+import time
 from typing import Any, Dict, Optional
 
 import numpy as np  # type: ignore
@@ -39,6 +40,7 @@ class AudioBridge:
         self._client = socketio.AsyncClient()  # Socket.IO client for server-to-server communication
         self._connected = asyncio.Event()
         self._mix_subs: Dict[str, MixedAudioSubscriber] = {}
+        self._last_ingest_log_ms: float = 0.0
 
         # Wire client event handlers
         self._client.on("connect", self._on_connect)
@@ -121,7 +123,17 @@ class AudioBridge:
             raise
 
     async def ingest_frame(self, *, room_id: str, source_id: str, pcm_i16: np.ndarray, sr: int = 48000) -> None:
-        await self._connected.wait()
+        # If upstream is not connected, drop the frame and rate-limit logs
+        if (not self._client.connected) or (not self._connected.is_set()):
+            now_ms = time.time() * 1000.0
+            if (now_ms - self._last_ingest_log_ms) > 2000.0:  # log at most every 2s
+                log.error(
+                    "Audio service not connected; dropping frames for %s in room %s",
+                    source_id,
+                    room_id,
+                )
+                self._last_ingest_log_ms = now_ms
+            return
         b64 = base64.b64encode(pcm_i16.astype(np.int16).tobytes()).decode("ascii")
         try:
             await self._client.emit("s2s_ingest_frame", self._with_auth({
@@ -132,7 +144,16 @@ class AudioBridge:
                 "frame_b64": b64,
             }))
         except Exception as e:
-            log.error(f"Failed to ingest frame for {source_id} in room {room_id}: {e}")
+            # Rate-limit error logs to avoid flooding
+            now_ms = time.time() * 1000.0
+            if (now_ms - self._last_ingest_log_ms) > 2000.0:
+                log.error(
+                    "Failed to ingest frame for %s in room %s: %s",
+                    source_id,
+                    room_id,
+                    e,
+                )
+                self._last_ingest_log_ms = now_ms
             # Don't raise here as this is called frequently and shouldn't break the flow
 
     async def user_text(self, *, room_id: str, human_id: str, text: str) -> Dict[str, Any]:
@@ -220,7 +241,8 @@ class AudioBridge:
                         _store_upsert  # lazy import to avoid cycles
                     msg_id = payload.get("message_id")
                     source_id = payload.get("source_id") or payload.get("agent_id") or "agent"
-                    role = payload.get("role") or ("agent" if (isinstance(source_id, str) and source_id.startswith("agent:")) else "user")
+                    # Normalize role naming for frontend expectations: agents → "assistant"
+                    role = payload.get("role") or ("assistant" if (isinstance(source_id, str) and source_id.startswith("agent:")) else "user")
                     text = payload.get("text") or ""
                     chunk_idx = int(payload.get("chunk_idx", 0))
                     is_final = bool(payload.get("is_final", False))
@@ -252,7 +274,7 @@ class AudioBridge:
             if isinstance(room_id, str):
                 log.debug("forwarded transcript to room=%s", room_id)
                 await self.server_sio.emit("transcript", payload, room=room_id)
-                log.info(f"Server forwarded transcript to room {room_id}")
+                # log.info(f"Server forwarded transcript to room {room_id}")
         except Exception:
             log.exception("failed to forward transcript")
 
