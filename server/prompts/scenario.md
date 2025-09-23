@@ -394,10 +394,13 @@ You must call these tools to complete the scenario generation:
 3. `create_user1_prompt`:
    - `prompt`: "You are user1, a UX designer participating in a mobile app strategy brainstorming session. Bring creative ideas about user experience and interface design that will increase engagement."
 
-4. `create_agent2_prompt`:
-   - `prompt`: "You are agent2, a product manager facilitating the brainstorming session. Guide the discussion toward actionable solutions and ensure all ideas are evaluated against business objectives."
+4. `create_agent1_prompt`:
+   - `prompt`: "You are agent1, a product manager facilitating the brainstorming session. Guide the discussion toward actionable solutions and ensure all ideas are evaluated against business objectives."
 
-5. `project_spec_doc` (REQUIRED - this tool ends in `_doc`):
+5. `create_agent2_prompt`:
+   - `prompt`: "You are agent2, a marketing specialist participating in the brainstorming session. Build on others' ideas, ask thoughtful questions, and help synthesize different perspectives into cohesive strategies."
+
+6. `project_spec_doc` (REQUIRED - this tool ends in `_doc`):
    - `doc_name`: "Mobile App Strategy Project Specification"
    - `project_name`: "Customer Engagement Mobile App Initiative"
    - `project_code`: "MOBILE-ENG-2024"
