@@ -3,10 +3,10 @@ FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies including tini
+# Install system dependencies including tini and cuDNN 9 split libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl build-essential gcc ca-certificates tini \
-    ffmpeg libsndfile1 \
+    ffmpeg libsndfile1 libcudnn9-cuda-12 \
  && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
@@ -14,6 +14,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -U pip setuptools wheel packaging ninja einops && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+
+# Verify cuDNN 9 split libs are available
+RUN ldconfig -p | grep -E 'libcudnn_(ops|cnn|adv|cnh|cnn_infer|ops_infer|cnn_train)\.so\.9' || true
 
 # Copy application code
 COPY app/ ./app/
@@ -25,7 +28,6 @@ RUN mkdir -p /app/model_cache
 ENV PYTHONPATH=/app \
     BNB_CUDA_VERSION=128 \
     HF_HOME=/app/model_cache/hf \
-    TRANSFORMERS_CACHE=/app/model_cache/transformers \
     TORCH_HOME=/app/model_cache/torch \
     CTRANSLATE2_RANK=0 \
     CTRANSLATE2_CACHE_DIR=/app/model_cache/ctranslate2
@@ -37,6 +39,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-ENTRYPOINT ["/usr/bin/tini","--"]
+ENTRYPOINT ["/usr/bin/tini","-s","--"]
 # GPU services: keep a single worker to avoid double-allocating VRAM
 CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000","--workers","1"]
