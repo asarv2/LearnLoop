@@ -252,39 +252,108 @@ async def list_templates() -> JSONResponse:
     template_ids = await _list_templates_from_storage()
     return JSONResponse(content={"template_ids": template_ids})
 
-@app.post("/verify-args")
-async def verify_args_class(request: dict) -> JSONResponse:
+@app.post("/verify")
+async def verify_template(request: dict) -> JSONResponse:
     """
-    Verify that Args class code is valid and can be imported without errors.
-    Accepts Args class code as freeform text.
+    Verify that both Args class and render function code are valid and can compile a PDF.
+    Accepts:
+    - args_code: Complete Args class code (pydantic BaseModel)
+    - render_code: Complete render function code
+    
     Returns validation status and any error details.
     """
     try:
         args_code = request.get("args_code", "")
+        render_code = request.get("render_code", "")
+        
         if not args_code.strip():
             return JSONResponse(content={
                 "valid": False,
-                "message": "No Args code provided",
+                "message": "No args_code provided",
                 "error_type": "ValidationError",
                 "error_details": "args_code field is required and cannot be empty"
+            }, status_code=400)
+        
+        if not render_code.strip():
+            return JSONResponse(content={
+                "valid": False,
+                "message": "No render_code provided",
+                "error_type": "ValidationError",
+                "error_details": "render_code field is required and cannot be empty"
             }, status_code=400)
         
         import importlib.util
         import tempfile
         from pathlib import Path
+        from textwrap import dedent
 
-        # Create a minimal template with the Args class
-        template_code = f"""# Generated Args class
+        # Minimal shims and imports expected by render()
+        shim = dedent("""\
+# -*- coding: utf-8 -*-
+
+from typing import Optional, List, Dict, Any, Union
+from pylatex import Document, NoEscape, Package, Section, Subsection  # type: ignore
+
+def _escape_latex(text: str) -> str:
+    if not text:
+        return ""
+    # NOTE: backslash key MUST be '\\\\' here to emit '\\' in the generated file
+    repl = {'\\\\': r'\\textbackslash{}',
+            '{': r'\\{', '}': r'\\}', '$': r'\\$',
+            '&': r'\\&', '%': r'\\%', '#': r'\\#',
+            '^': r'\\textasciicircum{}', '_': r'\\_',
+            '~': r'\\textasciitilde{}'}
+    for k, v in repl.items():
+        text = text.replace(k, v)
+    return text
+
+BR = NoEscape(r'\\\\')                           # LaTeX newline token \\ 
+def VSPACE(cm: str) -> NoEscape: return NoEscape(r'\\vspace{' + cm + r'}')
+def B(s: str) -> NoEscape: return NoEscape(r'\\textbf{' + _escape_latex(s) + r'}')
+""")
+
+        # Create the complete template with both Args class and render function
+        template_code = f"""# Generated template
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
+
+{shim}
 
 {args_code}
 
-# Dummy render function for testing
-def render(args: Args) -> bytes:
-    return b"dummy"
+# Rebuild model to resolve forward references (belt-and-suspenders)
+Args.model_rebuild()
+
+{render_code}
 """
         
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        # Check for stray line continuations before import
+        def _find_stray_line_continuations(src: str) -> Optional[int]:
+            for i, ln in enumerate(src.splitlines(), start=1):
+                # strip inline comments (naïve but good enough here)
+                code = ln.split('#', 1)[0]
+                if not code.strip():  # skip empty lines
+                    continue
+                # A single trailing backslash (not within a string) is hard to detect perfectly.
+                # Do a pragmatic check: a naked backslash at EOL outside quotes.
+                if code.rstrip().endswith("\\"):
+                    return i
+            return None
+
+        bad_line = _find_stray_line_continuations(template_code)
+        if bad_line:
+            return JSONResponse(
+                content={
+                    "valid": False,
+                    "message": f"Stray trailing backslash at end of line {bad_line}. Remove it (line continuations are invalid here).",
+                    "error_type": "ValidationError",
+                    "error_details": "Unexpected line continuation"
+                },
+                status_code=400
+            )
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
             f.write(template_code)
             temp_file = f.name
         
@@ -299,8 +368,26 @@ def render(args: Args) -> bytes:
                 }, status_code=400)
             
             temp_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(temp_module)
             
+            # Add improved syntax error diagnostics
+            try:
+                spec.loader.exec_module(temp_module)
+            except SyntaxError as e:
+                import linecache
+                filename = e.filename or temp_file
+                lineno = e.lineno or 1
+                line = linecache.getline(filename, lineno).rstrip("\n")
+                return JSONResponse(
+                    content={
+                        "valid": False,
+                        "message": f"Python syntax error on line {lineno}: {e.msg}",
+                        "error_type": "SyntaxError",
+                        "error_details": f"{line}\n{' ' * (e.offset-1)}^" if e.offset else line
+                    },
+                    status_code=400
+                )
+            
+            # Validate Args class
             if not hasattr(temp_module, 'Args'):
                 return JSONResponse(content={
                     "valid": False,
@@ -310,102 +397,15 @@ def render(args: Args) -> bytes:
                 }, status_code=400)
             
             Args = getattr(temp_module, 'Args')
-            try:
-                args_instance = Args()
-            except Exception as e:
+            if not issubclass(Args, BaseModel):
                 return JSONResponse(content={
                     "valid": False,
-                    "message": f"Could not instantiate Args class: {str(e)}",
-                    "error_type": "InstantiationError",
-                    "error_details": str(e)
+                    "message": "Args must subclass pydantic.BaseModel",
+                    "error_type": "ValidationError",
+                    "error_details": "Args class must inherit from BaseModel"
                 }, status_code=400)
             
-            try:
-                import json
-                json.dumps(args_instance.model_dump())
-            except Exception as e:
-                return JSONResponse(content={
-                    "valid": False,
-                    "message": f"Args instance not JSON serializable: {str(e)}",
-                    "error_type": "SerializationError",
-                    "error_details": str(e)
-                }, status_code=400)
-            
-            return JSONResponse(content={
-                "valid": True,
-                "message": "Args class is valid and ready to use"
-            })
-            
-        finally:
-            Path(temp_file).unlink()
-        
-    except Exception as e:
-        return JSONResponse(content={
-            "valid": False,
-            "message": f"Args validation failed: {str(e)}",
-            "error_type": type(e).__name__,
-            "error_details": str(e)
-        }, status_code=400)
-
-
-@app.post("/verify-render")
-async def verify_render_function(request: dict) -> JSONResponse:
-    """
-    Verify that render function code is valid and can compile a PDF.
-    Accepts either:
-    1. render_code: Just the render function code (uses dummy Args)
-    2. full_template: Complete template with both Args and render function
-    
-    Returns validation status and any error details.
-    """
-    try:
-        render_code = request.get("render_code", "")
-        full_template = request.get("full_template", "")
-        
-        if not render_code.strip() and not full_template.strip():
-            return JSONResponse(content={
-                "valid": False,
-                "message": "No render code or full template provided",
-                "error_type": "ValidationError",
-                "error_details": "Either render_code or full_template field is required"
-            }, status_code=400)
-        
-        import importlib.util
-        import tempfile
-        from pathlib import Path
-
-        # Use full template if provided, otherwise create minimal template
-        if full_template.strip():
-            template_code = full_template
-        else:
-            # Create a minimal template with a dummy Args class and the render function
-            template_code = f"""# Generated render function
-from pydantic import BaseModel, Field
-
-# Dummy Args class for testing
-class Args(BaseModel):
-    title: str = Field(default="Test Document", description="Document title")
-
-{render_code}
-"""
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-            f.write(template_code)
-            temp_file = f.name
-        
-        try:
-            spec = importlib.util.spec_from_file_location("temp_template", temp_file)
-            if spec is None or spec.loader is None:
-                return JSONResponse(content={
-                    "valid": False,
-                    "message": "Could not create module spec",
-                    "error_type": "ImportError",
-                    "error_details": "Failed to create module specification"
-                }, status_code=400)
-            
-            temp_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(temp_module)
-            
+            # Validate render function
             if not hasattr(temp_module, 'render'):
                 return JSONResponse(content={
                     "valid": False,
@@ -415,7 +415,6 @@ class Args(BaseModel):
                 }, status_code=400)
             
             render_func = getattr(temp_module, 'render')
-            Args = getattr(temp_module, 'Args')
             
             # Validate function signature
             import inspect
@@ -433,7 +432,6 @@ class Args(BaseModel):
                 args_instance = Args()
                 
                 # This will test the actual PyLaTeX imports and compilation
-                # We catch the error and provide detailed feedback
                 try:
                     pdf_bytes = render_func(args_instance)
                     
@@ -466,7 +464,7 @@ class Args(BaseModel):
                     
                     return JSONResponse(content={
                         "valid": True,
-                        "message": f"render function is valid and generated {len(pdf_bytes)} byte PDF",
+                        "message": f"Template is valid and generated {len(pdf_bytes)} byte PDF",
                         "pdf_size": len(pdf_bytes)
                     })
                     
@@ -481,32 +479,58 @@ class Args(BaseModel):
                 except Exception as e:
                     # This catches LaTeX compilation errors, syntax errors, etc.
                     error_msg = str(e)
+                    
+                    # Try to capture LaTeX log files for more detailed error information
+                    latex_log_details = ""
+                    try:
+                        # Look for .log files in the temp directory that might contain LaTeX errors
+                        import glob
+                        log_files = glob.glob(f"{temp_file.replace('.py', '')}*.log")
+                        if log_files:
+                            with open(log_files[0], 'r', encoding='utf-8', errors='ignore') as log_file:
+                                log_content = log_file.read()
+                                # Extract error lines from the log
+                                error_lines = [line for line in log_content.split('\n') if 'Error' in line or 'error' in line or '!' in line]
+                                if error_lines:
+                                    latex_log_details = "\nLaTeX Log Errors:\n" + "\n".join(error_lines[-10:])  # Last 10 error lines
+                    except Exception:
+                        pass  # Ignore log file reading errors
+                    
                     if "LaTeX Error" in error_msg:
+                        full_error = f"LaTeX compilation error: {error_msg}"
+                        if latex_log_details:
+                            full_error += f"\n{latex_log_details}"
                         return JSONResponse(content={
                             "valid": False,
-                            "message": f"LaTeX compilation error: {error_msg}",
+                            "message": full_error,
                             "error_type": "LaTeXError",
-                            "error_details": error_msg
+                            "error_details": full_error
                         }, status_code=400)
                     elif "XeLaTeX failed" in error_msg:
+                        full_error = f"XeLaTeX compilation failed: {error_msg}"
+                        if latex_log_details:
+                            full_error += f"\n{latex_log_details}"
                         return JSONResponse(content={
                             "valid": False,
-                            "message": f"XeLaTeX compilation failed: {error_msg}",
+                            "message": full_error,
                             "error_type": "LaTeXError",
-                            "error_details": error_msg
+                            "error_details": full_error
                         }, status_code=400)
                     else:
+                        full_error = f"render function execution failed: {error_msg}"
+                        if latex_log_details:
+                            full_error += f"\n{latex_log_details}"
                         return JSONResponse(content={
                             "valid": False,
-                            "message": f"render function execution failed: {error_msg}",
+                            "message": full_error,
                             "error_type": "ExecutionError",
-                            "error_details": error_msg
+                            "error_details": full_error
                         }, status_code=400)
                 
             except Exception as e:
                 return JSONResponse(content={
                     "valid": False,
-                    "message": f"Could not validate render function: {str(e)}",
+                    "message": f"Could not validate template: {str(e)}",
                     "error_type": "ValidationError",
                     "error_details": str(e)
                 }, status_code=400)
@@ -517,7 +541,7 @@ class Args(BaseModel):
     except Exception as e:
         return JSONResponse(content={
             "valid": False,
-            "message": f"render validation failed: {str(e)}",
+            "message": f"Template validation failed: {str(e)}",
             "error_type": type(e).__name__,
             "error_details": str(e)
         }, status_code=400)
