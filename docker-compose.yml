@@ -60,7 +60,6 @@ services:
       - REDIS_URL=redis://${COMPOSE_PROJECT_NAME}-redis:6379
       - MODEL_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-model:8000
       - DOCUMENTS_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-documents:8000
-      - AUDIO_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-audio:8000
 
       # webrtc
       - STUN_URI=stun:${COMPOSE_PROJECT_NAME}-webrtc-1:3479
@@ -138,30 +137,6 @@ services:
       retries: 3
       start_period: 30s
 
-  audio:
-    image: ${LEARNLOOP_AUDIO_IMAGE:-ghcr.io/ashokhomepc/learnloop-audio:latest}
-    pull_policy: always
-    restart: unless-stopped
-    init: true
-    networks:
-      web:
-        aliases:
-          - ${COMPOSE_PROJECT_NAME}-audio
-    environment:
-      - PORT=8000
-      - HOST=0.0.0.0
-      - AUDIO_SECRET=${AUDIO_SECRET}
-      - MODEL_SERVICE_URL=http://${COMPOSE_PROJECT_NAME}-model:8000
-      - OPENAI_REALTIME_MODEL=${OPENAI_REALTIME_MODEL}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    volumes:
-      - ./recordings:/app/recordings
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
 
   redis:
     image: redis:7-alpine
