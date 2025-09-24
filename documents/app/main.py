@@ -1,12 +1,12 @@
 import importlib.util
 import json
 import logging
+import os
 import tempfile
-from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple, Type
 from uuid import UUID
 
-from app.extensions import TEMPLATES_DIR  # <-- your templates directory (Path)
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -17,6 +17,11 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("documents_service")
+
+# Supabase Storage configuration
+SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+SERVICE_ROLE_KEY = os.getenv("SERVICE_ROLE_KEY")
+BUCKET_NAME = "templates"
 
 app = FastAPI(
     title="LearnLoop Documents Service",
@@ -45,23 +50,106 @@ class CreateRequest(BaseModel):
 
 # ---------- Utilities ----------
 
-def _template_module_path(template_id: UUID) -> Path:
-    return TEMPLATES_DIR / f"{str(template_id)}.py"
+async def _download_template_from_storage(template_id: UUID) -> str:
+    """Download template Python code from Supabase Storage."""
+    if not all([SUPABASE_URL, SERVICE_ROLE_KEY]):
+        raise HTTPException(
+            status_code=500, 
+            detail="Supabase configuration missing. Check SUPABASE_URL and SERVICE_ROLE_KEY environment variables."
+        )
+    
+    file_key = f"{template_id}.py"
+    storage_url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET_NAME}/{file_key}"
+    
+    headers = {
+        "Authorization": f"Bearer {SERVICE_ROLE_KEY}",
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(storage_url, headers=headers)
+            response.raise_for_status()
+            return response.text
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Template {template_id} not found in storage.")
+            else:
+                raise HTTPException(status_code=500, detail=f"Failed to download template: {e.response.text}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Storage error: {str(e)}")
 
-def _import_template_module(template_id: UUID) -> Any:
-    path = _template_module_path(template_id)
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"Template {template_id} not found.")
-    spec = importlib.util.spec_from_file_location(f"template_{template_id}", path)
-    if spec is None or spec.loader is None:
-        raise HTTPException(status_code=500, detail="Could not load template module spec.")
-    mod = importlib.util.module_from_spec(spec)
+async def _list_templates_from_storage() -> list[str]:
+    """List all template IDs from Supabase Storage."""
+    if not all([SUPABASE_URL, SERVICE_ROLE_KEY]):
+        raise HTTPException(
+            status_code=500, 
+            detail="Supabase configuration missing. Check SUPABASE_URL and SERVICE_ROLE_KEY environment variables."
+        )
+    
+    storage_url = f"{SUPABASE_URL}/storage/v1/object/list/{BUCKET_NAME}"
+    
+    headers = {
+        "Authorization": f"Bearer {SERVICE_ROLE_KEY}",
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(storage_url, headers=headers, json={"limit": 1000})
+            response.raise_for_status()
+            data = response.json()
+            
+            template_ids = []
+            for item in data:
+                if item.get("name", "").endswith(".py"):
+                    # Extract UUID from filename (remove .py extension)
+                    filename = item["name"]
+                    template_id = filename[:-3]  # Remove .py extension
+                    try:
+                        # Validate it's a valid UUID
+                        UUID(template_id)
+                        template_ids.append(template_id)
+                    except ValueError:
+                        # Skip files that don't have valid UUID names
+                        continue
+            
+            return template_ids
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=500, detail=f"Failed to list templates: {e.response.text}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Storage error: {str(e)}")
+
+# Removed _template_module_path as we're now using Supabase Storage
+
+async def _import_template_module(template_id: UUID) -> Any:
+    """Import template module from Supabase Storage."""
     try:
-        spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+        # Download template code from storage
+        template_code = await _download_template_from_storage(template_id)
+        
+        # Create a temporary file to execute the template code
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
+            temp_file.write(template_code)
+            temp_path = temp_file.name
+        
+        try:
+            # Load the module from the temporary file
+            spec = importlib.util.spec_from_file_location(f"template_{template_id}", temp_path)
+            if spec is None or spec.loader is None:
+                raise HTTPException(status_code=500, detail="Could not load template module spec.")
+            
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)  # type: ignore[attr-defined]
+            return mod
+        finally:
+            # Clean up the temporary file
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass  # Ignore cleanup errors
+                
     except Exception as e:
         logger.exception("Template import failed")
         raise HTTPException(status_code=500, detail=f"Template import error: {e}")
-    return mod
 
 
 def _get_template_contract(mod: Any) -> Tuple[Type[BaseModel], Callable[[BaseModel], bytes], Optional[str], Optional[str]]:
@@ -147,18 +235,9 @@ async def health_check() -> HealthResponse:
 @app.get("/templates")
 async def list_templates() -> JSONResponse:
     """
-    List all available template IDs by scanning the templates directory.
+    List all available template IDs from Supabase Storage.
     """
-    template_ids = []
-    for template_file in TEMPLATES_DIR.glob("*.py"):
-        if template_file.name != "__init__.py":
-            try:
-                template_id = UUID(template_file.stem)
-                template_ids.append(str(template_id))
-            except ValueError:
-                # Skip files that don't have valid UUID names
-                continue
-    
+    template_ids = await _list_templates_from_storage()
     return JSONResponse(content={"template_ids": template_ids})
 
 @app.get("/templates/{template_id}/spec")
@@ -166,7 +245,7 @@ async def get_template_spec(template_id: UUID) -> JSONResponse:
     """
     Return the template's Args schema (fields, types, defaults) and declared return type.
     """
-    mod = _import_template_module(template_id)
+    mod = await _import_template_module(template_id)
     ArgsModel, _, default_filename, template_description = _get_template_contract(mod)
     spec = _model_spec(ArgsModel, template_description, default_filename)
     return JSONResponse(content=spec)
@@ -177,7 +256,7 @@ async def create_document(req: CreateRequest) -> StreamingResponse:
     Single endpoint: pick template by UUID, validate kwargs against template's Args, then compile PDF.
     Returns PDF as streaming response.
     """
-    mod = _import_template_module(req.template_id)
+    mod = await _import_template_module(req.template_id)
     ArgsModel, render_fn, default_filename, _ = _get_template_contract(mod)
 
     try:

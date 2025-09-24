@@ -128,8 +128,10 @@ services:
     environment:
       - PORT=8000
       - HOST=0.0.0.0
+      # Supabase Storage configuration
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
     volumes:
-      - ./documents/templates:/app/templates:ro    # bind RO is fine for reading templates
       - documents_files:/app/files                 # named volume for writable outputs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

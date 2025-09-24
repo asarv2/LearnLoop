@@ -446,6 +446,7 @@ function CreateCustomTrainingModal({
             const document = await createDocument.mutateAsync({
               content: "",
               profile_id: user?.id || null,
+              title: uploadedFile.name,
             });
 
             const formData = new FormData();

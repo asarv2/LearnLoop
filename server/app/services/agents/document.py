@@ -124,15 +124,25 @@ async def run_document_agent(
         create_render_tool()
     ]
     
-    # Create the document agent
-    agent_instance = DocumentAgent(
+    # Create tool use behavior to wait for both tools to be called
+    def tool_use_behavior(context: Any, tool_results: list[Any]) -> ToolsToFinalOutputResult:
+        # We require both args_code and render_code tools to be called
+        required_tools = ['args_code', 'render_code']
+        completed_required = all(document_progress.get(tool, False) for tool in required_tools)
+        return ToolsToFinalOutputResult(is_final_output=completed_required)
+
+    # Create the document agent using GenericAgent directly
+    document_agent = GenericAgent(
         agent_name="Document Generator",
         system_prompt=system_prompt,
-        temperature=0.1,  # Low temperature for consistent code generation
-        model="xai/groq-llama-3.1-70b-versatile",  # Using xAI as requested
+        temperature=0.0,
         tools=tools,
-        parallel_tool_calls=True
+        parallel_tool_calls=False,
+        tool_use_behavior=tool_use_behavior,
+        model="xai/grok-4-fast-non-reasoning"
     )
+
+    agent_instance = document_agent.agent()
     
     # Clear previous results
     document_results.clear()
@@ -157,62 +167,30 @@ Please generate both the Args class and render function.
 """
     
     with trace("Document Generation Agent"):
-        result = Runner.run_streamed(
-            agent_instance.agent(),
-            input=[{"role": "user", "content": input_text}],
-        )
+        # Use streamed runner for better progress visibility
+        streamed_result = Runner.run_streamed(agent_instance, input=[{"role": "user", "content": input_text}])
+        
+        # Optionally handle streaming events for even more granular progress
+        async for event in streamed_result.stream_events():
+            # Could emit planning/tool-call started events here if needed
+            pass
+
+    logger.info("Document generation agent completed successfully")
     
-    # Wait for the agent to complete
-    async for event in result.stream_events():
-        # Check if we have both components generated
-        if document_progress.get('args_code', False) and document_progress.get('render_code', False):
-            break
+    # Check if required tools were called
+    required_tools = ['args_code', 'render_code']
+    completed_required = [tool for tool in required_tools if document_progress.get(tool, False)]
+    logger.info(f"Document generation completed: {len(completed_required)}/{len(required_tools)} required tools called")
+    logger.info(f"Required tools: {required_tools}")
+    logger.info(f"Completed tools: {completed_required}")
     
-    # Check if both components were generated
-    if not document_progress.get('args_code', False):
-        raise RuntimeError("Failed to generate Args class")
-    if not document_progress.get('render_code', False):
-        raise RuntimeError("Failed to generate render function")
+    if len(completed_required) < len(required_tools):
+        missing_tools = [tool for tool in required_tools if not document_progress.get(tool, False)]
+        logger.warning(f"Missing tool calls for: {missing_tools}")
+        raise RuntimeError(f"Document generation incomplete - missing: {missing_tools}")
     
     return {
         'args_code': document_results.get('args_code', ''),
         'render_code': document_results.get('render_code', ''),
         'document_type': document_type
     }
-
-
-class DocumentAgent:
-    def __init__(
-        self,
-        agent_name: str,
-        system_prompt: str,
-        temperature: float = 0.1,
-        model: str = "xai/groq-llama-3.1-70b-versatile",
-        tools: List[Any] = [],
-        parallel_tool_calls: bool = True
-    ):
-        self.agent_name = agent_name
-        self.system_prompt = system_prompt
-        self.temperature = temperature
-        self.model = model
-        self.tools = tools
-        self.parallel_tool_calls = parallel_tool_calls
-
-    def agent(self) -> Any:
-        """Create the document generation agent."""
-        return GenericAgent(
-            agent_name=self.agent_name,
-            system_prompt=self.system_prompt,
-            temperature=self.temperature,
-            model=self.model,
-            tools=self.tools,
-            parallel_tool_calls=self.parallel_tool_calls
-        ).agent()
-
-
-# Example usage:
-# result = await run_document_agent(
-#     document_type="resume",
-#     document_structure="Personal Information, Professional Summary, Work Experience, Education, Skills",
-#     context="Professional resume for software engineering positions"
-# )
