@@ -12,7 +12,6 @@ import {
   ExclamationTriangleIcon,
   FileTextIcon,
   PlayIcon,
-  ReloadIcon,
 } from "@radix-ui/react-icons";
 import {
   Badge,
@@ -76,7 +75,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     message: string;
     error: string;
   } | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
   const preparingModelTimerRef = useRef<number | null>(null);
   const { user } = useAuth();
   const { data: fields } = useFields();
@@ -560,7 +558,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       setIsGenerating(false);
       // Clear any previous errors
       setGenerationError(null);
-      setRetryCount(0);
       // Hide the progress shortly after completion
       window.setTimeout(() => {
         setGenerateProgress((prev) => ({ ...prev, visible: false }));
@@ -951,12 +948,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         </Flex>
       </Box>
     );
-  };
-
-  const handleRetryGeneration = () => {
-    setGenerationError(null);
-    setRetryCount((prev) => prev + 1);
-    handleGenerateScenario({ additionalPrompt });
   };
 
   const handleGenerateScenario = async (opts?: {
@@ -1853,7 +1844,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               (draftObjectives && draftObjectives.length > 0) ||
               (scenario?.objectives && scenario.objectives.length > 0)
             ) && (
-              <Box>
+              <Box mb="6">
                 <Card
                   style={{
                     background: "white",
@@ -1973,101 +1964,87 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               </Box>
             )}
 
-          {/* Error Display and Retry */}
+          {/* Error Display */}
           {generationError && (
-            <Box mb="4">
+            <Box mb="6">
               <Card
                 style={{
-                  background:
-                    "linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%)",
-                  border: "none",
-                  color: "white",
+                  background: "white",
+                  border: "1px solid var(--red-7)",
+                  borderRadius: "12px",
+                  boxShadow: "0 4px 12px rgba(255, 107, 107, 0.15)",
+                  position: "relative",
                 }}
               >
-                <Flex align="start" gap="4">
-                  <Box
-                    style={{
-                      width: "48px",
-                      height: "48px",
-                      borderRadius: "12px",
-                      background: "rgba(255, 255, 255, 0.2)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <ExclamationTriangleIcon
-                      color="white"
-                      width="16"
-                      height="16"
-                    />
-                  </Box>
-                  <Box style={{ flex: 1 }}>
-                    <Flex align="center" gap="2" mb="3">
-                      <Text size="4" weight="bold">
-                        Generation Failed
-                      </Text>
-                      <Badge size="1" variant="soft" color="red">
-                        Error
-                      </Badge>
-                    </Flex>
-                    <Text
-                      size="2"
-                      style={{ color: "rgba(255, 255, 255, 0.9)" }}
-                      mb="4"
+                <Box p="6">
+                  <Flex align="start" gap="4">
+                    <Box
+                      style={{
+                        width: "48px",
+                        height: "48px",
+                        borderRadius: "12px",
+                        background: "var(--red-3)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
                     >
-                      {generationError.message}
-                    </Text>
-                    <Flex gap="2">
-                      <Button
-                        size="3"
-                        variant="solid"
-                        style={{
-                          background: "rgba(255, 255, 255, 0.2)",
-                          border: "1px solid rgba(255, 255, 255, 0.3)",
-                          color: "white",
-                        }}
-                        onClick={handleRetryGeneration}
-                        disabled={isGenerating}
-                      >
-                        {isGenerating ? (
-                          <Flex align="center" gap="2">
-                            <Spinner size="1" />
-                            <Text>Retrying...</Text>
-                          </Flex>
-                        ) : (
-                          <Flex align="center" gap="2">
-                            <ReloadIcon />
-                            <Text>Retry Generation</Text>
-                          </Flex>
-                        )}
-                      </Button>
-                      <Button
-                        size="3"
-                        variant="outline"
-                        style={{
-                          border: "1px solid rgba(255, 255, 255, 0.3)",
-                          color: "white",
-                        }}
-                        onClick={() => setGenerationError(null)}
-                      >
-                        Dismiss
-                      </Button>
-                    </Flex>
-                    {retryCount > 0 && (
-                      <Text
-                        size="1"
-                        style={{
-                          color: "rgba(255, 255, 255, 0.7)",
-                          marginTop: "8px",
-                        }}
-                      >
-                        Retry attempt: {retryCount}
+                      <ExclamationTriangleIcon
+                        color="var(--red-11)"
+                        width="20"
+                        height="20"
+                      />
+                    </Box>
+                    <Box style={{ flex: 1 }}>
+                      <Flex align="center" gap="2" mb="3">
+                        <Text size="4" weight="bold" color="red">
+                          Generation Failed
+                        </Text>
+                        <Badge size="1" variant="soft" color="red">
+                          Error
+                        </Badge>
+                      </Flex>
+                      <Text size="3" color="gray" mb="4">
+                        {generationError.message}
                       </Text>
-                    )}
-                  </Box>
-                </Flex>
+                      <Text size="2" color="gray">
+                        You can try generating the scenario again using the
+                        button above.
+                      </Text>
+                    </Box>
+                  </Flex>
+                </Box>
+                {/* Cancel X button in top right */}
+                <Button
+                  size="1"
+                  variant="ghost"
+                  style={{
+                    position: "absolute",
+                    top: "12px",
+                    right: "12px",
+                    color: "var(--gray-11)",
+                    padding: "4px",
+                    minWidth: "auto",
+                    width: "24px",
+                    height: "24px",
+                    fontSize: "18px",
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  onClick={() => {
+                    setGenerationError(null);
+                    setIsGenerating(false);
+                    setGenerateProgress((prev) => ({
+                      ...prev,
+                      visible: false,
+                    }));
+                  }}
+                >
+                  ×
+                </Button>
               </Card>
             </Box>
           )}

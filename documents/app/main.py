@@ -252,6 +252,278 @@ async def list_templates() -> JSONResponse:
     template_ids = await _list_templates_from_storage()
     return JSONResponse(content={"template_ids": template_ids})
 
+@app.post("/verify-args")
+async def verify_args_class(request: dict) -> JSONResponse:
+    """
+    Verify that Args class code is valid and can be imported without errors.
+    Accepts Args class code as freeform text.
+    Returns validation status and any error details.
+    """
+    try:
+        args_code = request.get("args_code", "")
+        if not args_code.strip():
+            return JSONResponse(content={
+                "valid": False,
+                "message": "No Args code provided",
+                "error_type": "ValidationError",
+                "error_details": "args_code field is required and cannot be empty"
+            }, status_code=400)
+        
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        # Create a minimal template with the Args class
+        template_code = f"""# Generated Args class
+from pydantic import BaseModel, Field
+
+{args_code}
+
+# Dummy render function for testing
+def render(args: Args) -> bytes:
+    return b"dummy"
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(template_code)
+            temp_file = f.name
+        
+        try:
+            spec = importlib.util.spec_from_file_location("temp_template", temp_file)
+            if spec is None or spec.loader is None:
+                return JSONResponse(content={
+                    "valid": False,
+                    "message": "Could not create module spec",
+                    "error_type": "ImportError",
+                    "error_details": "Failed to create module specification"
+                }, status_code=400)
+            
+            temp_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(temp_module)
+            
+            if not hasattr(temp_module, 'Args'):
+                return JSONResponse(content={
+                    "valid": False,
+                    "message": "Args class not found",
+                    "error_type": "ValidationError",
+                    "error_details": "Args class is required but not found in code"
+                }, status_code=400)
+            
+            Args = getattr(temp_module, 'Args')
+            try:
+                args_instance = Args()
+            except Exception as e:
+                return JSONResponse(content={
+                    "valid": False,
+                    "message": f"Could not instantiate Args class: {str(e)}",
+                    "error_type": "InstantiationError",
+                    "error_details": str(e)
+                }, status_code=400)
+            
+            try:
+                import json
+                json.dumps(args_instance.model_dump())
+            except Exception as e:
+                return JSONResponse(content={
+                    "valid": False,
+                    "message": f"Args instance not JSON serializable: {str(e)}",
+                    "error_type": "SerializationError",
+                    "error_details": str(e)
+                }, status_code=400)
+            
+            return JSONResponse(content={
+                "valid": True,
+                "message": "Args class is valid and ready to use"
+            })
+            
+        finally:
+            Path(temp_file).unlink()
+        
+    except Exception as e:
+        return JSONResponse(content={
+            "valid": False,
+            "message": f"Args validation failed: {str(e)}",
+            "error_type": type(e).__name__,
+            "error_details": str(e)
+        }, status_code=400)
+
+
+@app.post("/verify-render")
+async def verify_render_function(request: dict) -> JSONResponse:
+    """
+    Verify that render function code is valid and can compile a PDF.
+    Accepts either:
+    1. render_code: Just the render function code (uses dummy Args)
+    2. full_template: Complete template with both Args and render function
+    
+    Returns validation status and any error details.
+    """
+    try:
+        render_code = request.get("render_code", "")
+        full_template = request.get("full_template", "")
+        
+        if not render_code.strip() and not full_template.strip():
+            return JSONResponse(content={
+                "valid": False,
+                "message": "No render code or full template provided",
+                "error_type": "ValidationError",
+                "error_details": "Either render_code or full_template field is required"
+            }, status_code=400)
+        
+        import importlib.util
+        import tempfile
+        from pathlib import Path
+
+        # Use full template if provided, otherwise create minimal template
+        if full_template.strip():
+            template_code = full_template
+        else:
+            # Create a minimal template with a dummy Args class and the render function
+            template_code = f"""# Generated render function
+from pydantic import BaseModel, Field
+
+# Dummy Args class for testing
+class Args(BaseModel):
+    title: str = Field(default="Test Document", description="Document title")
+
+{render_code}
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(template_code)
+            temp_file = f.name
+        
+        try:
+            spec = importlib.util.spec_from_file_location("temp_template", temp_file)
+            if spec is None or spec.loader is None:
+                return JSONResponse(content={
+                    "valid": False,
+                    "message": "Could not create module spec",
+                    "error_type": "ImportError",
+                    "error_details": "Failed to create module specification"
+                }, status_code=400)
+            
+            temp_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(temp_module)
+            
+            if not hasattr(temp_module, 'render'):
+                return JSONResponse(content={
+                    "valid": False,
+                    "message": "render function not found",
+                    "error_type": "ValidationError",
+                    "error_details": "render function is required but not found in code"
+                }, status_code=400)
+            
+            render_func = getattr(temp_module, 'render')
+            Args = getattr(temp_module, 'Args')
+            
+            # Validate function signature
+            import inspect
+            sig = inspect.signature(render_func)
+            if len(sig.parameters) != 1:
+                return JSONResponse(content={
+                    "valid": False,
+                    "message": "render function must take exactly one parameter (args: Args)",
+                    "error_type": "ValidationError",
+                    "error_details": f"Expected 1 parameter, got {len(sig.parameters)}"
+                }, status_code=400)
+            
+            # Try to instantiate Args and call render function to test PyLaTeX compilation
+            try:
+                args_instance = Args()
+                
+                # This will test the actual PyLaTeX imports and compilation
+                # We catch the error and provide detailed feedback
+                try:
+                    pdf_bytes = render_func(args_instance)
+                    
+                    # Verify we got bytes back
+                    if not isinstance(pdf_bytes, bytes):
+                        return JSONResponse(content={
+                            "valid": False,
+                            "message": "render function must return bytes, not file path",
+                            "error_type": "ValidationError",
+                            "error_details": f"Expected bytes, got {type(pdf_bytes).__name__}"
+                        }, status_code=400)
+                    
+                    # Verify PDF is not empty
+                    if len(pdf_bytes) == 0:
+                        return JSONResponse(content={
+                            "valid": False,
+                            "message": "render function returned empty PDF",
+                            "error_type": "ValidationError",
+                            "error_details": "Generated PDF has 0 bytes"
+                        }, status_code=400)
+                    
+                    # Verify it's actually a PDF (check for PDF header)
+                    if not pdf_bytes.startswith(b'%PDF'):
+                        return JSONResponse(content={
+                            "valid": False,
+                            "message": "render function did not generate valid PDF",
+                            "error_type": "ValidationError",
+                            "error_details": "Generated file does not have PDF header"
+                        }, status_code=400)
+                    
+                    return JSONResponse(content={
+                        "valid": True,
+                        "message": f"render function is valid and generated {len(pdf_bytes)} byte PDF",
+                        "pdf_size": len(pdf_bytes)
+                    })
+                    
+                except ImportError as e:
+                    return JSONResponse(content={
+                        "valid": False,
+                        "message": f"PyLaTeX import error: {str(e)}",
+                        "error_type": "ImportError",
+                        "error_details": str(e)
+                    }, status_code=400)
+                    
+                except Exception as e:
+                    # This catches LaTeX compilation errors, syntax errors, etc.
+                    error_msg = str(e)
+                    if "LaTeX Error" in error_msg:
+                        return JSONResponse(content={
+                            "valid": False,
+                            "message": f"LaTeX compilation error: {error_msg}",
+                            "error_type": "LaTeXError",
+                            "error_details": error_msg
+                        }, status_code=400)
+                    elif "XeLaTeX failed" in error_msg:
+                        return JSONResponse(content={
+                            "valid": False,
+                            "message": f"XeLaTeX compilation failed: {error_msg}",
+                            "error_type": "LaTeXError",
+                            "error_details": error_msg
+                        }, status_code=400)
+                    else:
+                        return JSONResponse(content={
+                            "valid": False,
+                            "message": f"render function execution failed: {error_msg}",
+                            "error_type": "ExecutionError",
+                            "error_details": error_msg
+                        }, status_code=400)
+                
+            except Exception as e:
+                return JSONResponse(content={
+                    "valid": False,
+                    "message": f"Could not validate render function: {str(e)}",
+                    "error_type": "ValidationError",
+                    "error_details": str(e)
+                }, status_code=400)
+            
+        finally:
+            Path(temp_file).unlink()
+        
+    except Exception as e:
+        return JSONResponse(content={
+            "valid": False,
+            "message": f"render validation failed: {str(e)}",
+            "error_type": type(e).__name__,
+            "error_details": str(e)
+        }, status_code=400)
+
+
+
 @app.get("/templates/{template_id}/spec")
 async def get_template_spec(template_id: UUID) -> JSONResponse:
     """

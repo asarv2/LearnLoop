@@ -21,6 +21,7 @@ import {
   useTrainingsByType,
   useUpdateTraining,
 } from "@/lib/api/hooks/useTrainings";
+import { trainingKeys } from "@/lib/api/keys";
 import {
   BulbOutlined,
   CommentOutlined,
@@ -39,6 +40,7 @@ import {
   UserDeleteOutlined,
 } from "@ant-design/icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Badge,
   Button,
@@ -382,6 +384,7 @@ function CreateCustomTrainingModal({
   );
   const { user } = useAuth();
   const { emitCreateTraining } = useWebSocket();
+  const queryClient = useQueryClient();
 
   // Get scenarios for the training being edited to find document info
   const { data: editScenarios } = useScenariosByTrainingId(
@@ -418,6 +421,10 @@ function CreateCustomTrainingModal({
         });
         setIsCreating(false);
         form.resetFields();
+
+        // Invalidate queries to refresh the training list
+        queryClient.invalidateQueries({ queryKey: trainingKeys.all });
+
         // Call onSuccess without routing
         onSuccess();
       } else {
@@ -450,6 +457,7 @@ function CreateCustomTrainingModal({
         handleCompleted as EventListener
       );
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, onSuccess]);
 
   const handleSubmit = async (values: {
@@ -464,11 +472,11 @@ function CreateCustomTrainingModal({
           title: values.scenario,
           description: values.description,
         });
-        message.success("Custom training updated successfully!");
+        messageApi.success("Custom training updated successfully!");
         form.resetFields();
         onSuccess();
       } catch {
-        message.error("Failed to update custom training");
+        messageApi.error("Failed to update custom training");
       } finally {
         setLoading(false);
       }
@@ -516,7 +524,7 @@ function CreateCustomTrainingModal({
             });
           } catch (error) {
             console.error("Error uploading document:", error);
-            message.error("Failed to upload document. Please try again.");
+            messageApi.error("Failed to upload document. Please try again.");
             setIsCreating(false);
             setProgress({
               visible: false,
@@ -536,7 +544,7 @@ function CreateCustomTrainingModal({
         });
       } catch (error) {
         console.error("Error in training creation:", error);
-        message.error("Failed to create training. Please try again.");
+        messageApi.error("Failed to create training. Please try again.");
         setIsCreating(false);
         setProgress({
           visible: false,
