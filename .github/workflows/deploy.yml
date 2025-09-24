@@ -8,7 +8,6 @@ on:
       - 'server/**'
       - 'model/**'
       - 'documents/**'
-      - 'audio/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
@@ -28,7 +27,6 @@ jobs:
       server-changed: ${{ steps.changes.outputs.server }}
       model-changed: ${{ steps.changes.outputs.model }}
       documents-changed: ${{ steps.changes.outputs.documents }}
-      audio-changed: ${{ steps.changes.outputs.audio }}
       any-changes: ${{ steps.changes.outputs.any }}
     steps:
       - name: Checkout code
@@ -55,9 +53,8 @@ jobs:
           set_flag "server" "server"
           set_flag "model"  "model"
           set_flag "documents" "documents"
-          set_flag "audio" "audio"
 
-          if echo "$CHANGED_FILES" | grep -qE "^client/|^server/|^model/|^documents/|^audio/|^\.github/workflows/deploy\.yml"; then
+          if echo "$CHANGED_FILES" | grep -qE "^client/|^server/|^model/|^documents/|^\.github/workflows/deploy\.yml"; then
             echo "any=true" >> $GITHUB_OUTPUT
           else
             echo "any=false" >> $GITHUB_OUTPUT
@@ -208,44 +205,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  build-audio:
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.audio-changed == 'true'
-    steps:
-      - uses: actions/checkout@v4
-        with: { clean: true }
-
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Meta (audio)
-        id: meta-audio
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/ashokhomepc/learnloop-audio
-          tags: |
-            type=raw,value=${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
-            type=sha,prefix=${{ github.ref_name }}-
-
-      - name: Build & push (audio)
-        uses: docker/build-push-action@v5
-        with:
-          context: ./audio
-          push: true
-          tags: ${{ steps.meta-audio.outputs.tags }}
-          labels: ${{ steps.meta-audio.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   deploy:
     runs-on: self-hosted
-    needs: [detect-changes, build-client, build-server, build-model, build-documents, build-audio]
+    needs: [detect-changes, build-client, build-server, build-model, build-documents]
     if: |
       always() &&
       (needs.detect-changes.outputs.any-changes == 'true' || github.event_name == 'workflow_dispatch')
@@ -279,7 +242,6 @@ jobs:
 
           # 0) Ensure these persistent dirs exist
           mkdir -p "$DEST/web/generated" "$DEST/prompts" "$DEST/templates"
-          mkdir -p "$DEST/recordings"
           
           # Match container users so entrypoints can seed/copy:
           chown -R 1001:1001 "$DEST/prompts"    || true   # server appuser
@@ -308,7 +270,6 @@ jobs:
           P web/generated/
           P prompts/
           P templates/
-          P recordings/
           EOF
 
           # 3) Mirror repo -> DEST (without touching protected dirs)
@@ -343,7 +304,6 @@ jobs:
           LEARNLOOP_SERVER_IMAGE: ghcr.io/ashokhomepc/learnloop-server:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
           LEARNLOOP_MODEL_IMAGE:  ghcr.io/ashokhomepc/learnloop-model:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
           LEARNLOOP_DOCUMENTS_IMAGE: ghcr.io/ashokhomepc/learnloop-documents:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
-          LEARNLOOP_AUDIO_IMAGE: ghcr.io/ashokhomepc/learnloop-audio:${{ env.CHANNEL == 'beta' && 'beta-latest' || 'latest' }}
 
           # Common env (client)
           SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
@@ -355,8 +315,6 @@ jobs:
           GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-          AUDIO_SECRET: ${{ secrets.AUDIO_SECRET }}
-          OPENAI_REALTIME_MODEL: ${{ secrets.OPENAI_REALTIME_MODEL }}
 
           # DB env
           DB_HOST: ${{ secrets.DB_HOST }}
@@ -382,12 +340,12 @@ jobs:
           # Scale
           SERVER_REPLICAS: ${{ env.CHANNEL == 'beta' && secrets.BETA_SERVER_REPLICAS || secrets.SERVER_REPLICAS }}
         run: |
-          mkdir -p web/generated prompts templates files recordings
+          mkdir -p web/generated prompts templates files
 
           # Only web/generated must be writable by nginx/docker-gen
           chmod -R a+rwX web/generated || true
 
-          # Do NOT chmod prompts/templates/files/recordings; they may be RO/immutable/foreign FS
+          # Do NOT chmod prompts/templates/files; they may be RO/immutable/foreign FS
 
           # Seed upstream files with fallback servers to prevent nginx crashes
           echo "server ${COMPOSE_PROJECT_NAME}-client:3000 max_fails=3 fail_timeout=30s;" > web/generated/next_client.upstream.conf

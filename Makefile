@@ -11,7 +11,6 @@ VENV_PIP := $(VENV_BIN)/pip
 SERVER_PORT := 8000
 MODEL_PORT := 8001
 DOCUMENTS_PORT := 8002
-AUDIO_PORT := 8003
 CLIENT_PORT := 3000
 REDIS_PORT := 6379
 
@@ -117,18 +116,16 @@ run: check-venv
 	@echo "  Server:   http://localhost:$(SERVER_PORT)"
 	@echo "  Model:    http://localhost:$(MODEL_PORT)"
 	@echo "  Documents: http://localhost:$(DOCUMENTS_PORT)"
-	@echo "  Audio:    http://localhost:$(AUDIO_PORT)"
 	@echo "  Client:   http://localhost:$(CLIENT_PORT)"
 	@echo ""
 	@echo "Press Ctrl+C to stop all services"
 	@echo "----------------------------------------"
-	@trap 'echo ""; echo "🛑 Stopping all services..."; pkill -f "redis-server.*$(REDIS_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(SERVER_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(MODEL_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(DOCUMENTS_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(AUDIO_PORT)" 2>/dev/null || true; pkill -f "next dev" 2>/dev/null || true; echo "✅ All services stopped"; exit 0' INT; \
+	@trap 'echo ""; echo "🛑 Stopping all services..."; pkill -f "redis-server.*$(REDIS_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(SERVER_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(MODEL_PORT)" 2>/dev/null || true; pkill -f "uvicorn.*$(DOCUMENTS_PORT)" 2>/dev/null || true; pkill -f "next dev" 2>/dev/null || true; echo "✅ All services stopped"; exit 0' INT; \
 	exec 2>/dev/null; \
 	(redis-server --port $(REDIS_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;31m[REDIS]\033[0m %s' "$$line")"; done) & \
 	(cd server && (echo "Generating SQLModel classes from database schema..." && $(PWD)/$(VENV_PYTHON) scripts/generate_models.py && echo "✅ Models generated" && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(SERVER_PORT)) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;32m[SERVER]\033[0m %s' "$$line")"; done) & \
 	(cd model && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(MODEL_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;33m[MODEL]\033[0m %s' "$$line")"; done) & \
 	(cd documents && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(DOCUMENTS_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;34m[DOCS]\033[0m %s' "$$line")"; done) & \
-	(cd audio && $(PWD)/$(VENV_PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port $(AUDIO_PORT) 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;36m[AUDIO]\033[0m %s' "$$line")"; done) & \
 	(cd client && npm run dev 2>&1 | while IFS= read -r line; do echo "$$(printf '\033[0;35m[CLIENT]\033[0m %s' "$$line")"; done) & \
 	wait
 
@@ -158,12 +155,6 @@ stop:
 		kill -9 $$(lsof -ti:$(DOCUMENTS_PORT)) 2>/dev/null && echo "✅ Documents service stopped" || echo "⚠️  Documents service process not found"; \
 	else \
 		echo "⚠️  No process found on port $(DOCUMENTS_PORT)"; \
-	fi
-	@echo "Stopping Audio service on port $(AUDIO_PORT)..."
-	@if lsof -ti:$(AUDIO_PORT) >/dev/null 2>&1; then \
-		kill -9 $$(lsof -ti:$(AUDIO_PORT)) 2>/dev/null && echo "✅ Audio service stopped" || echo "⚠️  Audio service process not found"; \
-	else \
-		echo "⚠️  No process found on port $(AUDIO_PORT)"; \
 	fi
 	@echo "Stopping Client on port $(CLIENT_PORT)..."
 	@if lsof -ti:$(CLIENT_PORT) >/dev/null 2>&1; then \
@@ -227,7 +218,6 @@ help:
 	@echo "  Server:    http://localhost:$(SERVER_PORT)"
 	@echo "  Model:     http://localhost:$(MODEL_PORT)"
 	@echo "  Documents: http://localhost:$(DOCUMENTS_PORT)"
-	@echo "  Audio:     http://localhost:$(AUDIO_PORT)"
 	@echo "  Client:    http://localhost:$(CLIENT_PORT)"
 	@echo ""
 	@echo "Virtual environment location: $(VENV)"

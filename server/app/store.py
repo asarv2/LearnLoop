@@ -90,10 +90,10 @@ def set_emitter(emitter: Callable[[str, str, dict], Awaitable[None]]) -> None:
 
 # ---- persistence helpers -----------------------------------------------------
 
-def _ensure_chat_exists(db: Any, chat_id: str) -> Optional[Chats]:
+def _ensure_chat_exists(db: Any, chat_id: str) -> Any:
     # Optional safety; if your chat rows always exist, you can skip this lookup
     try:
-        return cast(Optional[Chats], db.exec(select(Chats).where(Chats.id == chat_id)).one_or_none())
+        return db.exec(select(Chats).where(Chats.id == chat_id)).one_or_none()
     except Exception:
         return None
 
@@ -300,14 +300,8 @@ async def upsert_text_chunk(
                             if m:
                                 return m, (m.content or "")
                             else:
-                                # Create a dummy message if none exists
-                                dummy_msg = DBMessage(
-                                    id=UUID(mid),
-                                    chat_id=room_id,
-                                    role="user",
-                                    content="",
-                                    completed=True
-                                )
+                                # Create a dummy message if not found
+                                dummy_msg = DBMessage(id=UUID(mid), chat_id=room_id, role="user", content="", completed=True)
                                 return dummy_msg, ""
                         except Exception:
                             try: db.rollback()
@@ -318,7 +312,10 @@ async def upsert_text_chunk(
                             except Exception: pass
                     db_msg, acc = await asyncio.to_thread(_mark_complete)
                 else:
-                    db_msg, acc = res
+                    if res:
+                        db_msg, acc = res
+                    else:
+                        db_msg, acc = None, ""
                 if db_msg:
                     await _emit(room_id, "user_message_complete", {
                         "chat_id": room_id,
@@ -367,7 +364,7 @@ async def upsert_text_chunk(
                     import asyncio
                     async def _schedule_hints() -> None:
                         try:
-                            def _sync(msg_uuid: uuid.UUID) -> Dict[str, Any]:
+                            def _sync(msg_uuid: uuid.UUID) -> dict[str, Any]:
                                 import asyncio as _asyncio
                                 return _asyncio.run(run_hint_agent(msg_uuid))
                             result = await asyncio.to_thread(_sync, uuid.UUID(str(db_msg.id)))
@@ -376,8 +373,6 @@ async def upsert_text_chunk(
                                 "message_id": str(db_msg.id),
                                 "success": result.get("success", False),
                                 "hints": result.get("hints", []),
-                                "low_hints": result.get("dif_low_hints", []),
-                                "high_hints": result.get("dif_high_hints", []),
                                 "message": result.get("message", ""),
                             })
                         except Exception as e:

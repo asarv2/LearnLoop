@@ -17,7 +17,7 @@ import uvicorn
 # Add the app directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.api import socket_app as app
+from app.api import app
 
 # Configure logging
 logging.basicConfig(
@@ -29,3 +29,20 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("model_service")
+
+
+def main() -> None:
+    """Main entry point for the model service."""
+    logger.info(f"Starting LearnLoop Model Service on :8000")
+    
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="info",
+        access_log=True,
+    )
+
+
+if __name__ == "__main__":
+    main()

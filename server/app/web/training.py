@@ -322,20 +322,15 @@ async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
             sio = get_sio_instance()
             await sio.enter_room(sid, chat_id)
 
-            # Start a corresponding room in audio-multi (id == chat_id) and register this human
+            # Start a corresponding room and register this human using room system
             try:
-                from app.bridge import get_bridge
-                from app.utils.chat import get_audio_config
-                bridge = get_bridge(sio)
-                # Get dynamic config based on chat_id/room_id
-                config = get_audio_config(chat_id)
-                await bridge.start_room(room_id=chat_id, config=config)
-                human_id = f"user:{profile_id}" if profile_id else f"user:{sid[-6:]}"
-                await bridge.register_human(room_id=chat_id, human_id=human_id)
-                logger.info(f"Successfully started audio room and registered human {human_id}")
+                from app.room import get_room
+                room = get_room(chat_id)
+                await room.human_join(sid)
+                logger.info(f"Successfully started room {chat_id} and registered human {sid}")
             except Exception as e:
-                logger.error(f"Failed to start/register room in audio: {e}")
-                logger.exception("failed to start/register room in audio")
+                logger.error(f"Failed to start/register room: {e}")
+                logger.exception("failed to start/register room")
 
             # Send success response
             sio.start_background_task(sio.emit,
@@ -556,7 +551,7 @@ async def handle_training_message_rtc(sid: str, data: Dict[str, Any]) -> None:
         chat_id = data.get("chat_id")
         message = (data.get("message") or "").strip()
 
-        from app.store import get_room
+        from app.room import get_room
         room = get_room(str(chat_id))
         
         # Ensure sender is in the room to receive room-scoped events (no-op if already joined)
@@ -608,15 +603,16 @@ async def handle_training_message_rtc(sid: str, data: Dict[str, Any]) -> None:
         # If we need persona tagging for user messages later, we can thread it through the
         # audio pipeline explicitly.
 
-        # Trigger audio service TTS + streaming of user's typed text into the room bus
-        try:
-            from app.bridge import get_bridge
-            sio = get_sio_instance()
-            bridge = get_bridge(sio)
-            human_id = f"user:{profile_id}" if profile_id else f"user:{sid[-6:]}"
-            await bridge.user_text(room_id=str(chat_id), human_id=human_id, text=message)
-        except Exception as e:
-            logger.error(f"Failed to send user_text to audio for chat {chat_id}: {str(e)}")
+        # Use room system to append text chunk
+        await room.append_text_chunk(
+            source_id=sid,     # or profile id
+            role="user",
+            text=message,
+            message_id=None,
+            chunk_idx=0,
+            is_final=True,
+            persona_id=persona_id,
+        )
     except Exception as e:
         logger.error(f"Error in room system flow: {str(e)}")
         await emit_error(sid, f"Failed to process message: {str(e)}")

@@ -1,37 +1,31 @@
 from __future__ import annotations
 
-import base64
-import contextlib
 import logging
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from typing import AsyncIterator, Optional
 
 import numpy as np
-import socketio
 import soundfile as sf  # type: ignore
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from . import extensions  # type: ignore
-from .routers import stream_ws  # type: ignore
 from .transcripts import Transcript, align_audio  # type: ignore
 
 logger = logging.getLogger("model_service")
 
-@contextlib.asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[Any]:
-    async with contextlib.AsyncExitStack() as stack:
-        # Startup: warm up all models
-        logger.info("Starting up model service...")
-        extensions.warm_all_models()
-        logger.info("Model service startup complete")
-        
-        yield
-        
-        # Shutdown: cleanup if needed
-        # Models will be cleaned up automatically when the process exits
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Lifespan event handler for model warmup."""
+    logger.info("Starting up model service...")
+    extensions.warm_all_models()
+    logger.info("Model service startup complete")
+    yield
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -49,12 +43,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Include streaming routers
-app.include_router(stream_ws.router)
-
-# Mount Socket.IO app
-socket_app = socketio.ASGIApp(stream_ws.sio, app)
 
 
 class TranscriptResponse(BaseModel):
@@ -76,20 +64,6 @@ class HealthResponse(BaseModel):
     models_loaded: dict[str, bool]
 
 
-class TTSRequest(BaseModel):
-    text: str
-    voice: str = "alloy"
-    sample_rate: int = 48000
-
-
-class TTSResponse(BaseModel):
-    audio_b64: str
-    sample_rate: int
-    duration_ms: int
-
-
-
-
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     """Health check endpoint."""
@@ -97,23 +71,12 @@ async def health_check() -> HealthResponse:
         # Check if models are loaded
         wav2vec2_processor, wav2vec2_model = extensions.get_wav2vec2_ctc()
         whisper_model = extensions.get_whisper_tiny("auto")
-        kokoro_model = extensions.get_kokoro_pipeline("a")
-        
-        # Check if streamer is available
-        streamer_available = False
-        try:
-            from .routers.stream_ws import streamer
-            streamer_available = streamer is not None
-        except Exception:
-            pass
         
         return HealthResponse(
             status="healthy",
             models_loaded={
                 "wav2vec2": wav2vec2_processor is not None and wav2vec2_model is not None,
                 "whisper": whisper_model is not None,
-                "kokoro": kokoro_model is not None,
-                "streamer": streamer_available,
             }
         )
     except Exception as e:
@@ -256,44 +219,6 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
         raise HTTPException(status_code=500, detail=f"alignment failed: {str(e)}")
 
 
-@app.post("/synthesize", response_model=TTSResponse)
-async def synthesize_speech(req: TTSRequest) -> TTSResponse:
-    """
-    Synthesize speech from text using Kokoro TTS.
-    
-    - **text**: Text to synthesize
-    - **voice**: Voice name (default: "alloy")
-    - **sample_rate**: Target sample rate (default: 48000)
-    """
-    try:
-        if not req.text.strip():
-            raise HTTPException(status_code=400, detail="Text cannot be empty")
-        
-        # Synthesize audio
-        audio_data, sample_rate = extensions.synthesize_kokoro(
-            text=req.text,
-            voice=req.voice,
-            sr=req.sample_rate
-        )
-        
-        # Convert to base64
-        audio_bytes = audio_data.astype(np.float32).tobytes()
-        audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
-        
-        # Calculate duration
-        duration_ms = int((len(audio_data) / sample_rate) * 1000)
-        
-        return TTSResponse(
-            audio_b64=audio_b64,
-            sample_rate=sample_rate,
-            duration_ms=duration_ms
-        )
-        
-    except Exception as e:
-        logger.error(f"TTS synthesis failed: {e}")
-        raise HTTPException(status_code=500, detail=f"TTS synthesis failed: {str(e)}")
-
-
 @app.get("/")
 async def root() -> dict[str, str | dict[str, str]]:
     """Root endpoint with API information."""
@@ -304,8 +229,6 @@ async def root() -> dict[str, str | dict[str, str]]:
             "health": "/health",
             "transcribe": "/transcribe",
             "align": "/align",
-            "synthesize": "/synthesize",
-            "stream": "/ws/stream",
             "docs": "/docs"
         }
     }
