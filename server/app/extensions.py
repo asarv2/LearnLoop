@@ -10,10 +10,8 @@ load_dotenv()
 
 BASE = Path(__file__).resolve().parents[1]
 PROMPTS_DIR = BASE / "prompts"
-AUDIO_DIR = BASE / "audio"
 
 PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
-AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 

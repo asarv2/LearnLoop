@@ -219,7 +219,7 @@ export default function FeedbackModal({
                   ))}
                 </Flex>
               </Box>
-              {/* <Box style={{ marginTop: "24px", marginBottom: "12px" }}>
+              <Box style={{ marginTop: "24px", marginBottom: "12px" }}>
                 <Heading
                   size="3"
                   style={{ marginBottom: "8px", color: "#000000" }}
@@ -230,7 +230,7 @@ export default function FeedbackModal({
                   {bestRubricGrade?.description ||
                     "No feedback available for this standard."}
                 </Text>
-              </Box> */}
+              </Box>
             </>
           )}
         </Box>

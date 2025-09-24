@@ -2,7 +2,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
 from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
 from app.db import get_session
@@ -122,8 +122,30 @@ def create_improvements_function() -> Any:
     return function_tool(identify_improvements)
 
 
+def create_summary_function() -> Any:
+    """Create a function tool for generating an overall summary."""
+    
+    async def generate_summary(
+        summary: str = Field(description="Overall summary of the participant's performance, highlighting key strengths and areas for improvement")
+    ) -> str:
+        """Generate an overall summary of the participant's performance.
+        
+        Args:
+            summary: Comprehensive summary that synthesizes the evaluation results
+            
+        Returns:
+            Confirmation message
+        """
+        grading_results['summary'] = summary
+        grading_progress['summary'] = True
+        logger.info(f"✓ Generated summary: {summary[:100]}...")
+        return f"Generated overall summary"
+    
+    return function_tool(generate_summary)
+
+
 def create_grading_tools(standards: List[Standards]) -> List[Any]:
-    """Create all grading function tools for the standards plus strengths/improvements."""
+    """Create all grading function tools for the standards plus strengths/improvements/summary."""
     tools = []
     
     # Create tools for each standard
@@ -133,18 +155,63 @@ def create_grading_tools(standards: List[Standards]) -> List[Any]:
         standard_desc = standard.description or "No description"
         logger.info(f"Created grading tool for standard: {standard.name} - {standard_desc[:100]}...")
     
-    # Add strengths and improvements tools
+    # Add strengths, improvements, and summary tools
     tools.append(create_strengths_function())
     tools.append(create_improvements_function())
-    logger.info(f"Created strengths and improvements tools")
+    tools.append(create_summary_function())
+    logger.info(f"Created strengths, improvements, and summary tools")
     
     logger.info(f"Total tools created: {len(tools)}")
     return tools
 
 
-async def get_grade_prompt() -> str:
-    """Read the grade prompt from the markdown file."""
-    return await load_prompt("grade")
+async def get_grade_prompt(standards: Optional[List[Standards]] = None) -> str:
+    """Read the grade prompt from the markdown file and optionally add dynamic tool information."""
+    base_prompt = await load_prompt("grade")
+    
+    if standards:
+        # Add dynamic tool information to the prompt
+        tool_descriptions = []
+        
+        # Add standard grading tools
+        for standard in standards:
+            safe_name = create_safe_field_name(standard.name)
+            tool_descriptions.append(f"- `grade_{safe_name}`: Grade the conversation on {standard.name} (1-5 score + feedback)")
+        
+        # Add fixed tools
+        tool_descriptions.append("- `identify_strengths`: Identify key strengths demonstrated in the conversation")
+        tool_descriptions.append("- `identify_improvements`: Identify areas for improvement with specific suggestions")
+        tool_descriptions.append("- `generate_summary`: Generate an overall summary of the participant's performance")
+        
+        dynamic_section = f"""
+## Available Tools for This Evaluation
+
+You have access to the following tools to complete the evaluation:
+
+{chr(10).join(tool_descriptions)}
+
+**CRITICAL**: You must call ALL available tools to complete the task:
+- All standard grading tools (one for each rubric criterion) (required)
+- `identify_strengths` (required)
+- `identify_improvements` (required)
+- `generate_summary` (required)
+
+## 🔥 FINAL CHECKLIST
+
+**Before submitting your response, verify you have called:**
+{chr(10).join([f"{i+1}. ✅ `grade_{create_safe_field_name(standard.name)}`" for i, standard in enumerate(standards)])}
+{len(standards) + 1}. ✅ `identify_strengths`
+{len(standards) + 2}. ✅ `identify_improvements`
+{len(standards) + 3}. ✅ `generate_summary`
+
+**If you skip ANY of these tools, your task is incomplete!**
+
+"""
+        
+        # Insert the dynamic section after the base prompt
+        return base_prompt + dynamic_section
+    
+    return base_prompt
 
 
 async def run_grading_agent(
@@ -212,9 +279,9 @@ async def run_grading_agent(
         # Create tool use behavior to wait for all tools to be called
         def tool_use_behavior(context: Any, tool_results: list[Any]) -> ToolsToFinalOutputResult:
             # Build list of required tools based on standards and fixed tools
-            required_tools = ['strengths', 'improvements']
+            required_tools = ['strengths', 'improvements', 'summary']
             
-            # Add standard grading tools to required tools
+            # Add standard grading tools to required tools (using safe field names)
             for standard in standards:
                 safe_name = create_safe_field_name(standard.name)
                 required_tools.append(safe_name)
@@ -224,7 +291,7 @@ async def run_grading_agent(
             logger.info(f"Tool use behavior check: required_tools={required_tools}, completed_required={completed_required}, grading_progress={grading_progress}")
             return ToolsToFinalOutputResult(is_final_output=completed_required)
 
-        system_prompt = await get_grade_prompt()
+        system_prompt = await get_grade_prompt(list(standards))
 
         # Create grading agent with parallel tool calls
         grading_agent = GenericAgent(
@@ -250,13 +317,22 @@ async def run_grading_agent(
         logger.info("Parallel grading agent completed successfully")
         
         # Check if all tools were called
-        expected_tools = len(standards) + 2  # standards + strengths + improvements
+        expected_tools = len(standards) + 3  # standards + strengths + improvements + summary
         completed_tools = len(grading_progress)
         logger.info(f"Grading completed: {completed_tools}/{expected_tools} tools called")
+        logger.info(f"Grading progress details: {grading_progress}")
         
         if completed_tools < expected_tools:
-            missing_tools = [name for name, completed in grading_progress.items() if not completed]
+            # Build list of expected tool names
+            expected_tool_names = ['strengths', 'improvements', 'summary']
+            for standard in standards:
+                safe_name = create_safe_field_name(standard.name)
+                expected_tool_names.append(safe_name)
+            
+            missing_tools = [name for name in expected_tool_names if not grading_progress.get(name, False)]
             logger.warning(f"Missing tool calls for: {missing_tools}")
+            logger.warning(f"Expected tools: {expected_tool_names}")
+            logger.warning(f"Completed tools: {list(grading_progress.keys())}")
         
         # Extract results from the global storage
         grading_result = grading_results
@@ -281,6 +357,7 @@ async def run_grading_agent(
         # Get strengths and improvements from the results (now as arrays)
         strengths_list = grading_result.get('strengths', [])
         improvements_list = grading_result.get('improvements', [])
+        overall_summary = grading_result.get('summary', '')
         
         # Ensure they are lists
         if not isinstance(strengths_list, list):
@@ -288,13 +365,17 @@ async def run_grading_agent(
         if not isinstance(improvements_list, list):
             improvements_list = []
         
-        # Create overall summary for description field
-        summary_parts = []
-        if strengths_list:
-            summary_parts.append(f"Strengths: {'; '.join(strengths_list)}")
-        if improvements_list:
-            summary_parts.append(f"Areas for Improvement: {'; '.join(improvements_list)}")
-        summary = "\n\n".join(summary_parts) if summary_parts else "Grading completed"
+        # Use the generated summary for description field, fallback to concatenated sections if no summary
+        if overall_summary:
+            summary = overall_summary
+        else:
+            # Fallback: Create overall summary for description field
+            summary_parts = []
+            if strengths_list:
+                summary_parts.append(f"Strengths: {'; '.join(strengths_list)}")
+            if improvements_list:
+                summary_parts.append(f"Areas for Improvement: {'; '.join(improvements_list)}")
+            summary = "\n\n".join(summary_parts) if summary_parts else "Grading completed"
 
         # Create standard grade records for each standard and calculate total score
         standard_grade_count = 0
