@@ -66,7 +66,8 @@ class PersonaAudioGenerator:
             'pitching': f"You are {persona.name}. You are evaluating a pitch and should respond authentically to your personality type.",
             'brainstorming': f"You are {persona.name}. You are in a brainstorming session and should respond authentically to your personality type.",
             'termination': f"You are {persona.name}. You are being terminated and should respond authentically to your personality type.",
-            'feedback': f"You are {persona.name}. You are receiving constructive feedback and should respond authentically to your personality type."
+            'feedback': f"You are {persona.name}. You are receiving constructive feedback and should respond authentically to your personality type.",
+            'training': f"You are {persona.name}. You are participating in a training session and should respond authentically to your personality type."
         }
         return prompts.get(persona.scenario, f"You are {persona.name}.")
     
@@ -108,6 +109,12 @@ class PersonaAudioGenerator:
                 'Jessica Park': "Thank you for the feedback - can you give me some specific examples of what I should do differently?",
                 'Carlos Torres': "I appreciate you bringing this up - I'm committed to growing, but I want to understand the context better.",
                 'Kevin Foster': "I'm ready to work on this - what specific steps would you like me to take?"
+            },
+            'training': {
+                'Lucas': "I'd like to understand the specific requirements and processes before we begin - can you walk me through the methodology?",
+                'Zoe': "This sounds exciting! I'm really looking forward to collaborating and bringing fresh ideas to the table!",
+                'Tyler': "Let's establish clear objectives and timelines - what are the key deliverables and when do you need them completed?",
+                'Grace': "I'm curious about the underlying data and patterns here - can you help me understand the analytical framework we'll be using?"
             }
         }
         return quotes.get(persona.scenario, {}).get(persona.name, f"Hello, I'm {persona.name}.")
@@ -188,41 +195,11 @@ def load_personas_from_database() -> List[PersonaAudioData]:
 def get_hardcoded_personas() -> List[PersonaAudioData]:
     """Hardcoded persona data as fallback"""
     return [
-        # Affected Employee Group
-        PersonaAudioData("d6c5cdab-3d68-406d-a63a-f0b6e7a11197", "Alex Kim", "ash", "", "", "Affected Employee", "apology"),
-        PersonaAudioData("3aa1f056-0c1a-4f04-b8c3-bd3e2e832a46", "Lisa Martinez", "shimmer", "", "", "Affected Employee", "apology"),
-        PersonaAudioData("f2bef9da-b98b-4aae-bbca-70ac8743939d", "Marcus Johnson", "echo", "", "", "Affected Employee", "apology"),
-        PersonaAudioData("6a497a62-1815-4e49-b107-228af0490cac", "Sarah Chen", "coral", "", "", "Affected Employee", "apology"),
-        
-        # Interviewee Group
-        PersonaAudioData("e74ee74b-e316-4194-b080-9854ac1cccf8", "Chloe Sanders", "sage", "", "", "Interviewee", "interview"),
-        PersonaAudioData("2401b795-9bda-41f1-8800-cc63a78e7528", "Daniel Reed", "verse", "", "", "Interviewee", "interview"),
-        PersonaAudioData("52aed50d-137c-44b5-aba0-1702fe00a4c1", "Rebecca Owens", "ballad", "", "", "Interviewee", "interview"),
-        PersonaAudioData("945f6056-cdc8-4c56-a7af-79f66a37754f", "Ryan Patel", "echo", "", "", "Interviewee", "interview"),
-        
-        # Stakeholder Group
-        PersonaAudioData("12dfc984-9e5e-4d7b-825a-bfed832c48c2", "Amanda Foster", "alloy", "", "", "Stakeholder", "pitching"),
-        PersonaAudioData("2095c0cb-e1d7-4f30-94c9-b32af8209f59", "Jennifer Adams", "coral", "", "", "Stakeholder", "pitching"),
-        PersonaAudioData("b51c0cba-cda1-4c1e-8933-d92d6cd05688", "Mark Johnson", "ash", "", "", "Stakeholder", "pitching"),
-        PersonaAudioData("0a487bb7-582b-4e7b-ad33-2b092e5c0baf", "Robert Williams", "verse", "", "", "Stakeholder", "pitching"),
-        
-        # Team Member Group
-        PersonaAudioData("6d1c522a-dbcc-4185-bc90-f290777d9332", "David Chen", "echo", "", "", "Team Member", "brainstorming"),
-        PersonaAudioData("f87dae36-9340-43e0-98f5-187b1683b4f2", "Maria Rodriguez", "shimmer", "", "", "Team Member", "brainstorming"),
-        PersonaAudioData("048a249f-7382-4233-a2c2-f19992932246", "James Thompson", "ash", "", "", "Team Member", "brainstorming"),
-        PersonaAudioData("c6f72995-271e-4187-872d-22a13460b445", "Isabella Martinez", "ballad", "", "", "Team Member", "brainstorming"),
-        
-        # Terminated Employee Group
-        PersonaAudioData("eb1d792c-6e48-4db6-8a89-e56162746273", "Emily Harris", "coral", "", "", "Terminated Employee", "termination"),
-        PersonaAudioData("14641baf-9e57-411c-b24d-57f1b5e54178", "John Miller", "verse", "", "", "Terminated Employee", "termination"),
-        PersonaAudioData("a1606414-c9b5-4058-ba30-3b11b606c412", "Michael Torres", "ash", "", "", "Terminated Employee", "termination"),
-        PersonaAudioData("188cb068-1e18-40fd-8395-c2ce8a9f7465", "Samantha Ferguson", "sage", "", "", "Terminated Employee", "termination"),
-        
-        # Underperforming Employee Group
-        PersonaAudioData("22a93c61-261f-4c74-b9ed-43cb68bb8016", "Nicole Wright", "alloy", "", "", "Underperforming Employee", "feedback"),
-        PersonaAudioData("c312c065-bef2-4ecd-bd72-c9e9cce7e4d4", "Jessica Park", "shimmer", "", "", "Underperforming Employee", "feedback"),
-        PersonaAudioData("60399d3c-02a6-4dc5-b23f-a987cfc61407", "Carlos Torres", "echo", "", "", "Underperforming Employee", "feedback"),
-        PersonaAudioData("6fb5b778-f4f6-4d3f-8c8d-99c6929c70ff", "Kevin Foster", "verse", "", "", "Underperforming Employee", "feedback"),
+        # Employee Group
+        PersonaAudioData("b8aa1ebe-9f76-4b61-98c9-f71fe41a67a9", "Lucas", "echo", "", "", "Employee", "training"),
+        PersonaAudioData("dcab41a9-3747-408a-bdd9-49525ca173c7", "Zoe", "alloy", "", "", "Employee", "training"),
+        PersonaAudioData("c8b96e5b-55cb-48a4-a671-0cd6a291617b", "Tyler", "verse", "", "", "Employee", "training"),
+        PersonaAudioData("74019f63-8666-47a0-83cf-0c7669312912", "Grace", "shimmer", "", "", "Employee", "training"),
     ]
 
 async def main() -> None:

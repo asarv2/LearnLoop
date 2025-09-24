@@ -9,17 +9,16 @@ Optional:
 - DEFAULT_FILENAME: str
 """
 
+import time
 from pathlib import Path
+from subprocess import CalledProcessError
+from tempfile import TemporaryDirectory
 from typing import Optional
 
 from pydantic import BaseModel, Field
 # PyLaTeX
 from pylatex import Command, Document, NoEscape, Package  # type: ignore
 from pylatex.utils import bold  # type: ignore
-
-# Define the files directory path
-FILES_DIR = Path(__file__).parent.parent / "files"
-FILES_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_FILENAME = "project_specification"
 TEMPLATE_DESCRIPTION = "A comprehensive project specification template for documenting project requirements, scope, deliverables, timeline, and team structure. Suitable for software development, product launches, and other technical projects."
@@ -272,53 +271,24 @@ def render(args: Args) -> bytes:
 """)
     doc.append(approval_section)
 
-    # Generate PDF using FILES_DIR
-    import os
-    import time
-    from subprocess import CalledProcessError
-    
-    try:
-        # Generate filename with template name and timestamp
-        timestamp = int(time.time())
-        pdf_filename = f"project_spec_{timestamp}"  # No .pdf extension - PyLaTeX adds it
-        pdf_path = FILES_DIR / pdf_filename
-        
-        # Generate PDF to FILES_DIR
+    # Compile to a temp dir; return bytes
+    ts = int(time.time())
+    stem = f"project_spec_{ts}"  # no .pdf suffix; PyLaTeX adds it
+    with TemporaryDirectory() as tmp:
+        out = Path(tmp) / stem
         try:
             doc.generate_pdf(
-                filepath=str(pdf_path),
+                filepath=str(out),
                 clean=True,
                 clean_tex=True,
                 compiler="xelatex",
                 silent=True,
             )
         except CalledProcessError as e:
-            # Check if PDF was created despite non-zero exit
-            pdf_file_path = pdf_path.with_suffix('.pdf')
-            if pdf_file_path.exists() and pdf_file_path.stat().st_size > 0:
-                print(f"XeLaTeX returned {e.returncode} but PDF exists; returning it.")
-            else:
-                raise  # re-raise if no usable PDF
-        
-        # Check if file was created and has content (PyLaTeX adds .pdf extension)
-        pdf_file_path = pdf_path.with_suffix('.pdf')
-        if not pdf_file_path.exists():
-            raise Exception(f"PDF file was not created at {pdf_file_path}")
-        
-        file_size = pdf_file_path.stat().st_size
-        if file_size == 0:
-            raise Exception(f"PDF file is empty (0 bytes) at {pdf_file_path}")
-        
-        # Read the generated PDF bytes
-        with open(pdf_file_path, 'rb') as f:
-            pdf_bytes = f.read()
-        
-        # Keep the file for later retrieval
-        # pdf_path.unlink()  # Commented out to persist the file
-        
-        return pdf_bytes
-    except Exception as e:
-        # Clean up the generated file if it exists
-        if 'pdf_path' in locals() and pdf_path.exists():
-            pdf_path.unlink()
-        raise Exception(f"PDF generation failed: {e}")
+            pdf_file = out.with_suffix(".pdf")
+            if not (pdf_file.exists() and pdf_file.stat().st_size > 0):
+                raise RuntimeError(f"XeLaTeX failed and no PDF produced (code {e.returncode}).") from e
+        pdf_file = out.with_suffix(".pdf")
+        if not pdf_file.exists() or pdf_file.stat().st_size == 0:
+            raise RuntimeError("PDF not generated or empty.")
+        return pdf_file.read_bytes()
