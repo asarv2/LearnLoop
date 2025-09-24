@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import WelcomeModal from "@/components/common/WelcomeModal";
 import SuggestionsModal from "@/components/suggestions/SuggestionsModal";
 import { useRole } from "@/contexts/role-context";
 import {
@@ -105,8 +106,15 @@ export default function DashboardLayout({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, signOut } = useAuth();
-  const { userRole, loading, switchToAdmin, switchToEmployee, currentView } =
-    useRole();
+  const {
+    userRole,
+    loading,
+    switchToAdmin,
+    switchToEmployee,
+    currentView,
+    showWelcomeModal,
+    setShowWelcomeModal,
+  } = useRole();
 
   // Redirect admin users to admin interface if they're not in employee view
   useEffect(() => {
@@ -326,6 +334,12 @@ export default function DashboardLayout({
       <SuggestionsModal
         open={feedbackModalOpen}
         onClose={() => setFeedbackModalOpen(false)}
+      />
+
+      {/* Welcome modal */}
+      <WelcomeModal
+        open={showWelcomeModal}
+        onClose={() => setShowWelcomeModal(false)}
       />
     </Layout>
   );
