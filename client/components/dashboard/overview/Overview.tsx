@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { useChats } from "@/lib/api/hooks/useChats";
 import { useAllRubricGrades } from "@/lib/api/hooks/useRubrics";
+import { Typography } from "antd";
 import { useCallback, useMemo, useState } from "react";
 import {
   Area,
@@ -28,7 +29,7 @@ import {
   YAxis,
 } from "recharts";
 
-
+const { Title } = Typography;
 
 export default function Overview() {
   const { user } = useAuth();
@@ -60,57 +61,48 @@ export default function Overview() {
     });
   }, [chats, user?.id]);
 
-  // Get recent 5 completed conversations with their rubric grades
-  const recentConversations = useMemo(() => {
-    const completedChats = userChats
-      .filter((c) => c.completed && c.created_at)
-      .sort(
-        (a, b) =>
-          new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime()
-      )
-      .slice(0, 5);
-
-    return completedChats.map((chat) => {
-      const rubricGradeArray = Array.isArray(rubricGrades) ? rubricGrades : [];
-      const chatRubricGrade = rubricGradeArray.find(
-        (rg: { chat_id: string | null }) => rg.chat_id === chat.id
-      );
-      return {
-        chat,
-        rubricGrade: chatRubricGrade,
-        score: getChatScore(chat.id || ""),
-      };
-    });
-  }, [userChats, rubricGrades, getChatScore]);
-
-  // Extract strengths and areas for improvement from recent conversations
+  // Get the 5 most recent strengths and improvements from user's rubric grades
   const insights = useMemo(() => {
+    if (!user?.id || !rubricGrades) {
+      return {
+        strengths: [],
+        areasForImprovement: [],
+      };
+    }
+
+    // Get all rubric grades for the current user's chats, sorted by most recent
+    const userRubricGrades = rubricGrades
+      .filter((rg) => {
+        // Find the chat that this rubric grade belongs to
+        const chat = (chats || []).find((c) => c.id === rg.chat_id);
+        return chat && chat.profile_id === user.id;
+      })
+      .sort((a, b) => {
+        // Sort by created_at in descending order (most recent first)
+        const dateA = new Date(a.created_at || 0).getTime();
+        const dateB = new Date(b.created_at || 0).getTime();
+        return dateB - dateA;
+      });
+
+    // Collect all strengths and improvements from recent rubric grades
     const allStrengths: string[] = [];
     const allAreasForImprovement: string[] = [];
 
-    recentConversations.forEach(({ rubricGrade }) => {
-      if (rubricGrade) {
-        // Only use strengths and improvements arrays from rubric_grades table
-        if (rubricGrade.strengths && rubricGrade.strengths.length > 0) {
-          allStrengths.push(...rubricGrade.strengths);
-        }
-        if (rubricGrade.improvements && rubricGrade.improvements.length > 0) {
-          allAreasForImprovement.push(...rubricGrade.improvements);
-        }
+    userRubricGrades.forEach((rg) => {
+      if (rg.strengths && Array.isArray(rg.strengths)) {
+        allStrengths.push(...rg.strengths);
+      }
+      if (rg.improvements && Array.isArray(rg.improvements)) {
+        allAreasForImprovement.push(...rg.improvements);
       }
     });
 
-    // Remove duplicates and limit to top items
-    const uniqueStrengths = Array.from(new Set(allStrengths)).slice(0, 5);
-    const uniqueAreasForImprovement = Array.from(
-      new Set(allAreasForImprovement)
-    ).slice(0, 5);
-
+    // Return the 5 most recent items (since they're already sorted by recency)
     return {
-      strengths: uniqueStrengths,
-      areasForImprovement: uniqueAreasForImprovement,
+      strengths: allStrengths.slice(0, 5),
+      areasForImprovement: allAreasForImprovement.slice(0, 5),
     };
-  }, [recentConversations]);
+  }, [user?.id, rubricGrades, chats]);
 
   const trendData = useMemo(() => {
     // Get all user's completed chats with scores
@@ -197,257 +189,275 @@ export default function Overview() {
   }, [userChats, range, getChatScore]);
 
   return (
-    <div className="min-h-screen w-full">
-      <div className="max-w-7xl mx-auto px-4 lg:px-6 py-6 space-y-8">
-        {/* Performance Trends */}
-        <Card className="rounded-2xl shadow-lg border-0 bg-gradient-to-br from-white to-slate-50">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-xl font-semibold text-slate-900">
-                  Performance Trends
-                </CardTitle>
-                <p className="text-sm text-slate-600 mt-1">
-                  Track your progress over time
-                </p>
+    <div>
+      <div style={{ marginBottom: "24px" }}>
+        <Title level={2}>Training Analytics Dashboard</Title>
+      </div>
+
+      <div className="min-h-screen w-full">
+        <div className="max-w-7xl mx-auto px-4 lg:px-6 py-6 space-y-8">
+          {/* Performance Trends */}
+          <Card className="rounded-2xl shadow-lg border-0 bg-gradient-to-br from-white to-slate-50">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-xl font-semibold text-slate-900">
+                    Performance Trends
+                  </CardTitle>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Track your progress over time
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Select
+                    value={range}
+                    onValueChange={(v) =>
+                      setRange(v === "weekly" ? "weekly" : "monthly")
+                    }
+                  >
+                    <SelectTrigger className="w-32 rounded-lg shadow-sm bg-white text-slate-900 border-slate-200 h-9">
+                      <SelectValue placeholder="Range" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white text-slate-900 border border-slate-200">
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <Select
-                  value={range}
-                  onValueChange={(v) =>
-                    setRange(v === "weekly" ? "weekly" : "monthly")
-                  }
-                >
-                  <SelectTrigger className="w-32 rounded-lg shadow-sm bg-white text-slate-900 border-slate-200 h-9">
-                    <SelectValue placeholder="Range" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white text-slate-900 border border-slate-200">
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
+            </CardHeader>
+            <CardContent>
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={trendData}
+                    margin={{ left: 16, right: 16, top: 16, bottom: 16 }}
+                  >
+                    <defs>
+                      <linearGradient
+                        id="colorScore"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor="#3b82f6"
+                          stopOpacity={0.4}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor="#3b82f6"
+                          stopOpacity={0.05}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="2 2" stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="date"
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: "#64748b", fontSize: 12 }}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      domain={[0, 100]}
+                      tick={{ fill: "#64748b", fontSize: 12 }}
+                    />
+                    <RCTooltip
+                      wrapperStyle={{
+                        borderRadius: 12,
+                        border: "1px solid #e2e8f0",
+                        boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+                      }}
+                      contentStyle={{
+                        borderRadius: 12,
+                        backgroundColor: "white",
+                        border: "none",
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="score"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      fill="url(#colorScore)"
+                      isAnimationActive
+                      dot={{
+                        r: 4,
+                        fill: "#3b82f6",
+                        strokeWidth: 2,
+                        stroke: "white",
+                      }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={trendData}
-                  margin={{ left: 16, right: 16, top: 16, bottom: 16 }}
-                >
-                  <defs>
-                    <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
-                      <stop
-                        offset="95%"
-                        stopColor="#3b82f6"
-                        stopOpacity={0.05}
+            </CardContent>
+          </Card>
+
+          {/* Insights Cards */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Strengths Card */}
+            <Card className="rounded-2xl shadow-lg border-0 bg-gradient-to-br from-green-50 to-emerald-50">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                    <svg
+                      className="w-5 h-5 text-green-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                       />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="2 2" stroke="#e2e8f0" />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: "#64748b", fontSize: 12 }}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    domain={[0, 100]}
-                    tick={{ fill: "#64748b", fontSize: 12 }}
-                  />
-                  <RCTooltip
-                    wrapperStyle={{
-                      borderRadius: 12,
-                      border: "1px solid #e2e8f0",
-                      boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                    }}
-                    contentStyle={{
-                      borderRadius: 12,
-                      backgroundColor: "white",
-                      border: "none",
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="score"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    fill="url(#colorScore)"
-                    isAnimationActive
-                    dot={{
-                      r: 4,
-                      fill: "#3b82f6",
-                      strokeWidth: 2,
-                      stroke: "white",
-                    }}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Insights Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Strengths Card */}
-          <Card className="rounded-2xl shadow-lg border-0 bg-gradient-to-br from-green-50 to-emerald-50">
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                  <svg
-                    className="w-5 h-5 text-green-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <CardTitle className="text-lg font-semibold text-slate-900">
-                    Key Strengths
-                  </CardTitle>
-                  <p className="text-sm text-slate-600">
-                    Based on your recent 5 conversations
-                  </p>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {rubricGradesLoading ? (
-                  <div className="text-center py-8">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center">
-                      <div className="w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
-                    </div>
-                    <p className="text-sm text-slate-500">
-                      Loading insights...
+                    </svg>
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg font-semibold text-slate-900">
+                      Key Strengths
+                    </CardTitle>
+                    <p className="text-sm text-slate-600">
+                      5 most recent strengths from your training sessions
                     </p>
                   </div>
-                ) : insights.strengths.length > 0 ? (
-                  insights.strengths.map((strength, index) => (
-                    <div
-                      key={index}
-                      className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-green-200/50"
-                    >
-                      <div className="w-2 h-2 rounded-full bg-green-500 mt-2 flex-shrink-0" />
-                      <p className="text-sm text-slate-700 leading-relaxed">
-                        {strength}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {rubricGradesLoading ? (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center">
+                        <div className="w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                      <p className="text-sm text-slate-500">
+                        Loading insights...
                       </p>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center">
-                      <svg
-                        className="w-8 h-8 text-green-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
+                  ) : insights.strengths.length > 0 ? (
+                    insights.strengths.map((strength, index) => (
+                      <div
+                        key={index}
+                        className="flex items-start gap-3 p-3 bg-transparent rounded-lg"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                    </div>
-                    <p className="text-sm text-slate-500">
-                      Complete more conversations to see your strengths
-                    </p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Areas for Improvement Card */}
-          <Card className="rounded-2xl shadow-lg border-0 bg-gradient-to-br from-amber-50 to-orange-50">
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
-                  <svg
-                    className="w-5 h-5 text-amber-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <CardTitle className="text-lg font-semibold text-slate-900">
-                    Areas for Improvement
-                  </CardTitle>
-                  <p className="text-sm text-slate-600">
-                    Focus areas from your recent 5 conversations
-                  </p>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {rubricGradesLoading ? (
-                  <div className="text-center py-8">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
-                      <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-                    </div>
-                    <p className="text-sm text-slate-500">
-                      Loading insights...
-                    </p>
-                  </div>
-                ) : insights.areasForImprovement.length > 0 ? (
-                  insights.areasForImprovement.map((area, index) => (
-                    <div
-                      key={index}
-                      className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-amber-200/50"
-                    >
-                      <div className="w-2 h-2 rounded-full bg-amber-500 mt-2 flex-shrink-0" />
-                      <p className="text-sm text-slate-700 leading-relaxed">
-                        {area}
+                        <div className="w-2 h-2 rounded-full bg-green-500 mt-2 flex-shrink-0" />
+                        <p className="text-sm text-slate-700 leading-relaxed">
+                          {strength}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center">
+                        <svg
+                          className="w-8 h-8 text-green-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                      </div>
+                      <p className="text-sm text-slate-500">
+                        Complete more training sessions to see your strengths
                       </p>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
-                      <svg
-                        className="w-8 h-8 text-amber-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                    </div>
-                    <p className="text-sm text-slate-500">
-                      Great job! No specific areas for improvement identified
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Areas for Improvement Card */}
+            <Card className="rounded-2xl shadow-lg border-0 bg-gradient-to-br from-amber-50 to-orange-50">
+              <CardHeader className="pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                    <svg
+                      className="w-5 h-5 text-amber-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg font-semibold text-slate-900">
+                      Areas for Improvement
+                    </CardTitle>
+                    <p className="text-sm text-slate-600">
+                      5 most recent areas for improvement from your training
+                      sessions
                     </p>
                   </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {rubricGradesLoading ? (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
+                        <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                      <p className="text-sm text-slate-500">
+                        Loading insights...
+                      </p>
+                    </div>
+                  ) : insights.areasForImprovement.length > 0 ? (
+                    insights.areasForImprovement.map((area, index) => (
+                      <div
+                        key={index}
+                        className="flex items-start gap-3 p-3 bg-transparent rounded-lg"
+                      >
+                        <div className="w-2 h-2 rounded-full bg-amber-500 mt-2 flex-shrink-0" />
+                        <p className="text-sm text-slate-700 leading-relaxed">
+                          {area}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-100 flex items-center justify-center">
+                        <svg
+                          className="w-8 h-8 text-amber-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                          />
+                        </svg>
+                      </div>
+                      <p className="text-sm text-slate-500">
+                        Great job! No areas for improvement identified in recent
+                        sessions
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
