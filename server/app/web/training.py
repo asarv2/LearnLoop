@@ -1290,7 +1290,9 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 )
 
                 if not result.get("success", False):
-                    await emit_error(sid, result.get("message", "Failed to generate scenario"))
+                    error_message = result.get("message", "Failed to generate scenario")
+                    logger.error(f"Scenario generation failed for {parent_id}: {error_message}")
+                    await emit_error(sid, error_message)
                     return
 
                 # Extract results from the scenario agent
@@ -1319,9 +1321,10 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     db_session.close()
                 except Exception:
                     pass
-        except Exception:
+        except Exception as e:
             logger.exception("Error in generate_scenario event")
-            await emit_error(sid, "Failed to generate scenario")
+            error_message = f"Scenario generation failed: {str(e)}"
+            await emit_error(sid, error_message)
 
     @sio.event  # type: ignore
     async def update_scenario_parameters(sid: str, data: Dict[str, Any]) -> None:

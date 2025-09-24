@@ -290,9 +290,39 @@ export function WebSocketProvider({
           );
         } else if (data.message) {
           toast.error(data.message);
+          // Dispatch error event for component handling
+          window.dispatchEvent(
+            new CustomEvent("scenarioGenerationError", {
+              detail: {
+                message: data.message,
+                error: "Scenario generation failed",
+              },
+            })
+          );
         }
       }
     );
+
+    // Scenario generation error handling
+    socket.on("error", (data: { message: string; type?: string }) => {
+      logError("WebSocket error", data.message);
+      // Check if this is a scenario generation error
+      if (
+        data.message.includes("scenario") ||
+        data.message.includes("generation")
+      ) {
+        window.dispatchEvent(
+          new CustomEvent("scenarioGenerationError", {
+            detail: {
+              message: data.message,
+              error: "Scenario generation failed",
+            },
+          })
+        );
+      } else {
+        toast.error(data.message);
+      }
+    });
 
     socket.on(
       "training_joined",

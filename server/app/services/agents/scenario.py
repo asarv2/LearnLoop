@@ -827,8 +827,22 @@ async def run_scenario_agent(
     except Exception as e:
         logger.error(f"Error during scenario generation: {str(e)}", exc_info=True)
         session.rollback()
+        
+        # Provide more specific error messages based on the error type
+        error_message = str(e)
+        if "Tool" in error_message and "not found" in error_message:
+            user_message = "Scenario generation failed due to a missing tool. This is usually a temporary issue. Please try again."
+        elif "ModelBehaviorError" in error_message:
+            user_message = "The AI model encountered an issue while generating the scenario. Please try again."
+        elif "HTTP" in error_message or "connection" in error_message.lower():
+            user_message = "Network error occurred during scenario generation. Please check your connection and try again."
+        elif "timeout" in error_message.lower():
+            user_message = "Scenario generation timed out. Please try again with a simpler scenario."
+        else:
+            user_message = f"Scenario generation failed: {error_message}"
+        
         return {
             "success": False,
-            "message": f"Scenario generation failed: {str(e)}",
+            "message": user_message,
             "scenario_id": None,
         }

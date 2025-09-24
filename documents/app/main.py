@@ -90,11 +90,23 @@ async def _list_templates_from_storage() -> list[str]:
     
     headers = {
         "Authorization": f"Bearer {SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    # Use JSON body with proper structure for Supabase Storage API
+    request_body = {
+        "prefix": "",  # Required property - empty string to list all objects
+        "limit": 1000,
+        "offset": 0,
+        "sortBy": {
+            "column": "name",
+            "order": "asc"
+        }
     }
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            response = await client.post(storage_url, headers=headers, json={"limit": 1000})
+            response = await client.post(storage_url, headers=headers, json=request_body)
             response.raise_for_status()
             data = response.json()
             
