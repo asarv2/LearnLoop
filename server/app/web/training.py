@@ -4,15 +4,16 @@ Simplified version focused on core training functionality
 """
 
 import asyncio
+import base64
+import io
 import logging
 import os
 import random
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, List, Optional, Union, cast
 
-import httpx
 import socketio  # type: ignore
 from agents import Runner, trace
 from agents.items import TResponseInputItem
@@ -26,48 +27,24 @@ from app.services.agents.grade import run_grading_agent
 from app.services.agents.hint import run_hint_agent
 from app.services.agents.scenario import run_scenario_agent
 from app.utils.chat import get_conversation_history, get_preamble
+from app.utils.document import (convert_pdf_to_images,
+                                get_document_base64_and_content,
+                                upload_template_to_supabase_storage)
+from openai.types.responses import (EasyInputMessageParam,
+                                    ResponseInputImageParam,
+                                    ResponseInputMessageContentListParam,
+                                    ResponseInputTextParam)
 from sqlalchemy import Column, text
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
 
+
+
 # Global store for active training runs
 active_training_runs: Dict[str, Any] = {}
 
 
-async def _upload_template_to_supabase_storage(template_code: str, scenario_id: str) -> None:
-    """Upload template Python code to Supabase Storage templates bucket."""
-    # Get Supabase configuration from environment variables
-    supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
-    service_role_key = os.getenv("SERVICE_ROLE_KEY")
-    bucket_name = "templates"
-    
-    logger.info(f"Supabase Storage config - url: {supabase_url}, service_key: {'***' if service_role_key else 'None'}")
-    
-    if not all([supabase_url, service_role_key]):
-        logger.error("Missing Supabase configuration environment variables")
-        raise ValueError("Supabase configuration incomplete")
-    
-    # Upload template code to Supabase Storage using Storage API
-    file_key = f"{scenario_id}.py"
-    storage_url = f"{supabase_url}/storage/v1/object/{bucket_name}/{file_key}"
-    
-    headers = {
-        "Authorization": f"Bearer {service_role_key}",
-        "Content-Type": "text/x-python",
-        "x-upsert": "true"  # Allow overwrite
-    }
-    
-    # Use httpx client for async HTTP request
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            storage_url,
-            content=template_code.encode('utf-8'),
-            headers=headers
-        )
-        response.raise_for_status()
-    
-    logger.info(f"Successfully uploaded template {file_key} to Supabase Storage bucket {bucket_name}")
 
 # Short-lived join dedupe map: key=(sid:chat_id) -> last_seen_ts
 _recent_joins: Dict[str, float] = {}
@@ -510,27 +487,94 @@ async def handle_create_training(sid: str, data: Dict[str, Any]) -> None:
                 "progress": 75
             }, room=sid)
 
-            # Get document content if document_id is provided
+            # Get document as base64 and extract content if document_id is provided
+            document_base64 = None
             document_content = ""
             if document_id:
                 try:
-                    document = db_session.exec(
-                        select(Documents).where(Documents.id == document_id)
-                    ).one_or_none()
-                    if document and document.content:
-                        document_content = document.content
-                        logger.info(f"Using document content from {document_id}")
-                    else:
-                        logger.warning(f"Document {document_id} not found or has no content")
+                    document_data = await get_document_base64_and_content(document_id, db_session)
+                    document_base64 = document_data["base64"]
+                    document_content = document_data["content"]
+                    logger.info(f"Retrieved document {document_id} successfully")
                 except Exception as e:
                     logger.error(f"Error retrieving document {document_id}: {e}")
+                    # Continue without document
 
             # Call the document agent to generate template code
             try:
+                # Prepare input for document agent with proper typing
+                content: ResponseInputMessageContentListParam = []
+                
+                # Add content - either images OR text, but not both
+                if document_base64:
+                    try:
+                        # Convert PDF to images
+                        logger.info(f"Converting PDF to images")
+                        image_base64_list = convert_pdf_to_images(document_base64)  # Convert all pages
+                        
+                        if image_base64_list:
+                            # Add all pages as images
+                            for i, image_base64 in enumerate(image_base64_list):
+                                image_item: ResponseInputImageParam = {
+                                    "type": "input_image",
+                                    "image_url": f"data:image/png;base64,{image_base64}",
+                                    "detail": "auto"
+                                }
+                                content.append(image_item)
+                                logger.info(f"Added PDF page {i+1} as image")
+                            
+                            logger.info(f"Added {len(image_base64_list)} PDF pages as images")
+                        else:
+                            logger.warning("Failed to convert PDF to images, falling back to text content")
+                            # Fall back to text content if image conversion fails
+                            if document_content:
+                                fallback_text_item_2: ResponseInputTextParam = {
+                                    "type": "input_text", 
+                                    "text": f"Here is the extracted text content from the document:\n\n{document_content}"
+                                }
+                                content.append(fallback_text_item_2)
+                                logger.info("Added text content as fallback")
+                    except Exception as e:
+                        logger.warning(f"Error processing PDF: {e}, falling back to text content")
+                        # Fall back to text content if image processing fails
+                        if document_content:
+                            fallback_text_item: ResponseInputTextParam = {
+                                "type": "input_text", 
+                                "text": f"Here is the extracted text content from the document:\n\n{document_content}"
+                            }
+                            content.append(fallback_text_item)
+                            logger.info("Added text content as fallback")
+                elif document_content:
+                    # No PDF available, use text content
+                    no_pdf_text_item: ResponseInputTextParam = {
+                        "type": "input_text", 
+                        "text": f"Here is the extracted text content from the document:\n\n{document_content}"
+                    }
+                    content.append(no_pdf_text_item)
+                    logger.info("Added text content (no PDF available)")
+                
+                # Ensure we have at least some content - if both are empty, provide fallback text
+                if not content:
+                    fallback_text: ResponseInputTextParam = {
+                        "type": "input_text",
+                        "text": f"Generate a document template for: {name}. Document structure: {description or 'No specific structure provided'}"
+                    }
+                    content.append(fallback_text)
+
+                # Final validation to ensure content is not empty
+                if not content:
+                    raise ValueError("No content available for document generation - both document_base64 and document_content are empty")
+                
+                # Log content summary
+                logger.info(f"Prepared {len(content)} content items for document generation")
+                
+                input_items: list[EasyInputMessageParam] = [{"role": "user", "content": content}]
+                
                 result = await run_document_agent(
                     document_type=name,
-                    document_structure=document_content or description,
-                    context=f"Custom training template for: {name}"
+                    document_structure=description,  # Use description as fallback
+                    context=f"Custom training template for: {name}",
+                    input_items=input_items
                 )
 
                 args_code = result.get('args_code', '')
@@ -559,7 +603,7 @@ Optional:
                 logger.info(f"Generated template code for scenario {scenario.id}")
 
                 # Upload template to Supabase Storage
-                await _upload_template_to_supabase_storage(template_code, str(scenario.id))
+                await upload_template_to_supabase_storage(template_code, str(scenario.id))
 
                 logger.info(f"Successfully uploaded template for scenario {scenario.id}")
 

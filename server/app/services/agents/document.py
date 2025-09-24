@@ -14,6 +14,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Union
 
 from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
+from agents.items import TResponseInputItem
 from app.extensions import load_prompt
 from app.services.agents.generic import GenericAgent
 from pydantic import Field
@@ -90,7 +91,8 @@ document_progress: Dict[str, bool] = {}
 async def run_document_agent(
     document_type: str,
     document_structure: str,
-    context: Optional[str] = None
+    context: Optional[str] = None,
+    input_items: Optional[list[Any]] = None
 ) -> Dict[str, str]:
     """
     Run the document agent to generate Args class and render function for a document template.
@@ -148,8 +150,50 @@ async def run_document_agent(
     document_results.clear()
     document_progress.clear()
     
-    # Input for the agent
-    input_text = f"""
+    # Prepare input for the agent
+    logger.info(f"Received input_items: {len(input_items) if input_items else 0} items")
+    
+    if input_items:
+        # Validate that input_items have non-empty content
+        validated_input_items = []
+        for i, item in enumerate(input_items):
+            logger.info(f"Processing input item {i}: {item}")
+            if "content" in item and item["content"]:
+                # Check if content is a list (multimodal) or string
+                if isinstance(item["content"], list):
+                    # For multimodal content, ensure at least one element exists
+                    logger.info(f"Item {i} has list content with {len(item['content'])} elements")
+                    if len(item["content"]) > 0:
+                        validated_input_items.append(item)
+                        logger.info(f"Item {i} validated and added")
+                    else:
+                        logger.warning(f"Item {i} has empty list content")
+                elif isinstance(item["content"], str) and item["content"].strip():
+                    # For text content, ensure it's not empty
+                    logger.info(f"Item {i} has text content: {len(item['content'])} chars")
+                    validated_input_items.append(item)
+                    logger.info(f"Item {i} validated and added")
+                else:
+                    logger.warning(f"Item {i} has empty or whitespace-only content")
+            else:
+                logger.warning(f"Item {i} missing content or content is falsy")
+        
+        logger.info(f"Validated {len(validated_input_items)} out of {len(input_items)} input items")
+        
+        if validated_input_items:
+            agent_input = validated_input_items
+        else:
+            # If all input_items have empty content, fall back to default
+            logger.warning("All input items had empty content, falling back to default")
+            agent_input = None
+    else:
+        logger.info("No input_items provided, using fallback")
+        agent_input = None
+    
+    if not agent_input:
+        # Fallback to text-only input
+        logger.info("Using fallback text input")
+        input_text = f"""
 Generate a complete document template for a {document_type}.
 
 Document Structure:
@@ -165,10 +209,22 @@ Requirements:
 
 Please generate both the Args class and render function.
 """
+        agent_input = [{"role": "user", "content": input_text}]
+    
+    # Final validation and logging
+    logger.info(f"Final agent_input: {len(agent_input)} items")
+    for i, item in enumerate(agent_input):
+        logger.info(f"Final item {i}: role={item.get('role')}, content_type={type(item.get('content'))}")
+        if isinstance(item.get('content'), list):
+            logger.info(f"  Content list length: {len(item['content'])}")
+            for j, content_item in enumerate(item['content']):
+                logger.info(f"    Content item {j}: {content_item}")
+        elif isinstance(item.get('content'), str):
+            logger.info(f"  Content string length: {len(item['content'])}")
     
     with trace("Document Generation Agent"):
         # Use streamed runner for better progress visibility
-        streamed_result = Runner.run_streamed(agent_instance, input=[{"role": "user", "content": input_text}])
+        streamed_result = Runner.run_streamed(agent_instance, input=agent_input)
         
         # Optionally handle streaming events for even more granular progress
         async for event in streamed_result.stream_events():

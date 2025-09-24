@@ -26,5 +26,11 @@ export async function api<T>(
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body?.error || res.statusText);
   }
+
+  // Handle responses with no content (like 204 DELETE)
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return undefined as T;
+  }
+
   return res.json() as Promise<T>;
 }

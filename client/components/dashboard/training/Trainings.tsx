@@ -15,12 +15,14 @@ import {
 import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import {
   useCustomTrainingsForUser,
+  useDeleteTraining,
   useTrainingsByType,
   useUpdateTraining,
 } from "@/lib/api/hooks/useTrainings";
 import {
   BulbOutlined,
   CommentOutlined,
+  DeleteOutlined,
   EditOutlined,
   ExclamationCircleOutlined,
   HeartOutlined,
@@ -120,6 +122,7 @@ function TrainingCard({
   training,
   index,
   onEdit,
+  onDelete,
   isCustom = false,
 }: {
   training: {
@@ -130,6 +133,7 @@ function TrainingCard({
   };
   index: number;
   onEdit?: () => void;
+  onDelete?: () => void;
   isCustom?: boolean;
 }) {
   const { data: scenarios } = useScenariosByTrainingId(
@@ -229,22 +233,45 @@ function TrainingCard({
           </div>
         )}
 
-        {/* Edit button for custom trainings */}
-        {isCustom && onEdit && (
-          <Button
-            type="text"
-            icon={<EditOutlined />}
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-            }}
+        {/* Action buttons for custom trainings */}
+        {isCustom && (onEdit || onDelete) && (
+          <div
             style={{
               position: "absolute",
               top: "12px",
               right: "12px",
               zIndex: 10,
+              display: "flex",
+              gap: "4px",
             }}
-          />
+          >
+            {onEdit && (
+              <Button
+                type="text"
+                icon={<EditOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                style={{
+                  color: "#1890ff",
+                }}
+              />
+            )}
+            {onDelete && (
+              <Button
+                type="text"
+                icon={<DeleteOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                style={{
+                  color: "#ff4d4f",
+                }}
+              />
+            )}
+          </div>
         )}
 
         <div style={{ textAlign: "center", marginBottom: "16px" }}>
@@ -530,7 +557,7 @@ function CreateCustomTrainingModal({
       onCancel={onCancel}
       footer={null}
       width={600}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form
         form={form}
@@ -650,10 +677,16 @@ function TrainingTabContent({
   type,
   onCreateClick,
   onEditClick,
+  onDeleteClick,
 }: {
   type: "standard" | "required" | "custom";
   onCreateClick?: () => void;
   onEditClick?: (training: {
+    id: string;
+    title: string;
+    description?: string | null;
+  }) => void;
+  onDeleteClick?: (training: {
     id: string;
     title: string;
     description?: string | null;
@@ -710,6 +743,16 @@ function TrainingTabContent({
               type === "custom" && onEditClick && training.id
                 ? () =>
                     onEditClick({
+                      id: training.id!,
+                      title: training.title,
+                      description: training.description,
+                    })
+                : undefined
+            }
+            onDelete={
+              type === "custom" && onDeleteClick && training.id
+                ? () =>
+                    onDeleteClick({
                       id: training.id!,
                       title: training.title,
                       description: training.description,
@@ -805,6 +848,14 @@ export default function Trainings() {
     title: string;
     description?: string | null;
   } | null>(null);
+  const [deletingTraining, setDeletingTraining] = useState<{
+    id: string;
+    title: string;
+    description?: string | null;
+  } | null>(null);
+
+  const deleteTraining = useDeleteTraining(deletingTraining?.id || "");
+  const [messageApi, contextHolder] = message.useMessage();
 
   const handleCreateSuccess = () => {
     setCreateModalVisible(false);
@@ -819,6 +870,33 @@ export default function Trainings() {
   }) => {
     setEditingTraining(training);
     setCreateModalVisible(true);
+  };
+
+  const handleDeleteClick = (training: {
+    id: string;
+    title: string;
+    description?: string | null;
+  }) => {
+    setDeletingTraining(training);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingTraining) return;
+
+    try {
+      await deleteTraining.mutateAsync();
+      messageApi.success(
+        `Training "${deletingTraining.title}" deleted successfully!`
+      );
+      setDeletingTraining(null);
+    } catch (error) {
+      console.error("Error deleting training:", error);
+      messageApi.error("Failed to delete training. Please try again.");
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeletingTraining(null);
   };
 
   const handleCreateClick = () => {
@@ -845,6 +923,7 @@ export default function Trainings() {
           type="custom"
           onCreateClick={handleCreateClick}
           onEditClick={handleEditClick}
+          onDeleteClick={handleDeleteClick}
         />
       ),
     },
@@ -852,6 +931,7 @@ export default function Trainings() {
 
   return (
     <div>
+      {contextHolder}
       {/* Training Tabs */}
       <Tabs
         defaultActiveKey="standard"
@@ -873,6 +953,24 @@ export default function Trainings() {
         onSuccess={handleCreateSuccess}
         editingTraining={editingTraining}
       />
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        title="Delete Training"
+        open={!!deletingTraining}
+        onOk={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+        okText="Yes, Delete"
+        cancelText="Cancel"
+        okButtonProps={{ danger: true }}
+        confirmLoading={deleteTraining.isPending}
+      >
+        <p>
+          Are you sure you want to delete the training{" "}
+          <strong>&ldquo;{deletingTraining?.title}&rdquo;</strong>? This action
+          cannot be undone.
+        </p>
+      </Modal>
     </div>
   );
 }
