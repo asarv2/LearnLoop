@@ -211,17 +211,6 @@ Please generate both the Args class and render function.
 """
         agent_input = [{"role": "user", "content": input_text}]
     
-    # Final validation and logging
-    logger.info(f"Final agent_input: {len(agent_input)} items")
-    for i, item in enumerate(agent_input):
-        logger.info(f"Final item {i}: role={item.get('role')}, content_type={type(item.get('content'))}")
-        if isinstance(item.get('content'), list):
-            logger.info(f"  Content list length: {len(item['content'])}")
-            for j, content_item in enumerate(item['content']):
-                logger.info(f"    Content item {j}: {content_item}")
-        elif isinstance(item.get('content'), str):
-            logger.info(f"  Content string length: {len(item['content'])}")
-    
     with trace("Document Generation Agent"):
         # Use streamed runner for better progress visibility
         streamed_result = Runner.run_streamed(agent_instance, input=agent_input)
