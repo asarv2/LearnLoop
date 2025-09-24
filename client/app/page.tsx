@@ -36,6 +36,7 @@ export default function Home() {
       pathname === "/"
     ) {
       redirectedRef.current = true;
+      router.prefetch?.(targetPath);
       router.replace(targetPath);
     }
   }, [authLoading, roleLoading, user, targetPath, pathname, router]);

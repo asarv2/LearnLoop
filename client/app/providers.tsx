@@ -63,3 +63,4 @@ const WebSocketProviderWrapper = ({
     <WebSocketProvider profileId={profileId}>{children}</WebSocketProvider>
   );
 };
+

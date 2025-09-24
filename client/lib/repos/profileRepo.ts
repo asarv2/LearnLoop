@@ -12,15 +12,21 @@ export type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
 export const ProfileCreateSchema = z.object({
   name: z.string().min(1, "Name is required"),
   active: z.boolean().nullable().optional(),
-  last_active: z.string().nullable().optional(),
+  last_active: z.string().datetime().nullable().optional(),
   role: z.enum(["employee", "admin", "superadmin"]).nullable().optional(),
+  viewed_intro: z.boolean().optional(),
+  created_at: z.string().datetime().nullable().optional(),
+  updated_at: z.string().datetime().nullable().optional(),
 });
 
 export const ProfileUpdateSchema = z.object({
   name: z.string().min(1, "Name is required").optional(),
   active: z.boolean().nullable().optional(),
-  last_active: z.string().nullable().optional(),
+  last_active: z.string().datetime().nullable().optional(),
   role: z.enum(["employee", "admin", "superadmin"]).nullable().optional(),
+  viewed_intro: z.boolean().optional(),
+  created_at: z.string().datetime().nullable().optional(),
+  updated_at: z.string().datetime().nullable().optional(),
 });
 
 async function getSupabase() {

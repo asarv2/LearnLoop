@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import type { Database } from "@/database.types";
+import { useProfile } from "@/lib/api/hooks/useProfiles";
 import useSupabaseBrowser from "@/utils/supabase/supabase-browser";
 import React, { createContext, useContext, useEffect, useState } from "react";
 
@@ -13,6 +14,8 @@ interface RoleContextType {
   switchToEmployee: () => void;
   switchToAdmin: () => void;
   currentView: "employee" | "admin";
+  showWelcomeModal: boolean;
+  setShowWelcomeModal: (show: boolean) => void;
 }
 
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
@@ -25,80 +28,90 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
   const [currentView, setCurrentView] = useState<"employee" | "admin">(
     "employee"
   );
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+
+  // Check if user has viewed intro
+  const { data: profile, isLoading: profileLoading } = useProfile(
+    user?.id || "",
+    !!user
+  );
+  const hasViewedIntro = profile?.viewed_intro || false;
 
   useEffect(() => {
+    let isCancelled = false;
+
     const fetchUserRole = async () => {
-      if (!user) {
-        setUserRole(null);
-        setLoading(false);
-        return;
-      }
-
       try {
-        // First try to get profile by user ID
-        const { data: profile, error } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-
-        if (error && error.code !== "PGRST116") {
-          console.error("Error fetching user role:", error);
-          // Check if it's a column doesn't exist error
-          if (
-            error.message?.includes("column") &&
-            error.message?.includes("does not exist")
-          ) {
-            setUserRole("employee");
+        if (!user) {
+          if (!isCancelled) {
+            setUserRole(null);
             setCurrentView("employee");
-          } else {
-            setUserRole("employee"); // Default to employee on error
-            setCurrentView("employee");
+            setLoading(false);
           }
-        } else if (profile) {
-          // Handle case where role column might not exist yet
-          const role = profile.role || "employee";
-          setUserRole(role);
-          // Set initial view based on role
-          if (role === "superadmin") {
-            setCurrentView("employee"); // Superadmin starts in employee view so they can see the switch button
-          } else if (role === "admin") {
-            setCurrentView("admin");
-          } else {
-            setCurrentView("employee");
-          }
-        } else {
-          // No profile found, create one with employee role
-          const { data: newProfile, error: createError } = await supabase
-            .from("profiles")
-            .insert({
-              id: user.id,
-              name: user.user_metadata?.full_name || user.email || "User",
-              role: "employee",
-            })
-            .select()
-            .single();
-
-          if (createError) {
-            console.error("Error creating profile:", createError);
-            setUserRole("employee");
-            setCurrentView("employee");
-          } else {
-            setUserRole(newProfile.role || "employee");
-            setCurrentView("employee");
-          }
+          return;
         }
-      } catch (error) {
-        console.error("Unexpected error fetching user role:", error);
-        setUserRole("employee");
-        setCurrentView("employee");
-      } finally {
-        setLoading(false);
+
+        // If you stash role in JWT app_metadata, prefer that (no DB call)
+        const metaRole = (user.app_metadata as { role?: UserRole })?.role;
+        if (metaRole) {
+          if (!isCancelled) {
+            setUserRole(metaRole);
+            setCurrentView(metaRole === "admin" ? "admin" : "employee");
+            setLoading(false);
+          }
+          return;
+        }
+
+        // Read-only attempt; no upsert/insert
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        // If table/column missing or RLS blocks, degrade cleanly
+        if (error) {
+          console.error("[profiles.select] error:", error);
+          if (!isCancelled) {
+            setUserRole("employee");
+            setCurrentView("employee");
+            setLoading(false);
+          }
+          return;
+        }
+
+        // No row? Accept default — do NOT create one.
+        const role = (data?.role as UserRole) ?? "employee";
+        if (!isCancelled) {
+          setUserRole(role);
+          setCurrentView(role === "admin" ? "admin" : "employee");
+          setLoading(false);
+        }
+      } catch (e: unknown) {
+        console.error(
+          "[RoleProvider] unexpected:",
+          e instanceof Error ? e.message : e
+        );
+        if (!isCancelled) {
+          setUserRole("employee");
+          setCurrentView("employee");
+          setLoading(false);
+        }
       }
     };
 
     fetchUserRole();
+    return () => {
+      isCancelled = true;
+    };
   }, [user, supabase]);
+
+  // Show welcome modal if user hasn't viewed intro
+  useEffect(() => {
+    if (user && !profileLoading && !hasViewedIntro) {
+      setShowWelcomeModal(true);
+    }
+  }, [user, profileLoading, hasViewedIntro]);
 
   const switchToEmployee = () => {
     if (userRole === "superadmin") {
@@ -118,6 +131,8 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     switchToEmployee,
     switchToAdmin,
     currentView,
+    showWelcomeModal,
+    setShowWelcomeModal,
   };
 
   return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>;
