@@ -7,6 +7,7 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import FilePreviewModal from "@/components/chat/FilePreviewModal";
 import { useWebSocket } from "@/contexts/websocket-context";
 import {
   uploadDocument,
@@ -25,6 +26,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   ExclamationCircleOutlined,
+  EyeOutlined,
   HeartOutlined,
   PlayCircleOutlined,
   PlusOutlined,
@@ -346,6 +348,7 @@ function CreateCustomTrainingModal({
   onCancel,
   onSuccess,
   editingTraining,
+  messageApi,
 }: {
   visible: boolean;
   onCancel: () => void;
@@ -355,6 +358,10 @@ function CreateCustomTrainingModal({
     title: string;
     description?: string | null;
   } | null;
+  messageApi: {
+    success: (message: string) => void;
+    error: (message: string) => void;
+  };
 }) {
   const [form] = Form.useForm();
   const updateTraining = useUpdateTraining(editingTraining?.id || "");
@@ -368,6 +375,10 @@ function CreateCustomTrainingModal({
     progress: 0,
   });
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [documentPreviewVisible, setDocumentPreviewVisible] = useState(false);
+  const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(
+    null
+  );
   const { user } = useAuth();
   const { emitCreateTraining } = useWebSocket();
 
@@ -394,6 +405,7 @@ function CreateCustomTrainingModal({
         });
         setIsCreating(false);
         form.resetFields();
+        // Call onSuccess without routing
         onSuccess();
       } else {
         setIsCreating(false);
@@ -481,6 +493,7 @@ function CreateCustomTrainingModal({
             await uploadDocument(document.id!, formData);
 
             documentId = document.id!;
+            setUploadedDocumentId(document.id!);
 
             setProgress({
               visible: true,
@@ -538,6 +551,8 @@ function CreateCustomTrainingModal({
   React.useEffect(() => {
     if (!visible) {
       setUploadedFile(null);
+      setUploadedDocumentId(null);
+      setDocumentPreviewVisible(false);
       setProgress({
         visible: false,
         type: "",
@@ -594,32 +609,75 @@ function CreateCustomTrainingModal({
         </Form.Item>
 
         <Form.Item name="document" label="Supporting Document (Optional)">
-          <Upload.Dragger
-            beforeUpload={(file) => {
-              setUploadedFile(file);
-              return false; // Prevent auto upload
-            }}
-            onRemove={() => {
-              setUploadedFile(null);
-            }}
-            fileList={
-              uploadedFile
-                ? [{ uid: "1", name: uploadedFile.name, status: "done" }]
-                : []
-            }
-            maxCount={1}
-            accept=".pdf,.doc,.docx,.txt"
-          >
-            <p className="ant-upload-drag-icon">
-              <UploadOutlined />
-            </p>
-            <p className="ant-upload-text">
-              Click or drag file to this area to upload
-            </p>
-            <p className="ant-upload-hint">
-              Support for PDF, DOC, DOCX, and TXT files
-            </p>
-          </Upload.Dragger>
+          <div>
+            <Upload.Dragger
+              beforeUpload={(file) => {
+                // Validate file type
+                if (file.type !== "application/pdf") {
+                  messageApi.error("Only PDF files are supported");
+                  return false;
+                }
+                setUploadedFile(file);
+                return false; // Prevent auto upload
+              }}
+              onRemove={() => {
+                setUploadedFile(null);
+                setUploadedDocumentId(null);
+              }}
+              fileList={
+                uploadedFile
+                  ? [{ uid: "1", name: uploadedFile.name, status: "done" }]
+                  : []
+              }
+              maxCount={1}
+              accept=".pdf"
+              itemRender={(originNode, file) => {
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      marginTop: "12px",
+                      padding: "8px 12px",
+                      backgroundColor: "#fafafa",
+                      borderRadius: "6px",
+                      border: "1px solid #d9d9d9",
+                    }}
+                  >
+                    <span style={{ flex: 1 }}>{file.name}</span>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<EyeOutlined />}
+                      onClick={() => setDocumentPreviewVisible(true)}
+                      style={{ color: "#1890ff", padding: "4px" }}
+                      title="Preview Document"
+                    />
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<DeleteOutlined />}
+                      onClick={() => {
+                        setUploadedFile(null);
+                        setUploadedDocumentId(null);
+                      }}
+                      style={{ color: "#ff4d4f", padding: "4px" }}
+                      title="Remove Document"
+                    />
+                  </div>
+                );
+              }}
+            >
+              <p className="ant-upload-drag-icon">
+                <UploadOutlined />
+              </p>
+              <p className="ant-upload-text">
+                Click or drag PDF file to this area to upload
+              </p>
+              <p className="ant-upload-hint">Only PDF files are supported</p>
+            </Upload.Dragger>
+          </div>
         </Form.Item>
 
         {/* Progress Display */}
@@ -668,6 +726,14 @@ function CreateCustomTrainingModal({
           </Space>
         </div>
       </Form>
+
+      {/* Document Preview Modal */}
+      <FilePreviewModal
+        isOpen={documentPreviewVisible}
+        onClose={() => setDocumentPreviewVisible(false)}
+        file={uploadedFile || undefined}
+        documentId={uploadedDocumentId || undefined}
+      />
     </Modal>
   );
 }
@@ -860,6 +926,12 @@ export default function Trainings() {
   const handleCreateSuccess = () => {
     setCreateModalVisible(false);
     setEditingTraining(null);
+
+    // Show success message
+    messageApi.success(
+      "Training created successfully! You can now start your custom training."
+    );
+
     // The query will automatically refetch due to invalidation
   };
 
@@ -952,6 +1024,7 @@ export default function Trainings() {
         }}
         onSuccess={handleCreateSuccess}
         editingTraining={editingTraining}
+        messageApi={messageApi}
       />
 
       {/* Delete Confirmation Modal */}
