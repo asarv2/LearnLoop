@@ -105,16 +105,15 @@ def _escape_latex(text: str) -> str:
     core_logic_lines = render_function_body.split('\n')
     
     # Find where the document building ends (before any compilation attempts)
-    doc_building_end = 0
+    doc_building_end = len(core_logic_lines)
     for i, line in enumerate(core_logic_lines):
         line_lower = line.lower().strip()
         # Look for compilation-related code that we want to replace
-        if any(keyword in line_lower for keyword in ['generate_pdf', 'generate_tex', 'temporarydirectory', 'pdf_bytes', 'temp_dir']):
+        if any(keyword in line_lower for keyword in ['generate_pdf', 'generate_tex', 'temporarydirectory', 'pdf_bytes', 'temp_dir', 'pass']):
             doc_building_end = i
             break
-        doc_building_end = len(core_logic_lines)
     
-    # Extract the document building logic
+    # Extract the document building logic (exclude the 'pass' or placeholder lines)
     doc_building_logic = '\n'.join(core_logic_lines[:doc_building_end])
     
     # Create the enhanced render function with proper boilerplate
