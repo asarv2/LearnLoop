@@ -514,7 +514,7 @@ async def create_scenario_tools(scenario_id: uuid.UUID, persona_ids: List[uuid.U
         document_tools, document_tool_metadata = await create_document_tool_for_scenario(scenario_id, session)
         tools.extend(document_tools)
     else:
-        document_tool_metadata: List[Dict[str, str]] = []
+        document_tool_metadata = []
     
     return tools, document_tool_metadata
 
@@ -695,9 +695,9 @@ async def run_scenario_agent(
             system_prompt=system_prompt,
             temperature=0.0,
             tools=scenario_tools,  # scenario_tools is already just the tools list from the tuple
-            parallel_tool_calls=True,
+            parallel_tool_calls=False,
             tool_use_behavior=tool_use_behavior,
-            model="gpt-4.1-nano"
+            model="xai/grok-4-fast-non-reasoning"
         )
 
         agent_instance = scenario_agent.agent()

@@ -1,9 +1,6 @@
 import {
   Award,
-  Brain,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Clock,
   MessageSquare,
   Mic,
@@ -316,80 +313,6 @@ const MiniChatPreview = () => {
   );
 };
 
-// Mini assessment preview component for step 3
-const MiniAssessmentPreview = () => {
-  const [selectedAnswer, setSelectedAnswer] = useState("");
-
-  const options = ["1", "2", "3", "4", "5"];
-
-  return (
-    <div
-      className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col"
-      style={{ minHeight: "460px" }}
-    >
-      {/* Progress Bar */}
-      <div className="mb-4 flex-shrink-0">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-sm text-gray-600">Question 1 of 7</span>
-          <span className="text-sm text-gray-600">14% Complete</span>
-        </div>
-        <div className="w-full bg-gray-200 rounded-full h-2">
-          <div
-            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-            style={{ width: "14%" }}
-          ></div>
-        </div>
-      </div>
-
-      {/* Question Card */}
-      <div className="flex-1 mb-3 flex flex-col">
-        <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-100">
-          <h3 className="text-base font-semibold text-gray-900 mb-3">
-            How well do you think the employee got your message?
-          </h3>
-
-          <div className="space-y-2">
-            {options.map((option, index) => (
-              <label
-                key={index}
-                className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all ${
-                  selectedAnswer === option
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-gray-200 bg-white hover:border-gray-300"
-                }`}
-                onClick={() => setSelectedAnswer(option)}
-              >
-                <div
-                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                    selectedAnswer === option
-                      ? "border-blue-500 bg-blue-500"
-                      : "border-gray-300"
-                  }`}
-                >
-                  {selectedAnswer === option && (
-                    <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-                  )}
-                </div>
-                <span className="text-sm text-gray-700">{option}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation Arrows */}
-      <div className="flex justify-between items-center flex-shrink-0">
-        <ChevronLeft className="w-6 h-6 text-gray-400" />
-        <ChevronRight
-          className={`w-6 h-6 transition-colors ${
-            selectedAnswer ? "text-blue-600" : "text-gray-400"
-          }`}
-        />
-      </div>
-    </div>
-  );
-};
-
 // Mini feedback preview component for step 4
 const MiniFeedbackPreview = () => {
   const [currentTab, setCurrentTab] = useState(0);
@@ -568,16 +491,9 @@ const LandingPage = () => {
     },
     {
       number: "03",
-      title: "Reflect on Your Experience",
-      description:
-        "Complete a brief questionnaire to capture your thoughts and feelings about the conversation.",
-      icon: <Brain className="w-6 h-6" />,
-    },
-    {
-      number: "04",
       title: "Get Feedback & Improve",
       description:
-        "Receive a detailed score and personalized feedback to help you improve for next time.",
+        "Receive a detailed score breakdown and personalized feedback to help you improve for next time.",
       icon: <TrendingUp className="w-6 h-6" />,
     },
   ];
@@ -728,12 +644,12 @@ const LandingPage = () => {
               How LearnLoop Works
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
-              Our four-step process transforms your conversation skills through
+              Our three-step process transforms your conversation skills through
               AI-powered practice and personalized feedback
             </p>
           </div>
 
-          <div className="grid lg:grid-cols-2 xl:grid-cols-4 gap-8">
+          <div className="grid lg:grid-cols-2 xl:grid-cols-3 gap-8">
             {processSteps.map((step, index) => (
               <div key={index} className="relative group">
                 <div className="bg-white border-2 border-gray-100 rounded-2xl p-8 hover:border-blue-200 hover:shadow-lg transition-all duration-300">
@@ -775,15 +691,8 @@ const LandingPage = () => {
                   </div>
                 )}
 
-                {/* Assessment Preview for Step 3 */}
+                {/* Feedback Preview for Step 3 */}
                 {index === 2 && (
-                  <div className="mt-6">
-                    <MiniAssessmentPreview />
-                  </div>
-                )}
-
-                {/* Feedback Preview for Step 4 */}
-                {index === 3 && (
                   <div className="mt-6">
                     <MiniFeedbackPreview />
                   </div>
