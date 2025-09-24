@@ -35,10 +35,8 @@ except ImportError:
     pass
 
 BASE = Path(__file__).resolve().parents[1]
-AUDIO_DIR = BASE / "audio"
 MODEL_CACHE_DIR = BASE / "model_cache"
 
-AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 

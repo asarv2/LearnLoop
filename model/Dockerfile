@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 
 # Create required directories
-RUN mkdir -p /app/audio /app/model_cache
+RUN mkdir -p /app/model_cache
 
 # Expose port
 EXPOSE 8000

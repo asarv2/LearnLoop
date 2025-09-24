@@ -8,7 +8,6 @@ import math
 import os
 import re
 import time
-import wave
 from asyncio import QueueEmpty
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -35,7 +34,6 @@ from agents.realtime.model_events import \
     RealtimeModelRawServerEvent as OAEventRawServer
 from app.bus import PCM_SR, SAMPLES_PER_CHUNK, AudioChunk
 from app.db import get_session
-from app.extensions import AUDIO_DIR
 from app.models import Chats, Documents, Messages, Personas, Scenarios
 from app.services.agents.voice.base import Agent
 from app.store import list_messages
@@ -679,21 +677,6 @@ class OpenAIAgent(Agent):
         Always send 20ms frames at self.input_sr. If no mic frame arrives before
         the deadline, send a zero (silence) frame. We do NOT call commit().
         """
-        # --- Minimal capture: write exactly what we send (s16le) into a WAV ---
-        wav = None
-        wav_path = None
-        if os.getenv("OPENAI_MIC_DUMP", "0") == "1":
-            try:
-                ts = int(time.time() * 1000)
-                wav_path = (AUDIO_DIR / f"{ts}.wav")
-                wav = wave.open(str(wav_path), "wb")
-                # mono, 16-bit (2 bytes), self.input_sr
-                wav.setnchannels(1)
-                wav.setsampwidth(2)
-                wav.setframerate(self.input_sr)
-                print(f"[openai][mic-dump] capturing WAV to {wav_path} (sr={self.input_sr}, mono, s16le)")
-            except Exception as e:
-                print(f"[openai][mic-dump] failed to open file: {e}")
 
         # Keep the model from hearing the beep agent only (do NOT ignore ourselves here).
         try:
@@ -779,12 +762,6 @@ class OpenAIAgent(Agent):
                 if n % 50 == 0:
                     logger.debug(f"[pump] recv={(t_a1-t_a0)*1000:.1f}ms proc={(t_b1-t_b0)*1000:.1f}ms send=queue")
 
-                # Optional WAV dump of exactly what we sent
-                if wav is not None:
-                    try:
-                        wav.writeframes(b)
-                    except Exception:
-                        pass
 
                 n += 1
                 if n % 100 == 0:
@@ -801,12 +778,7 @@ class OpenAIAgent(Agent):
                     await asyncio.sleep(remaining)
 
         finally:
-            if wav is not None:
-                try:
-                    wav.close()
-                    logger.debug(f"[openai][mic-dump] saved to {wav_path}")
-                except Exception:
-                    pass
+            pass
 
     async def _pump_user_text_in(self, session: RealtimeSession) -> None:
         """
