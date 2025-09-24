@@ -7,9 +7,13 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useWebSocket } from "@/contexts/websocket-context";
+import {
+  uploadDocument,
+  useCreateDocument,
+} from "@/lib/api/hooks/useDocuments";
 import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import {
-  useCreateTraining,
   useCustomTrainingsForUser,
   useTrainingsByType,
   useUpdateTraining,
@@ -48,6 +52,8 @@ import {
 } from "antd";
 import Link from "next/link";
 import React, { useMemo, useState } from "react";
+
+const { Text } = Typography;
 
 const { Title, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -324,45 +330,167 @@ function CreateCustomTrainingModal({
   } | null;
 }) {
   const [form] = Form.useForm();
-  const createTraining = useCreateTraining();
   const updateTraining = useUpdateTraining(editingTraining?.id || "");
+  const createDocument = useCreateDocument();
   const [loading, setLoading] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [progress, setProgress] = useState({
+    visible: false,
+    type: "",
+    message: "",
+    progress: 0,
+  });
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const { user } = useAuth();
+  const { emitCreateTraining } = useWebSocket();
+
+  // Listen for training creation progress events
+  React.useEffect(() => {
+    const handleProgress = (e: CustomEvent) => {
+      const data = e.detail || {};
+      setProgress({
+        visible: true,
+        type: data.type || "",
+        message: data.message || "",
+        progress: data.progress || 0,
+      });
+    };
+
+    const handleCompleted = (e: CustomEvent) => {
+      const data = e.detail || {};
+      if (data.success) {
+        setProgress({
+          visible: false,
+          type: "",
+          message: "",
+          progress: 0,
+        });
+        setIsCreating(false);
+        form.resetFields();
+        onSuccess();
+      } else {
+        setIsCreating(false);
+        setProgress({
+          visible: false,
+          type: "",
+          message: "",
+          progress: 0,
+        });
+      }
+    };
+
+    window.addEventListener(
+      "trainingCreationProgress",
+      handleProgress as EventListener
+    );
+    window.addEventListener(
+      "trainingCreationCompleted",
+      handleCompleted as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        "trainingCreationProgress",
+        handleProgress as EventListener
+      );
+      window.removeEventListener(
+        "trainingCreationCompleted",
+        handleCompleted as EventListener
+      );
+    };
+  }, [form, onSuccess]);
 
   const handleSubmit = async (values: {
     scenario: string;
     description: string;
   }) => {
-    setLoading(true);
-    try {
-      if (editingTraining) {
+    if (editingTraining) {
+      // Use the old API for editing
+      setLoading(true);
+      try {
         await updateTraining.mutateAsync({
           title: values.scenario,
           description: values.description,
         });
         message.success("Custom training updated successfully!");
-      } else {
-        await createTraining.mutateAsync({
-          title: values.scenario,
-          description: values.description,
-          training_type: "custom",
-          practice: true,
-          active: true,
-          show_documents: false,
-          what_to_do: [],
-          what_not_to_do: [],
-          user_id: user?.id,
-        });
-        message.success("Custom training created successfully!");
+        form.resetFields();
+        onSuccess();
+      } catch {
+        message.error("Failed to update custom training");
+      } finally {
+        setLoading(false);
       }
-      form.resetFields();
-      onSuccess();
-    } catch {
-      message.error(
-        `Failed to ${editingTraining ? "update" : "create"} custom training`
-      );
-    } finally {
-      setLoading(false);
+    } else {
+      // Use WebSocket for creating new training
+      setIsCreating(true);
+      setProgress({
+        visible: true,
+        type: "generating_training",
+        message: "Creating training...",
+        progress: 0,
+      });
+
+      try {
+        let documentId: string | undefined;
+
+        // Upload document if one was selected
+        if (uploadedFile) {
+          try {
+            setProgress({
+              visible: true,
+              type: "generating_training",
+              message: "Uploading document...",
+              progress: 10,
+            });
+
+            const document = await createDocument.mutateAsync({
+              content: "",
+              profile_id: user?.id || null,
+            });
+
+            const formData = new FormData();
+            formData.append("file", uploadedFile);
+            await uploadDocument(document.id!, formData);
+
+            documentId = document.id!;
+
+            setProgress({
+              visible: true,
+              type: "generating_training",
+              message: "Document uploaded, creating training...",
+              progress: 30,
+            });
+          } catch (error) {
+            console.error("Error uploading document:", error);
+            message.error("Failed to upload document. Please try again.");
+            setIsCreating(false);
+            setProgress({
+              visible: false,
+              type: "",
+              message: "",
+              progress: 0,
+            });
+            return;
+          }
+        }
+
+        emitCreateTraining({
+          name: values.scenario,
+          description: values.description,
+          document_id: documentId,
+          profile_id: user?.id,
+        });
+      } catch (error) {
+        console.error("Error in training creation:", error);
+        message.error("Failed to create training. Please try again.");
+        setIsCreating(false);
+        setProgress({
+          visible: false,
+          type: "",
+          message: "",
+          progress: 0,
+        });
+      }
     }
   };
 
@@ -377,6 +505,20 @@ function CreateCustomTrainingModal({
       form.resetFields();
     }
   }, [editingTraining, visible, form]);
+
+  // Reset file state when modal is closed
+  React.useEffect(() => {
+    if (!visible) {
+      setUploadedFile(null);
+      setProgress({
+        visible: false,
+        type: "",
+        message: "",
+        progress: 0,
+      });
+      setIsCreating(false);
+    }
+  }, [visible]);
 
   return (
     <Modal
@@ -423,8 +565,23 @@ function CreateCustomTrainingModal({
           />
         </Form.Item>
 
-        <Form.Item name="document" label="Supporting Document (Coming Soon)">
-          <Upload.Dragger disabled>
+        <Form.Item name="document" label="Supporting Document (Optional)">
+          <Upload.Dragger
+            beforeUpload={(file) => {
+              setUploadedFile(file);
+              return false; // Prevent auto upload
+            }}
+            onRemove={() => {
+              setUploadedFile(null);
+            }}
+            fileList={
+              uploadedFile
+                ? [{ uid: "1", name: uploadedFile.name, status: "done" }]
+                : []
+            }
+            maxCount={1}
+            accept=".pdf,.doc,.docx,.txt"
+          >
             <p className="ant-upload-drag-icon">
               <UploadOutlined />
             </p>
@@ -432,18 +589,50 @@ function CreateCustomTrainingModal({
               Click or drag file to this area to upload
             </p>
             <p className="ant-upload-hint">
-              Document upload functionality will be available soon
+              Support for PDF, DOC, DOCX, and TXT files
             </p>
           </Upload.Dragger>
         </Form.Item>
 
+        {/* Progress Display */}
+        {progress.visible && (
+          <div style={{ marginTop: "16px", marginBottom: "16px" }}>
+            <div style={{ marginBottom: "8px" }}>
+              <Text strong>{progress.message}</Text>
+            </div>
+            <div
+              style={{
+                width: "100%",
+                height: "8px",
+                backgroundColor: "#f0f0f0",
+                borderRadius: "4px",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${progress.progress}%`,
+                  height: "100%",
+                  backgroundColor: "#1890ff",
+                  transition: "width 0.3s ease",
+                }}
+              />
+            </div>
+            <div style={{ textAlign: "right", marginTop: "4px" }}>
+              <Text type="secondary">{progress.progress}%</Text>
+            </div>
+          </div>
+        )}
+
         <div style={{ textAlign: "right", marginTop: "24px" }}>
           <Space>
-            <Button onClick={onCancel}>Cancel</Button>
+            <Button onClick={onCancel} disabled={isCreating}>
+              Cancel
+            </Button>
             <Button
               type="primary"
               htmlType="submit"
-              loading={loading}
+              loading={loading || isCreating}
               icon={<PlusOutlined />}
             >
               {editingTraining ? "Update Training" : "Create Training"}

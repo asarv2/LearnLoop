@@ -109,6 +109,12 @@ interface WebSocketContextType {
     responses: Record<string, unknown>;
   }) => void;
   emitGetHints: (data: { chat_id: string; message_id: string }) => void;
+  emitCreateTraining: (data: {
+    name: string;
+    description: string;
+    document_id?: string;
+    profile_id?: string;
+  }) => void;
 
   // Local mic stream access for UI visualizations (read-only)
   getLocalMicStream: () => MediaStream | null;
@@ -627,6 +633,50 @@ export function WebSocketProvider({
             detail: data,
           })
         );
+      }
+    );
+
+    // Training creation progress events
+    socket.on(
+      "training_creation_progress",
+      (data: {
+        type:
+          | "generating_training"
+          | "generating_scenario"
+          | "generating_document";
+        message: string;
+        progress: number;
+      }) => {
+        logInfo("Training creation progress update", data);
+        window.dispatchEvent(
+          new CustomEvent("trainingCreationProgress", {
+            detail: data,
+          })
+        );
+      }
+    );
+
+    // Training creation completion
+    socket.on(
+      "training_creation_completed",
+      (data: {
+        success: boolean;
+        training_id: string;
+        scenario_id: string;
+        message: string;
+        progress: number;
+      }) => {
+        logInfo("Training creation completed", data);
+        if (data.success) {
+          toast.success(data.message);
+          window.dispatchEvent(
+            new CustomEvent("trainingCreationCompleted", {
+              detail: data,
+            })
+          );
+        } else {
+          toast.error(data.message);
+        }
       }
     );
 
@@ -1239,6 +1289,24 @@ export function WebSocketProvider({
     []
   );
 
+  const emitCreateTraining = useCallback(
+    (data: {
+      name: string;
+      description: string;
+      document_id?: string;
+      profile_id?: string;
+    }) => {
+      if (!socketRef.current?.connected) {
+        logError("Cannot create training - WebSocket not connected");
+        toast.error("WebSocket not connected. Please refresh the page.");
+        return;
+      }
+      logInfo("Emitting create_training", data);
+      socketRef.current.emit("create_training", data);
+    },
+    []
+  );
+
   // ────────────────────────────────────────────────────────────────────────────
   // Value
   // ────────────────────────────────────────────────────────────────────────────
@@ -1270,6 +1338,7 @@ export function WebSocketProvider({
     emitEndTraining,
     emitSubmitAssessment,
     emitGetHints,
+    emitCreateTraining,
     getLocalMicStream,
   };
 

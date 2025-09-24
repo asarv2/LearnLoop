@@ -5,19 +5,22 @@ Simplified version focused on core training functionality
 
 import asyncio
 import logging
+import os
 import random
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, cast
 
+import httpx
 import socketio  # type: ignore
 from agents import Runner, trace
 from agents.items import TResponseInputItem
 from app.db import get_session
 from app.models import (Attempts, Chats, Documents,  # ✨ Import Personas
                         Fields, Messages, Parameters, Personas, Rubrics,
-                        Scenarios)
+                        Scenarios, Trainings)
+from app.services.agents.document import run_document_agent
 from app.services.agents.generic import GenericAgent, run_generic_agent
 from app.services.agents.grade import run_grading_agent
 from app.services.agents.hint import run_hint_agent
@@ -30,6 +33,41 @@ logger = logging.getLogger(__name__)
 
 # Global store for active training runs
 active_training_runs: Dict[str, Any] = {}
+
+
+async def _upload_template_to_supabase_storage(template_code: str, scenario_id: str) -> None:
+    """Upload template Python code to Supabase Storage templates bucket."""
+    # Get Supabase configuration from environment variables
+    supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+    service_role_key = os.getenv("SERVICE_ROLE_KEY")
+    bucket_name = "templates"
+    
+    logger.info(f"Supabase Storage config - url: {supabase_url}, service_key: {'***' if service_role_key else 'None'}")
+    
+    if not all([supabase_url, service_role_key]):
+        logger.error("Missing Supabase configuration environment variables")
+        raise ValueError("Supabase configuration incomplete")
+    
+    # Upload template code to Supabase Storage using Storage API
+    file_key = f"{scenario_id}.py"
+    storage_url = f"{supabase_url}/storage/v1/object/{bucket_name}/{file_key}"
+    
+    headers = {
+        "Authorization": f"Bearer {service_role_key}",
+        "Content-Type": "text/x-python",
+        "x-upsert": "true"  # Allow overwrite
+    }
+    
+    # Use httpx client for async HTTP request
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            storage_url,
+            content=template_code.encode('utf-8'),
+            headers=headers
+        )
+        response.raise_for_status()
+    
+    logger.info(f"Successfully uploaded template {file_key} to Supabase Storage bucket {bucket_name}")
 
 # Short-lived join dedupe map: key=(sid:chat_id) -> last_seen_ts
 _recent_joins: Dict[str, float] = {}
@@ -360,6 +398,196 @@ async def handle_join_training(sid: str, data: Dict[str, Any]) -> None:
         await emit_error(sid, f"Failed to join training: {str(e)}")
 
 
+
+
+async def handle_create_training(sid: str, data: Dict[str, Any]) -> None:
+    """
+    Handle custom training creation requests via WebSocket
+    Creates training entry, scenario entry, generates document template, and uploads to Supabase
+    """
+    try:
+        logger.info(f"Received create_training request from {sid} with data: {data}")
+
+        name = data.get("name")
+        description = data.get("description")
+        document_id = data.get("document_id")  # Optional document ID
+        profile_id = data.get("profile_id")
+
+        if not name:
+            logger.error(f"Missing name in request from {sid}")
+            await emit_error(sid, "Missing name")
+            return
+
+        if not description:
+            logger.error(f"Missing description in request from {sid}")
+            await emit_error(sid, "Missing description")
+            return
+
+        # Handle empty string profile_id as None for guest mode
+        if profile_id == "" or profile_id == "null":
+            profile_id = None
+
+        logger.info(
+            f"Processing custom training creation: name={name}, description={description}, profile_id={profile_id}, sid={sid}"
+        )
+
+        # Create a new session for this operation
+        db_session = next(get_session())
+
+        try:
+            # Get profile_id from WebSocket session if not provided
+            if not profile_id:
+                try:
+                    from app.main import (get_profile_id_for_sid,
+                                          get_socketio_instance)
+                    sio = get_socketio_instance()
+                    try:
+                        sess = await sio.get_session(sid)  # type: ignore
+                    except Exception:
+                        sess = None
+                    profile_id = (sess or {}).get("profile_id") if isinstance(sess, dict) else None
+                    if not profile_id:
+                        profile_id = get_profile_id_for_sid(sid)
+                except Exception:
+                    logger.warning("Could not get profile_id from session")
+
+            # Emit progress update: generating training
+            sio = get_sio_instance()
+            await sio.emit("training_creation_progress", {
+                "type": "generating_training",
+                "message": "Creating training entry...",
+                "progress": 25
+            }, room=sid)
+
+            # Create training entry with type 'custom'
+            training = Trainings(
+                title=name,
+                description=description,
+                training_type="custom",
+                user_id=profile_id,
+                active=True,
+                practice=False,
+                show_documents=True
+            )
+            db_session.add(training)
+            db_session.commit()
+            db_session.refresh(training)
+
+            logger.info(f"Created training {training.id} with type custom")
+
+            # Emit progress update: generating scenario
+            await sio.emit("training_creation_progress", {
+                "type": "generating_scenario",
+                "message": "Creating scenario entry...",
+                "progress": 50
+            }, room=sid)
+
+            # Create scenario entry with the specified group_id
+            group_id = uuid.UUID("8b6ed9ac-bfb7-4f31-992b-73935f6560bf")
+            scenario = Scenarios(
+                title=name,
+                description=description,
+                training_id=training.id,
+                group_ids=[group_id],
+                objectives=[],
+                parameter_ids=[],
+                document_ids=[uuid.UUID(document_id)] if document_id else [],
+                prompts={},
+                prompt_mapping={},
+                persona_ids=[],
+                problem_statement=""
+            )
+            db_session.add(scenario)
+            db_session.commit()
+            db_session.refresh(scenario)
+
+            logger.info(f"Created scenario {scenario.id} with group_id {group_id}")
+
+            # Emit progress update: generating document
+            await sio.emit("training_creation_progress", {
+                "type": "generating_document",
+                "message": "Generating document template...",
+                "progress": 75
+            }, room=sid)
+
+            # Get document content if document_id is provided
+            document_content = ""
+            if document_id:
+                try:
+                    document = db_session.exec(
+                        select(Documents).where(Documents.id == document_id)
+                    ).one_or_none()
+                    if document and document.content:
+                        document_content = document.content
+                        logger.info(f"Using document content from {document_id}")
+                    else:
+                        logger.warning(f"Document {document_id} not found or has no content")
+                except Exception as e:
+                    logger.error(f"Error retrieving document {document_id}: {e}")
+
+            # Call the document agent to generate template code
+            try:
+                result = await run_document_agent(
+                    document_type=name,
+                    document_structure=document_content or description,
+                    context=f"Custom training template for: {name}"
+                )
+
+                args_code = result.get('args_code', '')
+                render_code = result.get('render_code', '')
+
+                if not args_code or not render_code:
+                    raise ValueError("Document agent failed to generate complete template code")
+
+                # Combine the generated code into a complete template
+                template_code = f'''"""
+{name} Template Module.
+
+Contract:
+- Args: pydantic BaseModel (schema for kwargs)
+- render(args: Args) -> bytes  # returns compiled PDF bytes
+
+Optional:
+- DEFAULT_FILENAME: str
+"""
+
+{args_code}
+
+{render_code}
+'''
+
+                logger.info(f"Generated template code for scenario {scenario.id}")
+
+                # Upload template to Supabase Storage
+                await _upload_template_to_supabase_storage(template_code, str(scenario.id))
+
+                logger.info(f"Successfully uploaded template for scenario {scenario.id}")
+
+            except Exception as e:
+                logger.error(f"Error generating document template: {e}")
+                await emit_error(sid, f"Failed to generate document template: {str(e)}")
+                return
+
+            # Emit completion event
+            await sio.emit("training_creation_completed", {
+                "success": True,
+                "training_id": str(training.id),
+                "scenario_id": str(scenario.id),
+                "message": "Custom training created successfully",
+                "progress": 100
+            }, room=sid)
+
+            logger.info(f"Successfully created custom training: training_id={training.id}, scenario_id={scenario.id}")
+
+        finally:
+            try:
+                db_session.close()
+            except Exception as close_error:
+                logger.error(f"Error closing database session: {str(close_error)}")
+
+    except Exception as e:
+        logger.error(f"Error creating custom training for {sid}: {str(e)}")
+        await emit_error(sid, f"Failed to create custom training: {str(e)}")
 
 
 async def handle_end_training(sid: str, data: Dict[str, Any]) -> None:
@@ -1139,6 +1367,12 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
         """Get hints for a message"""
         logger.info(f"get_hints event triggered for sid={sid}")
         await handle_get_hints(sid, data)
+    
+    @sio.event  # type: ignore
+    async def create_training(sid: str, data: Dict[str, Any]) -> None:
+        """Create a custom training with document template generation"""
+        logger.info(f"create_training event triggered for sid={sid}")
+        await handle_create_training(sid, data)
     
 
     @sio.event  # type: ignore
