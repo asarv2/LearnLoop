@@ -14,6 +14,7 @@ import {
   LogoutOutlined,
   MessageOutlined,
   PlusOutlined,
+  ProfileOutlined,
   SwapOutlined,
   TeamOutlined,
   UserOutlined,
@@ -103,6 +104,16 @@ const getUserMenuItems = (
       onClick: switchToEmployee,
     });
   }
+
+  // Add profile option
+  items.push({
+    key: "profile",
+    icon: <ProfileOutlined />,
+    label: "Profile",
+    onClick: () => {
+      window.location.href = "/profile";
+    },
+  });
 
   // Add divider if we have switch options
   if (items.length > 0) {
