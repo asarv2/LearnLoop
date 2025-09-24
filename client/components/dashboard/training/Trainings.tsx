@@ -12,6 +12,7 @@ import { useWebSocket } from "@/contexts/websocket-context";
 import {
   uploadDocument,
   useCreateDocument,
+  useDocument,
 } from "@/lib/api/hooks/useDocuments";
 import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import {
@@ -382,6 +383,18 @@ function CreateCustomTrainingModal({
   const { user } = useAuth();
   const { emitCreateTraining } = useWebSocket();
 
+  // Get scenarios for the training being edited to find document info
+  const { data: editScenarios } = useScenariosByTrainingId(
+    editingTraining?.id || "",
+    !!(editingTraining && visible)
+  );
+
+  // Get document info for the document being edited
+  const { data: editDocument } = useDocument(
+    uploadedDocumentId || "",
+    !!(uploadedDocumentId && editingTraining && visible)
+  );
+
   // Listen for training creation progress events
   React.useEffect(() => {
     const handleProgress = (e: CustomEvent) => {
@@ -546,6 +559,40 @@ function CreateCustomTrainingModal({
       form.resetFields();
     }
   }, [editingTraining, visible, form]);
+
+  // Set up document info when editing
+  React.useEffect(() => {
+    if (editingTraining && visible && editScenarios) {
+      // Find the root scenario (parent_id = null)
+      const rootScenario = editScenarios.find(
+        (scenario) => scenario.parent_id === null
+      );
+
+      if (
+        rootScenario &&
+        rootScenario.document_ids &&
+        rootScenario.document_ids.length > 0
+      ) {
+        // Take the first document_id
+        const documentId = rootScenario.document_ids[0];
+        setUploadedDocumentId(documentId);
+      }
+    } else if (!editingTraining) {
+      // Reset document state when not editing
+      setUploadedFile(null);
+      setUploadedDocumentId(null);
+    }
+  }, [editingTraining, visible, editScenarios]);
+
+  // Create mock file with actual document title when document data is available
+  React.useEffect(() => {
+    if (editingTraining && visible && editDocument) {
+      const mockFile = new File([], editDocument.title || "Document", {
+        type: "application/pdf",
+      });
+      setUploadedFile(mockFile);
+    }
+  }, [editingTraining, visible, editDocument]);
 
   // Reset file state when modal is closed
   React.useEffect(() => {

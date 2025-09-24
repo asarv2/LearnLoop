@@ -9,8 +9,10 @@
 import {
   ArrowLeftIcon,
   CheckIcon,
+  ExclamationTriangleIcon,
   FileTextIcon,
   PlayIcon,
+  ReloadIcon,
 } from "@radix-ui/react-icons";
 import {
   Badge,
@@ -70,6 +72,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     completedCount: 0,
     totalTools: 0,
   });
+  const [generationError, setGenerationError] = useState<{
+    message: string;
+    error: string;
+  } | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const preparingModelTimerRef = useRef<number | null>(null);
   const { user } = useAuth();
   const { data: fields } = useFields();
@@ -551,19 +558,44 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       setDraftDocumentIds(Array.isArray(d.document_ids) ? d.document_ids : []);
       setShowGenerateModal(false);
       setIsGenerating(false);
+      // Clear any previous errors
+      setGenerationError(null);
+      setRetryCount(0);
       // Hide the progress shortly after completion
       window.setTimeout(() => {
         setGenerateProgress((prev) => ({ ...prev, visible: false }));
       }, 800);
     };
+
+    const handleScenarioGenerationError = (e: CustomEvent) => {
+      const d = e.detail || {};
+      console.error("Scenario generation error:", d);
+      setGenerationError({
+        message: d.message || "An error occurred during scenario generation",
+        error: d.error || "Unknown error",
+      });
+      setIsGenerating(false);
+      setShowGenerateModal(false);
+      // Hide the progress immediately on error
+      setGenerateProgress((prev) => ({ ...prev, visible: false }));
+    };
+
     window.addEventListener(
       "scenarioGenerated",
       handleScenarioGenerated as EventListener
+    );
+    window.addEventListener(
+      "scenarioGenerationError",
+      handleScenarioGenerationError as EventListener
     );
     return () => {
       window.removeEventListener(
         "scenarioGenerated",
         handleScenarioGenerated as EventListener
+      );
+      window.removeEventListener(
+        "scenarioGenerationError",
+        handleScenarioGenerationError as EventListener
       );
     };
   }, []);
@@ -921,6 +953,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     );
   };
 
+  const handleRetryGeneration = () => {
+    setGenerationError(null);
+    setRetryCount((prev) => prev + 1);
+    handleGenerateScenario({ additionalPrompt });
+  };
+
   const handleGenerateScenario = async (opts?: {
     additionalPrompt?: string;
   }) => {
@@ -931,6 +969,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
     try {
       setIsGenerating(true);
+      setGenerationError(null);
       beginGenerateProgress();
 
       const scenarioToUse = savedScenarioId || scenarioId;
@@ -1241,8 +1280,16 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       });
     } catch (error) {
       console.error("Error generating scenario:", error);
-      alert("Failed to generate scenario. Please try again.");
+      setGenerationError({
+        message:
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred",
+        error: "Scenario generation failed",
+      });
       setIsGenerating(false);
+      setShowGenerateModal(false);
+      setGenerateProgress((prev) => ({ ...prev, visible: false }));
     }
   };
 
@@ -1925,6 +1972,105 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 </Card>
               </Box>
             )}
+
+          {/* Error Display and Retry */}
+          {generationError && (
+            <Box mb="4">
+              <Card
+                style={{
+                  background:
+                    "linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%)",
+                  border: "none",
+                  color: "white",
+                }}
+              >
+                <Flex align="start" gap="4">
+                  <Box
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "12px",
+                      background: "rgba(255, 255, 255, 0.2)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <ExclamationTriangleIcon
+                      color="white"
+                      width="16"
+                      height="16"
+                    />
+                  </Box>
+                  <Box style={{ flex: 1 }}>
+                    <Flex align="center" gap="2" mb="3">
+                      <Text size="4" weight="bold">
+                        Generation Failed
+                      </Text>
+                      <Badge size="1" variant="soft" color="red">
+                        Error
+                      </Badge>
+                    </Flex>
+                    <Text
+                      size="2"
+                      style={{ color: "rgba(255, 255, 255, 0.9)" }}
+                      mb="4"
+                    >
+                      {generationError.message}
+                    </Text>
+                    <Flex gap="2">
+                      <Button
+                        size="3"
+                        variant="solid"
+                        style={{
+                          background: "rgba(255, 255, 255, 0.2)",
+                          border: "1px solid rgba(255, 255, 255, 0.3)",
+                          color: "white",
+                        }}
+                        onClick={handleRetryGeneration}
+                        disabled={isGenerating}
+                      >
+                        {isGenerating ? (
+                          <Flex align="center" gap="2">
+                            <Spinner size="1" />
+                            <Text>Retrying...</Text>
+                          </Flex>
+                        ) : (
+                          <Flex align="center" gap="2">
+                            <ReloadIcon />
+                            <Text>Retry Generation</Text>
+                          </Flex>
+                        )}
+                      </Button>
+                      <Button
+                        size="3"
+                        variant="outline"
+                        style={{
+                          border: "1px solid rgba(255, 255, 255, 0.3)",
+                          color: "white",
+                        }}
+                        onClick={() => setGenerationError(null)}
+                      >
+                        Dismiss
+                      </Button>
+                    </Flex>
+                    {retryCount > 0 && (
+                      <Text
+                        size="1"
+                        style={{
+                          color: "rgba(255, 255, 255, 0.7)",
+                          marginTop: "8px",
+                        }}
+                      >
+                        Retry attempt: {retryCount}
+                      </Text>
+                    )}
+                  </Box>
+                </Flex>
+              </Card>
+            </Box>
+          )}
 
           {/* Start Button: show only when problem statement exists */}
           {allStepsComplete && scenarioReady && (
