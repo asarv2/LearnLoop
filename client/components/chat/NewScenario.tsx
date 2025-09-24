@@ -220,14 +220,30 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           // Only create persona if we have the persona field value
           if (personaFieldValue) {
             try {
-              // Find the parent persona based on the persona field value
-              const parentPersona = personas?.find(
-                (p) => p.name === personaFieldValue
+              // Find the persona field value object to get the parameterId
+              const personaFieldValueObj = currentGroupFieldValues.find(
+                (gfv) => gfv?.fieldId === group.persona_field_id
               );
+
+              let parentPersona = null;
+
+              // Find the parent persona by parameterId (this is the reliable method)
+              if (personaFieldValueObj?.parameterId) {
+                // Find the parameter to get the actual persona ID
+                const parameter = allParameters?.find(
+                  (p) => p.id === personaFieldValueObj.parameterId
+                );
+                if (parameter?.value) {
+                  // Find the persona by ID
+                  parentPersona = personas?.find(
+                    (p) => p.id === parameter.value
+                  );
+                }
+              }
 
               if (!parentPersona) {
                 console.warn(
-                  `Parent persona "${personaFieldValue}" not found for group ${groupId}`
+                  `Parent persona "${personaFieldValue}" not found for group ${groupId}. ParameterId: ${personaFieldValueObj?.parameterId}`
                 );
                 continue; // Skip this group if parent persona not found
               }
