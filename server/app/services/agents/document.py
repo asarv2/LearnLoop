@@ -27,6 +27,17 @@ from pydantic import Field
 logger = logging.getLogger(__name__)
 
 
+def _lint_latex_strings(src: str) -> None:
+    """Quick unit guard to catch obvious backslash mistakes."""
+    import re
+
+    # Fail if we see 6+ consecutive backslashes anywhere (almost certainly wrong)
+    if re.search(r'\\\\\\\\\\\\+', src):
+        raise RuntimeError("Suspicious 6+ backslashes found; likely double-escaped newline.")
+    
+    # Note: Removed the '\\\\text' check as it false-positives on valid generator strings like r'\\textbf'
+
+
 def _enhance_render_function(render_code: str) -> str:
     """
     Enhance the generated render function with proper boilerplate code.
@@ -42,7 +53,7 @@ import time
 from pathlib import Path
 from subprocess import CalledProcessError
 from tempfile import TemporaryDirectory
-from typing import Optional
+from typing import Optional, List, Dict, Any, Union
 
 from pydantic import BaseModel, Field
 # PyLaTeX
@@ -73,6 +84,12 @@ def _escape_latex(text: str) -> str:
         text = text.replace(char, replacement)
     
     return text
+
+
+# Helper constants for consistent LaTeX formatting
+BR = NoEscape(r'\\\\')
+def VSPACE(cm: str) -> NoEscape: return NoEscape(r'\\vspace{' + cm + r'}')
+def B(s: str) -> NoEscape: return NoEscape(r'\\textbf{' + _escape_latex(s) + r'}')
 
 
 '''
@@ -169,123 +186,116 @@ TEMPLATE_DESCRIPTION = "{template_description}"
     return constants + args_code
 
 
-def create_args_tool(document_type: str) -> Any:
-    """Create a function tool for generating the Args class."""
+def create_template_tool(document_type: str) -> Any:
+    """Create a function tool for generating both Args class and render function."""
     
-    async def generate_args_class(
-        args_code: str = Field(description="Complete Python code for the Args class (pydantic BaseModel) with all required fields and descriptions")
+    async def generate(
+        args_code: str = Field(description="Complete Python code for the Args class (pydantic BaseModel) with all required fields and descriptions"),
+        render_code: str = Field(description="Complete Python code for the render(args: Args) -> bytes function using PyLaTeX")
     ) -> str:
-        """Generate the Args class for the document template.
+        """Generate both the Args class and render function for the document template.
         
-        This function should output complete Python code that defines a pydantic BaseModel
-        with all the fields needed for the document template. Each field should have:
-        - Appropriate type annotation
-        - Default value (usually empty string for text fields)
-        - Description for the field
+        This function should output complete Python code for:
+        1. Args class: A pydantic BaseModel with all fields needed for the document template
+        2. Render function: A function that takes an Args instance and returns PDF bytes
         
         Args:
             args_code: Complete Python class definition for Args
-            
-        Returns:
-            Confirmation message
-        """
-        # Enhance the Args code with boilerplate constants
-        enhanced_args_code = _enhance_args_class(args_code, document_type)
-        
-        # Verify the Args class with the documents service
-        try:
-            documents_service_url = os.getenv("DOCUMENTS_SERVICE_URL")
-            if not documents_service_url:
-                raise RuntimeError("DOCUMENTS_SERVICE_URL not configured")
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{documents_service_url}/verify-args",
-                    json={"args_code": enhanced_args_code}
-                ) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        if not result.get("valid", False):
-                            raise RuntimeError(f"Args validation failed: {result.get('message', 'Unknown error')}")
-                        logger.info("✓ Args class validation passed")
-                    else:
-                        raise RuntimeError(f"Args validation request failed with status {response.status}")
-        except Exception as e:
-            logger.error(f"Args validation failed: {e}")
-            raise RuntimeError(f"Args class validation failed: {str(e)}")
-        
-        # Store the enhanced code
-        document_results['args_code'] = enhanced_args_code
-        document_progress['args_code'] = True
-        logger.info(f"✓ Generated and enhanced Args class with {len(re.findall(r'def __init__|class Args', enhanced_args_code))} definitions")
-        return f"Generated and enhanced Args class with {len(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*:', enhanced_args_code))} fields"
-    
-    return function_tool(generate_args_class)
-
-
-def create_render_tool() -> Any:
-    """Create a function tool for generating the render function."""
-    
-    async def generate_render_function(
-        render_code: str = Field(description="Complete Python code for the render(args: Args) -> bytes function using PyLaTeX")
-    ) -> str:
-        """Generate the render function for the document template.
-        
-        This function should output complete Python code that:
-        - Takes an Args instance as parameter
-        - Uses PyLaTeX to create a PDF document
-        - Handles LaTeX escaping properly
-        - Returns PDF bytes
-        - Uses TemporaryDirectory for compilation
-        - Handles errors gracefully
-        
-        Args:
             render_code: Complete Python function definition for render
             
         Returns:
             Confirmation message
         """
-        # Process and enhance the generated code with boilerplate
+        # Enhance both codes with boilerplate
+        enhanced_args_code = _enhance_args_class(args_code, document_type)
         enhanced_render_code = _enhance_render_function(render_code)
         
-        # Verify the render function with the documents service
+        # Fix common LaTeX escaping issues with surgical normalization
+        import re
+
+        # REMOVED: The three broad regex lines that were risky and could mangle valid sequences
+        # Optional: narrowly normalize only line-break literals inside NoEscape raw strings,
+        # avoiding control sequences (\textbf, \vspace, \alpha, etc.)
+        enhanced_render_code = re.sub(
+            r"(NoEscape\(\s*r([\"']))\\\\{3,}(?![A-Za-z@])",  # 3+ backslashes not followed by a letter/@ (so not \textbf)
+            r"\1\\\\",                                        # force exactly two backslashes
+            enhanced_render_code
+        )
+        
+        # Quick unit guard to catch obvious mistakes
+        _lint_latex_strings(enhanced_render_code)
+        
+        # Verify both together with the documents service
         try:
             documents_service_url = os.getenv("DOCUMENTS_SERVICE_URL")
             if not documents_service_url:
                 raise RuntimeError("DOCUMENTS_SERVICE_URL not configured")
             
-            # If we have both args_code and render_code, pass the full template for verification
-            args_code = document_results.get('args_code', '')
-            if args_code:
-                full_template = args_code + '\n\n' + enhanced_render_code
-                payload = {"full_template": full_template}
-            else:
-                payload = {"render_code": enhanced_render_code}
-            
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"{documents_service_url}/verify-render",
-                    json=payload
+                    f"{documents_service_url}/verify",
+                    json={
+                        "args_code": enhanced_args_code,
+                        "render_code": enhanced_render_code
+                    }
                 ) as response:
                     if response.status == 200:
                         result = await response.json()
                         if not result.get("valid", False):
-                            raise RuntimeError(f"Render validation failed: {result.get('message', 'Unknown error')}")
-                        logger.info("✓ Render function validation passed")
+                            # Extract detailed error information
+                            error_message = result.get('message', 'Unknown error')
+                            error_type = result.get('error_type', 'UnknownError')
+                            error_details = result.get('error_details', '')
+                            
+                            # Create a comprehensive error message
+                            detailed_error = f"Template validation failed: {error_message}"
+                            if error_type and error_type != 'UnknownError':
+                                detailed_error += f" (Type: {error_type})"
+                            if error_details and error_details != error_message:
+                                detailed_error += f"\nDetails: {error_details}"
+                            
+                            raise RuntimeError(detailed_error)
+                        logger.info("✓ Template validation passed")
                     else:
-                        raise RuntimeError(f"Render validation request failed with status {response.status}")
+                        # Try to get error details from the response body
+                        try:
+                            error_response = await response.json()
+                            error_message = error_response.get('message', f'HTTP {response.status} error')
+                            error_type = error_response.get('error_type', 'HTTPError')
+                            error_details = error_response.get('error_details', '')
+                            
+                            detailed_error = f"Template validation request failed: {error_message}"
+                            if error_type and error_type != 'HTTPError':
+                                detailed_error += f" (Type: {error_type})"
+                            if error_details and error_details != error_message:
+                                detailed_error += f"\nDetails: {error_details}"
+                            
+                            raise RuntimeError(detailed_error)
+                        except Exception as parse_error:
+                            # Try to get response text as fallback
+                            try:
+                                response_text = await response.text()
+                                raise RuntimeError(f"Template validation request failed with status {response.status}. Response: {response_text}")
+                            except:
+                                # Final fallback if we can't parse the error response
+                                raise RuntimeError(f"Template validation request failed with status {response.status}. Parse error: {parse_error}")
         except Exception as e:
-            logger.error(f"Render validation failed: {e}")
-            raise RuntimeError(f"Render function validation failed: {str(e)}")
+            logger.error(f"Template validation failed: {e}")
+            raise RuntimeError(f"Template validation failed: {str(e)}")
         
-        # Store the enhanced code
+        # Store both enhanced codes
+        document_results['args_code'] = enhanced_args_code
         document_results['render_code'] = enhanced_render_code
+        document_progress['args_code'] = True
         document_progress['render_code'] = True
-        lines = enhanced_render_code.split('\n')
-        logger.info(f"✓ Generated and enhanced render function with {len(lines)} lines")
-        return f"Generated and enhanced render function with {len(lines)} lines of code"
+        
+        args_fields = len(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*:', enhanced_args_code))
+        render_lines = len(enhanced_render_code.split('\n'))
+        
+        logger.info(f"✓ Generated and enhanced template with {args_fields} Args fields and {render_lines} render lines")
+        return f"Generated and enhanced template with {args_fields} Args fields and {render_lines} render lines"
     
-    return function_tool(generate_render_function)
+    return function_tool(generate)
 
 
 # Global storage for document generation results
@@ -325,17 +335,15 @@ async def run_document_agent(
     if context:
         system_prompt += f"\n\nAdditional Context: {context}"
     
-    # Create tools for the agent
+    # Create single tool for the agent
     tools = [
-        create_args_tool(document_type),
-        create_render_tool()
+        create_template_tool(document_type)
     ]
     
-    # Create tool use behavior to wait for both tools to be called
+    # Create tool use behavior to wait for the template tool to be called
     def tool_use_behavior(context: Any, tool_results: list[Any]) -> ToolsToFinalOutputResult:
-        # We require both args_code and render_code tools to be called
-        required_tools = ['args_code', 'render_code']
-        completed_required = all(document_progress.get(tool, False) for tool in required_tools)
+        # We require the template tool to be called (which handles both args and render)
+        completed_required = document_progress.get('args_code', False) and document_progress.get('render_code', False)
         return ToolsToFinalOutputResult(is_final_output=completed_required)
 
     # Create the document agent using GenericAgent directly
@@ -390,17 +398,19 @@ Please generate both the Args class and render function.
 
     logger.info("Document generation agent completed successfully")
     
-    # Check if required tools were called
-    required_tools = ['args_code', 'render_code']
-    completed_required = [tool for tool in required_tools if document_progress.get(tool, False)]
-    logger.info(f"Document generation completed: {len(completed_required)}/{len(required_tools)} required tools called")
-    logger.info(f"Required tools: {required_tools}")
-    logger.info(f"Completed tools: {completed_required}")
+    # Check if template generation was completed
+    args_completed = document_progress.get('args_code', False)
+    render_completed = document_progress.get('render_code', False)
+    logger.info(f"Document generation completed: Args={args_completed}, Render={render_completed}")
     
-    if len(completed_required) < len(required_tools):
-        missing_tools = [tool for tool in required_tools if not document_progress.get(tool, False)]
-        logger.warning(f"Missing tool calls for: {missing_tools}")
-        raise RuntimeError(f"Document generation incomplete - missing: {missing_tools}")
+    if not (args_completed and render_completed):
+        missing_parts = []
+        if not args_completed:
+            missing_parts.append("Args class")
+        if not render_completed:
+            missing_parts.append("Render function")
+        logger.warning(f"Missing template parts: {missing_parts}")
+        raise RuntimeError(f"Document generation incomplete - missing: {missing_parts}")
     
     return {
         'args_code': document_results.get('args_code', ''),
