@@ -1,6 +1,8 @@
 import { ChatCreateSchema, chatRepo } from "@/lib/repos/chatRepo";
 import { handleHttpError } from "@/utils/HttpError";
 import { logError, logWarn } from "@/utils/logger";
+import supabaseServer from "@/utils/supabase/supabase-server";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 // POST /api/chats  – create
@@ -31,7 +33,19 @@ export async function POST(req: Request) {
 // GET /api/chats  – list
 export async function GET() {
   try {
-    const rows = await chatRepo.list();
+    // Get current user from Supabase
+    const supabase = await supabaseServer(cookies());
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // The user ID is the same as the profile ID in this system
+    const profileId = user.id;
+    const rows = await chatRepo.list(profileId);
     return NextResponse.json(rows);
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);

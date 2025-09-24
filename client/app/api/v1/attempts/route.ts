@@ -43,14 +43,8 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get user's profile ID
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    const profileId = profile?.id;
+    // The user ID is the same as the profile ID in this system
+    const profileId = user.id;
     const rows = await attemptRepo.list(profileId);
     return NextResponse.json(rows);
   } catch (err) {
