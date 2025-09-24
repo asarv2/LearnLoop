@@ -934,6 +934,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
             field_values = data.get("field_values", [])
             persona_ids_from_payload = data.get("persona_ids", [])
             additional_prompt = (data.get("additional_prompt") or "").strip()
+            generate_documents = data.get("generate_documents", True)
 
             if not parent_id:
                 await emit_error(sid, "Missing scenario_id")
@@ -1012,7 +1013,8 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     persona_ids=persona_ids_from_payload_uuids,
                     additional_context=additional_prompt,
                     create_child=True,
-                    session=db_session
+                    session=db_session,
+                    generate_documents=generate_documents
                 )
 
                 if not result.get("success", False):

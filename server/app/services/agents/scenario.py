@@ -474,8 +474,14 @@ def calculate_persona_aliases(persona_ids: List[uuid.UUID], session: Session) ->
     return persona_aliases
 
 
-async def create_scenario_tools(scenario_id: uuid.UUID, persona_ids: List[uuid.UUID], session: Session) -> tuple[List[Any], List[Dict[str, str]]]:
-    """Create all scenario function tools including scenario, objectives, persona prompts, and document generation.
+async def create_scenario_tools(scenario_id: uuid.UUID, persona_ids: List[uuid.UUID], session: Session, generate_documents: bool = True) -> tuple[List[Any], List[Dict[str, str]]]:
+    """Create all scenario function tools including scenario, objectives, persona prompts, and optionally document generation.
+    
+    Args:
+        scenario_id: The scenario ID
+        persona_ids: List of persona IDs
+        session: Database session
+        generate_documents: Whether to include document generation tools (default: True)
     
     Returns:
         tuple: (tools_list, document_tool_metadata_list) where document_tool_metadata_list contains dicts with 'name' and 'description' keys for document tools only
@@ -503,9 +509,12 @@ async def create_scenario_tools(scenario_id: uuid.UUID, persona_ids: List[uuid.U
         else:
             logger.error(f"Could not calculate alias for persona {persona_id}")
     
-    # Add document generation tool for scenario (using scenario.id as template_id)
-    document_tools, document_tool_metadata = await create_document_tool_for_scenario(scenario_id, session)
-    tools.extend(document_tools)
+    # Add document generation tool for scenario (using scenario.id as template_id) - only if generate_documents is True
+    if generate_documents:
+        document_tools, document_tool_metadata = await create_document_tool_for_scenario(scenario_id, session)
+        tools.extend(document_tools)
+    else:
+        document_tool_metadata: List[Dict[str, str]] = []
     
     return tools, document_tool_metadata
 
@@ -562,6 +571,7 @@ async def run_scenario_agent(
     create_child: bool = True,
     session: Session = Depends(get_session),
     socket_id: Optional[str] = None,
+    generate_documents: bool = True,
 ) -> dict[str, Any]:
     """
     This function is used to run the scenario agent.
@@ -574,6 +584,8 @@ async def run_scenario_agent(
         additional_context: Optional additional context to include
         create_child: Whether to create a child scenario (default: True)
         session: Database session
+        socket_id: Optional socket ID for progress events
+        generate_documents: Whether to include document generation tools (default: True)
 
     Returns:
         A dictionary containing scenario analysis and metadata.
@@ -624,13 +636,13 @@ async def run_scenario_agent(
         # Get the scenario prompt from the markdown file
         system_prompt = await get_scenario_prompt()
         
-        # Create all scenario tools (scenario, objectives, persona prompts, and document generation)
+        # Create all scenario tools (scenario, objectives, persona prompts, and optionally document generation)
         # Use the parent scenario ID as template_id for document generation
         # Use a fresh session to avoid prepared statement conflicts
         from app.db import get_session
         fresh_session = next(get_session())
         try:
-            scenario_tools, document_tool_metadata = await create_scenario_tools(scenario_id, persona_ids, fresh_session)
+            scenario_tools, document_tool_metadata = await create_scenario_tools(scenario_id, persona_ids, fresh_session, generate_documents)
         finally:
             fresh_session.close()
         logger.info(f"Created {len(scenario_tools)} scenario tools")

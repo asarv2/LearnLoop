@@ -107,6 +107,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     string | null
   >(null);
 
+  // Generate documents switch state
+  const [generateDocuments, setGenerateDocuments] = useState<boolean>(true);
+
   // Track the parameters used in the last generation to detect changes
   const [lastGeneratedSignature, setLastGeneratedSignature] = useState<
     string | null
@@ -1233,6 +1236,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         persona_ids: personaIds,
         additional_prompt: opts?.additionalPrompt || undefined,
         current_draft_objectives: draftObjectives || [],
+        generate_documents: generateDocuments,
       });
     } catch (error) {
       console.error("Error generating scenario:", error);
@@ -1838,6 +1842,54 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                             </Badge>
                           )}
                         </Flex>
+
+                        {/* Generate Documents Switch */}
+                        <Box
+                          style={{
+                            marginLeft: "24px",
+                            paddingLeft: "16px",
+                            borderLeft: "2px solid var(--gray-5)",
+                            marginBottom: "16px",
+                          }}
+                        >
+                          <Flex align="center" gap="3" mb="2">
+                            <label
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                cursor: "pointer",
+                                fontSize: "14px",
+                                fontWeight: "500",
+                                color: "var(--gray-12)",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={generateDocuments}
+                                onChange={(e) =>
+                                  setGenerateDocuments(e.target.checked)
+                                }
+                                style={{
+                                  width: "18px",
+                                  height: "18px",
+                                  accentColor: "var(--violet-9)",
+                                  cursor: "pointer",
+                                }}
+                              />
+                              <Text size="3" weight="medium">
+                                Include Documents
+                              </Text>
+                            </label>
+                          </Flex>
+                          <Text
+                            size="2"
+                            color="gray"
+                            style={{ marginLeft: "26px" }}
+                          >
+                            Randomly generated to enhance the scenario
+                          </Text>
+                        </Box>
 
                         <Button
                           size="3"
