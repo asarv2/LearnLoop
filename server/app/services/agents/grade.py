@@ -299,9 +299,9 @@ async def run_grading_agent(
             system_prompt=system_prompt,
             temperature=0.0,
             tools=grading_tools,
-            parallel_tool_calls=True,
+            parallel_tool_calls=False,
             tool_use_behavior=tool_use_behavior,
-            model="gpt-4.1",
+            model="xai/grok-4-fast-non-reasoning",
         )
 
         agent_instance = grading_agent.agent()
@@ -309,10 +309,16 @@ async def run_grading_agent(
         # Prepare input with rubric and conversation history
         input_items = [rubric_input] + conversation_history
 
-        # Run the grading with parallel tool calls
+        # Run the grading with parallel tool calls using streaming mode
         logger.info("Running parallel grading agent...")
         with trace(chat.title, trace_id=chat.trace_id, group_id=str(chat_id)):
-            result = await Runner.run(agent_instance, input=input_items)
+            # Use streamed runner for better progress visibility
+            streamed_result = Runner.run_streamed(agent_instance, input=input_items)
+            
+            # Optionally handle streaming events for even more granular progress
+            async for event in streamed_result.stream_events():
+                # You can add event handling here if needed for progress tracking
+                pass
 
         logger.info("Parallel grading agent completed successfully")
         

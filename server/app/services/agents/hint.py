@@ -228,7 +228,7 @@ async def run_hint_agent(
             tools=hint_tools,
             parallel_tool_calls=True,
             tool_use_behavior=tool_use_behavior,
-            model="gpt-4o-mini",
+            model="openai/gpt-4.1-mini",
         )
 
         with trace("Hint"):
