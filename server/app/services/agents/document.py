@@ -9,10 +9,15 @@ The agent uses xAI models and follows the same pattern as other agents in the sy
 """
 
 import logging
+import os
 import re
+import sys
+import tempfile
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import aiohttp
 from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
 from agents.items import TResponseInputItem
 from app.extensions import load_prompt
@@ -22,7 +27,150 @@ from pydantic import Field
 logger = logging.getLogger(__name__)
 
 
-def create_args_tool() -> Any:
+def _enhance_render_function(render_code: str) -> str:
+    """
+    Enhance the generated render function with proper boilerplate code.
+    
+    This function:
+    1. Adds proper imports
+    2. Adds the _escape_latex helper function
+    3. Wraps the core logic with proper compilation boilerplate
+    """
+    # Define the boilerplate imports and helper function
+    imports_and_helper = '''
+import time
+from pathlib import Path
+from subprocess import CalledProcessError
+from tempfile import TemporaryDirectory
+from typing import Optional
+
+from pydantic import BaseModel, Field
+# PyLaTeX
+from pylatex import Command, Document, NoEscape, Package, Section, Subsection  # type: ignore
+from pylatex.utils import bold  # type: ignore
+
+
+def _escape_latex(text: str) -> str:
+    """Escape special LaTeX characters in text."""
+    if not text:
+        return ""
+    
+    # Replace special LaTeX characters
+    replacements = {
+        '\\\\': r'\\textbackslash{}',
+        '{': r'\\{',
+        '}': r'\\}',
+        '$': r'\\$',
+        '&': r'\\&',
+        '%': r'\\%',
+        '#': r'\\#',
+        '^': r'\\textasciicircum{}',
+        '_': r'\\_',
+        '~': r'\\textasciitilde{}',
+    }
+    
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    
+    return text
+
+
+'''
+    
+    # Extract the core logic from the generated render function
+    # Remove any existing imports and function definition
+    lines = render_code.strip().split('\n')
+    
+    # Find the start of the actual render function logic
+    render_start = 0
+    for i, line in enumerate(lines):
+        if line.strip().startswith('def render('):
+            render_start = i
+            break
+    
+    # Extract just the function definition and body
+    render_function_lines = lines[render_start:]
+    
+    # Find where the function body ends (look for the last line that's not just whitespace)
+    render_end = len(render_function_lines)
+    for i in range(len(render_function_lines) - 1, -1, -1):
+        if render_function_lines[i].strip():
+            render_end = i + 1
+            break
+    
+    render_function_body = '\n'.join(render_function_lines[:render_end])
+    
+    # Extract the core document building logic (everything except the compilation part)
+    # We'll wrap it with proper compilation boilerplate
+    core_logic_lines = render_function_body.split('\n')
+    
+    # Find where the document building ends (before any compilation attempts)
+    doc_building_end = 0
+    for i, line in enumerate(core_logic_lines):
+        line_lower = line.lower().strip()
+        # Look for compilation-related code that we want to replace
+        if any(keyword in line_lower for keyword in ['generate_pdf', 'generate_tex', 'temporarydirectory', 'pdf_bytes', 'temp_dir']):
+            doc_building_end = i
+            break
+        doc_building_end = len(core_logic_lines)
+    
+    # Extract the document building logic
+    doc_building_logic = '\n'.join(core_logic_lines[:doc_building_end])
+    
+    # Create the enhanced render function with proper boilerplate
+    compilation_boilerplate = '''
+    # Compile to a temp dir; return bytes
+    ts = int(time.time())
+    stem = f"document_{ts}"  # no .pdf suffix; PyLaTeX adds it
+    with TemporaryDirectory() as tmp:
+        out = Path(tmp) / stem
+        try:
+            doc.generate_pdf(
+                filepath=str(out),
+                clean=True,
+                clean_tex=True,
+                compiler="xelatex",
+                silent=True,
+            )
+        except CalledProcessError as e:
+            pdf_file = out.with_suffix(".pdf")
+            if not (pdf_file.exists() and pdf_file.stat().st_size > 0):
+                raise RuntimeError(f"XeLaTeX failed and no PDF produced (code {e.returncode}).") from e
+        pdf_file = out.with_suffix(".pdf")
+        if not pdf_file.exists() or pdf_file.stat().st_size == 0:
+            raise RuntimeError("PDF not generated or empty.")
+        return pdf_file.read_bytes()
+'''
+    
+    enhanced_function = imports_and_helper + doc_building_logic + compilation_boilerplate
+    
+    return enhanced_function
+
+
+def _enhance_args_class(args_code: str, document_type: str) -> str:
+    """
+    Enhance the generated Args class with boilerplate constants.
+    
+    This function adds:
+    1. DEFAULT_FILENAME constant
+    2. TEMPLATE_DESCRIPTION constant
+    """
+    # Generate a default filename based on document type
+    default_filename = document_type.lower().replace(' ', '_').replace('-', '_')
+    
+    # Generate a template description
+    template_description = f"A {document_type} template for creating professional documents."
+    
+    # Add the constants before the Args class
+    constants = f'''DEFAULT_FILENAME = "{default_filename}"
+TEMPLATE_DESCRIPTION = "{template_description}"
+
+'''
+    
+    return constants + args_code
+
+
+def create_args_tool(document_type: str) -> Any:
     """Create a function tool for generating the Args class."""
     
     async def generate_args_class(
@@ -42,11 +190,36 @@ def create_args_tool() -> Any:
         Returns:
             Confirmation message
         """
-        # Store the generated code
-        document_results['args_code'] = args_code
+        # Enhance the Args code with boilerplate constants
+        enhanced_args_code = _enhance_args_class(args_code, document_type)
+        
+        # Verify the Args class with the documents service
+        try:
+            documents_service_url = os.getenv("DOCUMENTS_SERVICE_URL")
+            if not documents_service_url:
+                raise RuntimeError("DOCUMENTS_SERVICE_URL not configured")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{documents_service_url}/verify-args",
+                    json={"args_code": enhanced_args_code}
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if not result.get("valid", False):
+                            raise RuntimeError(f"Args validation failed: {result.get('message', 'Unknown error')}")
+                        logger.info("✓ Args class validation passed")
+                    else:
+                        raise RuntimeError(f"Args validation request failed with status {response.status}")
+        except Exception as e:
+            logger.error(f"Args validation failed: {e}")
+            raise RuntimeError(f"Args class validation failed: {str(e)}")
+        
+        # Store the enhanced code
+        document_results['args_code'] = enhanced_args_code
         document_progress['args_code'] = True
-        logger.info(f"✓ Generated Args class with {len(re.findall(r'def __init__|class Args', args_code))} definitions")
-        return f"Generated Args class with {len(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*:', args_code))} fields"
+        logger.info(f"✓ Generated and enhanced Args class with {len(re.findall(r'def __init__|class Args', enhanced_args_code))} definitions")
+        return f"Generated and enhanced Args class with {len(re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*:', enhanced_args_code))} fields"
     
     return function_tool(generate_args_class)
 
@@ -73,12 +246,45 @@ def create_render_tool() -> Any:
         Returns:
             Confirmation message
         """
-        # Store the generated code
-        document_results['render_code'] = render_code
+        # Process and enhance the generated code with boilerplate
+        enhanced_render_code = _enhance_render_function(render_code)
+        
+        # Verify the render function with the documents service
+        try:
+            documents_service_url = os.getenv("DOCUMENTS_SERVICE_URL")
+            if not documents_service_url:
+                raise RuntimeError("DOCUMENTS_SERVICE_URL not configured")
+            
+            # If we have both args_code and render_code, pass the full template for verification
+            args_code = document_results.get('args_code', '')
+            if args_code:
+                full_template = args_code + '\n\n' + enhanced_render_code
+                payload = {"full_template": full_template}
+            else:
+                payload = {"render_code": enhanced_render_code}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{documents_service_url}/verify-render",
+                    json=payload
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        if not result.get("valid", False):
+                            raise RuntimeError(f"Render validation failed: {result.get('message', 'Unknown error')}")
+                        logger.info("✓ Render function validation passed")
+                    else:
+                        raise RuntimeError(f"Render validation request failed with status {response.status}")
+        except Exception as e:
+            logger.error(f"Render validation failed: {e}")
+            raise RuntimeError(f"Render function validation failed: {str(e)}")
+        
+        # Store the enhanced code
+        document_results['render_code'] = enhanced_render_code
         document_progress['render_code'] = True
-        lines = render_code.split('\n')
-        logger.info(f"✓ Generated render function with {len(lines)} lines")
-        return f"Generated render function with {len(lines)} lines of code"
+        lines = enhanced_render_code.split('\n')
+        logger.info(f"✓ Generated and enhanced render function with {len(lines)} lines")
+        return f"Generated and enhanced render function with {len(lines)} lines of code"
     
     return function_tool(generate_render_function)
 
@@ -122,7 +328,7 @@ async def run_document_agent(
     
     # Create tools for the agent
     tools = [
-        create_args_tool(),
+        create_args_tool(document_type),
         create_render_tool()
     ]
     
@@ -153,44 +359,7 @@ async def run_document_agent(
     # Prepare input for the agent
     logger.info(f"Received input_items: {len(input_items) if input_items else 0} items")
     
-    if input_items:
-        # Validate that input_items have non-empty content
-        validated_input_items = []
-        for i, item in enumerate(input_items):
-            logger.info(f"Processing input item {i}: {item}")
-            if "content" in item and item["content"]:
-                # Check if content is a list (multimodal) or string
-                if isinstance(item["content"], list):
-                    # For multimodal content, ensure at least one element exists
-                    logger.info(f"Item {i} has list content with {len(item['content'])} elements")
-                    if len(item["content"]) > 0:
-                        validated_input_items.append(item)
-                        logger.info(f"Item {i} validated and added")
-                    else:
-                        logger.warning(f"Item {i} has empty list content")
-                elif isinstance(item["content"], str) and item["content"].strip():
-                    # For text content, ensure it's not empty
-                    logger.info(f"Item {i} has text content: {len(item['content'])} chars")
-                    validated_input_items.append(item)
-                    logger.info(f"Item {i} validated and added")
-                else:
-                    logger.warning(f"Item {i} has empty or whitespace-only content")
-            else:
-                logger.warning(f"Item {i} missing content or content is falsy")
-        
-        logger.info(f"Validated {len(validated_input_items)} out of {len(input_items)} input items")
-        
-        if validated_input_items:
-            agent_input = validated_input_items
-        else:
-            # If all input_items have empty content, fall back to default
-            logger.warning("All input items had empty content, falling back to default")
-            agent_input = None
-    else:
-        logger.info("No input_items provided, using fallback")
-        agent_input = None
-    
-    if not agent_input:
+    if not input_items:
         # Fallback to text-only input
         logger.info("Using fallback text input")
         input_text = f"""
@@ -209,11 +378,11 @@ Requirements:
 
 Please generate both the Args class and render function.
 """
-        agent_input = [{"role": "user", "content": input_text}]
+        input_items = [{"role": "user", "content": input_text}]
     
     with trace("Document Generation Agent"):
         # Use streamed runner for better progress visibility
-        streamed_result = Runner.run_streamed(agent_instance, input=agent_input)
+        streamed_result = Runner.run_streamed(agent_instance, input=input_items)
         
         # Optionally handle streaming events for even more granular progress
         async for event in streamed_result.stream_events():
