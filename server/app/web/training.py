@@ -1095,7 +1095,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     if parameter_ids:
                         array_sql = "ARRAY[" + ", ".join([f"'{p}'" for p in parameter_ids]) + "]::uuid[]"
                     else:
-                        array_sql = "'{}'::uuid[]"  # Empty array instead of NULL
+                        array_sql = "ARRAY[]::uuid[]"  # Empty array instead of NULL
                     conn = db_session.connection()
                     conn.execute(
                         text(f"UPDATE scenarios SET parameter_ids = {array_sql} WHERE id = :id"),
