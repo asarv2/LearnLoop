@@ -944,6 +944,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               const document = await createDocument.mutateAsync({
                 content: "",
                 profile_id: user?.id || null,
+                title: fieldValue.file.name,
               });
               const formData = new FormData();
               formData.append("file", fieldValue.file);
