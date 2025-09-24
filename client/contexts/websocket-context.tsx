@@ -82,6 +82,7 @@ interface WebSocketContextType {
     persona_ids?: string[];
     additional_prompt?: string;
     current_draft_objectives?: string[];
+    generate_documents?: boolean;
   }) => void;
   emitUpdateScenarioParameters: (data: {
     scenario_id: string;
@@ -1093,6 +1094,7 @@ export function WebSocketProvider({
         file?: File;
       }>;
       additional_prompt?: string;
+      generate_documents?: boolean;
     }) => {
       if (!socketRef.current?.connected) {
         logError("Cannot generate scenario - WebSocket not connected");
