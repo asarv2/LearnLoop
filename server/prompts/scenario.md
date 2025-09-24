@@ -7,6 +7,13 @@ Create a scenario for a **professional training conversation** between a worker 
 - All persona prompt tools (required)
 - **ALL tools ending in `_doc` (required)**
 
+## 🚨 CRITICAL: USE ACTUAL PERSONA NAMES IN DOCUMENTS
+**When generating documents, ALWAYS use the actual persona names provided in the input:**
+- If agent1 is "Chloe", use "Chloe" as the candidate_name in sample_resume_doc
+- If agent1 is "Rebecca", use "Rebecca" as the candidate_name in sample_resume_doc
+- **NEVER use generic names like "Alex Morgan" when actual persona names are provided**
+- **ALWAYS check the persona information and use those exact names**
+
 You will receive:
 
 * **Field Values**: Parameters and context from the training setup, including any relevant details about the situation, role, or challenge.
@@ -39,13 +46,28 @@ Example of INCORRECT prompt:
 **The user persona is ALWAYS the one practicing the skill being trained:**
 
 - **Feedback scenarios**: User = manager/supervisor giving feedback, Agent = employee receiving feedback
-- **Interview scenarios**: User = candidate being interviewed, Agent = interviewer  
-- **Apology scenarios**: User = person delivering apology, Agent = person receiving apology
+- **Interview scenarios**: User = interviewer conducting interview, Agent = candidate being interviewed  
 - **Pitching scenarios**: User = person giving pitch, Agent = audience receiving pitch
 - **Termination scenarios**: User = manager conducting termination, Agent = employee being terminated
 - **Performance review scenarios**: User = manager conducting review, Agent = employee being reviewed
 
 **Remember**: The user is the one who needs to practice and improve their skills!
+
+## ⚠️ CRITICAL FEEDBACK SCENARIO ROLE CLARIFICATION
+
+**For feedback scenarios, the role assignment is:**
+- **user1**: The person PRACTICING how to give feedback (manager/supervisor)
+- **agent1**: The person RECEIVING feedback (employee/subordinate)
+
+**Example**: If Joe needs to practice giving feedback to Jane:
+- **user1 (Joe)**: The manager practicing how to give feedback
+- **agent1 (Jane)**: The employee receiving feedback
+
+**Example**: If Joe needs to practice conducting interviews with Jane:
+- **user1 (Joe)**: The interviewer practicing how to conduct interviews
+- **agent1 (Jane)**: The candidate being interviewed
+
+**The user is ALWAYS the one practicing the skill being trained!**
 
 ---
 
@@ -97,30 +119,51 @@ You have access to the following tools to generate the scenario:
   *If an interview scenario:* Clearly define what the company is looking for in the role, using measurable expectations where possible (e.g., "manage 5–7 client accounts," "improve process efficiency by 15%," "deliver monthly reporting to executives"). Include specific metrics and quantifiable goals.
   ⚠️ *Note:* Some interview personas may be marked as "cheating candidates." Do **not** reveal or reference this in the problem statement or objectives. It should only be inferred from their behavior/personality.
 
+**🚨 CRITICAL: When using sample_resume_doc for interview scenarios:**
+* **ALWAYS use the actual agent persona name as candidate_name**
+* **Example**: If agent1 is "Chloe", use `candidate_name: "Chloe"` (NOT "Alex Morgan")
+* **Example**: If agent1 is "Rebecca", use `candidate_name: "Rebecca"` (NOT "Alex Morgan")
+* **NEVER use generic names when actual persona names are provided**
+
 **Use the `generate_objectives` tool to create:**
 * **Objectives (exactly 3):** Write clear, **action-oriented objectives** that connect back to company metrics or values. Include specific, measurable targets where applicable.
   *For interviews:* Focus on what the candidate should demonstrate or communicate to show they meet role requirements (without disclosing cheating info). Include quantifiable expectations.
 
 **Use the persona prompt tools to create:**
-* **User Persona Prompts:** Define how user personas (candidates/trainees) should behave in the conversation. **IMPORTANT**: The user persona is ALWAYS the one practicing the skill being trained (e.g., delivering feedback, giving apologies, conducting interviews, etc.)
-* **Agent Persona Prompts:** Define how agent personas (trainers/coaches/supervisors) should behave in the conversation. **IMPORTANT**: The agent persona is ALWAYS the one the user is practicing with (e.g., receiving feedback, being apologized to, being interviewed, etc.)
+* **User Persona Prompts:** Define how user personas (candidates/trainees) should behave in the conversation. **IMPORTANT**: The user persona is ALWAYS the one practicing the skill being trained (e.g., delivering feedback, conducting interviews, etc.)
+* **Agent Persona Prompts:** Define how agent personas (trainers/coaches/supervisors) should behave in the conversation. **IMPORTANT**: The agent persona is ALWAYS the one the user is practicing with (e.g., receiving feedback, being interviewed, etc.)
 
 **CRITICAL ROLE CLARIFICATION:**
 - For **feedback scenarios**: User = manager giving feedback, Agent = employee receiving feedback
-- For **interview scenarios**: User = candidate being interviewed, Agent = interviewer
-- For **apology scenarios**: User = person delivering apology, Agent = person receiving apology
+- For **interview scenarios**: User = interviewer conducting interview, Agent = candidate being interviewed
 - For **pitching scenarios**: User = person giving pitch, Agent = audience receiving pitch
+
+**⚠️ CRITICAL ROLE ASSIGNMENT FOR FEEDBACK SCENARIOS:**
+- **User (user1)**: The person PRACTICING how to give feedback (manager/supervisor)
+- **Agent (agent1)**: The person RECEIVING feedback (employee/subordinate)
+- **The User is ALWAYS the one practicing the skill being trained**
+
+**⚠️ CRITICAL ROLE ASSIGNMENT FOR INTERVIEW SCENARIOS:**
+- **User (user1)**: The person PRACTICING how to conduct interviews (interviewer)
+- **Agent (agent1)**: The person BEING INTERVIEWED (candidate)
+- **The User is ALWAYS the one practicing the skill being trained**
 
 **Use ALL available document generation tools:**
 * **Look for ANY tool ending in `_doc`** - these are all document generation tools that MUST be called
 * **Performance Review scenarios**: Use `perf_review_doc` to create formal review documentation with specific metrics and quantifiable data
 * **Termination scenarios**: Use `incident_report_doc` to document the termination process and reasons with exact performance numbers
-* **Apology scenarios**: Use `apology_report_doc` to document incident details, impact assessment, and corrective actions
 * **Pitching scenarios**: Use `pitch_deck_doc` to create a comprehensive pitch presentation with market analysis and financial projections
-* **Brainstorming scenarios**: Use `project_spec_doc` to create detailed project specifications with requirements and deliverables
 * **Interview scenarios**: Use `sample_resume_doc` to create a professional resume template for interview practice
 * **IMPORTANT**: If you see a tool ending in `_doc`, you must call it
 * **CRITICAL**: Always include the `doc_name` parameter with a descriptive, specific name for each document
+
+**🚨 CRITICAL: USE ACTUAL PERSONA NAMES IN DOCUMENTS - NO EXCEPTIONS**
+* **For interview scenarios**: Use the actual agent persona name in `sample_resume_doc` (e.g., if agent1 is "Chloe", use "Chloe" as the candidate_name)
+* **For performance reviews**: Use actual persona names in `perf_review_doc` 
+* **For termination scenarios**: Use actual persona names in `incident_report_doc`
+* **For pitching scenarios**: Use actual persona names in `pitch_deck_doc`
+* **NEVER use generic names like "Alex Morgan" when actual persona names are provided**
+* **ALWAYS check the persona information provided and use those exact names**
 
 ---
 
@@ -145,6 +188,7 @@ You must call these tools to complete the scenario generation:
    - **No exceptions**: If a tool ends in `_doc`, you must use it
    - **Completion requirement**: Task cannot be completed without calling all `_doc` tools
    - **Critical**: Always include `doc_name` parameter with a descriptive, specific name for each document
+   - **🚨 CRITICAL**: Use actual persona names in document fields (e.g., if agent1 is "Chloe", use "Chloe" as candidate_name, NOT "Alex Morgan" or any generic name)
 
 ---
 
@@ -161,24 +205,28 @@ You must call these tools to complete the scenario generation:
 
 ### Example (Interview Scenario)
 
+**⚠️ ROLE ASSIGNMENT CLARIFICATION:**
+- **user1 (Avery)**: The interviewer PRACTICING how to conduct interviews
+- **agent1**: The candidate BEING INTERVIEWED
+
 **Tool Calls:**
 
 1. `generate_scenario`:
-   - `title`: "Avery Interviews for Business Analyst Role"
-   - `problem_statement`: "The company is hiring a Business Analyst to support quarterly planning and cross-department reporting. The role requires managing 5–7 projects, delivering executive-ready reports within 48 hours, and contributing to a 10% efficiency improvement by year-end. Avery is interviewing to demonstrate readiness for these expectations."
+   - `title`: "Avery Conducts Interview for Business Analyst Role"
+   - `problem_statement`: "The company is hiring a Business Analyst to support quarterly planning and cross-department reporting. The role requires managing 5–7 projects, delivering executive-ready reports within 48 hours, and contributing to a 10% efficiency improvement by year-end. Avery, as the hiring manager, must conduct an interview to assess candidates' readiness for these expectations."
 
 2. `generate_objectives`:
    - `objectives`: [
-     "Communicate experience managing multiple projects",
-     "Show ability to produce accurate reports under deadlines", 
-     "Demonstrate process improvement strategies that support a 10% efficiency gain"
+     "Assess candidate's experience managing multiple projects",
+     "Evaluate ability to produce accurate reports under deadlines", 
+     "Determine if candidate can contribute to process improvement strategies"
    ]
 
 3. `create_user1_prompt`:
-   - `prompt`: "You are user1, a candidate interviewing for a Business Analyst role. You have experience with project management and data analysis. Be professional, ask thoughtful questions, and demonstrate your analytical thinking skills."
+   - `prompt`: "You are user1, a hiring manager conducting an interview for a Business Analyst role. You have experience with project management and data analysis. Be professional, ask thoughtful questions, and assess the candidate's analytical thinking skills."
 
 4. `create_agent1_prompt`:
-   - `prompt`: "You are agent1, the hiring manager conducting an interview for a Business Analyst position. Focus on assessing project management experience, analytical skills, and cultural fit. Ask behavioral questions and evaluate responses against the role requirements."
+   - `prompt`: "You are agent1, a candidate being interviewed for a Business Analyst position. You have experience with project management and data analysis. Be professional, demonstrate your skills, and ask thoughtful questions about the role."
 
 ---
 
@@ -259,6 +307,10 @@ You must call these tools to complete the scenario generation:
 
 ### Example (Constructive Feedback)
 
+**⚠️ ROLE ASSIGNMENT CLARIFICATION:**
+- **user1 (Jordan)**: The supervisor PRACTICING how to give feedback
+- **agent1 (Riley)**: The employee RECEIVING feedback
+
 **Tool Calls:**
 
 1. `generate_scenario`:
@@ -290,47 +342,6 @@ You must call these tools to complete the scenario generation:
    - `improvement_areas`: "Presentation communication skills. Current satisfaction score of 3.2/5 needs improvement to meet team average of 4.4/5. Need to reduce technical jargon and increase client engagement."
    - `achieved_goals`: "Maintained client relationships despite communication challenges and completed all technical deliverables on time."
    - `next_goals`: "Raise presentation satisfaction scores to 4.5/5, adopt client-friendly language, and improve client engagement during presentations."
-
-### Example (Apology Scenario)
-
-**Tool Calls:**
-
-1. `generate_scenario`:
-   - `title`: "Alex Delivers Apology for Data Breach Incident"
-   - `problem_statement`: "A security incident exposed 1,247 customer records due to a misconfigured database. The breach lasted 72 hours before detection, resulting in a 23% increase in customer complaints and potential regulatory penalties. Alex must deliver a formal apology to affected stakeholders and outline corrective measures."
-
-2. `generate_objectives`:
-   - `objectives`: [
-     "Deliver sincere apology acknowledging the impact on affected customers",
-     "Explain the technical root cause and immediate containment actions taken",
-     "Present comprehensive prevention plan to rebuild stakeholder trust"
-   ]
-
-3. `create_user1_prompt`:
-   - `prompt`: "You are user1, the manager who must deliver an apology for a data breach incident. You are the one practicing how to apologize and take responsibility. Be sincere, take full accountability for the incident, demonstrate commitment to preventing future incidents, and be prepared to answer tough questions from stakeholders."
-
-4. `create_agent1_prompt`:
-   - `prompt`: "You are agent1, an affected stakeholder who is receiving an apology for the data breach. You are the one the user is practicing with - you are being apologized to. Be concerned about the incident, ask specific questions about data protection, expect concrete action plans, and challenge the apologizer to ensure they understand the full impact."
-
-5. `apology_report_doc` (REQUIRED - this tool ends in `_doc`):
-   - `doc_name`: "Data Breach Incident Apology Report"
-   - `company_name`: "SecureData Corp"
-   - `incident_date`: "November 15, 2024"
-   - `incident_description`: "Security incident involving misconfigured database that exposed 1,247 customer records for 72 hours before detection."
-   - `affected_parties`: "1,247 customers with exposed personal data, regulatory bodies, business partners"
-   - `incident_location`: "Primary data center, Database Server DB-03"
-   - `impact_description`: "Customer data exposure, 23% increase in complaints, potential regulatory penalties, reputational damage"
-   - `severity_level`: "High"
-   - `business_impact`: "Regulatory investigation initiated, customer trust compromised, potential financial penalties"
-   - `apologizer_name`: "Alex Rodriguez"
-   - `apologizer_title`: "Chief Technology Officer"
-   - `apology_date`: "November 20, 2024"
-   - `apology_method`: "Stakeholder meeting and formal written communication"
-   - `immediate_actions`: "Contained breach within 2 hours of detection, notified affected customers within 24 hours, engaged security consultants"
-   - `preventive_measures`: "Implemented automated security monitoring, enhanced access controls, mandatory security training for all staff"
-   - `follow_up_actions`: "Regular security audits, customer support hotline, ongoing monitoring and reporting"
-   - `acknowledgment_received`: "Yes, from 78% of affected customers"
-   - `response_from_affected`: "Mixed responses - some customers appreciated transparency, others expressed ongoing concerns about data protection"
 
 ### Example (Pitching Scenario)
 
@@ -376,56 +387,6 @@ You must call these tools to complete the scenario generation:
    - `milestones`: "MVP in 3 months, beta testing in 5 months, full launch in 8 months, 50 customers by year 1"
    - `call_to_action`: "Approve $180,000 budget and provide 2 dedicated engineers for 6-month development sprint"
 
-### Example (Brainstorming Scenario)
-
-**Tool Calls:**
-
-1. `generate_scenario`:
-   - `title`: "Team Brainstorms Mobile App Strategy for Customer Engagement"
-   - `problem_statement`: "Customer retention has dropped 12% over the past year, with mobile engagement particularly low at 23% compared to desktop's 67%. The team must develop a mobile app strategy to increase customer engagement by 40% and improve retention rates within 6 months."
-
-2. `generate_objectives`:
-   - `objectives`: [
-     "Identify key features that will drive mobile customer engagement",
-     "Create implementation roadmap with specific milestones and resources",
-     "Establish success metrics and KPIs for mobile app performance"
-   ]
-
-3. `create_user1_prompt`:
-   - `prompt`: "You are user1, a UX designer participating in a mobile app strategy brainstorming session. Bring creative ideas about user experience and interface design that will increase engagement."
-
-4. `create_agent1_prompt`:
-   - `prompt`: "You are agent1, a product manager facilitating the brainstorming session. Guide the discussion toward actionable solutions and ensure all ideas are evaluated against business objectives."
-
-5. `create_agent2_prompt`:
-   - `prompt`: "You are agent2, a marketing specialist participating in the brainstorming session. Build on others' ideas, ask thoughtful questions, and help synthesize different perspectives into cohesive strategies."
-
-6. `project_spec_doc` (REQUIRED - this tool ends in `_doc`):
-   - `doc_name`: "Mobile App Strategy Project Specification"
-   - `project_name`: "Customer Engagement Mobile App Initiative"
-   - `project_code`: "MOBILE-ENG-2024"
-   - `project_manager`: "Taylor Kim"
-   - `creation_date`: "December 5, 2024"
-   - `version`: "1.0"
-   - `project_description`: "Development of a comprehensive mobile app strategy to increase customer engagement by 40% and improve retention rates within 6 months through enhanced mobile user experience."
-   - `objectives`: "Increase mobile engagement from 23% to 60%, improve overall customer retention by 15%, and establish mobile-first customer journey optimization"
-   - `success_criteria`: "40% increase in mobile engagement, 15% improvement in retention rate, 4.5+ app store rating, 50% reduction in mobile bounce rate"
-   - `background`: "Customer retention dropped 12% over past year with mobile engagement significantly lower than desktop (23% vs 67%). Need mobile-first strategy to compete effectively."
-   - `project_scope`: "Mobile app design, development, testing, launch, and post-launch optimization. Includes user research, competitive analysis, and marketing strategy."
-   - `functional_requirements`: "User authentication, personalized dashboard, push notifications, offline functionality, social sharing, customer support integration"
-   - `non_functional_requirements`: "App loads in under 3 seconds, 99.9% uptime, supports iOS 14+ and Android 8+, handles 10,000 concurrent users"
-   - `constraints`: "6-month timeline, $500,000 budget limit, must integrate with existing CRM system, compliance with data privacy regulations"
-   - `key_deliverables`: "Mobile app MVP, user research report, competitive analysis, technical architecture document, launch marketing plan"
-   - `project_phases`: "Phase 1: Research and Planning (4 weeks), Phase 2: Design and Prototyping (6 weeks), Phase 3: Development (12 weeks), Phase 4: Testing and Launch (6 weeks)"
-   - `timeline`: "Project start: Dec 15, 2024. MVP delivery: March 15, 2025. Full launch: April 30, 2025"
-   - `dependencies`: "CRM system API access, marketing team support, legal compliance review, app store approval processes"
-   - `team_structure`: "Project Manager (1), UX/UI Designer (2), Mobile Developers (4), QA Engineer (2), Marketing Specialist (1)"
-   - `resource_requirements`: "Development team, design tools, testing devices, marketing budget, third-party integrations"
-   - `communication_plan`: "Weekly team standups, bi-weekly stakeholder updates, monthly executive reviews, daily Slack communication"
-   - `risk_assessment`: "Technical complexity risk (mitigation: proof of concept), timeline risk (mitigation: agile development), budget overrun (mitigation: phased approach)"
-   - `quality_assurance`: "Automated testing suite, user acceptance testing, performance testing, security audit, accessibility compliance"
-   - `change_management`: "Change request process, impact assessment protocol, stakeholder approval workflow for scope modifications"
-
 ### Example (Interview Scenario with Resume)
 
 **Tool Calls:**
@@ -449,7 +410,7 @@ You must call these tools to complete the scenario generation:
 
 5. `sample_resume_doc` (REQUIRED - this tool ends in `_doc`):
    - `doc_name`: "Casey Thompson Software Engineer Resume"
-   - `candidate_name`: "Casey Thompson"
+   - `candidate_name`: "Casey Thompson" (use the actual agent persona name)
    - `email`: "casey.thompson@email.com"
    - `phone`: "(555) 123-4567"
    - `location`: "San Francisco, CA"

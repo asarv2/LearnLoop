@@ -6,6 +6,7 @@ import { useRole } from "@/contexts/role-context";
 import {
   LogoutOutlined,
   MessageOutlined,
+  ProfileOutlined,
   SwapOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -65,6 +66,16 @@ const getUserMenuItems = (
       });
     }
   }
+
+  // Add profile option
+  items.push({
+    key: "profile",
+    icon: <ProfileOutlined />,
+    label: "Profile",
+    onClick: () => {
+      window.location.href = "/profile";
+    },
+  });
 
   // Add divider if we have switch options
   if (items.length > 0) {
