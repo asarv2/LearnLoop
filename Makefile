@@ -100,13 +100,13 @@ test: check-venv
 		$(VENV_PYTHON) -m pytest $(ARGS) -v; \
 	else \
 		echo "Running all pytest tests..."; \
-		$(VENV_PYTHON) -m pytest tests/ -v; \
+		$(VENV_PYTHON) -m pytest server/tests/ -v; \
 	fi
 
 # Run tests with coverage
 test-cov: check-venv
 	@echo "Running pytest tests with coverage..."
-	@$(VENV_PYTHON) -m pytest tests/ --cov=app --cov-report=term-missing --cov-report=html
+	@$(VENV_PYTHON) -m pytest server/tests/ --cov=server/app --cov-report=term-missing --cov-report=html
 	@echo "✅ Coverage report generated"
 
 # Start all services in foreground with combined logs

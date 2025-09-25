@@ -156,7 +156,7 @@ module = [
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["server/tests"]
 python_files = "test_*.py"
 # Be explicit about asyncio mode for pytest-asyncio >= 0.23
 asyncio_mode = "auto"
@@ -165,9 +165,15 @@ addopts = [
     "--tb=short",
     "-v",
 ]
+markers = [
+    "fast: marks tests as fast (deselect with '-m \"not fast\"')",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "unit: marks tests as unit tests",
+    "integration: marks tests as integration tests",
+]
 
 [tool.coverage.run]
-source = ["app"]
+source = ["server/app"]
 omit = [
     "*/tests/*",
     "*/migrations/*",
