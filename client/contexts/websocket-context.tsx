@@ -58,6 +58,9 @@ interface WebSocketContextType {
     parentId?: string
   ) => void;
 
+  // Parent cursor control for branching
+  setParentCursor: (chatId: string, parentId?: string) => void;
+
   // Expose the global audio element (remote mixed audio)
   audioPlaybackRef: React.RefObject<HTMLAudioElement | null>;
 
@@ -1324,6 +1327,16 @@ export function WebSocketProvider({
     leaveRoom,
     isRoomJoined,
     sendWebRTCMessage,
+    setParentCursor: (chatId: string, parentId?: string) => {
+      try {
+        socketRef.current?.emit("set_parent_cursor", {
+          chat_id: chatId,
+          parent_id: parentId,
+        });
+      } catch (e) {
+        logError("setParentCursor failed", e as Error);
+      }
+    },
     audioPlaybackRef,
     getTrackState,
     emitStartTraining,

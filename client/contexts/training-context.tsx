@@ -84,7 +84,8 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
   const lastProcessedFeedbackRef = useRef<string | null>(null);
 
   // WebSocket connection
-  const { isConnected } = useWebSocket();
+  const { isConnected, sendWebRTCMessage, joinRoom, setParentCursor } =
+    useWebSocket();
 
   // Query client for invalidation
   const queryClient = useQueryClient();
@@ -220,11 +221,14 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     }
 
     try {
-      await sendMessageMutation.mutateAsync({
-        chatId,
-        message,
-        parentId,
-      });
+      // Prefer RTC/websocket pipeline to keep audio path/live events aligned
+      try {
+        joinRoom(chatId);
+      } catch {}
+      try {
+        if (parentId) setParentCursor(chatId, parentId);
+      } catch {}
+      sendWebRTCMessage(chatId, message, parentId);
       logInfo(`Sent training message for chat ${chatId}`);
     } catch (error) {
       logError("Error sending training message:", error);

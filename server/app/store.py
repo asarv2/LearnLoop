@@ -162,6 +162,12 @@ def _upsert_db_message(
         m.content = acc
         if is_final:
             m.completed = True
+        # Backfill parent_id if it was missing on initial insert
+        try:
+            if m.parent_id is None and parent_id is not None:
+                m.parent_id = _uuid_or_none(parent_id)
+        except Exception:
+            pass
         db.add(m)
         db.commit()
         db.refresh(m)
@@ -322,6 +328,7 @@ async def upsert_text_chunk(
                             text=text,
                             is_final=is_final,
                             persona_id=persona_id,
+                            parent_id=msg.parent_id,
                         )
                     except Exception:
                         try:
