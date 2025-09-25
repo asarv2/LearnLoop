@@ -4,12 +4,13 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 # Use uvloop for better performance
 try:
     import uvloop
+
     uvloop.install()
 except ImportError:
     pass  # Fall back to default event loop
@@ -23,7 +24,9 @@ from fastapi.responses import JSONResponse
 load_dotenv()
 
 # ── Logging ───────────────────────────────────────────────────────────────────
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger("app.main")
 
 origin = os.getenv("ORIGIN", "http://localhost:3000")
@@ -34,12 +37,19 @@ redis_url = os.getenv("REDIS_URL")
 if redis_url and socketio.AsyncRedisManager:
     logger.info(f"Socket.IO clustering via Redis -> {redis_url}")
     manager = socketio.AsyncRedisManager(redis_url)
-    sio = socketio.AsyncServer(async_mode="asgi", client_manager=manager,
-                               cors_allowed_origins=allowed_origins, transports=["websocket", "polling"])
+    sio = socketio.AsyncServer(
+        async_mode="asgi",
+        client_manager=manager,
+        cors_allowed_origins=allowed_origins,
+        transports=["websocket", "polling"],
+    )
 else:
     logger.info("Socket.IO using in-memory manager")
-    sio = socketio.AsyncServer(async_mode="asgi",
-                               cors_allowed_origins=allowed_origins, transports=["websocket", "polling"])
+    sio = socketio.AsyncServer(
+        async_mode="asgi",
+        cors_allowed_origins=allowed_origins,
+        transports=["websocket", "polling"],
+    )
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
 fastapi_app = FastAPI(title="GLOW API")
@@ -55,14 +65,16 @@ fastapi_app.add_middleware(
 app = socketio.ASGIApp(sio, fastapi_app, socketio_path="socket.io")
 
 # ── Import training events exactly as before ──────────────────────────────────
-from app.web.training import \
-    register_training_events  # keep your existing semantics
+from app.web.training import register_training_events  # keep your existing semantics
 
 register_training_events(sio)
 
 # ── Import new WebRTC primitives (from your NEWMAIN extraction) ───────────────
-from app.rtc import (WebRTCSession, get_room,  # get_room from your new code
-                     sessions)
+from app.rtc import (
+    WebRTCSession,
+    get_room,  # get_room from your new code
+    sessions,
+)
 
 
 # ── Loop lag watchdog ─────────────────────────────────────────────────────────
@@ -84,6 +96,7 @@ async def _loop_lag_watchdog(threshold_ms: int = 150, period_ms: int = 50) -> No
             logger.warning("Event loop lag: %.1f ms", lag_ms)
         last = now
 
+
 def _maybe_start_watchdog() -> None:
     enabled = os.getenv("LOOP_LAG_WATCHDOG", "1") != "0"
     if not enabled:
@@ -98,16 +111,20 @@ def _maybe_start_watchdog() -> None:
         p_ms = 50
     asyncio.create_task(_loop_lag_watchdog(threshold_ms=t_ms, period_ms=p_ms))
 
+
 # ── sid <-> profile map (very light; OK to keep in-memory or back by Redis) ──
 SID_TO_PROFILE: dict[str, str] = {}
 # Allow multiple active sockets per profile
 PROFILE_TO_SIDS: dict[str, set[str]] = {}
 
+
 def get_socketio_instance() -> socketio.AsyncServer:
     return sio
 
-def get_profile_id_for_sid(sid: str) -> Optional[str]:
+
+def get_profile_id_for_sid(sid: str) -> str | None:
     return SID_TO_PROFILE.get(sid)
+
 
 import uuid
 
@@ -123,17 +140,19 @@ async def emit_to_room(room_id: str, event: str, payload: dict) -> None:
     # Don't block the loop on broadcast/fanout
     sio.start_background_task(sio.emit, event, payload, room=room_id)
 
+
 rtc.set_emitter(lambda sid, event, payload: sio.emit(event, payload, room=sid))
 set_emitter(emit_to_room)
+
 
 # ── Socket lifecycle (very light) ─────────────────────────────────────────────
 @sio.event
 async def connect(sid: str, environ: dict, auth: Any) -> bool:
     # Start the loop lag watchdog on first connection (only once)
-    if not hasattr(connect, '_watchdog_started'):
+    if not hasattr(connect, "_watchdog_started"):
         _maybe_start_watchdog()
         connect._watchdog_started = True
-    
+
     # read profileId from query string (?profileId=...)
     q = environ.get("QUERY_STRING", "") or ""
     profile_id = None
@@ -167,7 +186,7 @@ async def connect(sid: str, environ: dict, auth: Any) -> bool:
                     p = db.get(Profiles, pid)
                     if p:
                         p.active = True
-                        p.last_active = datetime.now(timezone.utc)
+                        p.last_active = datetime.now(UTC)
                         db.add(p)
                 except Exception:
                     pass
@@ -176,8 +195,11 @@ async def connect(sid: str, environ: dict, auth: Any) -> bool:
 
     # (optional, but handy)
     await sio.emit("server_capabilities", {"webrtc": True, "audio": True}, room=sid)
-    await sio.emit("connection_confirmed", {"sid": sid, "server_time": time.time()}, room=sid)
+    await sio.emit(
+        "connection_confirmed", {"sid": sid, "server_time": time.time()}, room=sid
+    )
     return True
+
 
 @sio.event
 async def disconnect(sid: str) -> None:
@@ -201,7 +223,7 @@ async def disconnect(sid: str) -> None:
                                 p = db.get(Profiles, uuid.UUID(pid))
                                 if p:
                                     p.active = False
-                                    p.last_active = datetime.now(timezone.utc)
+                                    p.last_active = datetime.now(UTC)
                                     db.add(p)
                             except Exception:
                                 pass
@@ -209,6 +231,7 @@ async def disconnect(sid: str) -> None:
                         pass
         except Exception:
             pass
+
 
 async def _force_close_sid(old_sid: str) -> None:
     try:
@@ -229,9 +252,10 @@ async def _force_close_sid(old_sid: str) -> None:
     except Exception:
         pass
 
+
 # ── WebRTC events (thin shim) ─────────────────────────────────────────────────
 @sio.event
-async def offer(sid: str, data: Dict[str, Any]) -> None:
+async def offer(sid: str, data: dict[str, Any]) -> None:
     """
     Client sends SDP offer with { room_id: chat_id }.
     We join that room, spin a WebRTCSession, produce an answer.
@@ -249,32 +273,44 @@ async def offer(sid: str, data: Dict[str, Any]) -> None:
         sess = await sio.get_session(sid)
     except Exception:
         sess = None
-    pid_from_session = (sess or {}).get("profile_id") if isinstance(sess, dict) else None
+    pid_from_session = (
+        (sess or {}).get("profile_id") if isinstance(sess, dict) else None
+    )
     room.user_profile_id = pid_from_session or get_profile_id_for_sid(sid)
 
     # hook up text broadcast once (idempotent)
     if room.on_text_chunk is None:
+
         async def _broadcast(payload: dict) -> None:
             await sio.emit("text_chunk", payload, room=room.id)
+
         room.on_text_chunk = _broadcast
 
     # Wire transcript broadcasters if not set
     if room.on_transcript is None:
+
         async def _broadcast_tx(payload: dict) -> None:
             try:
-                print(f"[ctc][emit] transcript words={len(payload.get('words', []))} msg={payload.get('message_id')} room={payload.get('room_id')}")
+                print(
+                    f"[ctc][emit] transcript words={len(payload.get('words', []))} msg={payload.get('message_id')} room={payload.get('room_id')}"
+                )
             except Exception:
                 pass
             await sio.emit("transcript", payload, room=room.id)
+
         room.on_transcript = _broadcast_tx
 
     if room.on_transcript_stop is None:
+
         async def _broadcast_tx_stop(payload: dict) -> None:
             try:
-                print(f"[ctc][emit] transcript_stop msg={payload.get('message_id')} stop_ts={payload.get('stop_ts_ms')} room={payload.get('room_id')}")
+                print(
+                    f"[ctc][emit] transcript_stop msg={payload.get('message_id')} stop_ts={payload.get('stop_ts_ms')} room={payload.get('room_id')}"
+                )
             except Exception:
                 pass
             await sio.emit("transcript_stop", payload, room=room.id)
+
         room.on_transcript_stop = _broadcast_tx_stop
 
     if sid not in sessions:
@@ -295,10 +331,12 @@ async def offer(sid: str, data: Dict[str, Any]) -> None:
     pid = pid_from_session or get_profile_id_for_sid(sid)
     await sio.emit("webrtc_audio_ready", {"profile_id": pid}, room=sid)
 
+
 @sio.event
-async def ice_candidate(sid: str, data: Dict[str, Any]) -> None:
+async def ice_candidate(sid: str, data: dict[str, Any]) -> None:
     if sid in sessions:
         await sessions[sid].add_ice(data.get("candidate"))
+
 
 # ── Health + info ─────────────────────────────────────────────────────────────
 @fastapi_app.get("/")
@@ -306,11 +344,20 @@ async def root_info() -> JSONResponse:
     info = {"python_version": sys.version.split()[0]}
     return JSONResponse(content={"server_info": info})
 
+
 @fastapi_app.get("/health")
 async def health_check() -> JSONResponse:
     return JSONResponse(content={"status": "ok"})
 
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000,
-                reload=False, log_level="info", loop="uvloop")
+
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
+        log_level="info",
+        loop="uvloop",
+    )

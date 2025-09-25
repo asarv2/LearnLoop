@@ -6,16 +6,12 @@ import type { Tables } from "@/database.types";
 // ================ TABLE TYPES ================
 // =============================================
 
-// --- ASSESSMENTS ---
-export type Assessment = Tables<'assessments'>;
 // --- ATTEMPTS ---
 export type Attempt = Tables<'attempts'>;
 // --- CHATS ---
 export type Chat = Tables<'chats'>;
 // --- DOCUMENTS ---
 export type Document = Tables<'documents'>;
-// --- FEEDBACK ---
-export type Feedback = Tables<'feedback'>;
 // --- FIELDS ---
 export type Field = Tables<'fields'>;
 // --- GROUPS ---
@@ -32,8 +28,6 @@ export type Parameter = Tables<'parameters'>;
 export type Persona = Tables<'personas'>;
 // --- PROFILES ---
 export type Profile = Tables<'profiles'>;
-// --- QUESTIONS ---
-export type Question = Tables<'questions'>;
 // --- RUBRIC_GRADES ---
 export type RubricGrade = Tables<'rubric_grades'>;
 // --- RUBRICS ---
@@ -69,7 +63,7 @@ export type UserRole = "employee" | "admin" | "superadmin";
 // =============================================
 
 // Union type of all table names
-export type TableName = 'assessments' | 'attempts' | 'chats' | 'documents' | 'feedback' | 'fields' | 'groups' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'profiles' | 'questions' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings' | 'user_feedback' | 'user_insights';
+export type TableName = 'attempts' | 'chats' | 'documents' | 'fields' | 'groups' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'profiles' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings' | 'user_feedback' | 'user_insights';
 
 // Union type of all entity types
-export type Entity = Assessment | Attempt | Chat | Document | Feedback | Field | Group | Hint | Log | Message | Parameter | Persona | Profile | Question | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training | UserFeedback | UserInsight;
+export type Entity = Attempt | Chat | Document | Field | Group | Hint | Log | Message | Parameter | Persona | Profile | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training | UserFeedback | UserInsight;

@@ -8,7 +8,6 @@ This service provides FastAPI endpoints for:
 """
 
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -25,7 +24,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(),
-    ]
+    ],
 )
 
 logger = logging.getLogger("model_service")
@@ -33,8 +32,8 @@ logger = logging.getLogger("model_service")
 
 def main() -> None:
     """Main entry point for the model service."""
-    logger.info(f"Starting LearnLoop Model Service on :8000")
-    
+    logger.info("Starting LearnLoop Model Service on :8000")
+
     uvicorn.run(
         app,
         host="0.0.0.0",

@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import asyncio
-import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING
 
 import numpy as np
+
 from app.bus import PCM_SR, AudioBus, AudioChunk
 
 if TYPE_CHECKING:
@@ -14,13 +15,14 @@ if TYPE_CHECKING:
 
 AgentAudioHook = Callable[[AudioChunk], Awaitable[AudioChunk]]
 
+
 @dataclass
 class Agent:
     id: str
     bus: AudioBus
-    room: "Room"
-    audio_hook: Optional[AgentAudioHook] = None
-    task: Optional[asyncio.Task] = None
+    room: Room
+    audio_hook: AgentAudioHook | None = None
+    task: asyncio.Task | None = None
 
     def start(self) -> None:
         if self.task and not self.task.done():
@@ -58,10 +60,10 @@ class Agent:
         self,
         text: str,
         *,
-        message_id: Optional[str] = None,
+        message_id: str | None = None,
         chunk_idx: int = 0,
         is_final: bool = True,
-        persona_id: Optional[str] = None,
+        persona_id: str | None = None,
     ) -> str:
         """Append a text chunk to the room's in-memory store (returns message_id)."""
         return await self.room.append_text_chunk(

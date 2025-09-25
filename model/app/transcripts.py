@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -19,17 +18,19 @@ class Word:
 
 @dataclass
 class Transcript:
-    words: List[Word]
+    words: list[Word]
     text: str
 
 
-def align_words_uniform(audio_f32: np.ndarray, sr: int, reference_text: str) -> Transcript:
+def align_words_uniform(
+    audio_f32: np.ndarray, sr: int, reference_text: str
+) -> Transcript:
     duration_ms = int(round((audio_f32.size / max(1, sr)) * 1000.0))
     words = [w for w in (reference_text or "").split() if w]
     if not words:
         return Transcript(words=[], text=reference_text or "")
     per = max(1, duration_ms // len(words))
-    out: List[Word] = []
+    out: list[Word] = []
     t = 0
     for i, w in enumerate(words):
         end = duration_ms if i == len(words) - 1 else min(duration_ms, t + per)
@@ -38,7 +39,7 @@ def align_words_uniform(audio_f32: np.ndarray, sr: int, reference_text: str) -> 
     return Transcript(words=out, text=reference_text)
 
 
-def _to_mono_16k(audio_f32: np.ndarray, sr: int) -> Tuple[np.ndarray, int]:
+def _to_mono_16k(audio_f32: np.ndarray, sr: int) -> tuple[np.ndarray, int]:
     x = np.asarray(audio_f32, dtype=np.float32)
     # Fold channels to mono if needed
     if x.ndim == 2:
@@ -67,7 +68,10 @@ def align_ctc(audio_f32: np.ndarray, sr: int, reference_text: str) -> Transcript
     try:
         import torch  # type: ignore
         from ctc_segmentation import (  # type: ignore
-            CtcSegmentationParameters, ctc_segmentation, prepare_text)
+            CtcSegmentationParameters,
+            ctc_segmentation,
+            prepare_text,
+        )
 
         # Normalize text roughly to wav2vec2's charset
         def _norm_en(s: str) -> str:
@@ -95,7 +99,9 @@ def align_ctc(audio_f32: np.ndarray, sr: int, reference_text: str) -> Transcript
             pass
 
         with torch.no_grad():
-            inputs = processor(wav16, sampling_rate=16000, return_tensors="pt", padding="longest")
+            inputs = processor(
+                wav16, sampling_rate=16000, return_tensors="pt", padding="longest"
+            )
             inp = inputs.input_values.to(device)
             logits = model(inp).logits.squeeze(0).float().cpu().numpy()
 
@@ -109,21 +115,30 @@ def align_ctc(audio_f32: np.ndarray, sr: int, reference_text: str) -> Transcript
         timings, segments = ctc_segmentation(params, logits, ground)
 
         # Convert frames to ms using model stride; default to 20ms
-        ratio = getattr(getattr(model, "config", object()), "inputs_to_logits_ratio", 320)
+        ratio = getattr(
+            getattr(model, "config", object()), "inputs_to_logits_ratio", 320
+        )
         frame_ms = (float(ratio) / 16000.0) * 1000.0
 
-        out_words: List[Word] = []
-        for (start_idx, end_idx), w in zip(segments, words):
+        out_words: list[Word] = []
+        for (start_idx, end_idx), w in zip(segments, words, strict=False):
             start_ms = int(round(start_idx * frame_ms))
             end_ms = int(round(end_idx * frame_ms))
             out_words.append(Word(start_ms=start_ms, end_ms=end_ms, text=w))
-        
+
         # Log word-level timestamps
         audio_sec = float(len(wav16)) / 16000.0
-        sample = ", ".join(f"{w.text}({w.start_ms}-{w.end_ms}ms)" for w in out_words[:6])
-        import logging; logging.getLogger("model_service").info(
+        sample = ", ".join(
+            f"{w.text}({w.start_ms}-{w.end_ms}ms)" for w in out_words[:6]
+        )
+        import logging
+
+        logging.getLogger("model_service").info(
             "CTC aligned %d words to %.2fs (frame_ms=%.1f). sample: %s",
-            len(out_words), audio_sec, frame_ms, sample
+            len(out_words),
+            audio_sec,
+            frame_ms,
+            sample,
         )
         return Transcript(words=out_words, text=reference_text)
     except Exception:
@@ -132,17 +147,23 @@ def align_ctc(audio_f32: np.ndarray, sr: int, reference_text: str) -> Transcript
 
 def transcribe_and_align_whisper(audio_f32: np.ndarray, sr: int) -> Transcript:
     import logging
+
     log = logging.getLogger("model_service")
 
     # Guard: require at least ~0.1s of audio and non-NaN values
     if audio_f32 is None or getattr(audio_f32, "size", 0) < max(1, int(0.1 * sr)):
-        log.info("Whisper skipped: empty/too-short audio (samples=%d, sr=%d)", 0 if audio_f32 is None else getattr(audio_f32, "size", 0), sr)
+        log.info(
+            "Whisper skipped: empty/too-short audio (samples=%d, sr=%d)",
+            0 if audio_f32 is None else getattr(audio_f32, "size", 0),
+            sr,
+        )
         return Transcript(words=[], text="")
 
     try:
         import tempfile
 
         import soundfile as sf  # type: ignore
+
         x16, sro = _to_mono_16k(audio_f32, sr)
         dur_s = float(len(x16)) / sro
         log.info("Whisper input duration: %.3fs @ %d Hz", dur_s, sro)
@@ -157,16 +178,25 @@ def transcribe_and_align_whisper(audio_f32: np.ndarray, sr: int) -> Transcript:
                 return Transcript(words=[], text="")
 
             seg_gen, info = model.transcribe(
-                f.name, vad_filter=True,
-                vad_parameters={"min_silence_duration_ms": 200}
+                f.name, vad_filter=True, vad_parameters={"min_silence_duration_ms": 200}
             )
-            raw_segments = [{"start": s.start, "end": s.end, "text": (s.text or "").strip()} for s in seg_gen]
+            raw_segments = [
+                {"start": s.start, "end": s.end, "text": (s.text or "").strip()}
+                for s in seg_gen
+            ]
 
             # Fallback: segment-level
-            words = [Word(start_ms=int(round(s["start"] * 1000)),
-                          end_ms=int(round(s["end"] * 1000)),
-                          text=s["text"]) for s in raw_segments]
-            sample = ", ".join(f"{w.text}({w.start_ms}-{w.end_ms}ms)" for w in words[:3])
+            words = [
+                Word(
+                    start_ms=int(round(s["start"] * 1000)),
+                    end_ms=int(round(s["end"] * 1000)),
+                    text=s["text"],
+                )
+                for s in raw_segments
+            ]
+            sample = ", ".join(
+                f"{w.text}({w.start_ms}-{w.end_ms}ms)" for w in words[:3]
+            )
             log.info("Whisper segments: %d segments. sample: %s", len(words), sample)
             full_text = " ".join(s["text"] for s in raw_segments)
             return Transcript(words=words, text=full_text)
@@ -175,7 +205,9 @@ def transcribe_and_align_whisper(audio_f32: np.ndarray, sr: int) -> Transcript:
         return Transcript(words=[], text="")
 
 
-def align_audio(audio_f32: np.ndarray, sr: int, reference_text: Optional[str] = None) -> Transcript:
+def align_audio(
+    audio_f32: np.ndarray, sr: int, reference_text: str | None = None
+) -> Transcript:
     if reference_text is not None and reference_text.strip():
         return align_ctc(audio_f32, sr, reference_text.strip())
     return transcribe_and_align_whisper(audio_f32, sr)

@@ -3,6 +3,7 @@ import numpy as np
 
 PCM_SR = 48_000  # your bus rate
 
+
 def frame_to_i16_mono_safe(frame: av.AudioFrame) -> np.ndarray:
     """
     Convert any aiortc/PyAV AudioFrame (stereo/mono, interleaved/planar,
@@ -10,9 +11,11 @@ def frame_to_i16_mono_safe(frame: av.AudioFrame) -> np.ndarray:
     """
     # Reformat at the *frame* level first: rate/layout/format are canonicalized here
     f = frame
-    if (getattr(f, "sample_rate", None) != PCM_SR or
-        getattr(getattr(f, "layout", None), "name", None) != "mono" or
-        getattr(getattr(f, "format", None), "name", None) not in ("s16", "s16p")):
+    if (
+        getattr(f, "sample_rate", None) != PCM_SR
+        or getattr(getattr(f, "layout", None), "name", None) != "mono"
+        or getattr(getattr(f, "format", None), "name", None) not in ("s16", "s16p")
+    ):
         # Use PyAV's high-quality resampler + channel mixer
         resampler = av.AudioResampler(format="s16", layout="mono", rate=PCM_SR)
         resampled_frames = resampler.resample(f)
@@ -34,6 +37,7 @@ def frame_to_i16_mono_safe(frame: av.AudioFrame) -> np.ndarray:
     pcm_i16 = arr.astype(np.int16, copy=False).reshape(-1)
 
     return pcm_i16  # type: ignore
+
 
 def f32_levels(x: np.ndarray) -> tuple[float, float, int]:
     """Simple meter for debugging audio levels"""

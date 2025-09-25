@@ -1,14 +1,11 @@
 import os
 import uuid
-from typing import Any, AsyncGenerator, Callable, Dict, Optional, Union
+from collections.abc import AsyncGenerator, Callable
 
-from agents import (Agent, ModelSettings, Runner, Tool,
-                    ToolsToFinalOutputResult, trace)
+from agents import Agent, ModelSettings, Runner, Tool, trace
 from agents.extensions.models.litellm_model import LitellmModel
 from agents.items import TResponseInputItem
 from agents.models.openai_responses import OpenAIResponsesModel
-from app.db import get_session
-from app.models import Personas
 from dotenv import load_dotenv
 from fastapi import Depends
 from openai import AsyncOpenAI
@@ -16,16 +13,19 @@ from openai.types import Reasoning
 from openai.types.responses import ResponseTextDeltaEvent
 from sqlmodel import Session, select
 
+from app.db import get_session
+from app.models import Personas
+
 load_dotenv()
 
 
 def get_api_key_for_model(model: str) -> str:
     """
     Get the appropriate API key based on the model provider.
-    
+
     Args:
         model: The model string (e.g., "openai/gpt-4", "gemini/gemini-pro", "anthropic/claude-3")
-    
+
     Returns:
         The API key for the model provider
     """
@@ -42,14 +42,16 @@ def get_api_key_for_model(model: str) -> str:
         return os.getenv("OPENAI_API_KEY", "")
 
 
-def create_model_instance(model: str, api_key: str) -> Union[OpenAIResponsesModel, LitellmModel]:
+def create_model_instance(
+    model: str, api_key: str
+) -> OpenAIResponsesModel | LitellmModel:
     """
     Create the appropriate model instance based on the model string.
-    
+
     Args:
         model: The model string
         api_key: The API key for the model
-    
+
     Returns:
         The appropriate model instance
     """
@@ -57,15 +59,11 @@ def create_model_instance(model: str, api_key: str) -> Union[OpenAIResponsesMode
         # Use OpenAIResponsesModel for OpenAI models
         openai_model = model.replace("openai/", "")
         return OpenAIResponsesModel(
-            model=openai_model,
-            openai_client=AsyncOpenAI(api_key=api_key)
+            model=openai_model, openai_client=AsyncOpenAI(api_key=api_key)
         )
     else:
         # Use LiteLLM for all other providers (Gemini, Anthropic, XAI)
-        return LitellmModel(
-            model=model,
-            api_key=api_key
-        )
+        return LitellmModel(model=model, api_key=api_key)
 
 
 # this becomes main. Put those other in the files
@@ -116,8 +114,8 @@ class GenericAgent:
         tools: list[Tool] = [],
         parallel_tool_calls: bool = False,
         reasoning_effort: str | None = None,
-        tool_use_behavior: Optional[Callable] = None,
-        include_usage: bool = True
+        tool_use_behavior: Callable | None = None,
+        include_usage: bool = True,
     ):
         self.agent_name = agent_name
         self.system_prompt = system_prompt
@@ -135,16 +133,16 @@ class GenericAgent:
             temperature=self.temperature,
             include_usage=self.include_usage,
         )
-        
+
         # Add parallel tool calls and reasoning if enabled
         if self.parallel_tool_calls:
             model_settings.parallel_tool_calls = True
             model_settings.reasoning = Reasoning(effort=self.reasoning_effort)  # type: ignore
-        
+
         # Get the appropriate API key and create model instance
         api_key = get_api_key_for_model(self.model)
         model_instance = create_model_instance(self.model, api_key)
-        
+
         # Create agent with proper typing
         agent = Agent(
             name=f"{self.agent_name}",
@@ -153,9 +151,9 @@ class GenericAgent:
             model_settings=model_settings,
             tools=self.tools,
         )
-        
+
         # Add optional parameters
         if self.tool_use_behavior:
             agent.tool_use_behavior = self.tool_use_behavior
-        
+
         return agent

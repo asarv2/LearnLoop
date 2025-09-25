@@ -4,55 +4,50 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-import math
 import os
 import re
 import time
-from asyncio import QueueEmpty
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-from uuid import uuid4
+from typing import Any
 
 import numpy as np
+
 # ---- OpenAI Agents SDK (pip install openai-agents or openai-agents-python) ----
 from agents.realtime import RealtimeAgent as OARealtimeAgent
 from agents.realtime import RealtimeRunner, RealtimeSession
-from agents.realtime.config import (RealtimeRunConfig,
-                                    RealtimeSessionModelSettings)
+from agents.realtime.config import RealtimeRunConfig, RealtimeSessionModelSettings
 from agents.realtime.events import RealtimeAgentEndEvent as OAEventAgentEnd
 from agents.realtime.events import RealtimeAgentStartEvent as OAEventAgentStart
 from agents.realtime.events import RealtimeAudio as OAEventAudio
 from agents.realtime.events import RealtimeAudioEnd as OAEventAudioEnd
-from agents.realtime.events import \
-    RealtimeAudioInterrupted as OAEventAudioInterrupted
+from agents.realtime.events import RealtimeAudioInterrupted as OAEventAudioInterrupted
 from agents.realtime.events import RealtimeError as OAEventError
-from agents.realtime.events import RealtimeHistoryAdded as OAEventHistoryAdded
-from agents.realtime.events import \
-    RealtimeHistoryUpdated as OAEventHistoryUpdated
 from agents.realtime.events import RealtimeRawModelEvent as OAEventRaw
-from agents.realtime.model_events import \
-    RealtimeModelRawServerEvent as OAEventRawServer
+from agents.realtime.model_events import RealtimeModelRawServerEvent as OAEventRawServer
+from sqlmodel import select
+
 from app.bus import PCM_SR, SAMPLES_PER_CHUNK, AudioChunk
 from app.db import get_session
 from app.models import Chats, Documents, Messages, Personas, Scenarios
 from app.services.agents.voice.base import Agent
 from app.store import list_messages
 from app.utils.chat import get_formatted_conversation_history_with_personas
-from sqlalchemy import text
-from sqlmodel import select
 
 logger = logging.getLogger(__name__)
 
 
-
 # ---------- audio helpers ----------
+
 
 def _f32_to_s16le_bytes(x: np.ndarray) -> bytes:
     y = np.clip(x, -1.0, 1.0)
     return (y * 32767.0).astype(np.int16).tobytes()
 
+
 def _s16le_bytes_to_f32(data: bytes) -> np.ndarray:
-    return (np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0).clip(-1.0, 1.0)
+    return (np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0).clip(
+        -1.0, 1.0
+    )
+
 
 def _resample_linear(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
     if sr_in == sr_out or x.size == 0:
@@ -66,9 +61,8 @@ def _resample_linear(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
     return np.interp(idx, xi, x).astype(np.float32)
 
 
-
-
 # ---------- Realtime OpenAI bridge agent (NO local VAD) ----------
+
 
 class OpenAIAgent(Agent):
     """
@@ -107,40 +101,49 @@ class OpenAIAgent(Agent):
             "create_response": True,
             "interrupt_response": True,
             # give sane defaults; the server may ignore extras it doesn't use
-            "eagerness": "auto"
+            "eagerness": "auto",
         }
 
         # Audio formats the model expects/emits (pcm16 everywhere)
-        self.input_sr = int(os.getenv("OPENAI_INPUT_SR", "24000"))  # set to 48000 to skip resample
+        self.input_sr = int(
+            os.getenv("OPENAI_INPUT_SR", "24000")
+        )  # set to 48000 to skip resample
         self.output_sr = 24000  # ← back to 24k (fixes chipmunk/high pitch)
         self._logged_audio_format = False  # optional: one-time debug print
 
-        self._session: Optional[RealtimeSession] = None
+        self._session: RealtimeSession | None = None
         self._tasks: list[asyncio.Task] = []
         self._running = True
         self._seen_user_msg_ids: set[str] = set()
-        
+
         # For streaming assistant deltas from OAEventRaw
         # response_id -> {msg_id, chunk_idx, buffer, has_received_audio}
         self._resp_streams: dict[str, dict[str, Any]] = {}
         # Single active user anchor (one bubble max)
-        self._user_anchor: dict[str, Any] = {"msg_id": None, "chunk_idx": 0, "had_text": False, "open": False}
-        self._anchor_item_ids: set[str] = set()          # all item_ids contributing to this anchor
-        self._latest_item_id: Optional[str] = None        # last speech_started item_id
+        self._user_anchor: dict[str, Any] = {
+            "msg_id": None,
+            "chunk_idx": 0,
+            "had_text": False,
+            "open": False,
+        }
+        self._anchor_item_ids: set[str] = (
+            set()
+        )  # all item_ids contributing to this anchor
+        self._latest_item_id: str | None = None  # last speech_started item_id
 
         # --- TTS hard mute + draining task ---
         self._tts_blocked: bool = False
-        self._tts_drain_task: Optional[asyncio.Task] = None
+        self._tts_drain_task: asyncio.Task | None = None
         self._audio_buf = np.zeros(0, dtype=np.float32)  # shared TTS buffer
-        
+
         # --- Pending user messages queue for barge-in ---
         self._pending_user_msgs: list[str] = []
 
         # --- Persona ID for assistant messages ---
-        self._assistant_persona_id: Optional[str] = None
+        self._assistant_persona_id: str | None = None
 
         # Track the most recent response id to associate first audio chunks
-        self._current_response_id: Optional[str] = None
+        self._current_response_id: str | None = None
 
         # --- CTC alignment accumulators ---
         self._resp_audio: dict[str, np.ndarray] = {}
@@ -153,16 +156,15 @@ class OpenAIAgent(Agent):
 
         # --- Uplink queue for decoupling audio capture from network I/O ---
         self._uplink_q: asyncio.Queue[bytes] = asyncio.Queue(maxsize=256)
-        self._uplink_task: Optional[asyncio.Task] = None
+        self._uplink_task: asyncio.Task | None = None
 
-        async def _audio_gate(chunk: "AudioChunk") -> "AudioChunk":
+        async def _audio_gate(chunk: AudioChunk) -> AudioChunk:
             # If blocked, turn any frame we publish into silence instantly.
             if self._tts_blocked:
                 chunk.data[:] = 0.0
             return chunk
+
         self.audio_hook = _audio_gate
-
-
 
     def _block_tts(self) -> None:
         # Instant stop: mute, drop buffer, cancel drainer.
@@ -196,7 +198,7 @@ class OpenAIAgent(Agent):
                 return
 
             # Resolve message id for this response
-            msg_id: Optional[str] = None
+            msg_id: str | None = None
             st = self._resp_streams.get(rid)
             if st is not None and st.get("msg_id") is not None:
                 try:
@@ -249,6 +251,7 @@ class OpenAIAgent(Agent):
             # Persist interruption timestamp on the message (raw SQL to avoid session races)
             try:
                 from sqlalchemy import text as _text
+
                 db_session = next(get_session())
                 try:
                     conn = db_session.connection()
@@ -265,7 +268,11 @@ class OpenAIAgent(Agent):
                             ON CONFLICT (id) DO NOTHING
                             """
                         ),
-                        {"id": str(msg_id), "chat_id": str(self.room.id), "persona_id": persona_id},
+                        {
+                            "id": str(msg_id),
+                            "chat_id": str(self.room.id),
+                            "persona_id": persona_id,
+                        },
                     )
                     # Compute relative ms from created_at so it fits int4
                     row = conn.execute(
@@ -275,17 +282,20 @@ class OpenAIAgent(Agent):
                     rel_ms = 0
                     try:
                         import datetime as _dt
+
                         created_at = row[0] if row else None
                         if isinstance(created_at, _dt.datetime):
                             if created_at.tzinfo is None:
-                                created_at = created_at.replace(tzinfo=_dt.timezone.utc)
+                                created_at = created_at.replace(tzinfo=_dt.UTC)
                             created_ms = int(created_at.timestamp() * 1000)
                             rel = int(now_ms) - created_ms
                             rel_ms = max(0, min(rel, 2_147_483_647))
                     except Exception:
                         rel_ms = 0
                     conn.execute(
-                        _text("UPDATE messages SET interruption_ms = :ts WHERE id = :id"),
+                        _text(
+                            "UPDATE messages SET interruption_ms = :ts WHERE id = :id"
+                        ),
                         {"ts": int(rel_ms), "id": str(msg_id)},
                     )
                     db_session.commit()
@@ -299,71 +309,83 @@ class OpenAIAgent(Agent):
         except Exception:
             pass
 
-    async def _get_assistant_persona_id(self) -> Optional[str]:
+    async def _get_assistant_persona_id(self) -> str | None:
         """Get assistant persona from chat.persona_ids; specifically look for agent personas (profile_id is null)."""
         if self._assistant_persona_id is not None:
             return self._assistant_persona_id
-        
+
         try:
+            from sqlmodel import select
+
             from app.db import get_session
             from app.models import Chats, Personas
-            from sqlmodel import select
-            
+
             db_session = next(get_session())
             try:
                 # Get the chat
-                result = db_session.exec(
-                    select(Chats).where(Chats.id == self.room.id)
-                )
+                result = db_session.exec(select(Chats).where(Chats.id == self.room.id))
                 chat = result.one_or_none()
                 if not chat:
                     return None
-                
+
                 # Get chat.persona_ids (array) and find the first agent persona
                 persona_id = None
                 try:
                     from sqlalchemy import text as _text
+
                     conn = db_session.connection()
-                    row = conn.execute(_text("SELECT persona_ids FROM chats WHERE id = :id"), {"id": str(chat.id)}).fetchone()
+                    row = conn.execute(
+                        _text("SELECT persona_ids FROM chats WHERE id = :id"),
+                        {"id": str(chat.id)},
+                    ).fetchone()
                     pid_list = list(row[0]) if row and row[0] else []
-                    
+
                     # Look for the first agent persona (profile_id is null)
                     for pid in pid_list:
-                        persona = db_session.exec(select(Personas).where(Personas.id == pid)).one_or_none()
+                        persona = db_session.exec(
+                            select(Personas).where(Personas.id == pid)
+                        ).one_or_none()
                         if persona and persona.profile_id is None:
                             # This is an agent persona
                             persona_id = str(pid)
-                            logger.info(f"Found agent persona: {persona.name} (ID: {pid})")
+                            logger.info(
+                                f"Found agent persona: {persona.name} (ID: {pid})"
+                            )
                             break
-                    
+
                     if not persona_id and pid_list:
-                        logger.warning(f"No agent persona found in chat {chat.id}. Available personas: {pid_list}")
-                        
+                        logger.warning(
+                            f"No agent persona found in chat {chat.id}. Available personas: {pid_list}"
+                        )
+
                 except Exception as e:
-                    logger.error(f"Error processing persona_ids for chat {chat.id}: {str(e)}")
+                    logger.error(
+                        f"Error processing persona_ids for chat {chat.id}: {str(e)}"
+                    )
                     pass
-                
+
                 if persona_id:
                     self._assistant_persona_id = str(persona_id)
                     return self._assistant_persona_id
-                    
+
             finally:
                 db_session.close()
         except Exception as e:
             logger.error(f"Error getting assistant persona ID: {str(e)}")
-        
+
         return None
 
-    async def _get_user_persona_id(self) -> Optional[str]:
+    async def _get_user_persona_id(self) -> str | None:
         """Get the user persona ID from the room's user profile."""
         # cached?
         if getattr(self.room, "user_persona_id", None):
             return self.room.user_persona_id
 
         try:
+            from sqlmodel import select
+
             from app.db import get_session
             from app.models import Personas
-            from sqlmodel import select
 
             profile_id = getattr(self.room, "user_profile_id", None)
             if not profile_id:
@@ -409,13 +431,23 @@ class OpenAIAgent(Agent):
         except asyncio.CancelledError:
             pass
 
-    async def _align_ctc(self, *, audio_f32: np.ndarray, sr: int, reference_text: str, stage: str = "final", num_chunks: Optional[int] = None, chunk_ms: int = 20) -> tuple[str, list[dict[str, Any]]]:
+    async def _align_ctc(
+        self,
+        *,
+        audio_f32: np.ndarray,
+        sr: int,
+        reference_text: str,
+        stage: str = "final",
+        num_chunks: int | None = None,
+        chunk_ms: int = 20,
+    ) -> tuple[str, list[dict[str, Any]]]:
         """Call external model service /align_ctc; returns (text, words[])."""
         try:
             base = os.getenv("MODEL_SERVICE_URL") or "http://localhost:8001"
             if not base:
                 return reference_text, []
             import httpx  # type: ignore
+
             b = audio_f32.astype(np.float32).tobytes()
             payload: dict[str, Any] = {
                 "audio_b64": base64.b64encode(b).decode("utf-8"),
@@ -445,11 +477,13 @@ class OpenAIAgent(Agent):
             if isinstance(words_in, list):
                 for w in words_in:
                     try:
-                        words.append({
-                            "start_ms": int(w.get("start_ms", 0)),
-                            "end_ms": int(w.get("end_ms", 0)),
-                            "text": str(w.get("text", "")),
-                        })
+                        words.append(
+                            {
+                                "start_ms": int(w.get("start_ms", 0)),
+                                "end_ms": int(w.get("end_ms", 0)),
+                                "text": str(w.get("text", "")),
+                            }
+                        )
                     except Exception:
                         pass
             return text, words
@@ -469,8 +503,16 @@ class OpenAIAgent(Agent):
         TRANSCRIPT_SOURCE_ID = "openai:user-transcript"
         agent_self = self  # close over 'self'
 
-        async def wrapped(*, source_id: str, role: str, text: str,
-                          message_id: str | None, chunk_idx: int, is_final: bool, persona_id: Optional[str] = None) -> str:
+        async def wrapped(
+            *,
+            source_id: str,
+            role: str,
+            text: str,
+            message_id: str | None,
+            chunk_idx: int,
+            is_final: bool,
+            persona_id: str | None = None,
+        ) -> str:
             # If a user anchor is open, route typed text into that message
             use_anchor = (
                 role == "user"
@@ -480,8 +522,16 @@ class OpenAIAgent(Agent):
             )
 
             if use_anchor:
-                message_id = str(agent_self._user_anchor["msg_id"]) if agent_self._user_anchor["msg_id"] is not None else None
-                chunk_idx = int(agent_self._user_anchor["chunk_idx"]) if agent_self._user_anchor["chunk_idx"] is not None else 0
+                message_id = (
+                    str(agent_self._user_anchor["msg_id"])
+                    if agent_self._user_anchor["msg_id"] is not None
+                    else None
+                )
+                chunk_idx = (
+                    int(agent_self._user_anchor["chunk_idx"])
+                    if agent_self._user_anchor["chunk_idx"] is not None
+                    else 0
+                )
 
             # Get user persona_id if not provided for user messages
             if role == "user" and not persona_id:
@@ -529,26 +579,28 @@ class OpenAIAgent(Agent):
             if use_anchor:
                 if text:
                     agent_self._user_anchor["had_text"] = True
-                agent_self._user_anchor["chunk_idx"] = (agent_self._user_anchor["chunk_idx"] or 0) + 1
+                agent_self._user_anchor["chunk_idx"] = (
+                    agent_self._user_anchor["chunk_idx"] or 0
+                ) + 1
 
             return mid
 
         # Patch the instance method (doesn't interfere with socket broadcasting)
-        setattr(self.room, 'append_text_chunk', wrapped)
-        setattr(self.room, "_openai_text_hooked", True)
+        self.room.append_text_chunk = wrapped
+        self.room._openai_text_hooked = True
 
     # ---- session wiring -----------------------------------------------------
 
     async def _start_session(self) -> RealtimeSession:
         chat_id = self.room.id
         print(f"[OPENAI] Starting session for chat_id: {chat_id}")
-        
+
         persona_id = await self._get_assistant_persona_id()
         print(f"[OPENAI] Resolved assistant persona_id: {persona_id}")
 
         db_session = next(get_session())
 
-        chat: Optional[Chats] = db_session.exec(
+        chat: Chats | None = db_session.exec(
             select(Chats).where(Chats.id == chat_id)
         ).one_or_none()
 
@@ -556,7 +608,7 @@ class OpenAIAgent(Agent):
             logger.error(f"Chat lookup failed for ID: {chat_id}")
             raise ValueError(f"Chat with ID {chat_id} not found")
 
-        persona: Optional[Personas] = db_session.exec(
+        persona: Personas | None = db_session.exec(
             select(Personas).where(Personas.id == persona_id)
         ).one_or_none()
 
@@ -564,78 +616,111 @@ class OpenAIAgent(Agent):
             logger.error(f"Persona lookup failed for ID: {persona_id}")
             raise ValueError(f"Persona with ID {persona_id} not found")
 
-        print(f"[OPENAI] Found persona: Name='{persona.name}', Voice='{persona.voice}', ProfileID='{persona.profile_id}'")
+        print(
+            f"[OPENAI] Found persona: Name='{persona.name}', Voice='{persona.voice}', ProfileID='{persona.profile_id}'"
+        )
         logger.info(f"Found persona: Name='{persona.name}', Voice='{persona.voice}'")
 
         # Get the scenario for the preamble
         if not chat.scenario_id:
             raise ValueError(f"Chat {chat_id} has no scenario_id")
-        
-        scenario = db_session.exec(select(Scenarios).where(Scenarios.id == chat.scenario_id)).one_or_none()
+
+        scenario = db_session.exec(
+            select(Scenarios).where(Scenarios.id == chat.scenario_id)
+        ).one_or_none()
         if not scenario:
-            raise ValueError(f"Scenario {chat.scenario_id} not found for chat {chat_id}")
+            raise ValueError(
+                f"Scenario {chat.scenario_id} not found for chat {chat_id}"
+            )
 
         # get all messages for the chat
-        messages = db_session.exec(select(Messages).where(Messages.chat_id == chat_id)).all()
-        
+        messages = db_session.exec(
+            select(Messages).where(Messages.chat_id == chat_id)
+        ).all()
+
         # Format conversation history with persona names
-        formatted_history = get_formatted_conversation_history_with_personas(messages, db_session)
-        
+        formatted_history = get_formatted_conversation_history_with_personas(
+            messages, db_session
+        )
+
         # Build enhanced instructions: persona prompt + description + documents + history
         instructions_parts = []
-        
+
         # 1. Get persona-specific prompt from chat.prompts
         chat_prompts = chat.prompts or {}
         persona_prompt = chat_prompts.get(str(persona_id))
         if persona_prompt:
             instructions_parts.append(persona_prompt)
-        
+
         # 2. Add persona description
         if persona.description:
             instructions_parts.append(persona.description)
-        
+
         # 3. Add relevant documents from scenario
         if scenario and scenario.document_ids:
             try:
-                logger.info(f"Fetching documents for scenario {scenario.id}, document_ids: {scenario.document_ids}")
+                logger.info(
+                    f"Fetching documents for scenario {scenario.id}, document_ids: {scenario.document_ids}"
+                )
                 # Fetch documents from the database
                 documents = []
                 for doc_id in scenario.document_ids:
-                    doc = db_session.exec(select(Documents).where(Documents.id == doc_id)).one_or_none()
+                    doc = db_session.exec(
+                        select(Documents).where(Documents.id == doc_id)
+                    ).one_or_none()
                     if doc:
                         documents.append(doc)
                         logger.info(f"Found document: {doc.title}")
                     else:
                         logger.warning(f"Document not found: {doc_id}")
-                
+
                 if documents:
                     doc_info = []
-                    doc_info.append("These are the relevant documents for this scenario:")
+                    doc_info.append(
+                        "These are the relevant documents for this scenario:"
+                    )
                     for doc in documents:
                         if doc.title and doc.content:
                             doc_info.append(f"Document: {doc.title}")
                             doc_info.append(f"Content: {doc.content}")
                             doc_info.append("")  # Empty line for separation
-                    
+
                     if doc_info:
                         instructions_parts.append("\n".join(doc_info))
                         logger.info(f"Added {len(documents)} documents to instructions")
                 else:
                     logger.info("No documents found or documents have no title/content")
             except Exception as e:
-                logger.warning(f"Failed to fetch documents for scenario {scenario.id}: {e}")
+                logger.warning(
+                    f"Failed to fetch documents for scenario {scenario.id}: {e}"
+                )
         else:
-            logger.info(f"No scenario or document_ids found. Scenario: {scenario is not None}, document_ids: {scenario.document_ids if scenario else None}")
-        
+            logger.info(
+                f"No scenario or document_ids found. Scenario: {scenario is not None}, document_ids: {scenario.document_ids if scenario else None}"
+            )
+
         # 4. Add formatted conversation history if available
         if formatted_history:
             instructions_parts.append(f"Conversation history:\n{formatted_history}")
-        
+
         # Join all parts with double newlines for clarity
-        realtime_instructions = "\n\n".join(instructions_parts) if instructions_parts else "Be helpful and respond to the user's messages."
+        realtime_instructions = (
+            "\n\n".join(instructions_parts)
+            if instructions_parts
+            else "Be helpful and respond to the user's messages."
+        )
 
         realtime_voice = persona.voice
-        valid_voices = ["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"]
+        valid_voices = [
+            "alloy",
+            "ash",
+            "ballad",
+            "coral",
+            "echo",
+            "sage",
+            "shimmer",
+            "verse",
+        ]
         if realtime_voice not in valid_voices:
             realtime_voice = "alloy"
 
@@ -657,16 +742,14 @@ class OpenAIAgent(Agent):
                 "eagerness": "auto",
             },
             "voice": realtime_voice,
-            "input_audio_transcription": {
-                "model": "gpt-4o-mini-transcribe"
-            }
+            "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
         }
 
         run_cfg = RealtimeRunConfig(model_settings=model_settings)
 
         runner = RealtimeRunner(oa_agent, config=run_cfg)
         session: RealtimeSession = await runner.run()
-        session = await session.enter()   # ✅ correct way to enter
+        session = await session.enter()  # ✅ correct way to enter
         logger.debug("[openai] realtime session started")
         return session
 
@@ -708,7 +791,7 @@ class OpenAIAgent(Agent):
                     t_a0 = time.perf_counter()
                     chunk = await asyncio.wait_for(self.sub.recv(), timeout=timeout)
                     t_a1 = time.perf_counter()
-                    
+
                     x = chunk.data  # float32 mono @ PCM_SR (48k)
 
                     if x is None or x.size == 0:
@@ -717,9 +800,9 @@ class OpenAIAgent(Agent):
                     else:
                         # B) process (resample, preamp, pack)
                         t_b0 = time.perf_counter()
-                        
+
                         # resample 48k → self.input_sr (24k) if needed
-                        if self.input_sr != PCM_SR:             # 24000 vs 48000
+                        if self.input_sr != PCM_SR:  # 24000 vs 48000
                             # average pairs: (x[0:len-1:2] + x[1:len:2]) * 0.5
                             L2 = (x.size // 2) * 2
                             x = 0.5 * (x[:L2:2] + x[1:L2:2])
@@ -742,7 +825,7 @@ class OpenAIAgent(Agent):
                         #     rms = float(np.sqrt(np.mean(x * x)) + 1e-12)
                         #     print(f"[openai][mic-dump] len_f32={x.size} len_bytes={len(b)} rms_post={rms:.6f} preamp_db={pre_db}")
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # No bus chunk before the deadline → send silence
                     b = SILENCE_BYTES
                     t_a0 = t_a1 = t_b0 = t_b1 = time.perf_counter()
@@ -760,14 +843,17 @@ class OpenAIAgent(Agent):
                     self._uplink_q.put_nowait(b)
 
                 if n % 50 == 0:
-                    logger.debug(f"[pump] recv={(t_a1-t_a0)*1000:.1f}ms proc={(t_b1-t_b0)*1000:.1f}ms send=queue")
-
+                    logger.debug(
+                        f"[pump] recv={(t_a1-t_a0)*1000:.1f}ms proc={(t_b1-t_b0)*1000:.1f}ms send=queue"
+                    )
 
                 n += 1
                 if n % 100 == 0:
                     dt = time.time() - t0
                     if dt > 0:
-                        logger.debug(f"[openai] audio→model {n} frames (~{n*FRAME_SEC:.1f}s) in {dt:.1f}s")
+                        logger.debug(
+                            f"[openai] audio→model {n} frames (~{n*FRAME_SEC:.1f}s) in {dt:.1f}s"
+                        )
 
                 # Maintain pacing if we're early
                 remaining = next_deadline - time.perf_counter()
@@ -814,7 +900,7 @@ class OpenAIAgent(Agent):
         - History events: when assistant output text appears, stream to chat.
         """
         # For streaming assistant text
-        active_msg_id: Optional[str] = None
+        active_msg_id: str | None = None
         next_chunk_idx = 0
 
         async for ev in session:
@@ -853,7 +939,9 @@ class OpenAIAgent(Agent):
                                         persona_id=persona_id,
                                     )
                                 # If word timestamps are enabled, do not stream the buffered text; transcript will drive UI
-                                timestamps_enabled = bool(getattr(self.room, "word_timestamps_enabled", True))
+                                timestamps_enabled = bool(
+                                    getattr(self.room, "word_timestamps_enabled", True)
+                                )
                                 if not timestamps_enabled:
                                     await self.publish_text_chunk(
                                         text=buffered_text,
@@ -868,9 +956,11 @@ class OpenAIAgent(Agent):
                                 st["buffer"].clear()
 
                     # bytes or base64 string depending on SDK/version
-                    audio_bytes = getattr(ev.audio, "audio", None) \
-                               or getattr(ev.audio, "data", None) \
-                               or getattr(ev.audio, "bytes", None)
+                    audio_bytes = (
+                        getattr(ev.audio, "audio", None)
+                        or getattr(ev.audio, "data", None)
+                        or getattr(ev.audio, "bytes", None)
+                    )
                     if audio_bytes is None:
                         continue
                     if isinstance(audio_bytes, str):
@@ -885,7 +975,9 @@ class OpenAIAgent(Agent):
 
                     # Optional: log once so you can see what the model really sends
                     if not self._logged_audio_format:
-                        logger.debug(f"[openai] model audio: sr={self.output_sr}Hz, bytes={len(audio_bytes)}")
+                        logger.debug(
+                            f"[openai] model audio: sr={self.output_sr}Hz, bytes={len(audio_bytes)}"
+                        )
                         self._logged_audio_format = True
 
                     # Resample to the bus rate (48k) if needed
@@ -897,37 +989,56 @@ class OpenAIAgent(Agent):
                     self._ensure_unblocked_and_draining()
 
                     # Accumulate per-response audio for alignment
-                    rid_for_audio = getattr(self, "_current_response_id", None) or "_default"
+                    rid_for_audio = (
+                        getattr(self, "_current_response_id", None) or "_default"
+                    )
                     # Count model-emitted audio chunks
                     try:
-                        self._resp_audio_chunk_count[rid_for_audio] = 1 + int(self._resp_audio_chunk_count.get(rid_for_audio, 0))
+                        self._resp_audio_chunk_count[rid_for_audio] = 1 + int(
+                            self._resp_audio_chunk_count.get(rid_for_audio, 0)
+                        )
                     except Exception:
                         pass
                     prev_audio = self._resp_audio.get(rid_for_audio)
-                    self._resp_audio[rid_for_audio] = (np.concatenate([prev_audio, f32]) if isinstance(prev_audio, np.ndarray) else np.copy(f32))
+                    self._resp_audio[rid_for_audio] = (
+                        np.concatenate([prev_audio, f32])
+                        if isinstance(prev_audio, np.ndarray)
+                        else np.copy(f32)
+                    )
                     if rid_for_audio not in self._resp_audio_start_ts_ms:
-                        self._resp_audio_start_ts_ms[rid_for_audio] = int(time.time() * 1000)
+                        self._resp_audio_start_ts_ms[rid_for_audio] = int(
+                            time.time() * 1000
+                        )
 
                     # After first audio arrives, run PARTIAL CTC exactly once for this response
                     try:
                         if target_rid and target_rid in self._resp_streams:
                             st2 = self._resp_streams.get(target_rid) or {}
                             # Run partial only when we've received exactly the configured number of model audio chunks
-                            n_chunks_target = int(os.getenv("CTC_PARTIAL_NUM_CHUNKS", "6"))
+                            n_chunks_target = int(
+                                os.getenv("CTC_PARTIAL_NUM_CHUNKS", "6")
+                            )
                             if (
                                 st2.get("has_received_audio")
                                 and not st2.get("partial_ctc_done", False)
                                 and n_chunks_target > 0
-                                and int(self._resp_audio_chunk_count.get(target_rid, 0)) == n_chunks_target
+                                and int(self._resp_audio_chunk_count.get(target_rid, 0))
+                                == n_chunks_target
                             ):
                                 buffered_text_now = "".join(st2.get("buffer", []))
                                 # Combine pre-audio (flushed) + post-audio (buffer) for best reference
-                                reference_text = (st2.get("last_flushed_text") or "") + buffered_text_now
+                                reference_text = (
+                                    st2.get("last_flushed_text") or ""
+                                ) + buffered_text_now
                                 # Map response->message for clients
                                 if st2.get("msg_id"):
                                     self._rid_to_msg[target_rid] = str(st2["msg_id"])  # type: ignore[arg-type]
-                                audio_arr = self._resp_audio.get(target_rid, np.zeros(0, dtype=np.float32))
-                                start_ts = self._resp_audio_start_ts_ms.get(target_rid, int(time.time() * 1000))
+                                audio_arr = self._resp_audio.get(
+                                    target_rid, np.zeros(0, dtype=np.float32)
+                                )
+                                start_ts = self._resp_audio_start_ts_ms.get(
+                                    target_rid, int(time.time() * 1000)
+                                )
                                 if audio_arr.size > 0 and reference_text:
                                     logger.debug(
                                         f"[ctc][partial] rid={target_rid} samples={audio_arr.size} chunks={n_chunks_target} text_len={len(reference_text)}"
@@ -942,7 +1053,9 @@ class OpenAIAgent(Agent):
                                     if words_p:
                                         await self.room.broadcast_transcript(
                                             agent_id=self.id,
-                                            message_id=str(st2["msg_id"]) if st2.get("msg_id") is not None else None,
+                                            message_id=str(st2["msg_id"])
+                                            if st2.get("msg_id") is not None
+                                            else None,
                                             start_ts_ms=start_ts,
                                             words=words_p,
                                             full_text=reference_text,
@@ -954,7 +1067,7 @@ class OpenAIAgent(Agent):
                 # --- Audio finished (flush any micro tail just in case) ---
                 elif isinstance(ev, OAEventAudioEnd):
                     # Optional: drop any micro tail; the drainer will exit when buffer empties.
-                    pass 
+                    pass
 
                 # --- Agent end (close text message cleanly) ---
                 elif isinstance(ev, OAEventAgentEnd):
@@ -974,7 +1087,9 @@ class OpenAIAgent(Agent):
                     raw_msg = getattr(ev, "error", None)
                     msg = str(raw_msg or "")
                     # Suppress the benign cursor-length warning
-                    if re.search(r"Audio content of \d+ms is already shorter than \d+ms", msg):
+                    if re.search(
+                        r"Audio content of \d+ms is already shorter than \d+ms", msg
+                    ):
                         logger.debug("[openai] benign audio warning: %s", msg)
                         continue
                     logger.warning("[openai][error] %s", msg)
@@ -982,7 +1097,15 @@ class OpenAIAgent(Agent):
                     # await self.publish_text_chunk(text=f"(openai error) {msg}", message_id=None, chunk_idx=0, is_final=True)
 
                 # (optional) Log/ignore others
-                elif isinstance(ev, (OAEventRaw, OAEventRawServer, OAEventAudioInterrupted, OAEventAgentStart)):
+                elif isinstance(
+                    ev,
+                    (
+                        OAEventRaw,
+                        OAEventRawServer,
+                        OAEventAudioInterrupted,
+                        OAEventAgentStart,
+                    ),
+                ):
                     # Instant stop on user barge-in
                     if isinstance(ev, OAEventAudioInterrupted):
                         self._block_tts()
@@ -1004,27 +1127,48 @@ class OpenAIAgent(Agent):
                                 payload = raw.get("data", raw)
                             else:
                                 rtype = getattr(raw, "type", "")
-                                payload = getattr(raw, "data", {}) if rtype == "raw_server_event" else {}
+                                payload = (
+                                    getattr(raw, "data", {})
+                                    if rtype == "raw_server_event"
+                                    else {}
+                                )
                         if not isinstance(payload, dict):
                             continue
 
                         evt_type = payload.get("type", "")
-                        
+
                         # print(f"[openai] server evt: {payload.get('type')}")
-                        
+
                         # NEW RESPONSE starting? Unblock + start draining but DON'T create a placeholder yet
                         if evt_type in ("response.created", "response.started"):
                             self._tts_blocked = False
                             self._ensure_unblocked_and_draining()
 
-                            rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
+                            rid = (
+                                payload.get("response_id")
+                                or (payload.get("response") or {}).get("id")
+                                or "_default"
+                            )
                             # Track it but DON'T create a room message yet - wait for audio or actual text
-                            st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False, "partial_ctc_done": False})
+                            st = self._resp_streams.setdefault(
+                                rid,
+                                {
+                                    "msg_id": None,
+                                    "chunk_idx": 0,
+                                    "buffer": [],
+                                    "has_received_audio": False,
+                                    "partial_ctc_done": False,
+                                },
+                            )
                             # Remember latest response id for associating first audio chunks
                             self._current_response_id = rid
 
                         # Current response got interrupted/canceled? Hard stop now.
-                        if evt_type in ("response.interrupted", "response.canceled", "response.cancelled"):
+                        if evt_type in (
+                            "response.interrupted",
+                            "response.canceled",
+                            "response.cancelled",
+                        ):
                             self._block_tts()
                             try:
                                 await self._mark_interruption_for_active_response()
@@ -1038,17 +1182,36 @@ class OpenAIAgent(Agent):
                                     pass
 
                         # --- Assistant streaming text / transcript deltas ---
-                        if evt_type in ("response.output_text.delta", "response.text.delta", "response.audio_transcript.delta"):
+                        if evt_type in (
+                            "response.output_text.delta",
+                            "response.text.delta",
+                            "response.audio_transcript.delta",
+                        ):
                             # print(f"[openai] response.delta: {ev}")
-                            rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
+                            rid = (
+                                payload.get("response_id")
+                                or (payload.get("response") or {}).get("id")
+                                or "_default"
+                            )
                             delta = payload.get("delta", "") or ""
                             if not delta:
                                 continue
 
-                            st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False, "partial_ctc_done": False})
+                            st = self._resp_streams.setdefault(
+                                rid,
+                                {
+                                    "msg_id": None,
+                                    "chunk_idx": 0,
+                                    "buffer": [],
+                                    "has_received_audio": False,
+                                    "partial_ctc_done": False,
+                                },
+                            )
                             # Always accumulate a full-text copy for robust finalization
                             self._resp_text.setdefault(rid, []).append(delta)
-                            timestamps_enabled = bool(getattr(self.room, "word_timestamps_enabled", True))
+                            timestamps_enabled = bool(
+                                getattr(self.room, "word_timestamps_enabled", True)
+                            )
                             if timestamps_enabled:
                                 # Buffer only; final transcript will be emitted after alignment
                                 st["buffer"].append(delta)
@@ -1057,7 +1220,13 @@ class OpenAIAgent(Agent):
                                 if st.get("has_received_audio"):
                                     persona_id = await self._get_assistant_persona_id()
                                     if st["msg_id"] is None:
-                                        st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
+                                        st["msg_id"] = await self.publish_text_chunk(
+                                            text="",
+                                            message_id=None,
+                                            chunk_idx=0,
+                                            is_final=False,
+                                            persona_id=persona_id,
+                                        )
                                     await self.publish_text_chunk(
                                         text=delta,
                                         message_id=st["msg_id"],
@@ -1076,18 +1245,43 @@ class OpenAIAgent(Agent):
                                 if isinstance(ot, dict):
                                     delta = ot.get("delta", "") or ""
                             if delta:
-                                rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
-                                st = self._resp_streams.setdefault(rid, {"msg_id": None, "chunk_idx": 0, "buffer": [], "has_received_audio": False, "partial_ctc_done": False})
+                                rid = (
+                                    payload.get("response_id")
+                                    or (payload.get("response") or {}).get("id")
+                                    or "_default"
+                                )
+                                st = self._resp_streams.setdefault(
+                                    rid,
+                                    {
+                                        "msg_id": None,
+                                        "chunk_idx": 0,
+                                        "buffer": [],
+                                        "has_received_audio": False,
+                                        "partial_ctc_done": False,
+                                    },
+                                )
                                 # Accumulate regardless of streaming strategy
                                 self._resp_text.setdefault(rid, []).append(delta)
-                                timestamps_enabled = bool(getattr(self.room, "word_timestamps_enabled", True))
+                                timestamps_enabled = bool(
+                                    getattr(self.room, "word_timestamps_enabled", True)
+                                )
                                 if timestamps_enabled:
                                     st["buffer"].append(delta)
                                 else:
                                     if st.get("has_received_audio"):
-                                        persona_id = await self._get_assistant_persona_id()
+                                        persona_id = (
+                                            await self._get_assistant_persona_id()
+                                        )
                                         if st["msg_id"] is None:
-                                            st["msg_id"] = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
+                                            st[
+                                                "msg_id"
+                                            ] = await self.publish_text_chunk(
+                                                text="",
+                                                message_id=None,
+                                                chunk_idx=0,
+                                                is_final=False,
+                                                persona_id=persona_id,
+                                            )
                                         await self.publish_text_chunk(
                                             text=delta,
                                             message_id=st["msg_id"],
@@ -1100,9 +1294,18 @@ class OpenAIAgent(Agent):
                                         st["buffer"].append(delta)
 
                         # --- Assistant done/finalize ---
-                        elif evt_type in ("response.output_text.done", "response.text.done", "response.audio_transcript.done",
-                                          "response.completed", "response.done"):
-                            rid = payload.get("response_id") or (payload.get("response") or {}).get("id") or "_default"
+                        elif evt_type in (
+                            "response.output_text.done",
+                            "response.text.done",
+                            "response.audio_transcript.done",
+                            "response.completed",
+                            "response.done",
+                        ):
+                            rid = (
+                                payload.get("response_id")
+                                or (payload.get("response") or {}).get("id")
+                                or "_default"
+                            )
                             st = self._resp_streams.pop(rid, {})
 
                             # If there were no deltas, many servers put the full text here
@@ -1119,16 +1322,32 @@ class OpenAIAgent(Agent):
 
                             # Fall back to concatenated buffer (if deltas were streamed)
                             if st:
-                                buffered_all = (st.get("last_flushed_text") or "") + "".join(st.get("buffer", []))
-                                if not final_text or len(buffered_all) > len(final_text or ""):
+                                buffered_all = (
+                                    st.get("last_flushed_text") or ""
+                                ) + "".join(st.get("buffer", []))
+                                if not final_text or len(buffered_all) > len(
+                                    final_text or ""
+                                ):
                                     final_text = buffered_all
 
                             if final_text:
                                 # if we never created a message, do a one-shot create+finalize now
                                 persona_id = await self._get_assistant_persona_id()
                                 if not st or st["msg_id"] is None:
-                                    msg_id = await self.publish_text_chunk(text="", message_id=None, chunk_idx=0, is_final=False, persona_id=persona_id)
-                                    await self.publish_text_chunk(text=final_text, message_id=msg_id, chunk_idx=0, is_final=True, persona_id=persona_id)
+                                    msg_id = await self.publish_text_chunk(
+                                        text="",
+                                        message_id=None,
+                                        chunk_idx=0,
+                                        is_final=False,
+                                        persona_id=persona_id,
+                                    )
+                                    await self.publish_text_chunk(
+                                        text=final_text,
+                                        message_id=msg_id,
+                                        chunk_idx=0,
+                                        is_final=True,
+                                        persona_id=persona_id,
+                                    )
                                     self._rid_to_msg[rid] = msg_id
                                 else:
                                     # Persist the complete final text and mark complete in the same call
@@ -1148,13 +1367,32 @@ class OpenAIAgent(Agent):
                             try:
                                 # Choose the most complete text among payload, accumulated deltas, and buffered pre+post
                                 deltas_joined = "".join(self._resp_text.get(rid, []))
-                                buffered_all = ((st.get("last_flushed_text") if st else "") or "") + ("".join(st.get("buffer", [])) if st else "")
+                                buffered_all = (
+                                    (st.get("last_flushed_text") if st else "") or ""
+                                ) + ("".join(st.get("buffer", [])) if st else "")
                                 cand_payload = (final_text or "").strip()
-                                candidates = [cand_payload, deltas_joined.strip(), buffered_all.strip()]
-                                effective_text = max(candidates, key=lambda s: len(s or "")) if any(candidates) else (final_text or "")
-                                audio_arr = self._resp_audio.get(rid, self._resp_audio.get("_default", np.zeros(0, dtype=np.float32)))
-                                start_ts = self._resp_audio_start_ts_ms.get(rid, int(time.time() * 1000))
-                                if (effective_text or "").strip() and audio_arr is not None:
+                                candidates = [
+                                    cand_payload,
+                                    deltas_joined.strip(),
+                                    buffered_all.strip(),
+                                ]
+                                effective_text = (
+                                    max(candidates, key=lambda s: len(s or ""))
+                                    if any(candidates)
+                                    else (final_text or "")
+                                )
+                                audio_arr = self._resp_audio.get(
+                                    rid,
+                                    self._resp_audio.get(
+                                        "_default", np.zeros(0, dtype=np.float32)
+                                    ),
+                                )
+                                start_ts = self._resp_audio_start_ts_ms.get(
+                                    rid, int(time.time() * 1000)
+                                )
+                                if (
+                                    effective_text or ""
+                                ).strip() and audio_arr is not None:
                                     tr_text, words = await self._align_ctc(
                                         audio_f32=audio_arr,
                                         sr=PCM_SR,
@@ -1173,31 +1411,64 @@ class OpenAIAgent(Agent):
                                         # Persist final word timestamps to DB
                                         try:
                                             if (msg_id_final or "").strip():
-                                                from app.db import \
-                                                    get_session as _get_session
-                                                from app.models import \
-                                                    Messages as _DBMsg
-                                                from sqlmodel import \
-                                                    select as _select
+                                                from sqlmodel import select as _select
+
+                                                from app.db import (
+                                                    get_session as _get_session,
+                                                )
+                                                from app.models import (
+                                                    Messages as _DBMsg,
+                                                )
+
                                                 def _persist_words() -> None:
                                                     db = next(_get_session())
                                                     try:
-                                                        m = db.exec(_select(_DBMsg).where(_DBMsg.id == msg_id_final)).one_or_none()
+                                                        m = db.exec(
+                                                            _select(_DBMsg).where(
+                                                                _DBMsg.id
+                                                                == msg_id_final
+                                                            )
+                                                        ).one_or_none()
                                                         if m is not None:
                                                             # store as JSON array
                                                             m.word_timestamps = [
-                                                                {"start_ms": int(w.get("start_ms", 0)), "end_ms": int(w.get("end_ms", 0)), "text": str(w.get("text", ""))}  # type: ignore
+                                                                {
+                                                                    "start_ms": int(
+                                                                        w.get(
+                                                                            "start_ms",
+                                                                            0,
+                                                                        )
+                                                                    ),
+                                                                    "end_ms": int(
+                                                                        w.get(
+                                                                            "end_ms", 0
+                                                                        )
+                                                                    ),
+                                                                    "text": str(
+                                                                        w.get(
+                                                                            "text", ""
+                                                                        )
+                                                                    ),
+                                                                }  # type: ignore
                                                                 for w in words
                                                             ]
-                                                            db.add(m); db.commit(); db.refresh(m)
+                                                            db.add(m)
+                                                            db.commit()
+                                                            db.refresh(m)
                                                     except Exception:
-                                                        try: db.rollback()
-                                                        except Exception: pass
+                                                        try:
+                                                            db.rollback()
+                                                        except Exception:
+                                                            pass
                                                         raise
                                                     finally:
-                                                        try: db.close()
-                                                        except Exception: pass
+                                                        try:
+                                                            db.close()
+                                                        except Exception:
+                                                            pass
+
                                                 import asyncio as _asyncio
+
                                                 await _asyncio.to_thread(_persist_words)
                                         except Exception:
                                             pass
@@ -1219,17 +1490,26 @@ class OpenAIAgent(Agent):
                             self._resp_audio_start_ts_ms.pop(rid, None)
                             self._resp_audio_chunk_count.pop(rid, None)
 
-
                         # --- User live mic transcript (stream into chat) ---
-                        elif evt_type in ("conversation.item.input_audio_transcription.delta", "transcript_delta"):
+                        elif evt_type in (
+                            "conversation.item.input_audio_transcription.delta",
+                            "transcript_delta",
+                        ):
                             print(f"[openai] transcript_delta: {ev}")
-                            item_id = str(payload.get("item_id") or payload.get("conversation_item_id") or "")
+                            item_id = str(
+                                payload.get("item_id")
+                                or payload.get("conversation_item_id")
+                                or ""
+                            )
                             delta = payload.get("delta") or ""
                             if not item_id or not delta:
                                 continue
 
                             # Ensure anchor exists (rare: delta before speech_started)
-                            if not self._user_anchor["open"] or self._user_anchor["msg_id"] is None:
+                            if (
+                                not self._user_anchor["open"]
+                                or self._user_anchor["msg_id"] is None
+                            ):
                                 msg_id = await self.room.append_text_chunk(
                                     source_id="openai:user-transcript",
                                     role="user",
@@ -1239,7 +1519,14 @@ class OpenAIAgent(Agent):
                                     is_final=False,
                                     persona_id=await self._get_user_persona_id(),
                                 )
-                                self._user_anchor.update({"msg_id": msg_id, "chunk_idx": 0, "had_text": False, "open": True})
+                                self._user_anchor.update(
+                                    {
+                                        "msg_id": msg_id,
+                                        "chunk_idx": 0,
+                                        "had_text": False,
+                                        "open": True,
+                                    }
+                                )
                                 self._anchor_item_ids.clear()
                             self._anchor_item_ids.add(item_id)
 
@@ -1247,19 +1534,35 @@ class OpenAIAgent(Agent):
                                 source_id="openai:user-transcript",
                                 role="user",
                                 text=delta,
-                                message_id=str(self._user_anchor["msg_id"]) if self._user_anchor["msg_id"] is not None else None,
-                                chunk_idx=int(self._user_anchor["chunk_idx"]) if self._user_anchor["chunk_idx"] is not None else 0,
+                                message_id=str(self._user_anchor["msg_id"])
+                                if self._user_anchor["msg_id"] is not None
+                                else None,
+                                chunk_idx=int(self._user_anchor["chunk_idx"])
+                                if self._user_anchor["chunk_idx"] is not None
+                                else 0,
                                 is_final=False,
                                 persona_id=await self._get_user_persona_id(),
                             )
-                            self._user_anchor["chunk_idx"] = (self._user_anchor["chunk_idx"] or 0) + 1
+                            self._user_anchor["chunk_idx"] = (
+                                self._user_anchor["chunk_idx"] or 0
+                            ) + 1
                             self._user_anchor["had_text"] = True
 
-                        elif evt_type == "conversation.item.input_audio_transcription.completed":
-                            item_id = str(payload.get("item_id") or payload.get("conversation_item_id") or "")
+                        elif (
+                            evt_type
+                            == "conversation.item.input_audio_transcription.completed"
+                        ):
+                            item_id = str(
+                                payload.get("item_id")
+                                or payload.get("conversation_item_id")
+                                or ""
+                            )
                             transcript = (payload.get("transcript") or "").strip()
 
-                            if not self._user_anchor["open"] or self._user_anchor["msg_id"] is None:
+                            if (
+                                not self._user_anchor["open"]
+                                or self._user_anchor["msg_id"] is None
+                            ):
                                 continue  # nothing to finalize
 
                             # If a final transcript arrives but we didn't stream deltas, append it once
@@ -1268,32 +1571,52 @@ class OpenAIAgent(Agent):
                                     source_id="openai:user-transcript",
                                     role="user",
                                     text=transcript,
-                                    message_id=str(self._user_anchor["msg_id"]) if self._user_anchor["msg_id"] is not None else None,
-                                    chunk_idx=int(self._user_anchor["chunk_idx"]) if self._user_anchor["chunk_idx"] is not None else 0,
+                                    message_id=str(self._user_anchor["msg_id"])
+                                    if self._user_anchor["msg_id"] is not None
+                                    else None,
+                                    chunk_idx=int(self._user_anchor["chunk_idx"])
+                                    if self._user_anchor["chunk_idx"] is not None
+                                    else 0,
                                     is_final=False,
                                     persona_id=await self._get_user_persona_id(),
                                 )
-                                self._user_anchor["chunk_idx"] = (self._user_anchor["chunk_idx"] or 0) + 1
+                                self._user_anchor["chunk_idx"] = (
+                                    self._user_anchor["chunk_idx"] or 0
+                                ) + 1
                                 self._user_anchor["had_text"] = True
 
                             # Only close the bubble when the *latest* item completes
-                            if item_id and self._latest_item_id and item_id == self._latest_item_id:
+                            if (
+                                item_id
+                                and self._latest_item_id
+                                and item_id == self._latest_item_id
+                            ):
                                 if self._user_anchor["had_text"]:
                                     await self.room.append_text_chunk(
                                         source_id="openai:user-transcript",
                                         role="user",
                                         text="",
-                                        message_id=str(self._user_anchor["msg_id"]) if self._user_anchor["msg_id"] is not None else None,
-                                        chunk_idx=int(self._user_anchor["chunk_idx"]) if self._user_anchor["chunk_idx"] is not None else 0,
+                                        message_id=str(self._user_anchor["msg_id"])
+                                        if self._user_anchor["msg_id"] is not None
+                                        else None,
+                                        chunk_idx=int(self._user_anchor["chunk_idx"])
+                                        if self._user_anchor["chunk_idx"] is not None
+                                        else 0,
                                         is_final=True,
                                         persona_id=await self._get_user_persona_id(),
                                     )
                                 # Reset single-anchor state (whether we wrote text or not)
-                                self._user_anchor.update({"msg_id": None, "chunk_idx": 0, "had_text": False, "open": False})
+                                self._user_anchor.update(
+                                    {
+                                        "msg_id": None,
+                                        "chunk_idx": 0,
+                                        "had_text": False,
+                                        "open": False,
+                                    }
+                                )
                                 self._anchor_item_ids.clear()
                                 self._latest_item_id = None
                             # else: earlier item completed; ignore (we're still collecting into the same anchor)
-
 
                         # --- Speech events ---
                         elif evt_type == "input_audio_buffer.speech_started":
@@ -1312,13 +1635,23 @@ class OpenAIAgent(Agent):
                                     is_final=False,
                                     persona_id=await self._get_user_persona_id(),
                                 )
-                                self._user_anchor.update({"msg_id": msg_id, "chunk_idx": 0, "had_text": False, "open": True})
+                                self._user_anchor.update(
+                                    {
+                                        "msg_id": msg_id,
+                                        "chunk_idx": 0,
+                                        "had_text": False,
+                                        "open": True,
+                                    }
+                                )
                                 self._anchor_item_ids.clear()
 
                             self._anchor_item_ids.add(item_id)
                             self._latest_item_id = item_id
 
-                        elif evt_type in ("input_audio_buffer.speech_stopped", "input_audio_buffer.committed"):
+                        elif evt_type in (
+                            "input_audio_buffer.speech_stopped",
+                            "input_audio_buffer.committed",
+                        ):
                             if evt_type == "input_audio_buffer.speech_stopped":
                                 print(f"[openai] speech_stopped: {ev}")
                             # No-op; placeholder already opened on speech_started
@@ -1347,7 +1680,7 @@ class OpenAIAgent(Agent):
             asyncio.create_task(self._pump_audio_in(self._session)),
             asyncio.create_task(self._pump_model_events_out(self._session)),
         ]
-        
+
         # Start uplink writer task
         self._uplink_task = asyncio.create_task(self._uplink_writer(self._session))
         self._tasks.append(self._uplink_task)

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import logging
 import tempfile
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator, Optional
 
 import numpy as np
 import soundfile as sf  # type: ignore
@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from . import extensions  # type: ignore
-from .transcripts import Transcript, align_audio  # type: ignore
+from .transcripts import align_audio  # type: ignore
 
 logger = logging.getLogger("model_service")
 
@@ -71,13 +71,14 @@ async def health_check() -> HealthResponse:
         # Check if models are loaded
         wav2vec2_processor, wav2vec2_model = extensions.get_wav2vec2_ctc()
         whisper_model = extensions.get_whisper_tiny("auto")
-        
+
         return HealthResponse(
             status="healthy",
             models_loaded={
-                "wav2vec2": wav2vec2_processor is not None and wav2vec2_model is not None,
+                "wav2vec2": wav2vec2_processor is not None
+                and wav2vec2_model is not None,
                 "whisper": whisper_model is not None,
-            }
+            },
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -87,61 +88,64 @@ async def health_check() -> HealthResponse:
 @app.post("/transcribe", response_model=TranscriptResponse)
 async def transcribe_audio(
     audio_file: UploadFile = File(..., description="Audio file to transcribe"),
-    reference_text: Optional[str] = Form(None, description="Reference text for CTC alignment (optional)")
+    reference_text: str | None = Form(
+        None, description="Reference text for CTC alignment (optional)"
+    ),
 ) -> TranscriptResponse:
     """
     Transcribe audio file and optionally align with reference text using CTC.
-    
+
     - **audio_file**: Audio file (WAV, MP3, etc.)
     - **reference_text**: Optional reference text for CTC alignment
     """
     try:
         # Validate file type
-        if not audio_file.content_type or not audio_file.content_type.startswith("audio/"):
+        if not audio_file.content_type or not audio_file.content_type.startswith(
+            "audio/"
+        ):
             raise HTTPException(status_code=400, detail="File must be an audio file")
-        
+
         # Read audio file
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
             content = await audio_file.read()
             temp_file.write(content)
             temp_file.flush()
-            
+
             try:
                 # Load audio with soundfile
                 audio_data, sample_rate = sf.read(temp_file.name)
-                
+
                 # Convert to float32 if needed
                 if audio_data.dtype != np.float32:
                     audio_data = audio_data.astype(np.float32)
-                
+
                 # Handle stereo audio by converting to mono
                 if audio_data.ndim > 1:
                     audio_data = np.mean(audio_data, axis=1)
-                
-                logger.info(f"Loaded audio: {len(audio_data)} samples at {sample_rate} Hz")
-                
+
+                logger.info(
+                    f"Loaded audio: {len(audio_data)} samples at {sample_rate} Hz"
+                )
+
                 # Transcribe and align
                 transcript = align_audio(audio_data, sample_rate, reference_text)
-                
+
                 # Convert to response format
                 words_data: list[dict[str, int | str]] = [
                     {
                         "start_ms": int(word.start_ms),
                         "end_ms": int(word.end_ms),
-                        "text": str(word.text)
+                        "text": str(word.text),
                     }
                     for word in transcript.words
                 ]
-                
-                return TranscriptResponse(
-                    text=transcript.text,
-                    words=words_data
-                )
-                
+
+                return TranscriptResponse(text=transcript.text, words=words_data)
+
             finally:
                 # Clean up temp file
                 Path(temp_file.name).unlink(missing_ok=True)
-                
+
     except Exception as e:
         logger.error(f"Transcription failed: {e}")
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
@@ -150,17 +154,17 @@ async def transcribe_audio(
 @app.post("/align", response_model=TranscriptResponse)
 async def align_audio_with_text(
     audio_file: UploadFile = File(..., description="Audio file to align"),
-    reference_text: str = Form(..., description="Reference text for alignment")
+    reference_text: str = Form(..., description="Reference text for alignment"),
 ) -> TranscriptResponse:
     """
     Align audio with reference text using CTC segmentation.
-    
+
     - **audio_file**: Audio file (WAV, MP3, etc.)
     - **reference_text**: Reference text to align with audio
     """
     if not reference_text.strip():
         raise HTTPException(status_code=400, detail="Reference text cannot be empty")
-    
+
     return await transcribe_audio(audio_file, reference_text)
 
 
@@ -178,9 +182,12 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
     import base64
 
     import numpy as np  # type: ignore
+
     try:
         if not (req.reference_text or "").strip():
-            raise HTTPException(status_code=400, detail="reference_text cannot be empty")
+            raise HTTPException(
+                status_code=400, detail="reference_text cannot be empty"
+            )
 
         # Decode audio
         raw = base64.b64decode(req.audio_b64)
@@ -189,9 +196,9 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
             x = np.frombuffer(raw, dtype=np.float32)
             if not np.isfinite(x).all():
                 # fallback to s16
-                x = (np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0)
+                x = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
         else:
-            x = (np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0)
+            x = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
         x = x.astype(np.float32)
         sr = int(req.sr)
@@ -229,6 +236,6 @@ async def root() -> dict[str, str | dict[str, str]]:
             "health": "/health",
             "transcribe": "/transcribe",
             "align": "/align",
-            "docs": "/docs"
-        }
+            "docs": "/docs",
+        },
     }
