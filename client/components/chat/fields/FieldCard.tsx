@@ -58,9 +58,13 @@ export default function FieldCard({
       }
     };
 
-    const handleFileChange = (file: File | null) => {
+    const handleFileChange = (
+      value: string,
+      parameterId?: string,
+      file?: File
+    ) => {
       if (field.field_type === "document") {
-        onChange(file?.name || "", undefined, file || undefined);
+        onChange(value, parameterId, file);
       }
     };
 

@@ -22,7 +22,7 @@ export type CategoricalFieldProps = FieldProps & {
 export type DocumentFieldProps = {
   field: NonNullable<Tables<"fields">>;
   value: string;
-  onChange: (file: File | null) => void;
+  onChange: (value: string, parameterId?: string, file?: File) => void;
 };
 
 export type PersonaFieldProps = {

@@ -777,8 +777,39 @@ async def run_scenario_agent(
 
         logger.info(f"Successfully generated scenario for scenario {scenario_id}")
 
-        # Only include document_ids if generate_documents is True
-        final_document_ids = document_ids if generate_documents else []
+        # Debug: Log all field_values to see what we're receiving
+        logger.info(f"Processing {len(field_values)} field_values:")
+        for i, fv in enumerate(field_values):
+            logger.info(f"  Field {i}: {fv}")
+        
+        # Extract document IDs from field_values for document fields
+        field_document_ids = []
+        for fv in field_values:
+            field_id = fv.get("fieldId")
+            if not field_id:
+                continue
+                
+            # Check if this is a document field
+            from app.models import Fields
+            field = session.exec(select(Fields).where(Fields.id == field_id)).one_or_none()
+            if field and field.field_type == 'document':
+                doc_id = fv.get("value", "").strip()
+                if doc_id:
+                    field_document_ids.append(doc_id)
+                    logger.info(f"Found document field with ID: {doc_id}")
+                else:
+                    logger.warning(f"Document field {field_id} has no value: {fv}")
+            else:
+                logger.info(f"Field {field_id} is not a document field (type: {field.field_type if field else 'not found'})")
+
+        # Combine generated document IDs with field document IDs
+        all_document_ids = []
+        if generate_documents:
+            all_document_ids.extend(document_ids)
+        all_document_ids.extend(field_document_ids)
+        
+        # Remove duplicates while preserving order
+        final_document_ids = list(dict.fromkeys(all_document_ids))
 
         # Create child scenario if requested
         child_scenario = None
@@ -830,6 +861,8 @@ async def run_scenario_agent(
             "prompts": prompts,
             "prompt_mapping": prompt_mapping,
             "document_ids": final_document_ids,
+            "field_document_ids": field_document_ids,  # Document IDs from field_values
+            "generated_document_ids": document_ids if generate_documents else [],  # Document IDs from generation
             "child_scenario_id": str(child_scenario.id) if child_scenario else None,
         }
 
