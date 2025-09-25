@@ -36,7 +36,7 @@ def get_preamble(
     }
 
 def get_conversation_history(
-    messages: Sequence[Messages],
+    messages: Sequence[Messages]
 ) -> list[TResponseInputItem]:
     """
     Get the conversation history for a given list of messages.

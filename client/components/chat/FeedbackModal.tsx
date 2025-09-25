@@ -5,7 +5,6 @@ import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import type { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import type {
   Chat,
-  Feedback,
   Rubric,
   RubricGrade,
   StandardGrade,
@@ -28,7 +27,6 @@ const TEXT_COLOR = "#000000"; // Black text for all content
 interface FeedbackModalProps {
   isOpen: boolean;
   onClose: () => void;
-  feedback: Feedback | null;
   score?: number | null;
   chat?: Chat | null;
 }
@@ -36,7 +34,6 @@ interface FeedbackModalProps {
 export default function FeedbackModal({
   isOpen,
   onClose,
-  feedback,
   score,
   chat,
 }: FeedbackModalProps) {
@@ -80,7 +77,7 @@ export default function FeedbackModal({
     [];
 
   // If no feedback is available (neither old feedback nor rubric_grades), show a loading/empty state
-  if (!feedback && rubricGrades.length === 0) {
+  if (rubricGrades.length === 0) {
     return (
       <Dialog.Root open={isOpen} onOpenChange={onClose}>
         <Dialog.Portal>

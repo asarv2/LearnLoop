@@ -1,15 +1,8 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import {
-  useCreatePersona,
-  usePersonas,
-  useUpdatePersona,
-} from "@/lib/api/hooks/usePersonas";
-import {
-  useCreateProfile,
-  useUpdateProfile,
-} from "@/lib/api/hooks/useProfiles";
+import { usePersonas, useUpdatePersona } from "@/lib/api/hooks/usePersonas";
+import { useUpdateProfile } from "@/lib/api/hooks/useProfiles";
 import { SaveOutlined, UserOutlined } from "@ant-design/icons";
 import {
   Button,
@@ -41,9 +34,7 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
 
   // Hooks for profile and persona management
   const { data: personas } = usePersonas(user?.id);
-  const createProfile = useCreateProfile();
   const updateProfile = useUpdateProfile(user?.id || "");
-  const createPersona = useCreatePersona();
   const updatePersona = useUpdatePersona(personas?.[0]?.id || "");
 
   // Note: We don't need to check viewed_intro here since the modal only shows when it's false
@@ -57,7 +48,7 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
       form.setFieldsValue({
         name: firstName,
         position: "",
-        level: "senior",
+        level: "mid",
         description: "",
       });
     }
@@ -68,37 +59,18 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
       setIsSubmitting(true);
       const values = await form.validateFields();
 
-      // If no personas exist, create profile and persona
-      if (!personas || personas.length === 0) {
-        // Create profile first
-        const profile = await createProfile.mutateAsync({
-          id: user?.id,
-          name: values.name,
-          viewed_intro: true,
-        });
+      // Update existing profile to mark viewed_intro as true
+      await updateProfile.mutateAsync({
+        viewed_intro: true,
+      });
 
-        // Create persona for the profile
-        await createPersona.mutateAsync({
-          profile_id: profile.id,
-          name: values.name,
-          description: values.description,
-          position: values.position,
-          level: values.level,
-        });
-      } else {
-        // Update existing profile to mark viewed_intro as true
-        await updateProfile.mutateAsync({
-          viewed_intro: true,
-        });
-
-        // Update existing persona
-        await updatePersona.mutateAsync({
-          name: values.name,
-          description: values.description,
-          position: values.position,
-          level: values.level,
-        });
-      }
+      // Update existing persona
+      await updatePersona.mutateAsync({
+        name: values.name,
+        description: values.description,
+        position: values.position,
+        level: values.level,
+      });
 
       messageApi.success(
         "Thank you! Your profile has been set up successfully."

@@ -1,10 +1,4 @@
 // lib/api/keys.ts
-export const assessmentKeys = {
-  all: ["assessments"] as const,
-  list: (filters?: unknown) => [...assessmentKeys.all, { filters }] as const,
-  detail: (id: string) => [...assessmentKeys.all, id] as const,
-};
-
 export const attemptKeys = {
   all: ["attempts"] as const,
   list: (filters?: unknown) => [...attemptKeys.all, { filters }] as const,
@@ -15,12 +9,6 @@ export const chatKeys = {
   all: ["chats"] as const,
   list: (filters?: unknown) => [...chatKeys.all, { filters }] as const,
   detail: (id: string) => [...chatKeys.all, id] as const,
-};
-
-export const feedbackKeys = {
-  all: ["feedback"] as const,
-  list: (filters?: unknown) => [...feedbackKeys.all, { filters }] as const,
-  detail: (id: string) => [...feedbackKeys.all, id] as const,
 };
 
 export const fieldKeys = {
@@ -63,12 +51,6 @@ export const profileKeys = {
   all: ["profiles"] as const,
   list: (filters?: unknown) => [...profileKeys.all, { filters }] as const,
   detail: (id: string) => [...profileKeys.all, id] as const,
-};
-
-export const questionKeys = {
-  all: ["questions"] as const,
-  list: (filters?: unknown) => [...questionKeys.all, { filters }] as const,
-  detail: (id: string) => [...questionKeys.all, id] as const,
 };
 
 export const scenarioKeys = {
