@@ -10,12 +10,11 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from sqlmodel import select
-
 from app.db import get_session
 from app.models import Chats
 from app.models import Messages as DBMessage
 from app.services.agents.hint import run_hint_agent
+from sqlmodel import select
 
 # test comment
 
@@ -53,6 +52,7 @@ class Message:
     created_ms: int
     chunks: list[TextChunk] = field(default_factory=list)
     persona_id: str | None = None
+    voice: bool = False  # whether this is a voice message
 
 
 @dataclass
@@ -125,6 +125,7 @@ def _upsert_db_message(
     text: str,
     is_final: bool,
     persona_id: str | None = None,
+    voice: bool = False,
 ) -> tuple[DBMessage, str]:
     """
     Create/update a DB message row. We store the concatenated content so fetches are simple.
@@ -144,6 +145,7 @@ def _upsert_db_message(
             content=text or "",
             completed=is_final,
             persona_id=_uuid_or_none(persona_id),
+            voice=voice,
         )
         db.add(m)
         db.commit()
@@ -213,6 +215,7 @@ async def _flush_pending_writes(
                 text=pending_text,
                 is_final=force,
                 persona_id=msg.persona_id,
+                voice=msg.voice,
             )
         except Exception:
             # Make sure the aborted txn is rolled back before returning the conn to the pool
@@ -243,6 +246,7 @@ async def upsert_text_chunk(
     chunk_idx: int,
     is_final: bool,
     persona_id: str | None = None,  # optional: allow caller to tag persona
+    voice: bool = False,  # optional: mark as voice message
 ) -> Message:
     """
     1) Update in-memory store (for streaming UX)
@@ -263,6 +267,7 @@ async def upsert_text_chunk(
             role=role,
             created_ms=created_ms_now,
             persona_id=persona_id,
+            voice=voice,
         )
         room.messages[mid] = msg
         logger.debug(
