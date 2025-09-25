@@ -67,3 +67,9 @@ Note: The model should focus on document structure and content. Import statement
 - **CRITICAL**: Use helper constants `BR`, `B(...)`, `VSPACE(...)` for consistent formatting
 - Keep escaping simple and consistent with the examples above
 - **CRITICAL**: Do NOT return `b'PDF_BYTES_PLACEHOLDER'` - the compilation is handled automatically by the boilerplate code
+
+**Line breaks discipline**: *Only* append `BR` after text content (e.g., `NoEscape(_escape_latex(...))`). **Never** put `BR` before/after `VSPACE(...)` or immediately after `Section`/`Subsection`.
+
+**No stray backslashes**: The generated LaTeX **must not** contain a line that ends with a single `\` (after trimming) or `\\%` on the same line.
+
+**Typing imports for Args**: If you use `Optional`, `List`, etc., **include** `from typing import Optional, List` in `args_code`.
