@@ -123,11 +123,41 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     string | null
   >(null);
 
+  // Track per-scenario initialization to prevent re-running after generation
+  const initRef = useRef<Record<string, boolean>>({});
+
   // Document viewer modal state
   const [selectedDocument, setSelectedDocument] = useState<{
     id: string;
     name?: string;
   } | null>(null);
+
+  // Helper functions for merging field values instead of replacing
+  const mergeByFieldId = (
+    prev: FieldValue[],
+    next: FieldValue[]
+  ): FieldValue[] => {
+    const map = new Map(prev.map((f) => [f.fieldId, f]));
+    for (const n of next) {
+      const p = map.get(n.fieldId);
+      map.set(n.fieldId, { ...(p ?? {}), ...n }); // shallow merge, preserves other props
+    }
+    return Array.from(map.values());
+  };
+
+  const mergeByGroupAndField = (
+    prev: FieldValue[],
+    next: FieldValue[]
+  ): FieldValue[] => {
+    const key = (fv: FieldValue) => `${fv.groupId ?? ""}::${fv.fieldId}`;
+    const map = new Map(prev.map((f) => [key(f), f]));
+    for (const n of next) {
+      const k = key(n);
+      const p = map.get(k);
+      map.set(k, { ...(p ?? {}), ...n });
+    }
+    return Array.from(map.values());
+  };
 
   // Create a stable signature string from payload values for comparison
   const makeSignatureFromPayload = (
@@ -416,257 +446,224 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     }
   }, [training]);
 
-  // Initialize field values when scenario and training load
+  // Initialize field values when scenario and training load - ONCE per scenario
   useEffect(() => {
-    if (scenario && fields && groups) {
-      if (training) {
-        // Update progress steps based on training setting only
-        const baseSteps = [
-          { label: "Processing inputs", complete: false },
-          { label: "Generating scenario", complete: false },
-          { label: "Creating objectives", complete: false },
-          { label: "Creating persona prompts", complete: false },
-        ];
+    if (!scenario || !fields || !groups) return;
+    if (initRef.current[scenario.id!]) return; // already initialized for this scenario
 
-        const steps =
-          training.show_documents === true
-            ? [...baseSteps, { label: "Generating documents", complete: false }]
-            : baseSteps;
+    if (training) {
+      // Update progress steps based on training setting only
+      const baseSteps = [
+        { label: "Processing inputs", complete: false },
+        { label: "Generating scenario", complete: false },
+        { label: "Creating objectives", complete: false },
+        { label: "Creating persona prompts", complete: false },
+      ];
 
-        setGenerateProgress((prev) => ({
-          ...prev,
-          steps,
-        }));
-      }
-      // Only use individual scenario field_ids for the main fieldValues state
-      // Group field_ids will be handled separately within group components
-      const individualFieldIds = scenario.field_ids || [];
+      const steps =
+        training.show_documents === true
+          ? [...baseSteps, { label: "Generating documents", complete: false }]
+          : baseSteps;
 
-      const filteredFieldIds = individualFieldIds.filter((fieldId: string) => {
-        const field = fields.find((f) => f.id === fieldId);
-        if (!field) return false;
-        // Always include document fields - they represent user-uploaded documents
-        if (field.field_type === "document") {
-          return true;
-        }
+      setGenerateProgress((prev) => ({
+        ...prev,
+        steps,
+      }));
+    }
+
+    // Only use individual scenario field_ids for the main fieldValues state
+    // Group field_ids will be handled separately within group components
+    const individualFieldIds = scenario.field_ids || [];
+
+    const filteredFieldIds = individualFieldIds.filter((fieldId: string) => {
+      const field = fields.find((f) => f.id === fieldId);
+      if (!field) return false;
+      // Always include document fields - they represent user-uploaded documents
+      if (field.field_type === "document") {
         return true;
+      }
+      return true;
+    });
+
+    const initialFieldValues = filteredFieldIds.map((fieldId: string) => ({
+      fieldId,
+      value: "",
+      parameterId: undefined,
+    }));
+
+    setFieldValues((prev) => mergeByFieldId(prev, initialFieldValues)); // merge, don't replace
+
+    // Create unique field values by combining groupId + fieldId
+    const uniqueGroupFieldValues: FieldValue[] = [];
+    (scenario.group_ids || []).forEach((groupId: string) => {
+      const group = groups.find((g) => g.id === groupId);
+      if (!group) return;
+
+      const groupFieldIds = [
+        group.persona_field_id,
+        group.mood_field_id,
+        group.position_field_id,
+        group.level_field_id,
+        ...(group.field_ids || []),
+      ].filter((fieldId): fieldId is string => {
+        if (!fieldId) return false;
+        const field = fields?.find((f) => f.id === fieldId);
+        // Do not render hidden fields in the UI
+        return field ? !field.hidden : true;
       });
 
-      setFieldValues(
-        filteredFieldIds.map((fieldId: string) => ({
+      groupFieldIds.forEach((fieldId: string) => {
+        const field = fields?.find((f) => f.id === fieldId);
+        if (!field) return;
+
+        // Always include document fields - they represent user-uploaded documents
+        // (No filtering needed for document fields)
+
+        uniqueGroupFieldValues.push({
           fieldId,
           value: "",
           parameterId: undefined,
-        }))
-      );
-
-      // Initialize hidden fields with random values
-      const hiddenFieldIds = individualFieldIds.filter((fieldId: string) => {
-        const field = fields.find((f) => f.id === fieldId);
-        return field?.hidden === true;
-      });
-
-      if (hiddenFieldIds.length > 0) {
-        const hiddenFieldValues = hiddenFieldIds
-          .map((fieldId: string) => {
-            const field = fields.find((f) => f.id === fieldId);
-            if (!field) return null;
-
-            const paramsForField = (allParameters || []).filter(
-              (p) => p.field_id === field.id
-            );
-
-            const pickRandom = <T,>(arr: T[]): T | undefined =>
-              arr[Math.floor(Math.random() * arr.length)];
-
-            // Auto-populate based on field type
-            if (
-              field.field_type === "text" ||
-              field.field_type === "numerical"
-            ) {
-              const candidates = paramsForField.filter(
-                (p) => (p.value || "").trim() !== ""
-              );
-              if (candidates.length > 0) {
-                const choice = pickRandom(candidates)!;
-                return {
-                  fieldId,
-                  value: choice.value || "",
-                  parameterId: choice.id,
-                };
-              }
-            } else if (field.field_type === "categorical") {
-              const candidates = paramsForField.filter(
-                (p) => p.value !== null && (p.description || "").trim() !== ""
-              );
-              if (candidates.length > 0) {
-                const choice = pickRandom(candidates)!;
-                return {
-                  fieldId,
-                  value: choice.name || "",
-                  parameterId: choice.id,
-                };
-              }
-            } else if (field.field_type === "persona") {
-              const candidates = paramsForField.filter((p) => {
-                const persona = personas?.find((pp) => pp.id === p.value);
-                return persona?.active === true;
-              });
-              if (candidates.length > 0) {
-                const choice = pickRandom(candidates)!;
-                return {
-                  fieldId,
-                  value: choice.name || "",
-                  parameterId: choice.id,
-                };
-              }
-            }
-
-            // Fallback: return empty field value
-            return {
-              fieldId,
-              value: "",
-              parameterId: undefined,
-            };
-          })
-          .filter((item): item is NonNullable<typeof item> => item !== null);
-
-        // Add hidden fields to the field values
-        setFieldValues((prev) => [...prev, ...hiddenFieldValues]);
-      }
-
-      // Create unique field values by combining groupId + fieldId
-      const uniqueGroupFieldValues: FieldValue[] = [];
-      (scenario.group_ids || []).forEach((groupId: string) => {
-        const group = groups.find((g) => g.id === groupId);
-        if (!group) return;
-
-        const groupFieldIds = [
-          group.persona_field_id,
-          group.mood_field_id,
-          group.position_field_id,
-          group.level_field_id,
-          ...(group.field_ids || []),
-        ].filter((fieldId): fieldId is string => {
-          if (!fieldId) return false;
-          const field = fields?.find((f) => f.id === fieldId);
-          // Do not render hidden fields in the UI
-          return field ? !field.hidden : true;
-        });
-
-        groupFieldIds.forEach((fieldId: string) => {
-          const field = fields?.find((f) => f.id === fieldId);
-          if (!field) return;
-
-          // Always include document fields - they represent user-uploaded documents
-          // (No filtering needed for document fields)
-
-          uniqueGroupFieldValues.push({
-            fieldId,
-            value: "",
-            parameterId: undefined,
-            groupId, // Add groupId to create unique identifier
-          });
+          groupId, // Add groupId to create unique identifier
         });
       });
+    });
 
-      setGroupFieldValues(uniqueGroupFieldValues);
+    setGroupFieldValues((prev) =>
+      mergeByGroupAndField(prev, uniqueGroupFieldValues)
+    ); // merge, don't replace
 
-      // Initialize hidden group fields with random values
-      (scenario.group_ids || []).forEach((groupId: string) => {
-        const group = groups.find((g) => g.id === groupId);
-        if (!group) return;
+    // Mark this scenario as initialized
+    initRef.current[scenario.id!] = true;
+  }, [scenario, fields, groups, training]); // 🚫 exclude allParameters, personas
 
-        const allGroupFieldIds = [
-          group.persona_field_id,
-          group.mood_field_id,
-          group.position_field_id,
-          group.level_field_id,
-          ...(group.field_ids || []),
-        ].filter((fieldId): fieldId is string => Boolean(fieldId));
+  // Separate effect for hidden-field autofill - non-destructive
+  useEffect(() => {
+    if (!scenario || !fields) return;
 
-        const hiddenGroupFieldIds = allGroupFieldIds.filter(
-          (fieldId: string) => {
-            const field = fields?.find((f) => f.id === fieldId);
-            return field?.hidden === true;
-          }
+    setFieldValues((prev) =>
+      prev.map((fv) => {
+        const f = fields.find((x) => x.id === fv.fieldId);
+        if (!f?.hidden) return fv;
+        if (
+          (fv.parameterId && fv.parameterId.trim()) ||
+          (fv.value && fv.value.trim())
+        )
+          return fv;
+
+        // Only fill if empty and no existing parameterId/value
+        const paramsForField = (allParameters || []).filter(
+          (p) => p.field_id === f.id
         );
 
-        if (hiddenGroupFieldIds.length > 0) {
-          const hiddenGroupFieldValues = hiddenGroupFieldIds
-            .map((fieldId: string) => {
-              const field = fields?.find((f) => f.id === fieldId);
-              if (!field) return null;
+        const pickRandom = <T,>(arr: T[]): T | undefined =>
+          arr[Math.floor(Math.random() * arr.length)];
 
-              const paramsForField = (allParameters || []).filter(
-                (p) => p.field_id === field.id
-              );
-
-              const pickRandom = <T,>(arr: T[]): T | undefined =>
-                arr[Math.floor(Math.random() * arr.length)];
-
-              // Auto-populate based on field type
-              if (
-                field.field_type === "text" ||
-                field.field_type === "numerical"
-              ) {
-                const candidates = paramsForField.filter(
-                  (p) => (p.value || "").trim() !== ""
-                );
-                if (candidates.length > 0) {
-                  const choice = pickRandom(candidates)!;
-                  return {
-                    fieldId,
-                    value: choice.value || "",
-                    parameterId: choice.id,
-                    groupId,
-                  };
-                }
-              } else if (field.field_type === "categorical") {
-                const candidates = paramsForField.filter(
-                  (p) => p.value !== null && (p.description || "").trim() !== ""
-                );
-                if (candidates.length > 0) {
-                  const choice = pickRandom(candidates)!;
-                  return {
-                    fieldId,
-                    value: choice.name || "",
-                    parameterId: choice.id,
-                    groupId,
-                  };
-                }
-              } else if (field.field_type === "persona") {
-                const candidates = paramsForField.filter((p) => {
-                  const persona = personas?.find((pp) => pp.id === p.value);
-                  return persona?.active === true;
-                });
-                if (candidates.length > 0) {
-                  const choice = pickRandom(candidates)!;
-                  return {
-                    fieldId,
-                    value: choice.name || "",
-                    parameterId: choice.id,
-                    groupId,
-                  };
-                }
-              }
-
-              // Fallback: return empty field value
-              return {
-                fieldId,
-                value: "",
-                parameterId: undefined,
-                groupId,
-              };
-            })
-            .filter((item): item is NonNullable<typeof item> => item !== null);
-
-          // Add hidden group fields to the group field values
-          setGroupFieldValues((prev) => [...prev, ...hiddenGroupFieldValues]);
+        // Auto-populate based on field type
+        if (f.field_type === "text" || f.field_type === "numerical") {
+          const candidates = paramsForField.filter(
+            (p) => (p.value || "").trim() !== ""
+          );
+          if (candidates.length > 0) {
+            const choice = pickRandom(candidates)!;
+            return {
+              ...fv,
+              value: choice.value || "",
+              parameterId: choice.id,
+            };
+          }
+        } else if (f.field_type === "categorical") {
+          const candidates = paramsForField.filter(
+            (p) => p.value !== null && (p.description || "").trim() !== ""
+          );
+          if (candidates.length > 0) {
+            const choice = pickRandom(candidates)!;
+            return {
+              ...fv,
+              value: choice.name || "",
+              parameterId: choice.id,
+            };
+          }
+        } else if (f.field_type === "persona") {
+          const candidates = paramsForField.filter((p) => {
+            const persona = personas?.find((pp) => pp.id === p.value);
+            return persona?.active === true;
+          });
+          if (candidates.length > 0) {
+            const choice = pickRandom(candidates)!;
+            return {
+              ...fv,
+              value: choice.name || "",
+              parameterId: choice.id,
+            };
+          }
         }
-      });
-    }
-  }, [scenario, fields, groups, training, allParameters, personas]);
+
+        return fv;
+      })
+    );
+
+    setGroupFieldValues((prev) =>
+      prev.map((fv) => {
+        const f = fields.find((x) => x.id === fv.fieldId);
+        if (!f?.hidden) return fv;
+        if (
+          (fv.parameterId && fv.parameterId.trim()) ||
+          (fv.value && fv.value.trim())
+        )
+          return fv;
+
+        // Only fill if empty and no existing parameterId/value
+        const paramsForField = (allParameters || []).filter(
+          (p) => p.field_id === f.id
+        );
+
+        const pickRandom = <T,>(arr: T[]): T | undefined =>
+          arr[Math.floor(Math.random() * arr.length)];
+
+        // Auto-populate based on field type
+        if (f.field_type === "text" || f.field_type === "numerical") {
+          const candidates = paramsForField.filter(
+            (p) => (p.value || "").trim() !== ""
+          );
+          if (candidates.length > 0) {
+            const choice = pickRandom(candidates)!;
+            return {
+              ...fv,
+              value: choice.value || "",
+              parameterId: choice.id,
+            };
+          }
+        } else if (f.field_type === "categorical") {
+          const candidates = paramsForField.filter(
+            (p) => p.value !== null && (p.description || "").trim() !== ""
+          );
+          if (candidates.length > 0) {
+            const choice = pickRandom(candidates)!;
+            return {
+              ...fv,
+              value: choice.name || "",
+              parameterId: choice.id,
+            };
+          }
+        } else if (f.field_type === "persona") {
+          const candidates = paramsForField.filter((p) => {
+            const persona = personas?.find((pp) => pp.id === p.value);
+            return persona?.active === true;
+          });
+          if (candidates.length > 0) {
+            const choice = pickRandom(candidates)!;
+            return {
+              ...fv,
+              value: choice.name || "",
+              parameterId: choice.id,
+            };
+          }
+        }
+
+        return fv;
+      })
+    );
+  }, [scenario, fields, allParameters, personas]); // still exclude to avoid churn
 
   // Cleanup timers on component unmount
   useEffect(() => {
@@ -1270,8 +1267,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         groupFieldValues,
         user?.id
       );
-      setFieldValues(resolvedIndiv);
-      setGroupFieldValues(resolvedGroup);
+      setFieldValues((prev) => mergeByFieldId(prev, resolvedIndiv));
+      setGroupFieldValues((prev) => mergeByGroupAndField(prev, resolvedGroup));
 
       // ✅ Hard stop if any filename slipped through
       assertAllDocValuesAreUUIDs([...resolvedIndiv, ...resolvedGroup]);
@@ -1531,9 +1528,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         )
       );
 
-      // (Optional) update UI
-      setFieldValues(individualFields);
-      setGroupFieldValues(groupFields);
+      // (Optional) update UI - use merge instead of replace
+      setFieldValues((prev) => mergeByFieldId(prev, individualFields));
+      setGroupFieldValues((prev) => mergeByGroupAndField(prev, groupFields));
       if (nextAssistantPersonaId !== customAssistantPersonaId) {
         setCustomAssistantPersonaId(nextAssistantPersonaId);
       }
@@ -1599,8 +1596,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         groupFieldValues,
         user?.id
       );
-      setFieldValues(resolvedIndiv);
-      setGroupFieldValues(resolvedGroup);
+      setFieldValues((prev) => mergeByFieldId(prev, resolvedIndiv));
+      setGroupFieldValues((prev) => mergeByGroupAndField(prev, resolvedGroup));
 
       // ✅ Hard stop if any filename slipped through
       assertAllDocValuesAreUUIDs([...resolvedIndiv, ...resolvedGroup]);
