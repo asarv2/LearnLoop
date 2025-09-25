@@ -65,8 +65,9 @@ export async function GET(request: Request) {
         // Keep the earliest completion date if there are multiple scores
         if (
           !completedEmployeeMap.has(profileId) ||
-          new Date(completedAt) <
-            new Date(completedEmployeeMap.get(profileId).completedAt)
+          (completedAt &&
+            new Date(completedAt) <
+              new Date(completedEmployeeMap.get(profileId).completedAt))
         ) {
           completedEmployeeMap.set(profileId, {
             id: profileId,

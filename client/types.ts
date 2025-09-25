@@ -7,60 +7,55 @@ import type { Tables } from "@/database.types";
 // =============================================
 
 // --- ASSESSMENTS ---
-export type Assessment = Tables<"assessments">;
+export type Assessment = Tables<'assessments'>;
 // --- ATTEMPTS ---
-export type Attempt = Tables<"attempts">;
+export type Attempt = Tables<'attempts'>;
 // --- CHATS ---
-export type Chat = Tables<"chats">;
+export type Chat = Tables<'chats'>;
 // --- DOCUMENTS ---
-export type Document = Tables<"documents">;
+export type Document = Tables<'documents'>;
 // --- FEEDBACK ---
-export type Feedback = Tables<"feedback">;
+export type Feedback = Tables<'feedback'>;
 // --- FIELDS ---
-export type Field = Tables<"fields">;
+export type Field = Tables<'fields'>;
 // --- GROUPS ---
-export type Group = Tables<"groups">;
+export type Group = Tables<'groups'>;
 // --- HINTS ---
-export type Hint = Tables<"hints">;
+export type Hint = Tables<'hints'>;
 // --- LOGS ---
-export type Log = Tables<"logs">;
+export type Log = Tables<'logs'>;
 // --- MESSAGES ---
-export type Message = Tables<"messages">;
+export type Message = Tables<'messages'>;
 // --- PARAMETERS ---
-export type Parameter = Tables<"parameters">;
+export type Parameter = Tables<'parameters'>;
 // --- PERSONAS ---
-export type Persona = Tables<"personas">;
+export type Persona = Tables<'personas'>;
 // --- PROFILES ---
-export type Profile = Tables<"profiles">;
+export type Profile = Tables<'profiles'>;
 // --- QUESTIONS ---
-export type Question = Tables<"questions">;
+export type Question = Tables<'questions'>;
 // --- RUBRIC_GRADES ---
-export type RubricGrade = Tables<"rubric_grades">;
+export type RubricGrade = Tables<'rubric_grades'>;
 // --- RUBRICS ---
-export type Rubric = Tables<"rubrics">;
+export type Rubric = Tables<'rubrics'>;
 // --- SCENARIOS ---
-export type Scenario = Tables<"scenarios">;
+export type Scenario = Tables<'scenarios'>;
 // --- STANDARD_GRADES ---
-export type StandardGrade = Tables<"standard_grades">;
+export type StandardGrade = Tables<'standard_grades'>;
 // --- STANDARDS ---
-export type Standard = Tables<"standards">;
+export type Standard = Tables<'standards'>;
 // --- TRAININGS ---
-export type Training = Tables<"trainings">;
+export type Training = Tables<'trainings'>;
 // --- USER_FEEDBACK ---
-export type UserFeedback = Tables<"user_feedback">;
+export type UserFeedback = Tables<'user_feedback'>;
 // --- USER_INSIGHTS ---
-export type UserInsight = Tables<"user_insights">;
+export type UserInsight = Tables<'user_insights'>;
 
 // =============================================
 // ================ ENUM TYPES ================
 // =============================================
 
-export type FieldType =
-  | "persona"
-  | "document"
-  | "numerical"
-  | "categorical"
-  | "text";
+export type FieldType = "persona" | "document" | "numerical" | "categorical" | "text";
 export type InterviewType = "regular" | "cheating" | "ai-assisted";
 export type Level = "junior" | "mid" | "senior" | "executive";
 export type LogLevel = "info" | "error" | "warn" | "debug";
@@ -74,51 +69,7 @@ export type UserRole = "employee" | "admin" | "superadmin";
 // =============================================
 
 // Union type of all table names
-export type TableName =
-  | "assessments"
-  | "attempts"
-  | "chats"
-  | "documents"
-  | "feedback"
-  | "fields"
-  | "groups"
-  | "hints"
-  | "logs"
-  | "messages"
-  | "parameters"
-  | "personas"
-  | "profiles"
-  | "questions"
-  | "rubric_grades"
-  | "rubrics"
-  | "scenarios"
-  | "standard_grades"
-  | "standards"
-  | "trainings"
-  | "user_feedback"
-  | "user_insights";
+export type TableName = 'assessments' | 'attempts' | 'chats' | 'documents' | 'feedback' | 'fields' | 'groups' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'profiles' | 'questions' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings' | 'user_feedback' | 'user_insights';
 
 // Union type of all entity types
-export type Entity =
-  | Assessment
-  | Attempt
-  | Chat
-  | Document
-  | Feedback
-  | Field
-  | Group
-  | Hint
-  | Log
-  | Message
-  | Parameter
-  | Persona
-  | Profile
-  | Question
-  | RubricGrade
-  | Rubric
-  | Scenario
-  | StandardGrade
-  | Standard
-  | Training
-  | UserFeedback
-  | UserInsight;
+export type Entity = Assessment | Attempt | Chat | Document | Feedback | Field | Group | Hint | Log | Message | Parameter | Persona | Profile | Question | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training | UserFeedback | UserInsight;

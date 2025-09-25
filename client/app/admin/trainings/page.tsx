@@ -4,6 +4,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { api } from "@/lib/api/fetcher";
 import { useProfile } from "@/lib/api/hooks/useProfiles";
 import { useTrainingsByTypeAndCompany } from "@/lib/api/hooks/useTrainings";
+import { Training } from "@/types";
 import {
   CalendarOutlined,
   CheckCircleOutlined,
@@ -40,18 +41,7 @@ const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 // Training data types
-interface TrainingRecord {
-  id: string;
-  title: string;
-  description?: string | null;
-  training_type?: string | null;
-  active?: boolean | null;
-  due_date?: string | null;
-  company?: string | null;
-  created_at: string;
-  updated_at: string;
-  user_id?: string | null;
-}
+// Using Training type from @/types
 
 // Completion data types
 interface CompletionData {
@@ -126,7 +116,7 @@ function TrainingDetailsModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  training: TrainingRecord | null;
+  training: Partial<Training> | null;
 }) {
   return (
     <Modal
@@ -196,12 +186,10 @@ function EmployeeCompletionModal({
   visible,
   onClose,
   training,
-  completion,
 }: {
   visible: boolean;
   onClose: () => void;
-  training: TrainingRecord | null;
-  completion: CompletionData | null;
+  training: Partial<Training> | null;
 }) {
   const [employeeDetails, setEmployeeDetails] =
     useState<EmployeeDetailsData | null>(null);
@@ -209,7 +197,7 @@ function EmployeeCompletionModal({
 
   // Fetch detailed employee data when modal opens
   useEffect(() => {
-    if (visible && training && training.company) {
+    if (visible && training && training.company && training.id) {
       setLoadingDetails(true);
       fetchEmployeeDetails(training.id, training.company)
         .then(setEmployeeDetails)
@@ -221,7 +209,7 @@ function EmployeeCompletionModal({
   const completedEmployees = employeeDetails?.completed || [];
   const pendingEmployees = employeeDetails?.pending || [];
   const completedCount = employeeDetails?.completed_count || 0;
-  const totalEmployees = employeeDetails?.total_employees || 0;
+  // const totalEmployees = employeeDetails?.total_employees || 0;
   const pendingCount = employeeDetails?.pending_count || 0;
 
   return (
@@ -336,7 +324,7 @@ export default function AdminTrainingsPage() {
     [dayjs.Dayjs | null, dayjs.Dayjs | null] | null
   >(null);
   const [selectedTraining, setSelectedTraining] =
-    useState<TrainingRecord | null>(null);
+    useState<Partial<Training> | null>(null);
   const [employeeModalVisible, setEmployeeModalVisible] = useState(false);
   const [trainingDetailsVisible, setTrainingDetailsVisible] = useState(false);
 
@@ -449,13 +437,13 @@ export default function AdminTrainingsPage() {
   }, [allTrainings, completionRates]);
 
   // Table columns
-  const columns: ColumnsType<TrainingRecord> = [
+  const columns: ColumnsType<Partial<Training>> = [
     {
       title: "Training Name",
       dataIndex: "title",
       key: "title",
       width: 250,
-      render: (text: string, record: TrainingRecord) => (
+      render: (text: string, record: Partial<Training>) => (
         <div>
           <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{text}</div>
           {record.description && (
@@ -482,8 +470,8 @@ export default function AdminTrainingsPage() {
       title: "Completion Rate",
       key: "completion_rate",
       width: 150,
-      render: (_, record: TrainingRecord) => {
-        const completion = completionLookup[record.id];
+      render: (_, record: Partial<Training>) => {
+        const completion = record.id ? completionLookup[record.id] : undefined;
         if (!completion) {
           return (
             <span style={{ color: "#999" }}>
@@ -523,7 +511,7 @@ export default function AdminTrainingsPage() {
       title: "Actions",
       key: "actions",
       width: 200,
-      render: (_, record: TrainingRecord) => (
+      render: (_, record: Partial<Training>) => (
         <Space size="small">
           <Tooltip title="View Training Details">
             <Button
@@ -752,9 +740,6 @@ export default function AdminTrainingsPage() {
           setSelectedTraining(null);
         }}
         training={selectedTraining}
-        completion={
-          selectedTraining ? completionLookup[selectedTraining.id] : null
-        }
       />
     </div>
   );

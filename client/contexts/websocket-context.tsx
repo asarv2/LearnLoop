@@ -114,6 +114,10 @@ interface WebSocketContextType {
     description: string;
     document_id?: string;
     profile_id?: string;
+    training_type?: string;
+    company?: string;
+    due_date?: string;
+    admin_created?: boolean;
   }) => void;
 
   // Local mic stream access for UI visualizations (read-only)
@@ -1325,6 +1329,10 @@ export function WebSocketProvider({
       description: string;
       document_id?: string;
       profile_id?: string;
+      training_type?: string;
+      company?: string;
+      due_date?: string;
+      admin_created?: boolean;
     }) => {
       if (!socketRef.current?.connected) {
         logError("Cannot create training - WebSocket not connected");

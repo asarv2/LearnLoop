@@ -89,7 +89,14 @@ export async function GET(request: Request) {
 
     // Get all chats for these attempts
     const attemptIds = attempts?.map((attempt) => attempt.id) || [];
-    let chats: any[] = [];
+    let chats: Array<{
+      id: string;
+      attempt_id: string | null;
+      title: string;
+      completed: boolean;
+      completed_at?: string | null;
+      created_at: string;
+    }> = [];
 
     if (attemptIds.length > 0) {
       const { data: chatsData, error: chatsError } = await supabase

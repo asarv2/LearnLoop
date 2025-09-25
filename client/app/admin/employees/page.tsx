@@ -99,7 +99,7 @@ const createColumns = (
     title: "Trainings Completed",
     key: "trainings_completed",
     width: 150,
-    render: (_, record: EmployeeRecord) => {
+    render: (_: unknown, record: EmployeeRecord) => {
       const stats = trainingStats[record.id];
       const count = stats?.completed_count || 0;
       return (
@@ -120,7 +120,7 @@ const createColumns = (
     title: "Average Score",
     key: "average_score",
     width: 150,
-    render: (_, record: EmployeeRecord) => {
+    render: (_: unknown, record: EmployeeRecord) => {
       const stats = trainingStats[record.id];
       const score = stats?.average_score || 0;
       return (
