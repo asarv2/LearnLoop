@@ -1,8 +1,8 @@
 # app/db.py
 import logging
 import os
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
-from typing import Generator, Iterator
 
 from dotenv import load_dotenv
 from sqlalchemy.orm import sessionmaker
@@ -25,11 +25,11 @@ engine = create_engine(
     db_url,
     pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
     max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
-    pool_pre_ping=True,     # ping before checkout to kill dead conns
+    pool_pre_ping=True,  # ping before checkout to kill dead conns
     pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
     pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
-    pool_use_lifo=True,     # reduce thundering herd on hot services
-    echo=False,             # flip to True if you want SQL debug
+    pool_use_lifo=True,  # reduce thundering herd on hot services
+    echo=False,  # flip to True if you want SQL debug
     connect_args={
         # TCP keepalives so idle connections get probed and revived/closed by kernel
         "keepalives": 1,
@@ -56,12 +56,16 @@ try:
 except Exception as e:
     print(f"Failed to connect: {e}")
 
+
 def init_db() -> None:
     if os.getenv("DOCKER_ENV"):
-        print("🐳 Running in Docker - skipping SQLModel schema creation (using SQL files instead)")
+        print(
+            "🐳 Running in Docker - skipping SQLModel schema creation (using SQL files instead)"
+        )
         return
     print("🔧 Creating database schema via SQLModel...")
     SQLModel.metadata.create_all(engine)
+
 
 def get_session() -> Generator[Session, None, None]:
     """
@@ -89,6 +93,7 @@ def get_session() -> Generator[Session, None, None]:
         except Exception:
             pass
 
+
 def get_session_safe() -> Session:
     """Return a fresh session (remember to rollback/close on exceptions!)."""
     db = SessionLocal()
@@ -101,6 +106,7 @@ def get_session_safe() -> Session:
     except Exception as e:
         logger.error(f"Failed to create database session: {e}")
         raise
+
 
 @contextmanager
 def session_scope() -> Iterator[Session]:
@@ -129,6 +135,7 @@ def session_scope() -> Iterator[Session]:
             db.close()
         except Exception:
             pass
+
 
 def reset_connection_pool() -> None:
     try:

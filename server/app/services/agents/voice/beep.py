@@ -5,11 +5,14 @@ import asyncio
 import math
 
 import numpy as np
+
 from app.bus import PCM_SR, SAMPLES_PER_CHUNK
 from app.services.agents.voice.base import Agent
 
 
-def tone_chunk(freq_hz: float, phase: float, length_samples: int) -> tuple[np.ndarray, float]:
+def tone_chunk(
+    freq_hz: float, phase: float, length_samples: int
+) -> tuple[np.ndarray, float]:
     t = (np.arange(length_samples, dtype=np.float32)) / PCM_SR
     omega = 2.0 * math.pi * freq_hz
     y = np.sin(omega * t + phase).astype(np.float32)
@@ -33,8 +36,8 @@ class BeepAgent(Agent):
         """
         freq = 440.0
         phase = 0.0
-        chunk_len = SAMPLES_PER_CHUNK        # 20ms @ 48k
-        chunks_per_beep = int(1.0 / 0.02)    # 1s / 20ms = 50
+        chunk_len = SAMPLES_PER_CHUNK  # 20ms @ 48k
+        chunks_per_beep = int(1.0 / 0.02)  # 1s / 20ms = 50
 
         while True:
             # updated message text

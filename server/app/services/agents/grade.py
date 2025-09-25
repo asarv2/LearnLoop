@@ -1,18 +1,17 @@
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union
+from datetime import UTC, datetime
+from typing import Any
 
 from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
-from app.db import get_session
-from app.extensions import load_prompt
-from app.models import (Chats, Messages, RubricGrades, Rubrics, StandardGrades,
-                        Standards)
-from app.services.agents.generic import GenericAgent
-from app.utils.chat import get_conversation_history, get_dynamic_rubric
 from pydantic import Field
 from sqlmodel import Session, select
+
+from app.extensions import load_prompt
+from app.models import Chats, Messages, RubricGrades, Rubrics, StandardGrades, Standards
+from app.services.agents.generic import GenericAgent
+from app.utils.chat import get_conversation_history, get_dynamic_rubric
 
 logger = logging.getLogger(__name__)
 
@@ -33,22 +32,22 @@ def create_safe_field_name(standard_name: str) -> str:
 
 
 # Global storage for grading results
-grading_results: Dict[str, Any] = {}
-grading_progress: Dict[str, bool] = {}
+grading_results: dict[str, Any] = {}
+grading_progress: dict[str, bool] = {}
 
 
 def create_grading_function(standard: Standards) -> Any:
     """Create a function tool for a specific standard."""
     safe_name = create_safe_field_name(standard.name)
-    
+
     # Build description with standard details
     standard_description = standard.description or "No description available"
     score_description = f"Score for {standard.name} (1-5) - {standard_description}"
     feedback_description = f"Feedback for {standard.name} - {standard_description}"
-    
+
     async def grade_standard(
         score: int = Field(ge=1, le=5, description=score_description),
-        feedback: str = Field(default="", description=feedback_description)
+        feedback: str = Field(default="", description=feedback_description),
     ) -> str:
         f"""Grade the conversation on the standard: {standard.name}
         
@@ -63,126 +62,143 @@ def create_grading_function(standard: Standards) -> Any:
         Returns:
             Confirmation message of the grading
         """
-        grading_results[safe_name] = {
-            'score': score,
-            'feedback': feedback
-        }
+        grading_results[safe_name] = {"score": score, "feedback": feedback}
         grading_progress[safe_name] = True
         logger.info(f"✓ Graded {standard.name}: {score}/5 - {feedback[:50]}...")
         return f"Graded {standard.name} with score {score}"
-    
+
     # Set the function name dynamically
     grade_standard.__name__ = f"grade_{safe_name}"
-    
+
     # Apply the function_tool decorator
     return function_tool(grade_standard)
 
 
 def create_strengths_function() -> Any:
     """Create a function tool for identifying strengths."""
-    
+
     async def identify_strengths(
-        strengths: List[str] = Field(description="List of key strengths observed in the conversation")
+        strengths: list[str] = Field(
+            description="List of key strengths observed in the conversation"
+        ),
     ) -> str:
         """Identify the main strengths demonstrated in the conversation.
-        
+
         Args:
             strengths: List of key strengths with specific examples
-            
+
         Returns:
             Confirmation message
         """
-        grading_results['strengths'] = strengths
-        grading_progress['strengths'] = True
-        logger.info(f"✓ Identified {len(strengths)} strengths: {[s[:30] + '...' if len(s) > 30 else s for s in strengths[:3]]}")
+        grading_results["strengths"] = strengths
+        grading_progress["strengths"] = True
+        logger.info(
+            f"✓ Identified {len(strengths)} strengths: {[s[:30] + '...' if len(s) > 30 else s for s in strengths[:3]]}"
+        )
         return f"Identified {len(strengths)} strengths"
-    
+
     return function_tool(identify_strengths)
 
 
 def create_improvements_function() -> Any:
     """Create a function tool for identifying areas for improvement."""
-    
+
     async def identify_improvements(
-        improvements: List[str] = Field(description="List of areas for improvement in the conversation")
+        improvements: list[str] = Field(
+            description="List of areas for improvement in the conversation"
+        ),
     ) -> str:
         """Identify areas where the conversation could be improved.
-        
+
         Args:
             improvements: List of specific areas for improvement with suggestions
-            
+
         Returns:
             Confirmation message
         """
-        grading_results['improvements'] = improvements
-        grading_progress['improvements'] = True
-        logger.info(f"✓ Identified {len(improvements)} improvements: {[i[:30] + '...' if len(i) > 30 else i for i in improvements[:3]]}")
+        grading_results["improvements"] = improvements
+        grading_progress["improvements"] = True
+        logger.info(
+            f"✓ Identified {len(improvements)} improvements: {[i[:30] + '...' if len(i) > 30 else i for i in improvements[:3]]}"
+        )
         return f"Identified {len(improvements)} improvements"
-    
+
     return function_tool(identify_improvements)
 
 
 def create_summary_function() -> Any:
     """Create a function tool for generating an overall summary."""
-    
+
     async def generate_summary(
-        summary: str = Field(description="Overall summary of the participant's performance, highlighting key strengths and areas for improvement")
+        summary: str = Field(
+            description="Overall summary of the participant's performance, highlighting key strengths and areas for improvement"
+        ),
     ) -> str:
         """Generate an overall summary of the participant's performance.
-        
+
         Args:
             summary: Comprehensive summary that synthesizes the evaluation results
-            
+
         Returns:
             Confirmation message
         """
-        grading_results['summary'] = summary
-        grading_progress['summary'] = True
+        grading_results["summary"] = summary
+        grading_progress["summary"] = True
         logger.info(f"✓ Generated summary: {summary[:100]}...")
-        return f"Generated overall summary"
-    
+        return "Generated overall summary"
+
     return function_tool(generate_summary)
 
 
-def create_grading_tools(standards: List[Standards]) -> List[Any]:
+def create_grading_tools(standards: list[Standards]) -> list[Any]:
     """Create all grading function tools for the standards plus strengths/improvements/summary."""
     tools = []
-    
+
     # Create tools for each standard
     for standard in standards:
         tool = create_grading_function(standard)
         tools.append(tool)
         standard_desc = standard.description or "No description"
-        logger.info(f"Created grading tool for standard: {standard.name} - {standard_desc[:100]}...")
-    
+        logger.info(
+            f"Created grading tool for standard: {standard.name} - {standard_desc[:100]}..."
+        )
+
     # Add strengths, improvements, and summary tools
     tools.append(create_strengths_function())
     tools.append(create_improvements_function())
     tools.append(create_summary_function())
-    logger.info(f"Created strengths, improvements, and summary tools")
-    
+    logger.info("Created strengths, improvements, and summary tools")
+
     logger.info(f"Total tools created: {len(tools)}")
     return tools
 
 
-async def get_grade_prompt(standards: Optional[List[Standards]] = None) -> str:
+async def get_grade_prompt(standards: list[Standards] | None = None) -> str:
     """Read the grade prompt from the markdown file and optionally add dynamic tool information."""
     base_prompt = await load_prompt("grade")
-    
+
     if standards:
         # Add dynamic tool information to the prompt
         tool_descriptions = []
-        
+
         # Add standard grading tools
         for standard in standards:
             safe_name = create_safe_field_name(standard.name)
-            tool_descriptions.append(f"- `grade_{safe_name}`: Grade the conversation on {standard.name} (1-5 score + feedback)")
-        
+            tool_descriptions.append(
+                f"- `grade_{safe_name}`: Grade the conversation on {standard.name} (1-5 score + feedback)"
+            )
+
         # Add fixed tools
-        tool_descriptions.append("- `identify_strengths`: Identify key strengths demonstrated in the conversation")
-        tool_descriptions.append("- `identify_improvements`: Identify areas for improvement with specific suggestions")
-        tool_descriptions.append("- `generate_summary`: Generate an overall summary of the participant's performance")
-        
+        tool_descriptions.append(
+            "- `identify_strengths`: Identify key strengths demonstrated in the conversation"
+        )
+        tool_descriptions.append(
+            "- `identify_improvements`: Identify areas for improvement with specific suggestions"
+        )
+        tool_descriptions.append(
+            "- `generate_summary`: Generate an overall summary of the participant's performance"
+        )
+
         dynamic_section = f"""
 ## Available Tools for This Evaluation
 
@@ -207,10 +223,10 @@ You have access to the following tools to complete the evaluation:
 **If you skip ANY of these tools, your task is incomplete!**
 
 """
-        
+
         # Insert the dynamic section after the base prompt
         return base_prompt + dynamic_section
-    
+
     return base_prompt
 
 
@@ -235,7 +251,7 @@ async def run_grading_agent(
         global grading_results, grading_progress
         grading_results.clear()
         grading_progress.clear()
-        
+
         # Get the chat from the chat_id
         chat = session.exec(select(Chats).where(Chats.id == chat_id)).one()
         if not chat:
@@ -275,20 +291,26 @@ async def run_grading_agent(
         # Create grading tools
         grading_tools = create_grading_tools(list(standards))
         logger.info(f"Created {len(grading_tools)} grading tools")
-        
+
         # Create tool use behavior to wait for all tools to be called
-        def tool_use_behavior(context: Any, tool_results: list[Any]) -> ToolsToFinalOutputResult:
+        def tool_use_behavior(
+            context: Any, tool_results: list[Any]
+        ) -> ToolsToFinalOutputResult:
             # Build list of required tools based on standards and fixed tools
-            required_tools = ['strengths', 'improvements', 'summary']
-            
+            required_tools = ["strengths", "improvements", "summary"]
+
             # Add standard grading tools to required tools (using safe field names)
             for standard in standards:
                 safe_name = create_safe_field_name(standard.name)
                 required_tools.append(safe_name)
-            
+
             # Check if all required tools have been called
-            completed_required = all(grading_progress.get(tool, False) for tool in required_tools)
-            logger.info(f"Tool use behavior check: required_tools={required_tools}, completed_required={completed_required}, grading_progress={grading_progress}")
+            completed_required = all(
+                grading_progress.get(tool, False) for tool in required_tools
+            )
+            logger.info(
+                f"Tool use behavior check: required_tools={required_tools}, completed_required={completed_required}, grading_progress={grading_progress}"
+            )
             return ToolsToFinalOutputResult(is_final_output=completed_required)
 
         system_prompt = await get_grade_prompt(list(standards))
@@ -314,45 +336,53 @@ async def run_grading_agent(
         with trace(chat.title, trace_id=chat.trace_id, group_id=str(chat_id)):
             # Use streamed runner for better progress visibility
             streamed_result = Runner.run_streamed(agent_instance, input=input_items)
-            
+
             # Optionally handle streaming events for even more granular progress
             async for event in streamed_result.stream_events():
                 # You can add event handling here if needed for progress tracking
                 pass
 
         logger.info("Parallel grading agent completed successfully")
-        
+
         # Check if all tools were called
-        expected_tools = len(standards) + 3  # standards + strengths + improvements + summary
+        expected_tools = (
+            len(standards) + 3
+        )  # standards + strengths + improvements + summary
         completed_tools = len(grading_progress)
-        logger.info(f"Grading completed: {completed_tools}/{expected_tools} tools called")
+        logger.info(
+            f"Grading completed: {completed_tools}/{expected_tools} tools called"
+        )
         logger.info(f"Grading progress details: {grading_progress}")
-        
+
         if completed_tools < expected_tools:
             # Build list of expected tool names
-            expected_tool_names = ['strengths', 'improvements', 'summary']
+            expected_tool_names = ["strengths", "improvements", "summary"]
             for standard in standards:
                 safe_name = create_safe_field_name(standard.name)
                 expected_tool_names.append(safe_name)
-            
-            missing_tools = [name for name in expected_tool_names if not grading_progress.get(name, False)]
+
+            missing_tools = [
+                name
+                for name in expected_tool_names
+                if not grading_progress.get(name, False)
+            ]
             logger.warning(f"Missing tool calls for: {missing_tools}")
             logger.warning(f"Expected tools: {expected_tool_names}")
             logger.warning(f"Completed tools: {list(grading_progress.keys())}")
-        
+
         # Extract results from the global storage
         grading_result = grading_results
 
         # Calculate time taken - ensure both times are in UTC
-        current_time = datetime.now(timezone.utc)
+        current_time = datetime.now(UTC)
         chat_created_at = chat.created_at
 
         # Convert chat_created_at to UTC if it has timezone info
         if chat_created_at.tzinfo is not None:
-            chat_created_at = chat_created_at.astimezone(timezone.utc)
+            chat_created_at = chat_created_at.astimezone(UTC)
         else:
             # If timezone-naive, assume it's already UTC and make it timezone-aware
-            chat_created_at = chat_created_at.replace(tzinfo=timezone.utc)
+            chat_created_at = chat_created_at.replace(tzinfo=UTC)
 
         # Now both times are timezone-aware and in UTC
         time_taken = max(1, int((current_time - chat_created_at).total_seconds()))
@@ -361,16 +391,16 @@ async def run_grading_agent(
         )
 
         # Get strengths and improvements from the results (now as arrays)
-        strengths_list = grading_result.get('strengths', [])
-        improvements_list = grading_result.get('improvements', [])
-        overall_summary = grading_result.get('summary', '')
-        
+        strengths_list = grading_result.get("strengths", [])
+        improvements_list = grading_result.get("improvements", [])
+        overall_summary = grading_result.get("summary", "")
+
         # Ensure they are lists
         if not isinstance(strengths_list, list):
             strengths_list = []
         if not isinstance(improvements_list, list):
             improvements_list = []
-        
+
         # Use the generated summary for description field, fallback to concatenated sections if no summary
         if overall_summary:
             summary = overall_summary
@@ -380,14 +410,18 @@ async def run_grading_agent(
             if strengths_list:
                 summary_parts.append(f"Strengths: {'; '.join(strengths_list)}")
             if improvements_list:
-                summary_parts.append(f"Areas for Improvement: {'; '.join(improvements_list)}")
-            summary = "\n\n".join(summary_parts) if summary_parts else "Grading completed"
+                summary_parts.append(
+                    f"Areas for Improvement: {'; '.join(improvements_list)}"
+                )
+            summary = (
+                "\n\n".join(summary_parts) if summary_parts else "Grading completed"
+            )
 
         # Create standard grade records for each standard and calculate total score
         standard_grade_count = 0
         score = 0
         standard_grades_to_add = []
-        
+
         for standard in standards:
             # Create safe field names (same logic as in model creation)
             safe_name = create_safe_field_name(standard.name)
@@ -395,12 +429,14 @@ async def run_grading_agent(
             try:
                 # Get the score and feedback from the grading results
                 standard_data = grading_result.get(safe_name, {})
-                standard_score = standard_data.get('score', 0)
-                standard_feedback = standard_data.get('feedback', '')
+                standard_score = standard_data.get("score", 0)
+                standard_feedback = standard_data.get("feedback", "")
 
                 # Ensure standard_score is a valid integer
                 if not isinstance(standard_score, (int, float)):
-                    logger.warning(f"Invalid standard score type for {standard.name}: {type(standard_score)}, value: {standard_score}. Defaulting to 0.")
+                    logger.warning(
+                        f"Invalid standard score type for {standard.name}: {type(standard_score)}, value: {standard_score}. Defaulting to 0."
+                    )
                     standard_score = 0
                 else:
                     standard_score = int(standard_score)  # Ensure it's an integer
@@ -410,12 +446,14 @@ async def run_grading_agent(
                 )
 
                 # Store standard grade data for later creation
-                standard_grades_to_add.append({
-                    'standard_id': standard.id,
-                    'name': standard.name,
-                    'score': standard_score,
-                    'description': standard_feedback,
-                })
+                standard_grades_to_add.append(
+                    {
+                        "standard_id": standard.id,
+                        "name": standard.name,
+                        "score": standard_score,
+                        "description": standard_feedback,
+                    }
+                )
                 standard_grade_count += 1
                 score += standard_score
             except Exception as e:
@@ -426,11 +464,13 @@ async def run_grading_agent(
 
         # Ensure score is a valid integer
         if not isinstance(score, (int, float)):
-            logger.warning(f"Invalid score type: {type(score)}, value: {score}. Defaulting to 0.")
+            logger.warning(
+                f"Invalid score type: {type(score)}, value: {score}. Defaulting to 0."
+            )
             score = 0
         else:
             score = int(score)  # Ensure it's an integer
-        
+
         # Create the rubric grade record with calculated score
         logger.info(f"Creating rubric grade with score: {score}, name: {rubric.name}")
         logger.info(f"Strengths list: {strengths_list}")
@@ -453,10 +493,10 @@ async def run_grading_agent(
         for standard_grade_data in standard_grades_to_add:
             standard_grade = StandardGrades(
                 rubric_grade_id=rubric_grade.id,
-                standard_id=standard_grade_data['standard_id'],
-                name=standard_grade_data['name'],
-                score=standard_grade_data['score'],
-                description=standard_grade_data['description'],
+                standard_id=standard_grade_data["standard_id"],
+                name=standard_grade_data["name"],
+                score=standard_grade_data["score"],
+                description=standard_grade_data["description"],
             )
             session.add(standard_grade)
 
@@ -472,9 +512,7 @@ async def run_grading_agent(
         session.commit()
         session.refresh(rubric_grade)
 
-        logger.info(
-            f"Grading completed successfully with grade ID: {rubric_grade.id}"
-        )
+        logger.info(f"Grading completed successfully with grade ID: {rubric_grade.id}")
         return str(rubric_grade.id)
 
     except Exception as e:

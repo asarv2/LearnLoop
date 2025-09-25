@@ -2,57 +2,57 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol
+from typing import Any, Protocol
 
-import numpy as np
-from app.bus import PCM_SR, SAMPLES_PER_CHUNK, AudioBus, AudioChunk
-from app.services.agents.voice.beep import BeepAgent
-from app.services.agents.voice.echo import EchoAgent
-from app.services.agents.voice.logger import LoggerAgent
+from app.bus import AudioBus
+
 # new imports
 from app.services.agents.voice.openai import OpenAIAgent
-from app.store import create_room
+from app.store import create_room, list_messages, upsert_text_chunk
 from app.store import get_room as _get_room
-from app.store import list_messages, upsert_text_chunk
 
-FullChatCallback  = Callable[[str, list], Awaitable[None]]       # (room_id, messages[]) -> None
-MessageCB         = Callable[[str, str], Awaitable[None]]        # (room_id, message_id) -> None
-TextChunkBroadcaster = Callable[[Dict[str, Any]], Awaitable[None]]
-TranscriptBroadcaster = Callable[[Dict[str, Any]], Awaitable[None]]
-TranscriptStopBroadcaster = Callable[[Dict[str, Any]], Awaitable[None]]
+FullChatCallback = Callable[
+    [str, list], Awaitable[None]
+]  # (room_id, messages[]) -> None
+MessageCB = Callable[[str, str], Awaitable[None]]  # (room_id, message_id) -> None
+TextChunkBroadcaster = Callable[[dict[str, Any]], Awaitable[None]]
+TranscriptBroadcaster = Callable[[dict[str, Any]], Awaitable[None]]
+TranscriptStopBroadcaster = Callable[[dict[str, Any]], Awaitable[None]]
+
 
 class StoppableAgent(Protocol):
     async def stop(self) -> None: ...
+
 
 @dataclass
 class Room:
     id: str
     bus: AudioBus
-    on_full_chat: Optional[FullChatCallback] = None
-    on_agent_message: Optional[MessageCB] = None
-    on_text_chunk: Optional[TextChunkBroadcaster] = None   # 👈 NEW
-    on_transcript: Optional[TranscriptBroadcaster] = None
-    on_transcript_stop: Optional[TranscriptStopBroadcaster] = None
+    on_full_chat: FullChatCallback | None = None
+    on_agent_message: MessageCB | None = None
+    on_text_chunk: TextChunkBroadcaster | None = None  # 👈 NEW
+    on_transcript: TranscriptBroadcaster | None = None
+    on_transcript_stop: TranscriptStopBroadcaster | None = None
     # keep a handle on agents so we can stop them on cleanup
-    agents: List[StoppableAgent] = field(default_factory=list)
+    agents: list[StoppableAgent] = field(default_factory=list)
 
     # Feature flag: enable word-level timestamp transcripts
     word_timestamps_enabled: bool = True
 
     # NEW: User identification fields
-    user_profile_id: Optional[str] = None
-    user_persona_id: Optional[str] = None
+    user_profile_id: str | None = None
+    user_persona_id: str | None = None
 
     # Track human RTC participants (by sid)
     human_sids: set[str] = field(default_factory=set)
 
     # OpenAI agent lifecycle (lazy start/stop)
-    openai_agent: Optional[OpenAIAgent] = None
+    openai_agent: OpenAIAgent | None = None
     _openai_started: bool = False
-    _idle_shutdown_task: Optional[asyncio.Task] = None
+    _idle_shutdown_task: asyncio.Task | None = None
 
     def register_agent(self, agent_id: str, description: str = "") -> None:
         # just metadata; can expand later
@@ -103,6 +103,7 @@ class Room:
             return
         # Graceful idle shutdown: stop OpenAI after a short delay to allow fast reconnects
         self._cancel_idle_shutdown()
+
         async def _idle() -> None:
             try:
                 await asyncio.sleep(max(0, idle_ms) / 1000.0)
@@ -110,13 +111,30 @@ class Room:
                     await self._stop_openai()
             except asyncio.CancelledError:
                 pass
+
         self._idle_shutdown_task = asyncio.create_task(_idle())
 
-    async def append_text_chunk(self, *, source_id: str, role: str,
-                                text: str, message_id: Optional[str],
-                                chunk_idx: int, is_final: bool, persona_id: Optional[str] = None) -> str:
-        msg = await upsert_text_chunk(self.id, message_id=message_id, source_id=source_id,
-                                role=role, text=text, chunk_idx=chunk_idx, is_final=is_final, persona_id=persona_id)
+    async def append_text_chunk(
+        self,
+        *,
+        source_id: str,
+        role: str,
+        text: str,
+        message_id: str | None,
+        chunk_idx: int,
+        is_final: bool,
+        persona_id: str | None = None,
+    ) -> str:
+        msg = await upsert_text_chunk(
+            self.id,
+            message_id=message_id,
+            source_id=source_id,
+            role=role,
+            text=text,
+            chunk_idx=chunk_idx,
+            is_final=is_final,
+            persona_id=persona_id,
+        )
 
         # The chunk we just appended is the last one; expose its ts_ms.
         last_chunk_ts = msg.chunks[-1].ts_ms if msg.chunks else int(time.time() * 1000)
@@ -138,7 +156,7 @@ class Room:
         }
 
         if self.on_text_chunk:
-            await self.on_text_chunk(payload)   # 👈 broadcast to sockets
+            await self.on_text_chunk(payload)  # 👈 broadcast to sockets
 
         # per-message callback (e.g., persist agent outputs)
         if self.on_agent_message and role == "agent":
@@ -148,7 +166,15 @@ class Room:
             await self.on_full_chat(self.id, list_messages(self.id))
         return msg.id
 
-    async def broadcast_transcript(self, *, agent_id: str, message_id: Optional[str], start_ts_ms: int, words: List[Dict[str, Any]], full_text: str) -> None:
+    async def broadcast_transcript(
+        self,
+        *,
+        agent_id: str,
+        message_id: str | None,
+        start_ts_ms: int,
+        words: list[dict[str, Any]],
+        full_text: str,
+    ) -> None:
         if (not self.word_timestamps_enabled) or self.on_transcript is None:
             return
         payload = {
@@ -173,7 +199,9 @@ class Room:
     def set_transcripts_enabled(self, enabled: bool) -> None:
         self.set_word_timestamps_enabled(enabled)
 
-    async def broadcast_transcript_stop(self, *, agent_id: str, message_id: Optional[str], stop_ts_ms: int) -> None:
+    async def broadcast_transcript_stop(
+        self, *, agent_id: str, message_id: str | None, stop_ts_ms: int
+    ) -> None:
         if self.on_transcript_stop is None:
             return
         payload = {
@@ -185,18 +213,19 @@ class Room:
         await self.on_transcript_stop(payload)
 
 
+ROOMS: dict[str, Room] = {}
 
-ROOMS: Dict[str, Room] = {}
 
-def get_room(room_id: Optional[str] = None) -> Room:
+def get_room(room_id: str | None = None) -> Room:
     if room_id is None:
         rec = create_room()
         rid = rec.id
     else:
-        _ = _get_room(room_id)      # ensure exists
+        _ = _get_room(room_id)  # ensure exists
         rid = room_id
     r = ROOMS.get(rid)
-    if r: return r
+    if r:
+        return r
     bus = AudioBus()
     bus.start(period_ms=20)
     r = Room(id=rid, bus=bus)
@@ -232,6 +261,7 @@ def get_room(room_id: Optional[str] = None) -> Room:
 
     ROOMS[rid] = r
     return r
+
 
 async def cleanup_room(room_id: str) -> None:
     r = ROOMS.pop(room_id, None)

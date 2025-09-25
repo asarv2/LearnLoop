@@ -3,14 +3,15 @@ import asyncio
 import os
 import time
 import wave
-from typing import Dict, Optional
 
 import numpy as np
 
 PCM_SR = 48_000
 
+
 def float_to_i16(x: np.ndarray) -> np.ndarray:
     return (np.clip(x, -1.0, 1.0) * 32767.0).astype(np.int16)
+
 
 class _WavHandle:
     def __init__(self, path: str):
@@ -29,18 +30,20 @@ class _WavHandle:
         except Exception:
             pass
 
+
 class AudioRecorder:
     """
     Very small recorder that writes:
       - one WAV per source_id for inbound pre-mix audio
       - one WAV for the bus-mixed output
     """
-    def __init__(self, out_dir: str = "./recordings", room_id: Optional[str] = None):
+
+    def __init__(self, out_dir: str = "./recordings", room_id: str | None = None):
         ts = time.strftime("%Y%m%d-%H%M%S")
         room_tag = f"{room_id}_" if room_id else ""
         self.base = os.path.join(out_dir, f"{room_tag}{ts}")
-        self._per_source: Dict[str, _WavHandle] = {}
-        self._mixed: Optional[_WavHandle] = None
+        self._per_source: dict[str, _WavHandle] = {}
+        self._mixed: _WavHandle | None = None
         self._lock = asyncio.Lock()
 
     async def write_source_float(self, source_id: str, pcm_f32: np.ndarray) -> None:

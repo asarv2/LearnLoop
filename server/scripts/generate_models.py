@@ -9,17 +9,18 @@ from dotenv import load_dotenv
 # Load environment variables from .env
 load_dotenv()
 
+
 def generate_sqlmodel_from_sql() -> None:
     """Generate SQLModel classes from SQL schema using sqlacodegen"""
     python_executable = sys.executable
-    
+
     # Use the same environment variable pattern as db.py
     db_user = os.getenv("DB_USER")
     db_password = os.getenv("DB_PASSWORD")
     db_host = os.getenv("DB_HOST")
     db_port = os.getenv("DB_PORT")
     db_name = os.getenv("DB_NAME")
-    
+
     db_url = f"postgresql+psycopg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
 
     if not all([db_user, db_password, db_name, db_host, db_port]):
@@ -141,11 +142,15 @@ def generate_sqlmodel_from_sql() -> None:
         class_definitions = re.sub(
             r": Mapped\[uuid\.UUID\]", r": uuid.UUID", class_definitions
         )
-        class_definitions = re.sub(r": Mapped\[UUID\]", r": uuid.UUID", class_definitions)
         class_definitions = re.sub(
-            r": Optional\[Mapped\[uuid\.UUID\]\]", r": Optional[uuid.UUID]", class_definitions
+            r": Mapped\[UUID\]", r": uuid.UUID", class_definitions
         )
-        
+        class_definitions = re.sub(
+            r": Optional\[Mapped\[uuid\.UUID\]\]",
+            r": Optional[uuid.UUID]",
+            class_definitions,
+        )
+
         # Fix other type hints
         class_definitions = re.sub(r": UUID", r": uuid.UUID", class_definitions)
         class_definitions = re.sub(
@@ -184,7 +189,7 @@ def generate_sqlmodel_from_sql() -> None:
                 line = line.replace("Optional[List[uuid.UUID]]", "Optional[List[str]]")
                 line = line.replace("List[uuid.UUID]", "List[str]")
             processed_lines.append(line)
-        
+
         class_definitions = "\n".join(processed_lines)
 
         final_code = import_section + class_definitions

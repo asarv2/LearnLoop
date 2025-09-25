@@ -14,45 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      assessments: {
-        Row: {
-          chat_id: string
-          created_at: string | null
-          id: string
-          title: string
-          training_id: string | null
-        }
-        Insert: {
-          chat_id: string
-          created_at?: string | null
-          id?: string
-          title?: string
-          training_id?: string | null
-        }
-        Update: {
-          chat_id?: string
-          created_at?: string | null
-          id?: string
-          title?: string
-          training_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "assessments_chat_id_fkey"
-            columns: ["chat_id"]
-            isOneToOne: false
-            referencedRelation: "chats"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "assessments_training_id_fkey"
-            columns: ["training_id"]
-            isOneToOne: false
-            referencedRelation: "trainings"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       attempts: {
         Row: {
           created_at: string | null
@@ -218,48 +179,6 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      feedback: {
-        Row: {
-          chat_id: string
-          created_at: string
-          errors: string[]
-          id: string
-          strengths: string[]
-          training_id: string | null
-        }
-        Insert: {
-          chat_id: string
-          created_at?: string
-          errors?: string[]
-          id?: string
-          strengths?: string[]
-          training_id?: string | null
-        }
-        Update: {
-          chat_id?: string
-          created_at?: string
-          errors?: string[]
-          id?: string
-          strengths?: string[]
-          training_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "feedback_chat_id_fkey"
-            columns: ["chat_id"]
-            isOneToOne: false
-            referencedRelation: "chats"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "feedback_training_id_fkey"
-            columns: ["training_id"]
-            isOneToOne: false
-            referencedRelation: "trainings"
             referencedColumns: ["id"]
           },
         ]
@@ -516,8 +435,6 @@ export type Database = {
           parent_id: string | null
           position: string | null
           profile_id: string | null
-          realtime_prompt: string | null
-          system_prompt: string | null
           temperature: number | null
           updated_at: string | null
           voice: string | null
@@ -532,8 +449,6 @@ export type Database = {
           parent_id?: string | null
           position?: string | null
           profile_id?: string | null
-          realtime_prompt?: string | null
-          system_prompt?: string | null
           temperature?: number | null
           updated_at?: string | null
           voice?: string | null
@@ -548,8 +463,6 @@ export type Database = {
           parent_id?: string | null
           position?: string | null
           profile_id?: string | null
-          realtime_prompt?: string | null
-          system_prompt?: string | null
           temperature?: number | null
           updated_at?: string | null
           voice?: string | null
@@ -599,50 +512,6 @@ export type Database = {
           viewed_intro?: boolean
         }
         Relationships: []
-      }
-      questions: {
-        Row: {
-          assessment_id: string | null
-          created_at: string | null
-          default_question: boolean | null
-          id: string
-          options: string[] | null
-          question_type: Database["public"]["Enums"]["question_type"]
-          stem: string
-          updated_at: string | null
-          value: string | null
-        }
-        Insert: {
-          assessment_id?: string | null
-          created_at?: string | null
-          default_question?: boolean | null
-          id?: string
-          options?: string[] | null
-          question_type: Database["public"]["Enums"]["question_type"]
-          stem: string
-          updated_at?: string | null
-          value?: string | null
-        }
-        Update: {
-          assessment_id?: string | null
-          created_at?: string | null
-          default_question?: boolean | null
-          id?: string
-          options?: string[] | null
-          question_type?: Database["public"]["Enums"]["question_type"]
-          stem?: string
-          updated_at?: string | null
-          value?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "questions_assessment_id_fkey"
-            columns: ["assessment_id"]
-            isOneToOne: false
-            referencedRelation: "assessments"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       rubric_grades: {
         Row: {

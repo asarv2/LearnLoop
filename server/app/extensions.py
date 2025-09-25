@@ -1,7 +1,6 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 import redis.asyncio as redis
 from dotenv import load_dotenv
@@ -16,10 +15,11 @@ PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
 logger = logging.getLogger(__name__)
 
 # Redis client for socket ownership management
-redis_client: Optional[redis.Redis] = None
+redis_client: redis.Redis | None = None
 
 # Fallback in-memory storage for when Redis is unavailable
 socket_owner: dict[str, str] = {}  # profile_id -> socket_id
+
 
 async def init_redis_client() -> None:
     """Initialize Redis client for socket ownership management."""
@@ -36,22 +36,26 @@ async def init_redis_client() -> None:
             logger.error(f"Failed to initialize Redis client: {e}")
             redis_client = None
     else:
-        logger.warning("No REDIS_URL provided - socket ownership will use in-memory storage")
+        logger.warning(
+            "No REDIS_URL provided - socket ownership will use in-memory storage"
+        )
         redis_client = None
 
-async def get_socket_owner(profile_id: str) -> Optional[str]:
+
+async def get_socket_owner(profile_id: str) -> str | None:
     """Get the socket ID that owns a profile from Redis."""
     if not redis_client:
         # Fallback to in-memory storage
         return socket_owner.get(profile_id)
-    
+
     try:
         owner_sid = await redis_client.get(f"socket_owner:{profile_id}")
-        return owner_sid.decode('utf-8') if owner_sid else None
+        return owner_sid.decode("utf-8") if owner_sid else None
     except Exception as e:
         logger.error(f"Redis error getting socket owner for profile {profile_id}: {e}")
         # Fallback to in-memory storage
         return socket_owner.get(profile_id)
+
 
 async def set_socket_owner(profile_id: str, socket_id: str) -> None:
     """Set the socket ID that owns a profile in Redis."""
@@ -59,7 +63,7 @@ async def set_socket_owner(profile_id: str, socket_id: str) -> None:
         # Fallback to in-memory storage
         socket_owner[profile_id] = socket_id
         return
-    
+
     try:
         # Set with expiration (24 hours) to prevent stale data
         await redis_client.setex(f"socket_owner:{profile_id}", 86400, socket_id)
@@ -68,13 +72,14 @@ async def set_socket_owner(profile_id: str, socket_id: str) -> None:
         # Fallback to in-memory storage
         socket_owner[profile_id] = socket_id
 
+
 async def remove_socket_owner(profile_id: str) -> None:
     """Remove the socket ownership for a profile from Redis."""
     if not redis_client:
         # Fallback to in-memory storage
         socket_owner.pop(profile_id, None)
         return
-    
+
     try:
         await redis_client.delete(f"socket_owner:{profile_id}")
     except Exception as e:
@@ -82,7 +87,8 @@ async def remove_socket_owner(profile_id: str) -> None:
         # Fallback to in-memory storage
         socket_owner.pop(profile_id, None)
 
-async def find_profile_by_socket(socket_id: str) -> Optional[str]:
+
+async def find_profile_by_socket(socket_id: str) -> str | None:
     """Find the profile ID owned by a socket ID."""
     if not redis_client:
         # Fallback to in-memory storage
@@ -90,13 +96,13 @@ async def find_profile_by_socket(socket_id: str) -> Optional[str]:
             if sid == socket_id:
                 return profile_id
         return None
-    
+
     try:
         # Scan through all socket ownership keys to find the matching socket_id
         async for key in redis_client.scan_iter(match="socket_owner:*"):
             owner_sid = await redis_client.get(key)
-            if owner_sid and owner_sid.decode('utf-8') == socket_id:
-                return str(key.decode('utf-8').replace('socket_owner:', ''))
+            if owner_sid and owner_sid.decode("utf-8") == socket_id:
+                return str(key.decode("utf-8").replace("socket_owner:", ""))
         return None
     except Exception as e:
         logger.error(f"Redis error finding profile by socket {socket_id}: {e}")
@@ -105,6 +111,7 @@ async def find_profile_by_socket(socket_id: str) -> Optional[str]:
             if sid == socket_id:
                 return profile_id
         return None
+
 
 async def cleanup_redis_client() -> None:
     """Clean up Redis client on shutdown."""
@@ -116,27 +123,28 @@ async def cleanup_redis_client() -> None:
 
 # ---------- prompt loading utilities ----------
 
+
 async def load_prompt(prompt_name: str) -> str:
     """
     Load a prompt from the PROMPTS_DIR.
-    
+
     Args:
         prompt_name: Name of the prompt file (e.g., "grade", "hint", "scenario")
-        
+
     Returns:
         Content of the prompt file
-        
+
     Raises:
         FileNotFoundError: If the prompt file is not found
     """
     prompt_file = PROMPTS_DIR / f"{prompt_name}.md"
-    
+
     if not prompt_file.exists():
         logger.error(f"Prompt file not found: {prompt_file}")
         raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
-    
+
     try:
-        with open(prompt_file, "r", encoding="utf-8") as f:
+        with open(prompt_file, encoding="utf-8") as f:
             content = f.read().strip()
         logger.info(f"Successfully loaded prompt: {prompt_name}")
         return content
