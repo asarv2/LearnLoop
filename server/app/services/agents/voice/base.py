@@ -64,7 +64,6 @@ class Agent:
         is_final: bool = True,
         persona_id: str | None = None,
         voice: bool = False,
-        parent_id: str | None = None,
     ) -> str:
         """Append a text chunk to the room's in-memory store (returns message_id)."""
         return await self.room.append_text_chunk(
@@ -76,5 +75,4 @@ class Agent:
             is_final=is_final,
             persona_id=persona_id,
             voice=voice,
-            parent_id=parent_id,
         )

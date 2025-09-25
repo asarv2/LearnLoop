@@ -180,31 +180,11 @@ class WebRTCSession:
                     asyncio.create_task(_bg())
                     return
 
-                # Get the previous message ID for parent_id
-                previous_message_id = None
-                try:
-                    from app.db import get_session
-                    from app.models import Messages
-                    from sqlmodel import select
-                    
-                    db_session = next(get_session())
-                    try:
-                        result = db_session.exec(
-                            select(Messages.id)
-                            .where(Messages.chat_id == self.room.id)
-                            .order_by(Messages.created_at.desc())
-                            .limit(1)
-                        ).one_or_none()
-                        previous_message_id = str(result) if result else None
-                    except Exception:
-                        previous_message_id = None
-                    finally:
-                        try:
-                            db_session.close()
-                        except Exception:
-                            pass
-                except Exception:
-                    previous_message_id = None
+                # Get parent_id from client data
+                parent_id = obj.get("parent_id")
+                if parent_id:
+                    # Set the parent_id on the room for future messages
+                    self.room.set_parent_id(parent_id)
 
                 # fallback: if no chat_id or not final, keep existing room append (optional)
                 await self.room.append_text_chunk(
@@ -215,7 +195,6 @@ class WebRTCSession:
                     chunk_idx=int(obj.get("chunk_idx", 0)),
                     is_final=is_final,
                     persona_id=None,  # No persona for fallback cases
-                    parent_id=previous_message_id,
                 )
 
     async def handle_offer(self, offer: dict[str, Any]) -> dict[str, str]:

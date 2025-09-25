@@ -215,7 +215,6 @@ class OpenAIAgent(Agent):
                 except Exception:
                     persona_id = None
                 try:
-                    parent_id = await self._get_previous_message_id()
                     msg_id_new = await self.publish_text_chunk(
                         text="",
                         message_id=None,
@@ -223,7 +222,6 @@ class OpenAIAgent(Agent):
                         is_final=False,
                         persona_id=persona_id,
                         voice=True,
-                        parent_id=parent_id,
                     )
                     msg_id = msg_id_new
                     # Backfill mappings so future events attach correctly
@@ -408,31 +406,6 @@ class OpenAIAgent(Agent):
 
         return None
 
-    async def _get_previous_message_id(self) -> str | None:
-        """Get the ID of the most recent message in the chat."""
-        try:
-            from app.db import get_session
-            from app.models import Messages
-            from sqlmodel import select
-
-            db_session = next(get_session())
-            try:
-                result = db_session.exec(
-                    select(Messages.id)
-                    .where(Messages.chat_id == self.room.id)
-                    .order_by(Messages.created_at.desc())
-                    .limit(1)
-                ).one_or_none()
-                return str(result) if result else None
-            except Exception:
-                return None
-            finally:
-                try:
-                    db_session.close()
-                except Exception:
-                    pass
-        except Exception:
-            return None
 
     async def _drain_tts(self) -> None:
         try:
@@ -541,7 +514,6 @@ class OpenAIAgent(Agent):
             is_final: bool,
             persona_id: str | None = None,
             voice: bool = False,
-            parent_id: str | None = None,
         ) -> str:
             # If a user anchor is open, route typed text into that message
             use_anchor = (
@@ -576,7 +548,6 @@ class OpenAIAgent(Agent):
                 is_final=is_final,
                 persona_id=persona_id,
                 voice=voice,
-                parent_id=parent_id,
             )
 
             # 1) Local barge-in for ANY typed user chunk (not transcript)
@@ -963,7 +934,6 @@ class OpenAIAgent(Agent):
                             if buffered_text:
                                 persona_id = await self._get_assistant_persona_id()
                                 if st.get("msg_id") is None:
-                                    parent_id = await self._get_previous_message_id()
                                     st["msg_id"] = await self.publish_text_chunk(
                                         text="",
                                         message_id=None,
@@ -971,7 +941,6 @@ class OpenAIAgent(Agent):
                                         is_final=False,
                                         persona_id=persona_id,
                                         voice=True,
-                                        parent_id=parent_id,
                                     )
                                 # If word timestamps are enabled, do not stream the buffered text; transcript will drive UI
                                 timestamps_enabled = bool(
@@ -985,7 +954,6 @@ class OpenAIAgent(Agent):
                                         is_final=False,
                                         persona_id=persona_id,
                                         voice=True,
-                                        parent_id=None,  # Already set on first chunk
                                     )
                                     st["chunk_idx"] += 1
                                 # Save flushed text for partial CTC reference
@@ -1117,7 +1085,6 @@ class OpenAIAgent(Agent):
                             is_final=True,
                             persona_id=persona_id,
                             voice=True,
-                            parent_id=None,  # Already set on first chunk
                         )
                         active_msg_id = None
                         next_chunk_idx = 0
@@ -1259,7 +1226,6 @@ class OpenAIAgent(Agent):
                                 if st.get("has_received_audio"):
                                     persona_id = await self._get_assistant_persona_id()
                                     if st["msg_id"] is None:
-                                        parent_id = await self._get_previous_message_id()
                                         st["msg_id"] = await self.publish_text_chunk(
                                             text="",
                                             message_id=None,
@@ -1267,7 +1233,6 @@ class OpenAIAgent(Agent):
                                             is_final=False,
                                             persona_id=persona_id,
                                             voice=True,
-                                            parent_id=parent_id,
                                         )
                                     await self.publish_text_chunk(
                                         text=delta,
@@ -1276,7 +1241,6 @@ class OpenAIAgent(Agent):
                                         is_final=False,
                                         persona_id=persona_id,
                                         voice=True,
-                                        parent_id=None,  # Already set on first chunk
                                     )
                                     st["chunk_idx"] += 1
                                 else:
@@ -1317,7 +1281,6 @@ class OpenAIAgent(Agent):
                                             await self._get_assistant_persona_id()
                                         )
                                         if st["msg_id"] is None:
-                                            parent_id = await self._get_previous_message_id()
                                             st[
                                                 "msg_id"
                                             ] = await self.publish_text_chunk(
@@ -1327,7 +1290,6 @@ class OpenAIAgent(Agent):
                                                 is_final=False,
                                                 persona_id=persona_id,
                                                 voice=True,
-                                                parent_id=parent_id,
                                             )
                                         await self.publish_text_chunk(
                                             text=delta,
@@ -1336,7 +1298,6 @@ class OpenAIAgent(Agent):
                                             is_final=False,
                                             persona_id=persona_id,
                                             voice=True,
-                                            parent_id=None,  # Already set on first chunk
                                         )
                                         st["chunk_idx"] += 1
                                     else:
@@ -1383,7 +1344,6 @@ class OpenAIAgent(Agent):
                                 # if we never created a message, do a one-shot create+finalize now
                                 persona_id = await self._get_assistant_persona_id()
                                 if not st or st["msg_id"] is None:
-                                    parent_id = await self._get_previous_message_id()
                                     msg_id = await self.publish_text_chunk(
                                         text="",
                                         message_id=None,
@@ -1391,7 +1351,6 @@ class OpenAIAgent(Agent):
                                         is_final=False,
                                         persona_id=persona_id,
                                         voice=True,
-                                        parent_id=parent_id,
                                     )
                                     await self.publish_text_chunk(
                                         text=final_text,
@@ -1400,7 +1359,6 @@ class OpenAIAgent(Agent):
                                         is_final=True,
                                         persona_id=persona_id,
                                         voice=True,
-                                        parent_id=None,  # Already set on first chunk
                                     )
                                     self._rid_to_msg[rid] = msg_id
                                 else:
@@ -1412,7 +1370,6 @@ class OpenAIAgent(Agent):
                                         is_final=True,
                                         persona_id=persona_id,
                                         voice=True,
-                                        parent_id=None,  # Already set on first chunk
                                     )
                                     self._rid_to_msg[rid] = str(st["msg_id"])  # type: ignore[arg-type]
                             else:
@@ -1621,7 +1578,6 @@ class OpenAIAgent(Agent):
 
                             # If a final transcript arrives but we didn't stream deltas, append it once
                             if transcript and not self._user_anchor["had_text"]:
-                                parent_id = await self._get_previous_message_id()
                                 await self.room.append_text_chunk(
                                     source_id="openai:user-transcript",
                                     role="user",
@@ -1635,7 +1591,6 @@ class OpenAIAgent(Agent):
                                     is_final=False,
                                     persona_id=await self._get_user_persona_id(),
                                     voice=True,
-                                    parent_id=parent_id,
                                 )
                                 self._user_anchor["chunk_idx"] = (
                                     self._user_anchor["chunk_idx"] or 0
