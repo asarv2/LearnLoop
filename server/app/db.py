@@ -14,12 +14,27 @@ logger = logging.getLogger(__name__)
 db_user = os.getenv("DB_USER")
 db_password = os.getenv("DB_PASSWORD")
 db_name = os.getenv("DB_NAME")
-db_port = os.getenv("DB_PORT")
 db_host = os.getenv("DB_HOST")
+db_port = os.getenv("DB_PORT") or "5432"
 
-db_url = f"postgresql+psycopg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode=require"
-if not db_url:
-    raise ValueError("Database url is not set")
+required_env_vars = {
+    "DB_USER": db_user,
+    "DB_PASSWORD": db_password,
+    "DB_NAME": db_name,
+    "DB_HOST": db_host,
+}
+
+missing_env = [name for name, value in required_env_vars.items() if not value]
+if missing_env:
+    missing = ", ".join(sorted(missing_env))
+    raise ValueError(
+        "Missing required database configuration environment variables: " f"{missing}"
+    )
+
+db_url = (
+    f"postgresql+psycopg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    "?sslmode=require"
+)
 
 engine = create_engine(
     db_url,
