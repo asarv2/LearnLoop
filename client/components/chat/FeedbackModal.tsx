@@ -10,10 +10,10 @@ import type {
   RubricGrade,
   StandardGrade,
 } from "@/types";
-import { InfoCircleOutlined } from "@ant-design/icons";
+import * as Accordion from "@radix-ui/react-accordion";
 import * as Dialog from "@radix-ui/react-dialog";
-import * as HoverCard from "@radix-ui/react-hover-card";
 import {
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   Cross2Icon,
@@ -23,7 +23,6 @@ import { Badge, Box, Button, Flex, Heading, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import ScoreDisplay from "./ScoreDisplay";
 
-const SUBTLE_TEXT = "#64748b"; // Subtle gray for secondary text
 const TEXT_COLOR = "#000000"; // Black text for all content
 
 interface FeedbackModalProps {
@@ -49,6 +48,18 @@ export default function FeedbackModal({
   const cleanText = (text: string) => {
     // Remove markdown bold formatting (**text**)
     return text.replace(/\*\*(.*?)\*\*/g, "$1");
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score >= 4.0) return "green"; // 80% and above (4.0/5.0 = 80%)
+    if (score >= 3.0) return "yellow"; // 60-80% (3.0-3.9/5.0 = 60-78%)
+    return "red"; // Below 60% (<3.0/5.0)
+  };
+
+  const getScoreColorHex = (score: number) => {
+    if (score >= 4.0) return "#16a34a"; // Green
+    if (score >= 3.0) return "#f59e0b"; // Yellow/Amber
+    return "#ef4444"; // Red
   };
 
   // Extract rubric and standard grades if present on chat include
@@ -155,69 +166,84 @@ export default function FeedbackModal({
                 >
                   Standards
                 </Heading>
-                <Flex direction="column" gap="4">
+                <Accordion.Root type="single" collapsible>
                   {standardGrades.map((sg) => (
-                    <Flex
+                    <Accordion.Item
                       key={sg.id}
-                      align="center"
-                      justify="between"
+                      value={sg.id}
                       style={{
                         border: "1px solid var(--gray-6)",
                         borderRadius: 8,
-                        padding: "12px 16px",
                         marginBottom: "8px",
+                        overflow: "hidden",
                       }}
                     >
-                      <Flex align="center" gap="2">
-                        <Text size="2" style={{ color: "#000000" }}>
-                          {sg.name}
+                      <Accordion.Trigger
+                        style={{
+                          width: "100%",
+                          padding: "12px 16px",
+                          backgroundColor: "white",
+                          border: "none",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          transition: "background-color 0.2s ease",
+                        }}
+                      >
+                        <Flex align="center" gap="2">
+                          <Text size="2" style={{ color: "#000000" }}>
+                            {sg.name}
+                          </Text>
+                        </Flex>
+                        <Flex align="center">
+                          <Badge
+                            variant="soft"
+                            color={getScoreColor(sg.score)}
+                            style={{
+                              backgroundColor: `${getScoreColorHex(
+                                sg.score
+                              )}20`,
+                              color: getScoreColorHex(sg.score),
+                              border: `1px solid ${getScoreColorHex(
+                                sg.score
+                              )}40`,
+                              marginRight: "6px",
+                            }}
+                          >
+                            {sg.score}/5
+                          </Badge>
+                          <ChevronDownIcon
+                            width="16"
+                            height="16"
+                            style={{
+                              transition: "transform 0.2s ease",
+                              color: "#64748b",
+                            }}
+                          />
+                        </Flex>
+                      </Accordion.Trigger>
+                      <Accordion.Content
+                        style={{
+                          padding: "0 16px 16px 16px",
+                          backgroundColor: "var(--gray-1)",
+                        }}
+                      >
+                        <Text
+                          size="2"
+                          style={{
+                            color: TEXT_COLOR,
+                            lineHeight: "1.4",
+                            paddingTop: "8px",
+                          }}
+                        >
+                          {sg.description ||
+                            "No feedback available for this standard."}
                         </Text>
-                        <HoverCard.Root>
-                          <HoverCard.Trigger asChild>
-                            <Box
-                              style={{
-                                cursor: "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                color: SUBTLE_TEXT,
-                              }}
-                            >
-                              <InfoCircleOutlined
-                                style={{ fontSize: "1rem", paddingLeft: "4px" }}
-                              />
-                            </Box>
-                          </HoverCard.Trigger>
-                          <HoverCard.Portal>
-                            <HoverCard.Content
-                              style={{
-                                backgroundColor: "white",
-                                border: "1px solid #e2e8f0",
-                                borderRadius: "8px",
-                                padding: "12px",
-                                boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
-                                maxWidth: "300px",
-                                zIndex: 9999,
-                              }}
-                              sideOffset={5}
-                            >
-                              <Text
-                                size="2"
-                                style={{ color: TEXT_COLOR, lineHeight: "1.4" }}
-                              >
-                                {sg.description ||
-                                  "No feedback available for this standard."}
-                              </Text>
-                              <HoverCard.Arrow style={{ fill: "white" }} />
-                            </HoverCard.Content>
-                          </HoverCard.Portal>
-                        </HoverCard.Root>
-                      </Flex>
-                      <Badge variant="soft" color="blue">
-                        {sg.score}/5
-                      </Badge>
-                    </Flex>
+                      </Accordion.Content>
+                    </Accordion.Item>
                   ))}
-                </Flex>
+                </Accordion.Root>
               </Box>
               <Box style={{ marginTop: "24px", marginBottom: "12px" }}>
                 <Heading
@@ -611,6 +637,48 @@ export default function FeedbackModal({
           }
           to {
             opacity: 1;
+          }
+        }
+
+        [data-radix-accordion-trigger][data-state="open"] svg {
+          transform: rotate(180deg);
+        }
+
+        [data-radix-accordion-trigger]:hover {
+          background-color: var(--gray-2) !important;
+        }
+
+        [data-radix-accordion-content] {
+          overflow: hidden;
+        }
+
+        [data-radix-accordion-content][data-state="open"] {
+          animation: slideDown 0.2s ease-out;
+        }
+
+        [data-radix-accordion-content][data-state="closed"] {
+          animation: slideUp 0.2s ease-out;
+        }
+
+        @keyframes slideDown {
+          from {
+            height: 0;
+            opacity: 0;
+          }
+          to {
+            height: var(--radix-accordion-content-height);
+            opacity: 1;
+          }
+        }
+
+        @keyframes slideUp {
+          from {
+            height: var(--radix-accordion-content-height);
+            opacity: 1;
+          }
+          to {
+            height: 0;
+            opacity: 0;
           }
         }
       `}</style>
