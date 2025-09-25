@@ -12,14 +12,9 @@ logger = logging.getLogger(__name__)
 
 import av  # type: ignore
 import numpy as np
-from aiortc import (
-    MediaStreamTrack,
-    RTCConfiguration,  # type: ignore
-    RTCDataChannel,
-    RTCIceServer,
-    RTCPeerConnection,
-    RTCSessionDescription,
-)
+from aiortc import RTCConfiguration  # type: ignore
+from aiortc import (MediaStreamTrack, RTCDataChannel, RTCIceServer,
+                    RTCPeerConnection, RTCSessionDescription)
 
 from .bus import PCM_SR, SAMPLES_PER_CHUNK, Subscriber
 from .room import get_room
@@ -185,6 +180,32 @@ class WebRTCSession:
                     asyncio.create_task(_bg())
                     return
 
+                # Get the previous message ID for parent_id
+                previous_message_id = None
+                try:
+                    from app.db import get_session
+                    from app.models import Messages
+                    from sqlmodel import select
+                    
+                    db_session = next(get_session())
+                    try:
+                        result = db_session.exec(
+                            select(Messages.id)
+                            .where(Messages.chat_id == self.room.id)
+                            .order_by(Messages.created_at.desc())
+                            .limit(1)
+                        ).one_or_none()
+                        previous_message_id = str(result) if result else None
+                    except Exception:
+                        previous_message_id = None
+                    finally:
+                        try:
+                            db_session.close()
+                        except Exception:
+                            pass
+                except Exception:
+                    previous_message_id = None
+
                 # fallback: if no chat_id or not final, keep existing room append (optional)
                 await self.room.append_text_chunk(
                     source_id=self.sid,
@@ -194,6 +215,7 @@ class WebRTCSession:
                     chunk_idx=int(obj.get("chunk_idx", 0)),
                     is_final=is_final,
                     persona_id=None,  # No persona for fallback cases
+                    parent_id=previous_message_id,
                 )
 
     async def handle_offer(self, offer: dict[str, Any]) -> dict[str, str]:

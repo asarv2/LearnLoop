@@ -128,6 +128,7 @@ class Room:
         is_final: bool,
         persona_id: str | None = None,
         voice: bool = False,
+        parent_id: str | None = None,
     ) -> str:
         msg = await upsert_text_chunk(
             self.id,
@@ -139,6 +140,7 @@ class Room:
             is_final=is_final,
             persona_id=persona_id,
             voice=voice,
+            parent_id=parent_id,
         )
 
         # The chunk we just appended is the last one; expose its ts_ms.
