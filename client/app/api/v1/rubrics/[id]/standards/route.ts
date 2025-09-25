@@ -8,7 +8,7 @@ async function getSupabase() {
   return await supabaseServer(cookies());
 }
 
-export async function DELETE(
+export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -36,7 +36,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
 
-    // Get the rubric to verify ownership
+    // Get the rubric first to verify access
     const { data: rubric, error: rubricError } = await supabase
       .from("rubrics")
       .select("id, name, company")
@@ -47,47 +47,40 @@ export async function DELETE(
       return NextResponse.json({ error: "Rubric not found" }, { status: 404 });
     }
 
-    // Verify user can delete this rubric
-    // Only allow deletion of company-specific rubrics that belong to the user's company
-    if (!rubric.company || rubric.company !== currentProfile.company) {
-      return NextResponse.json(
-        {
-          error:
-            "Access denied. You can only delete rubrics from your own company.",
-        },
-        { status: 403 }
-      );
+    // Verify user can access this rubric (company match or null company)
+    if (rubric.company && rubric.company !== currentProfile.company) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // Delete associated standards first (due to foreign key constraints)
-    const { error: standardsDeleteError } = await supabase
+    // Get standards for this rubric
+    const { data: standards, error: standardsError } = await supabase
       .from("standards")
-      .delete()
-      .eq("rubric_id", rubricId);
+      .select(
+        `
+        id,
+        name,
+        description,
+        items,
+        created_at,
+        updated_at
+      `
+      )
+      .eq("rubric_id", rubricId)
+      .order("created_at", { ascending: true });
 
-    if (standardsDeleteError) {
-      throw new Error(
-        `Failed to delete rubric standards: ${standardsDeleteError.message}`
-      );
-    }
-
-    // Delete the rubric
-    const { error: rubricDeleteError } = await supabase
-      .from("rubrics")
-      .delete()
-      .eq("id", rubricId);
-
-    if (rubricDeleteError) {
-      throw new Error(`Failed to delete rubric: ${rubricDeleteError.message}`);
-    }
+    if (standardsError) throw standardsError;
 
     return NextResponse.json({
-      success: true,
-      message: "Rubric deleted successfully",
+      rubric: {
+        id: rubric.id,
+        name: rubric.name,
+        company: rubric.company,
+      },
+      standards: standards || [],
     });
   } catch (err) {
     const { statusCode, message } = handleHttpError(err);
-    await logError("Failed to delete rubric", err);
+    await logError("Failed to fetch rubric standards", err);
     return NextResponse.json({ error: message }, { status: statusCode });
   }
 }
