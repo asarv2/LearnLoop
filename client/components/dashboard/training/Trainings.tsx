@@ -14,16 +14,18 @@ import {
   useCreateDocument,
   useDocument,
 } from "@/lib/api/hooks/useDocuments";
+import { useProfile } from "@/lib/api/hooks/useProfiles";
 import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import {
   useCustomTrainingsForUser,
   useDeleteTraining,
-  useTrainingsByType,
+  useTrainingsByTypeAndCompany,
   useUpdateTraining,
 } from "@/lib/api/hooks/useTrainings";
 import { trainingKeys } from "@/lib/api/keys";
 import {
   BulbOutlined,
+  CalendarOutlined,
   CommentOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -135,6 +137,9 @@ function TrainingCard({
     title: string;
     description?: string | null;
     active?: boolean | null;
+    training_type?: string | null;
+    due_date?: string | null;
+    company?: string | null;
   };
   index: number;
   onEdit?: () => void;
@@ -296,6 +301,14 @@ function TrainingCard({
                 <Badge count="Soon" style={{ backgroundColor: "#fa8c16" }} />
               </div>
             )}
+            {training.training_type === "required" && (
+              <div style={{ marginTop: "8px" }}>
+                <Badge
+                  count="Required"
+                  style={{ backgroundColor: "#f5222d" }}
+                />
+              </div>
+            )}
           </Title>
         </div>
 
@@ -313,6 +326,26 @@ function TrainingCard({
           >
             {getTrainingDescription(training)}
           </Paragraph>
+
+          {/* Due date for required trainings */}
+          {training.training_type === "required" && training.due_date && (
+            <div
+              style={{
+                marginTop: "12px",
+                padding: "8px",
+                backgroundColor: "#fff1f0",
+                borderRadius: "4px",
+                border: "1px solid #ffccc7",
+              }}
+            >
+              <CalendarOutlined
+                style={{ color: "#f5222d", marginRight: "8px" }}
+              />
+              <Text type="secondary" style={{ fontSize: "12px" }}>
+                Due: {new Date(training.due_date).toLocaleDateString()}
+              </Text>
+            </div>
+          )}
         </div>
 
         <div style={{ textAlign: "center" }}>
@@ -814,7 +847,14 @@ function TrainingTabContent({
   }) => void;
 }) {
   const { user } = useAuth();
-  const { data: trainings, isLoading, error } = useTrainingsByType(type);
+  const { data: currentProfile } = useProfile(user?.id || "", !!user);
+
+  // Use company-based filtering for standard and required trainings
+  const {
+    data: trainings,
+    isLoading,
+    error,
+  } = useTrainingsByTypeAndCompany(type, currentProfile?.company || null);
   const { data: customTrainings } = useCustomTrainingsForUser(user?.id);
 
   if (isLoading) {

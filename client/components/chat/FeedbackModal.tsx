@@ -201,13 +201,9 @@ export default function FeedbackModal({
                             variant="soft"
                             color={getScoreColor(sg.score)}
                             style={{
-                              backgroundColor: `${getScoreColorHex(
-                                sg.score
-                              )}20`,
+                              backgroundColor: "transparent",
                               color: getScoreColorHex(sg.score),
-                              border: `1px solid ${getScoreColorHex(
-                                sg.score
-                              )}40`,
+                              border: "none",
                               marginRight: "6px",
                             }}
                           >

@@ -1,274 +1,455 @@
 "use client";
 
-import {
-  DownloadOutlined,
-  EyeOutlined,
-  FilterOutlined,
-  SearchOutlined,
-} from "@ant-design/icons";
+import { useAuth } from "@/components/auth/AuthProvider";
+import TrainingDetailsModal from "@/components/dashboard/history/TrainingDetailsModal";
+import { api } from "@/lib/api/fetcher";
+import { useProfile } from "@/lib/api/hooks/useProfiles";
+import { useRubricGradesByChat } from "@/lib/api/hooks/useRubricGrades";
+import { EyeOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
+import { useQuery } from "@tanstack/react-query";
 import {
   Button,
   Card,
   Col,
+  DatePicker,
+  Empty,
   Input,
   Row,
   Select,
   Space,
   Table,
-  Tag,
   Typography,
 } from "antd";
+import type { ColumnsType } from "antd/es/table";
+import type { Dayjs } from "dayjs";
+import { useMemo, useState } from "react";
 
-const { Title } = Typography;
-const { Search } = Input;
-const { Option } = Select;
+const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
 
-const historyData = [
-  {
-    key: "1",
-    employee: "John Doe",
-    training: "Critical Conversation",
-    startedAt: "2024-01-15 10:30",
-    completedAt: "2024-01-15 11:45",
-    duration: "1h 15m",
-    score: 85,
-    status: "completed",
-  },
-  {
-    key: "2",
-    employee: "Jane Smith",
-    training: "Leadership",
-    startedAt: "2024-01-14 14:20",
-    completedAt: "2024-01-14 15:30",
-    duration: "1h 10m",
-    score: 92,
-    status: "completed",
-  },
-  {
-    key: "3",
-    employee: "Mike Johnson",
-    training: "Interview",
-    startedAt: "2024-01-13 09:15",
-    completedAt: null,
-    duration: "45m",
-    score: null,
-    status: "in_progress",
-  },
-  {
-    key: "4",
-    employee: "Sarah Wilson",
-    training: "Critical Conversation",
-    startedAt: "2024-01-12 16:00",
-    completedAt: "2024-01-12 17:20",
-    duration: "1h 20m",
-    score: 78,
-    status: "completed",
-  },
-];
+// Data types
+interface Attempt {
+  id: string;
+  training_id: string;
+  profile_id: string;
+  created_at: string;
+  updated_at: string;
+}
 
-const columns = [
+interface Chat {
+  id: string;
+  attempt_id: string;
+  title: string;
+  completed: boolean;
+  completed_at?: string;
+  created_at: string;
+}
+
+interface Training {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+interface Profile {
+  id: string;
+  name: string;
+  company: string;
+}
+
+interface AttemptWithDetails extends Attempt {
+  training?: Training;
+  profile?: Profile;
+  chatInfo?: {
+    title: string;
+    name: string;
+    isCompleted: boolean;
+    completedAt?: string;
+    totalChats: number;
+    completedChats: number;
+  };
+  latestChatId?: string;
+}
+
+// Helper component to display score for a chat
+function ChatScore({
+  chatId,
+  isCompleted,
+}: {
+  chatId: string;
+  isCompleted: boolean;
+}) {
+  const { data: grades, isLoading } = useRubricGradesByChat(
+    chatId,
+    isCompleted
+  );
+
+  if (!isCompleted) {
+    return <Text>Incomplete</Text>;
+  }
+
+  if (isLoading) {
+    return <Text>Loading...</Text>;
+  }
+
+  if (!grades || grades.length === 0) {
+    return <Text>No score</Text>;
+  }
+
+  // Calculate average score from all rubric grades
+  const totalScore = grades.reduce((sum, grade) => sum + (grade.score || 0), 0);
+  const averageScore =
+    grades.length > 0 ? Math.round(totalScore / grades.length) : 0;
+
+  return <Text>{averageScore}%</Text>;
+}
+
+// Function to fetch company training history
+async function fetchCompanyTrainingHistory(
+  company: string | null
+): Promise<AttemptWithDetails[]> {
+  if (!company) return [];
+
+  try {
+    const response = await api<AttemptWithDetails[]>(
+      `/api/v1/company-training-history?company=${encodeURIComponent(company)}`
+    );
+    return response;
+  } catch (error) {
+    console.error("Failed to fetch company training history:", error);
+    return [];
+  }
+}
+
+// Create columns function
+const createColumns = (
+  onViewAttempt: (attemptId: string) => void
+): ColumnsType<AttemptWithDetails> => [
   {
     title: "Employee",
-    dataIndex: "employee",
+    dataIndex: "profile",
     key: "employee",
-    render: (text: string) => <div style={{ fontWeight: "bold" }}>{text}</div>,
+    render: (profile: Profile | undefined) => (
+      <Space>
+        <UserOutlined style={{ color: "#8c8c8c" }} />
+        <Text style={{ fontWeight: "bold" }}>
+          {profile?.name || "Unknown Employee"}
+        </Text>
+      </Space>
+    ),
+    width: 200,
+  },
+  {
+    title: "Scenario",
+    dataIndex: "chatInfo",
+    key: "scenario",
+    render: (chatInfo) => <Text>{chatInfo?.name || "Unknown Scenario"}</Text>,
+    width: 220,
   },
   {
     title: "Training",
     dataIndex: "training",
     key: "training",
-    render: (text: string) => <Tag color="blue">{text}</Tag>,
-  },
-  {
-    title: "Started",
-    dataIndex: "startedAt",
-    key: "startedAt",
-    render: (text: string) => (
-      <div>
-        <div>{text.split(" ")[0]}</div>
-        <div style={{ color: "#666", fontSize: "12px" }}>
-          {text.split(" ")[1]}
-        </div>
-      </div>
+    render: (training: Training | undefined) => (
+      <Text style={{ textTransform: "capitalize" }}>
+        {training?.title || "-"}
+      </Text>
     ),
-  },
-  {
-    title: "Duration",
-    dataIndex: "duration",
-    key: "duration",
+    width: 140,
   },
   {
     title: "Score",
-    dataIndex: "score",
+    dataIndex: "latestChatId",
     key: "score",
-    render: (score: number | null) =>
-      score ? (
-        <div
-          style={{
-            color:
-              score >= 80 ? "#52c41a" : score >= 60 ? "#fa8c16" : "#ff4d4f",
-            fontWeight: "bold",
-          }}
-        >
-          {score}%
-        </div>
-      ) : (
-        <span style={{ color: "#666" }}>-</span>
-      ),
+    render: (chatId: string | null, record: AttemptWithDetails) => (
+      <ChatScore
+        chatId={chatId || ""}
+        isCompleted={record.chatInfo?.isCompleted || false}
+      />
+    ),
+    width: 140,
   },
   {
-    title: "Status",
-    dataIndex: "status",
-    key: "status",
-    render: (status: string) => (
-      <Tag
-        color={
-          status === "completed"
-            ? "green"
-            : status === "in_progress"
-            ? "blue"
-            : "red"
-        }
-      >
-        {status.replace("_", " ").toUpperCase()}
-      </Tag>
-    ),
+    title: "Created",
+    dataIndex: "created_at",
+    key: "created_at",
+    render: (date: string) => {
+      const formatDate = (dateString: string) => {
+        return new Date(dateString).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      };
+      return (
+        <Space direction="vertical" size={0}>
+          <Text>{formatDate(date)}</Text>
+        </Space>
+      );
+    },
+    sorter: (a: AttemptWithDetails, b: AttemptWithDetails) =>
+      new Date(a.created_at || "").getTime() -
+      new Date(b.created_at || "").getTime(),
+    width: 180,
   },
   {
     title: "Actions",
     key: "actions",
-    render: () => (
-      <Space size="small">
-        <Button type="text" icon={<EyeOutlined />} size="small">
+    render: (_, record: AttemptWithDetails) => (
+      <Space>
+        <Button
+          type="primary"
+          size="small"
+          icon={<EyeOutlined />}
+          onClick={() => onViewAttempt(record.id)}
+        >
           View
-        </Button>
-        <Button type="text" icon={<DownloadOutlined />} size="small">
-          Report
         </Button>
       </Space>
     ),
+    width: 100,
   },
 ];
 
 export default function AdminHistoryPage() {
+  const { user } = useAuth();
+  const {
+    data: currentProfile,
+    isLoading: profileLoading,
+    error: profileError,
+  } = useProfile(user?.id || "", !!user);
+
+  console.log("Profile loading state:", {
+    user: user?.id,
+    profileLoading,
+    profileError,
+    currentProfile,
+  });
+
+  // State for filters and modal
+  const [searchText, setSearchText] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [trainingFilter, setTrainingFilter] = useState<string>("all");
+  const [dateRange, setDateRange] = useState<
+    [Dayjs | null, Dayjs | null] | null
+  >(null);
+  const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(
+    null
+  );
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Fetch company training history
+  const {
+    data: attempts,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["company-training-history", currentProfile?.company],
+    queryFn: () => fetchCompanyTrainingHistory(currentProfile?.company || null),
+    enabled: !!currentProfile?.company,
+    staleTime: 2 * 60_000, // 2 minutes
+  });
+
+  console.log("Admin History Debug:", {
+    user: user?.id,
+    currentProfile: currentProfile,
+    company: currentProfile?.company,
+    attempts: attempts?.length,
+    isLoading,
+    error,
+    enabled: !!currentProfile?.company,
+  });
+
+  const handleViewAttempt = (attemptId: string) => {
+    setSelectedAttemptId(attemptId);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedAttemptId(null);
+  };
+
+  // Filter attempts based on search and filters
+  const filteredAttempts = useMemo(() => {
+    if (!attempts) return [];
+
+    return attempts.filter((attempt) => {
+      // Search filter
+      const matchesSearch =
+        !searchText ||
+        attempt.profile?.name
+          ?.toLowerCase()
+          .includes(searchText.toLowerCase()) ||
+        attempt.chatInfo?.title
+          ?.toLowerCase()
+          .includes(searchText.toLowerCase()) ||
+        attempt.training?.title
+          ?.toLowerCase()
+          .includes(searchText.toLowerCase());
+
+      // Status filter
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "completed" && attempt.chatInfo?.isCompleted) ||
+        (statusFilter === "in-progress" && !attempt.chatInfo?.isCompleted);
+
+      // Training filter
+      const matchesTraining =
+        trainingFilter === "all" || attempt.training?.title === trainingFilter;
+
+      // Date range filter
+      const matchesDate =
+        !dateRange ||
+        !dateRange[0] ||
+        !dateRange[1] ||
+        (attempt.created_at &&
+          new Date(attempt.created_at) >= dateRange[0].toDate() &&
+          new Date(attempt.created_at) <= dateRange[1].toDate());
+
+      return matchesSearch && matchesStatus && matchesTraining && matchesDate;
+    });
+  }, [attempts, searchText, statusFilter, trainingFilter, dateRange]);
+
+  // Sort attempts by newest first
+  const sortedAttempts = useMemo(
+    () =>
+      filteredAttempts.sort(
+        (a, b) =>
+          new Date(b.created_at || "").getTime() -
+          new Date(a.created_at || "").getTime()
+      ),
+    [filteredAttempts]
+  );
+
+  const columns = createColumns(handleViewAttempt);
+
+  // Show loading state while profile is loading
+  if (profileLoading) {
+    return (
+      <div style={{ textAlign: "center", padding: "50px" }}>
+        <div>Loading profile...</div>
+      </div>
+    );
+  }
+
+  // Show error if profile failed to load
+  if (profileError) {
+    return (
+      <div style={{ textAlign: "center", padding: "50px" }}>
+        <div>Error loading profile: {profileError.message}</div>
+      </div>
+    );
+  }
+
+  // Show message if no company
+  if (!currentProfile?.company) {
+    return (
+      <div style={{ textAlign: "center", padding: "50px" }}>
+        <div>No company assigned to your profile.</div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "24px",
-        }}
-      >
-        <Title level={2} style={{ margin: 0 }}>
-          Training History
-        </Title>
-        <Button icon={<DownloadOutlined />}>Export Report</Button>
+      <div style={{ marginBottom: "24px" }}>
+        <Title level={2}>Company Training History</Title>
       </div>
 
-      <Row gutter={[24, 24]} style={{ marginBottom: "24px" }}>
-        <Col xs={24} sm={6}>
-          <Card>
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "bold",
-                  color: "#1890ff",
-                }}
-              >
-                4
-              </div>
-              <div style={{ color: "#666" }}>Total Sessions</div>
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={6}>
-          <Card>
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "bold",
-                  color: "#52c41a",
-                }}
-              >
-                3
-              </div>
-              <div style={{ color: "#666" }}>Completed</div>
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={6}>
-          <Card>
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "bold",
-                  color: "#fa8c16",
-                }}
-              >
-                1
-              </div>
-              <div style={{ color: "#666" }}>In Progress</div>
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={6}>
-          <Card>
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  fontSize: "24px",
-                  fontWeight: "bold",
-                  color: "#722ed1",
-                }}
-              >
-                85%
-              </div>
-              <div style={{ color: "#666" }}>Avg. Score</div>
-            </div>
-          </Card>
-        </Col>
-      </Row>
-
-      <Card>
-        <div
-          style={{
-            marginBottom: "16px",
-            display: "flex",
-            gap: "16px",
-            flexWrap: "wrap",
-          }}
-        >
-          <Search
-            placeholder="Search sessions..."
-            allowClear
-            style={{ width: 300 }}
-            prefix={<SearchOutlined />}
-          />
-          <Select placeholder="Filter by training" style={{ width: 200 }}>
-            <Option value="all">All Trainings</Option>
-            <Option value="Critical Conversation">Critical Conversation</Option>
-            <Option value="Leadership">Leadership</Option>
-            <Option value="Interview">Interview</Option>
-          </Select>
-          <Select placeholder="Filter by status" style={{ width: 150 }}>
-            <Option value="all">All Status</Option>
-            <Option value="completed">Completed</Option>
-            <Option value="in_progress">In Progress</Option>
-          </Select>
-          <Button icon={<FilterOutlined />}>More Filters</Button>
-        </div>
-        <Table
-          columns={columns}
-          dataSource={historyData}
-          pagination={false}
-          scroll={{ x: 1000 }}
-        />
+      {/* Filters */}
+      <Card style={{ marginBottom: "24px" }}>
+        <Row gutter={[16, 16]} align="middle">
+          <Col xs={24} md={6}>
+            <Input
+              placeholder="Search attempts..."
+              prefix={<SearchOutlined />}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              allowClear
+            />
+          </Col>
+          <Col xs={12} md={3}>
+            <Select
+              style={{ width: "100%" }}
+              placeholder="Status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+            >
+              <Select.Option value="all">All Status</Select.Option>
+              <Select.Option value="completed">Completed</Select.Option>
+              <Select.Option value="in-progress">In Progress</Select.Option>
+            </Select>
+          </Col>
+          <Col xs={12} md={4}>
+            <Select
+              style={{ width: "100%" }}
+              placeholder="Training"
+              value={trainingFilter}
+              onChange={setTrainingFilter}
+            >
+              <Select.Option value="all">All Trainings</Select.Option>
+              <Select.Option value="Interview">Interview</Select.Option>
+              <Select.Option value="Critical Conversations">
+                Critical Conversations
+              </Select.Option>
+              <Select.Option value="Leadership">Leadership</Select.Option>
+            </Select>
+          </Col>
+          <Col xs={24} md={11}>
+            <RangePicker
+              style={{ width: "100%" }}
+              placeholder={["Start Date", "End Date"]}
+              value={dateRange}
+              onChange={setDateRange}
+            />
+          </Col>
+        </Row>
       </Card>
+
+      {/* Attempts Table */}
+      <Card>
+        {sortedAttempts.length === 0 && !isLoading ? (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <span>
+                {error
+                  ? `Error loading data: ${error.message}`
+                  : attempts?.length === 0
+                  ? "No training attempts found for your company."
+                  : "No attempts match your current filters."}
+              </span>
+            }
+          />
+        ) : (
+          <Table
+            columns={columns}
+            dataSource={sortedAttempts}
+            rowKey="id"
+            loading={isLoading}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total, range) =>
+                `${range[0]}-${range[1]} of ${total} attempts`,
+            }}
+            scroll={{ x: 800 }}
+          />
+        )}
+      </Card>
+
+      {/* Training Details Modal */}
+      {selectedAttemptId && (
+        <TrainingDetailsModal
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          attemptId={selectedAttemptId}
+        />
+      )}
     </div>
   );
 }

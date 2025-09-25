@@ -39,10 +39,17 @@ export async function GET(req: Request) {
       | "custom"
       | null;
     const userId = searchParams.get("userId");
+    const company = searchParams.get("company");
 
     let rows;
     if (type === "custom" && userId) {
       rows = await trainingRepo.listCustomForUser(userId);
+    } else if (
+      type &&
+      ["standard", "required", "custom"].includes(type) &&
+      company !== undefined
+    ) {
+      rows = await trainingRepo.listByTypeAndCompany(type, company);
     } else if (type && ["standard", "required", "custom"].includes(type)) {
       rows = await trainingRepo.listByType(type);
     } else if (practice === "true") {

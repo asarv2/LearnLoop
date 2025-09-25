@@ -2,7 +2,7 @@
 
 import { useParametersByField } from "@/lib/api/hooks/useParameters";
 import { usePersonas } from "@/lib/api/hooks/usePersonas";
-import { CheckIcon, PlayIcon } from "@radix-ui/react-icons";
+import { CheckIcon, SpeakerLoudIcon } from "@radix-ui/react-icons";
 import { Box, Button, Card, Flex, Spinner, Text } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import type { PersonaFieldProps } from "./types";
@@ -275,15 +275,15 @@ export default function PersonaField({
                       style={{
                         padding: "6px",
                         borderRadius: "6px",
-                        background:
-                          playingAudioId === parameter.value
-                            ? "var(--red-3)"
-                            : "var(--gray-3)",
+                        background: "transparent",
                         color:
                           playingAudioId === parameter.value
                             ? "var(--red-9)"
-                            : "var(--gray-9)",
-                        border: "none",
+                            : "var(--blue-9)",
+                        border:
+                          playingAudioId === parameter.value
+                            ? "2px solid var(--red-7)"
+                            : "2px solid var(--blue-7)",
                         cursor: "pointer",
                         transition: "all 0.2s ease",
                       }}
@@ -291,7 +291,7 @@ export default function PersonaField({
                       {(() => {
                         const isPlaying = playingAudioId === parameter.value;
                         if (!isPlaying)
-                          return <PlayIcon width="12" height="12" />;
+                          return <SpeakerLoudIcon width="12" height="12" />;
                         const radius = 16;
                         const circumference = 2 * Math.PI * radius;
                         const progress =
