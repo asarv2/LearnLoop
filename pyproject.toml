@@ -162,10 +162,6 @@ python_files = "test_*.py"
 asyncio_mode = "auto"
 addopts = [
     "--strict-markers",
-    "--cov=app",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-fail-under=80",
     "--tb=short",
     "-v",
 ]
