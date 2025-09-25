@@ -174,6 +174,13 @@ class Room:
         # full-chat callback (e.g., snapshot → archive)
         if self.on_full_chat and is_final:
             await self.on_full_chat(self.id, list_messages(self.id))
+        # Auto-advance the room's parent cursor on final chunks so the next
+        # message (agent or user) threads properly.
+        if is_final:
+            try:
+                self.current_parent_id = msg.id
+            except Exception:
+                pass
         return msg.id
 
     def set_parent_id(self, parent_id: str | None) -> None:

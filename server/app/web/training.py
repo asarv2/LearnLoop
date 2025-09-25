@@ -1009,7 +1009,6 @@ async def handle_training_message_rtc(sid: str, data: dict[str, Any]) -> None:
             chunk_idx=0,
             is_final=True,
             persona_id=persona_id,
-            parent_id=parent_id,
         )
     except Exception as e:
         logger.error(f"Error in room system flow: {str(e)}")
@@ -1105,19 +1104,19 @@ async def process_training_message_websocket(
                 # Fallback or error handling
                 raise ValueError(f"User persona not found for profile {profile_id}")
 
-        # Set the parent_id on the room for future messages if provided
+        # Set the parent_id on the room for this turn if provided (branching)
         if parent_id:
             room = get_room(chat_id)
             room.set_parent_id(parent_id)
 
-        # Create user message (in-memory, not saved with new field)
+        # Create user message; link to provided parent (previous assistant or start)
         user_message = Messages(
             chat_id=chat_id,
             content=message,
             role="user",
             training_id=chat.training_id,
             completed=True,
-            persona_id=user_persona_id,  # ✨ Associate with user's persona
+            persona_id=user_persona_id,
             parent_id=parent_id,
         )
         db_session.add(user_message)
@@ -1151,6 +1150,13 @@ async def process_training_message_websocket(
             room=chat_id,
         )
 
+        # Advance the server-managed parent cursor to the new user message
+        try:
+            room = get_room(chat_id)
+            room.set_parent_id(str(user_message.id))
+        except Exception:
+            pass
+
         # ✨ 3. Get assistant's persona_id from chat.persona_ids (array column)
         assistant_persona_id = None
         try:
@@ -1175,15 +1181,15 @@ async def process_training_message_websocket(
             return
 
 
-        # Create assistant message placeholder
+        # Create assistant message placeholder, linked to the user message
         assistant_message = Messages(
             chat_id=chat_id,
             content="",
             role="assistant",
             training_id=chat.training_id,
             completed=False,
-            persona_id=assistant_persona_id,  # ✨ Associate with assistant's persona
-            parent_id=parent_id,
+            persona_id=assistant_persona_id,
+            parent_id=user_message.id,
         )
         db_session.add(assistant_message)
         db_session.commit()
@@ -1360,6 +1366,13 @@ async def process_training_message_websocket(
                 _schedule_hints_for_message(chat_id, str(assistant_message.id))
             )
 
+            # Advance the server-managed parent cursor to the assistant message
+            try:
+                room = get_room(chat_id)
+                room.set_parent_id(str(assistant_message.id))
+            except Exception:
+                pass
+
         except Exception as e:
             logger.error(f"Error generating training response: {str(e)}")
 
@@ -1378,6 +1391,13 @@ async def process_training_message_websocket(
                 },
                 room=chat_id,
             )
+
+            # Even on error, advance cursor to assistant message id for consistent threading
+            try:
+                room = get_room(chat_id)
+                room.set_parent_id(str(assistant_message.id))
+            except Exception:
+                pass
 
     except Exception as e:
         logger.error(f"Error processing training message: {str(e)}")
@@ -1655,6 +1675,26 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
         """Join a training chat room"""
         logger.info(f"join_training event triggered for sid={sid}")
         await handle_join_training(sid, data)
+
+    @sio.event  # type: ignore
+    async def set_parent_cursor(sid: str, data: dict[str, Any]) -> None:
+        """Explicitly set the server parent cursor for a chat (branching)."""
+        try:
+            chat_id = data.get("chat_id")
+            parent_id = data.get("parent_id")
+            if not chat_id:
+                await emit_error(sid, "Missing chat_id")
+                return
+            room = get_room(str(chat_id))
+            room.set_parent_id(str(parent_id) if parent_id else None)
+            await sio.emit(
+                "parent_cursor_set",
+                {"chat_id": str(chat_id), "parent_id": parent_id or None},
+                room=sid,
+            )
+        except Exception as e:
+            logger.exception("Failed to set parent cursor")
+            await emit_error(sid, f"Failed to set parent cursor: {e}")
 
     @sio.event  # type: ignore
     async def send_training_message(sid: str, data: dict[str, Any]) -> None:

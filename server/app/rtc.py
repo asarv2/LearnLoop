@@ -88,6 +88,34 @@ class WebRTCSession:
             asyncio.create_task(self.room.human_join(self.sid))
         except Exception:
             pass
+        # Seed the parent cursor to the latest assistant message so live mic
+        # transcripts thread correctly even before any explicit parent is sent.
+        async def _seed_parent_cursor() -> None:
+            try:
+                from app.db import get_session
+                from app.models import Messages
+                from sqlalchemy import text as _text
+                from sqlmodel import select
+
+                db = next(get_session())
+                try:
+                    # Use raw ORDER BY to avoid typing issues
+                    row = db.exec(
+                        select(Messages)
+                        .where(Messages.chat_id == room_id, Messages.role == "assistant")
+                        .order_by(_text("created_at DESC"))
+                    ).first()
+                    if row:
+                        self.room.set_parent_id(str(row.id))
+                finally:
+                    try:
+                        db.close()
+                    except Exception:
+                        pass
+            except Exception:
+                # best-effort; safe to ignore
+                pass
+        asyncio.create_task(_seed_parent_cursor())
         self.subscriber = self.room.bus.subscribe(self.sid)
         self.out_track = OutboundTrack(self.subscriber)
 
@@ -168,6 +196,8 @@ class WebRTCSession:
                                     "chat_id": str(chat_id),
                                     "message": text,
                                     "source": "rtc",
+                                    # Thread parent override if client requests a branch
+                                    "parent_id": obj.get("parent_id"),
                                 },
                             )
                         except Exception:
@@ -183,7 +213,7 @@ class WebRTCSession:
                 # Get parent_id from client data
                 parent_id = obj.get("parent_id")
                 if parent_id:
-                    # Set the parent_id on the room for future messages
+                    # Set the parent_id on the room for this and future messages
                     self.room.set_parent_id(parent_id)
 
                 # fallback: if no chat_id or not final, keep existing room append (optional)

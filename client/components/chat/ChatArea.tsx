@@ -71,6 +71,7 @@ export default function ChatArea({
     joinRoom,
     toggleMic,
     sendWebRTCMessage,
+    setParentCursor,
     getLocalMicStream,
   } = useWebSocket();
 
@@ -90,6 +91,9 @@ export default function ChatArea({
     null
   );
   const [lastAssistantId, setLastAssistantId] = useState<string | null>(null);
+  const [currentAssistantId, setCurrentAssistantId] = useState<string | null>(
+    null
+  );
 
   // Transcript state per message id
   const [transcripts, setTranscripts] = useState<
@@ -311,6 +315,16 @@ export default function ChatArea({
 
   // Request hints when the assistant signals it's DONE
   useEffect(() => {
+    const onStart = (e: CustomEvent) => {
+      try {
+        const d = e.detail || {};
+        const chatId = d.chatId ?? d.chat_id;
+        const messageId = d.messageId ?? d.message_id;
+        if (!chat?.id || chatId !== chat.id || !messageId) return;
+        setCurrentAssistantId(String(messageId));
+      } catch {}
+    };
+
     const onComplete = (e: CustomEvent) => {
       const d = e.detail || {};
       const chatId = d.chatId ?? d.chat_id;
@@ -320,15 +334,24 @@ export default function ChatArea({
       // Update local state for UI - hints will be fetched automatically by the hook
       setLastAIResponse(finalContent || "");
       setLastAssistantId(messageId);
+      setCurrentAssistantId(null);
       setRealtimeLowHints(null); // Clear any previous real-time hints
       setRealtimeHighHints(null); // Clear any previous real-time hints
     };
 
     window.addEventListener(
+      "trainingMessageStart",
+      onStart as unknown as EventListener
+    );
+    window.addEventListener(
       "trainingMessageComplete",
       onComplete as EventListener
     );
     return () => {
+      window.removeEventListener(
+        "trainingMessageStart",
+        onStart as unknown as EventListener
+      );
       window.removeEventListener(
         "trainingMessageComplete",
         onComplete as EventListener
@@ -598,8 +621,26 @@ export default function ChatArea({
       joinRoom(chat.id);
       // Prefer to wait briefly for RTC setup so we don't miss audio reply
       await waitForVoiceReady(1500);
+      // Compute parentId: default to last assistant message id if present; else undefined
+      let parentId: string | undefined =
+        currentAssistantId || lastAssistantId || undefined;
+      try {
+        if (!parentId) {
+          for (let i = displayMessages.length - 1; i >= 0; i--) {
+            const m = displayMessages[i];
+            if (m.role === "assistant" && (m.completed || m.content === "")) {
+              parentId = m.id;
+              break;
+            }
+          }
+        }
+      } catch {}
+      // Optionally inform server to branch cursor before sending
+      try {
+        if (parentId) setParentCursor(chat.id, parentId);
+      } catch {}
       // sendWebRTCMessage will still fallback to socket if DC isn't ready
-      sendWebRTCMessage(chat.id, message);
+      sendWebRTCMessage(chat.id, message, parentId);
       setCurrentMessage("");
     },
     [
@@ -607,10 +648,44 @@ export default function ChatArea({
       currentMessage,
       joinRoom,
       sendWebRTCMessage,
+      setParentCursor,
       setCurrentMessage,
       waitForVoiceReady,
+      displayMessages,
+      currentAssistantId,
+      lastAssistantId,
     ]
   );
+
+  // When mic turns ON, seed server parent cursor to latest assistant so
+  // the audio transcript user message threads correctly.
+  useEffect(() => {
+    if (!chat?.id) return;
+    if (!micOn) return;
+    let parentId: string | undefined =
+      currentAssistantId || lastAssistantId || undefined;
+    try {
+      if (!parentId) {
+        for (let i = displayMessages.length - 1; i >= 0; i--) {
+          const m = displayMessages[i];
+          if (m.role === "assistant" && (m.completed || m.content === "")) {
+            parentId = m.id;
+            break;
+          }
+        }
+      }
+    } catch {}
+    try {
+      if (parentId) setParentCursor(chat.id, parentId);
+    } catch {}
+  }, [
+    micOn,
+    chat?.id,
+    displayMessages,
+    currentAssistantId,
+    lastAssistantId,
+    setParentCursor,
+  ]);
 
   // Removed auto-show feedback modal useEffect - modal should only show when user clicks button
 

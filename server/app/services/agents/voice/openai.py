@@ -788,7 +788,7 @@ class OpenAIAgent(Agent):
                 # Try to get one bus chunk in time; otherwise send silence
                 b = None
                 remaining = next_deadline - time.perf_counter()
-                timeout = 0.010 if remaining > 0 else 0.0
+                timeout = max(0.0, min(remaining, FRAME_SEC))
                 try:
                     # A) wait for bus
                     t_a0 = time.perf_counter()
