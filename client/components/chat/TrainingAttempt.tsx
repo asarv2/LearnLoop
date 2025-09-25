@@ -120,14 +120,12 @@ function TrainingAttemptContent() {
   const hasFeedback = () => {
     if (!chat) return false;
     const chatWithIncludes = chat as ChatWithAllIncludes;
-    // Check for rubric_grades (new system) or feedback (old system)
+    // Check for rubric_grades
     const hasRubricGrades =
       chatWithIncludes.rubric_grades &&
       chatWithIncludes.rubric_grades.length > 0;
-    const hasOldFeedback =
-      chatWithIncludes.feedback && chatWithIncludes.feedback.length > 0;
 
-    return hasRubricGrades || hasOldFeedback;
+    return hasRubricGrades;
   };
 
   const scrollToBottom = () => {

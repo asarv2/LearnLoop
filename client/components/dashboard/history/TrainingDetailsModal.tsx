@@ -10,6 +10,7 @@ import { useChatForAttempt } from "@/lib/api/hooks/useChats";
 import { useRubricGradesByChat } from "@/lib/api/hooks/useRubricGrades";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
 import { useTrainingMessages } from "@/lib/api/hooks/useTrainingMessages";
+import type { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import { Button, Card, Col, List, Modal, Row, Tag, Typography } from "antd";
 import { useMemo } from "react";
@@ -78,8 +79,8 @@ export default function TrainingDetailsModal({
     Boolean(chat?.scenario_id)
   );
 
-  // Get feedback data from chat
-  const feedback = chat && "feedback" in chat ? chat.feedback?.[0] : null;
+  // Get feedback data from chat - using rubric_grades instead of old feedback table
+  const rubricGrades = chat?.rubric_grades || [];
 
   const isLoading = chatLoading || messagesLoading;
 
@@ -95,7 +96,6 @@ export default function TrainingDetailsModal({
       isUser: message.role === "user",
     }));
   }, [messages]);
-
 
   return (
     <Modal
@@ -173,7 +173,7 @@ export default function TrainingDetailsModal({
                           style={{ padding: "4px 0", fontSize: "14px" }}
                         >
                           <Text>
-                            {index + 1}. {objective}
+                            {index + 1}. {String(objective)}
                           </Text>
                         </List.Item>
                       )}
@@ -288,7 +288,7 @@ export default function TrainingDetailsModal({
                   <div>
                     <Title level={5}>Feedback</Title>
                     {chat.completed ? (
-                      feedback ? (
+                      rubricGrades.length > 0 ? (
                         <div
                           style={{
                             display: "flex",
@@ -296,74 +296,90 @@ export default function TrainingDetailsModal({
                             gap: "12px",
                           }}
                         >
-                          {/* Strengths */}
-                          {feedback.strengths &&
-                            feedback.strengths.length > 0 && (
-                              <div>
+                          {rubricGrades.map(
+                            (
+                              grade: ChatWithAllIncludes["rubric_grades"][0],
+                              index: number
+                            ) => (
+                              <div key={index}>
                                 <Text
                                   strong
-                                  style={{ fontSize: "12px", color: "#52c41a" }}
+                                  style={{ fontSize: "12px", color: "#1890ff" }}
                                 >
-                                  Strengths:
+                                  {grade.name}: {grade.score}/100
                                 </Text>
-                                <List
-                                  size="small"
-                                  dataSource={feedback.strengths}
-                                  renderItem={(strength) => (
-                                    <List.Item
-                                      style={{
-                                        padding: "2px 0",
-                                        fontSize: "12px",
-                                      }}
-                                    >
-                                      <Text style={{ color: "#52c41a" }}>
-                                        • {strength}
-                                      </Text>
-                                    </List.Item>
-                                  )}
-                                />
-                              </div>
-                            )}
-
-                          {/* Improvements */}
-                          {feedback.errors && feedback.errors.length > 0 && (
-                            <div>
-                              <Text
-                                strong
-                                style={{ fontSize: "12px", color: "#ff4d4f" }}
-                              >
-                                Areas for Improvement:
-                              </Text>
-                              <List
-                                size="small"
-                                dataSource={feedback.errors}
-                                renderItem={(error) => (
-                                  <List.Item
-                                    style={{
-                                      padding: "2px 0",
-                                      fontSize: "12px",
-                                    }}
+                                {grade.description && (
+                                  <Text
+                                    style={{ fontSize: "11px", color: "#666" }}
                                   >
-                                    <Text style={{ color: "#ff4d4f" }}>
-                                      • {error}
-                                    </Text>
-                                  </List.Item>
+                                    {grade.description}
+                                  </Text>
                                 )}
-                              />
-                            </div>
-                          )}
 
-                          {(!feedback.strengths ||
-                            feedback.strengths.length === 0) &&
-                            (!feedback.errors ||
-                              feedback.errors.length === 0) && (
-                              <Text
-                                type="secondary"
-                                style={{ fontSize: "12px" }}
-                              >
-                                No detailed feedback available
-                              </Text>
-                            )}
+                                {/* Strengths */}
+                                {grade.strengths &&
+                                  grade.strengths.length > 0 && (
+                                    <div style={{ marginTop: "4px" }}>
+                                      <Text
+                                        style={{
+                                          fontSize: "11px",
+                                          color: "#52c41a",
+                                        }}
+                                      >
+                                        Strengths:
+                                      </Text>
+                                      <List
+                                        size="small"
+                                        dataSource={grade.strengths}
+                                        renderItem={(strength) => (
+                                          <List.Item
+                                            style={{
+                                              padding: "1px 0",
+                                              fontSize: "11px",
+                                            }}
+                                          >
+                                            <Text style={{ color: "#52c41a" }}>
+                                              • {String(strength)}
+                                            </Text>
+                                          </List.Item>
+                                        )}
+                                      />
+                                    </div>
+                                  )}
+
+                                {/* Improvements */}
+                                {grade.improvements &&
+                                  grade.improvements.length > 0 && (
+                                    <div style={{ marginTop: "4px" }}>
+                                      <Text
+                                        style={{
+                                          fontSize: "11px",
+                                          color: "#ff4d4f",
+                                        }}
+                                      >
+                                        Areas for Improvement:
+                                      </Text>
+                                      <List
+                                        size="small"
+                                        dataSource={grade.improvements}
+                                        renderItem={(improvement) => (
+                                          <List.Item
+                                            style={{
+                                              padding: "1px 0",
+                                              fontSize: "11px",
+                                            }}
+                                          >
+                                            <Text style={{ color: "#ff4d4f" }}>
+                                              • {String(improvement)}
+                                            </Text>
+                                          </List.Item>
+                                        )}
+                                      />
+                                    </div>
+                                  )}
+                              </div>
+                            )
+                          )}
                         </div>
                       ) : (
                         <Text type="secondary" style={{ fontSize: "12px" }}>

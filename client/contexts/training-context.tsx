@@ -190,8 +190,7 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     };
     const hasFeedback =
       (chatWithIncludes.rubric_grades &&
-        chatWithIncludes.rubric_grades.length > 0) ||
-      (chatWithIncludes.feedback && chatWithIncludes.feedback.length > 0);
+        chatWithIncludes.rubric_grades.length > 0);
 
     // Show feedback if available and we haven't processed it yet
     if (hasFeedback && !lastProcessedFeedbackRef.current) {

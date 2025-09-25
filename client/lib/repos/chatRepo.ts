@@ -14,9 +14,6 @@ type ChatRow = Database["public"]["Tables"]["chats"]["Row"];
 // Related table types
 type RubricGradeRow = Database["public"]["Tables"]["rubric_grades"]["Row"];
 type StandardGradeRow = Database["public"]["Tables"]["standard_grades"]["Row"];
-type AssessmentRow = Database["public"]["Tables"]["assessments"]["Row"];
-type QuestionRow = Database["public"]["Tables"]["questions"]["Row"];
-type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
 type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
 type HintRow = Database["public"]["Tables"]["hints"]["Row"];
 
@@ -25,10 +22,6 @@ export type ChatWithAllIncludes = ChatRow & {
   rubric_grades: (RubricGradeRow & {
     standard_grades: StandardGradeRow[];
   })[];
-  assessments: (AssessmentRow & {
-    questions: QuestionRow[];
-  })[];
-  feedback: FeedbackRow[];
   messages: (MessageRow & {
     hints: HintRow[];
   })[];
@@ -119,8 +112,6 @@ export const chatRepo = {
         `
         *,
         rubric_grades(*, standard_grades(*)),
-        assessments(*, questions(*)),
-        feedback(*),
         messages(*, hints(*))
       `
       )
