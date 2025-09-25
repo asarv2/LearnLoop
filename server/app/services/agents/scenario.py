@@ -645,6 +645,12 @@ async def run_scenario_agent(
             scenario_tools, document_tool_metadata = await create_scenario_tools(scenario_id, persona_ids, fresh_session, generate_documents)
         finally:
             fresh_session.close()
+        
+        # If document tools are available, append the document generation section
+        if document_tool_metadata:
+            # Load the document generation section from separate file
+            document_section = await load_prompt("scenario_doc")
+            system_prompt += "\n\n" + document_section
         logger.info(f"Created {len(scenario_tools)} scenario tools")
         
         # Add tools information for the model to understand what's available
@@ -771,6 +777,9 @@ async def run_scenario_agent(
 
         logger.info(f"Successfully generated scenario for scenario {scenario_id}")
 
+        # Only include document_ids if generate_documents is True
+        final_document_ids = document_ids if generate_documents else []
+
         # Create child scenario if requested
         child_scenario = None
         if create_child:
@@ -797,7 +806,7 @@ async def run_scenario_agent(
                         parameter_ids.append(str(new_param.id))
                     except Exception:
                         logger.exception("Failed to create parameter from field value")
-
+            
             child_scenario = await create_child_scenario(
                 parent_scenario=scenario,
                 title=title,
@@ -805,11 +814,11 @@ async def run_scenario_agent(
                 objectives=objectives,
                 prompts=prompts,
                 prompt_mapping=prompt_mapping,
-                document_ids=document_ids,
+                document_ids=final_document_ids,
                 parameter_ids=parameter_ids,
                 persona_ids=persona_ids,
                 session=session
-        )
+            )
 
         return {
             "success": True,
@@ -820,7 +829,7 @@ async def run_scenario_agent(
             "objectives": objectives,
             "prompts": prompts,
             "prompt_mapping": prompt_mapping,
-            "document_ids": document_ids,
+            "document_ids": final_document_ids,
             "child_scenario_id": str(child_scenario.id) if child_scenario else None,
         }
 

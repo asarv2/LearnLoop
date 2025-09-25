@@ -112,8 +112,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     string | null
   >(null);
 
-  // Generate documents switch state
-  const [generateDocuments, setGenerateDocuments] = useState<boolean>(true);
+  // Generate documents switch state - initialize based on training setting
+  const [generateDocuments, setGenerateDocuments] = useState<boolean>(false);
+
+  // Track that we've applied the training default once
+  const docsInitRef = useRef(false);
 
   // Track the parameters used in the last generation to detect changes
   const [lastGeneratedSignature, setLastGeneratedSignature] = useState<
@@ -384,9 +387,36 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     lastGeneratedSignature !== null &&
     lastGeneratedSignature !== currentSignature;
 
+  // Initialize generateDocuments ONCE when training is first loaded
+  useEffect(() => {
+    if (training && !docsInitRef.current) {
+      setGenerateDocuments(training.show_documents === true);
+      docsInitRef.current = true;
+    }
+  }, [training]);
+
   // Initialize field values when scenario and training load
   useEffect(() => {
     if (scenario && fields && groups) {
+      if (training) {
+        // Update progress steps based on training setting only
+        const baseSteps = [
+          { label: "Processing inputs", complete: false },
+          { label: "Generating scenario", complete: false },
+          { label: "Creating objectives", complete: false },
+          { label: "Creating persona prompts", complete: false },
+        ];
+
+        const steps =
+          training.show_documents === true
+            ? [...baseSteps, { label: "Generating documents", complete: false }]
+            : baseSteps;
+
+        setGenerateProgress((prev) => ({
+          ...prev,
+          steps,
+        }));
+      }
       // Only use individual scenario field_ids for the main fieldValues state
       // Group field_ids will be handled separately within group components
       const individualFieldIds = scenario.field_ids || [];
@@ -460,12 +490,25 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   }, []);
 
   const beginGenerateProgress = () => {
+    // Set up progress steps based on current generateDocuments state
+    const baseSteps = [
+      { label: "Processing inputs", complete: false },
+      { label: "Generating scenario", complete: false },
+      { label: "Creating objectives", complete: false },
+      { label: "Creating persona prompts", complete: false },
+    ];
+
+    const steps =
+      training?.show_documents === true && generateDocuments
+        ? [...baseSteps, { label: "Generating documents", complete: false }]
+        : baseSteps;
+
     setGenerateProgress((prev) => ({
       ...prev,
       visible: true,
       completedCount: 0,
       totalTools: 0,
-      steps: prev.steps.map((s, i) => ({ ...s, complete: i === 0 })),
+      steps: steps.map((s, i) => ({ ...s, complete: i === 0 })),
     }));
     if (preparingModelTimerRef.current) {
       window.clearTimeout(preparingModelTimerRef.current);
@@ -517,10 +560,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
           case "document":
             newProgress.completedCount += 1;
-            newProgress.steps = newProgress.steps.map((s, i) => ({
-              ...s,
-              complete: i === 4 ? true : s.complete,
-            }));
+            // Only update document step if it exists (when training.show_documents is true)
+            if (training?.show_documents === true) {
+              // Find the document step index dynamically
+              const documentStepIndex = newProgress.steps.findIndex(
+                (step) => step.label === "Generating documents"
+              );
+              if (documentStepIndex !== -1) {
+                newProgress.steps = newProgress.steps.map((s, i) => ({
+                  ...s,
+                  complete: i === documentStepIndex ? true : s.complete,
+                }));
+              }
+            }
             break;
         }
 
@@ -539,7 +591,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         handleScenarioProgress as EventListener
       );
     };
-  }, []);
+  }, [training?.show_documents, generateDocuments]);
 
   // Listen for scenario generated events
   useEffect(() => {
@@ -1267,7 +1319,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         persona_ids: personaIds,
         additional_prompt: opts?.additionalPrompt || undefined,
         current_draft_objectives: draftObjectives || [],
-        generate_documents: generateDocuments,
+        generate_documents:
+          training?.show_documents === true ? generateDocuments : false,
       });
     } catch (error) {
       console.error("Error generating scenario:", error);
@@ -1779,9 +1832,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                         </Box>
 
                         {/* Specifics Section - Document Previews */}
-                        {((draftDocumentIds && draftDocumentIds.length > 0) ||
-                          (scenario?.document_ids &&
-                            scenario.document_ids.length > 0)) && (
+                        {draftDocumentIds && draftDocumentIds.length > 0 && (
                           <Box>
                             <Text size="2" weight="bold" mb="3">
                               Specifics
@@ -1793,10 +1844,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                                 maxWidth: "600px", // 5 cards * 120px + 4 gaps * 12px = 648px, so 600px fits nicely
                               }}
                             >
-                              {(draftDocumentIds.length > 0
-                                ? draftDocumentIds
-                                : scenario?.document_ids || []
-                              ).map((docId) => (
+                              {draftDocumentIds.map((docId) => (
                                 <DocumentPreviewCard
                                   key={docId}
                                   documentId={docId}
@@ -1882,53 +1930,55 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                           )}
                         </Flex>
 
-                        {/* Generate Documents Switch */}
-                        <Box
-                          style={{
-                            marginLeft: "24px",
-                            paddingLeft: "16px",
-                            borderLeft: "2px solid var(--gray-5)",
-                            marginBottom: "16px",
-                          }}
-                        >
-                          <Flex align="center" gap="3" mb="2">
-                            <label
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "8px",
-                                cursor: "pointer",
-                                fontSize: "14px",
-                                fontWeight: "500",
-                                color: "var(--gray-12)",
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={generateDocuments}
-                                onChange={(e) =>
-                                  setGenerateDocuments(e.target.checked)
-                                }
-                                style={{
-                                  width: "18px",
-                                  height: "18px",
-                                  accentColor: "var(--violet-9)",
-                                  cursor: "pointer",
-                                }}
-                              />
-                              <Text size="3" weight="medium">
-                                Include Documents
-                              </Text>
-                            </label>
-                          </Flex>
-                          <Text
-                            size="2"
-                            color="gray"
-                            style={{ marginLeft: "26px" }}
+                        {/* Generate Documents Switch - only show if training allows documents */}
+                        {training?.show_documents === true && (
+                          <Box
+                            style={{
+                              marginLeft: "24px",
+                              paddingLeft: "16px",
+                              borderLeft: "2px solid var(--gray-5)",
+                              marginBottom: "16px",
+                            }}
                           >
-                            Randomly generated to enhance the scenario
-                          </Text>
-                        </Box>
+                            <Flex align="center" gap="3" mb="2">
+                              <label
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  cursor: "pointer",
+                                  fontSize: "14px",
+                                  fontWeight: "500",
+                                  color: "var(--gray-12)",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={generateDocuments}
+                                  onChange={(e) =>
+                                    setGenerateDocuments(e.target.checked)
+                                  }
+                                  style={{
+                                    width: "18px",
+                                    height: "18px",
+                                    accentColor: "var(--violet-9)",
+                                    cursor: "pointer",
+                                  }}
+                                />
+                                <Text size="3" weight="medium">
+                                  Include Documents
+                                </Text>
+                              </label>
+                            </Flex>
+                            <Text
+                              size="2"
+                              color="gray"
+                              style={{ marginLeft: "26px" }}
+                            >
+                              Randomly generated to enhance the scenario
+                            </Text>
+                          </Box>
+                        )}
 
                         <Button
                           size="3"
