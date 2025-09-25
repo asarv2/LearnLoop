@@ -213,7 +213,7 @@ services:
     restart: unless-stopped
     profiles: [prod]
     environment:
-      - PROJECT_NAME=${COMPOSE_PROJECT_NAME}    # ok to keep; templates don't use it
+      - PROJECT_NAME=${COMPOSE_PROJECT_NAME}
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
       - ./web/generated:/etc/nginx/conf.d/generated:rw
