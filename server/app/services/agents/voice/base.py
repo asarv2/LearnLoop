@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
-
 from app.bus import PCM_SR, AudioBus, AudioChunk
 
 if TYPE_CHECKING:
@@ -64,6 +63,7 @@ class Agent:
         chunk_idx: int = 0,
         is_final: bool = True,
         persona_id: str | None = None,
+        voice: bool = False,
     ) -> str:
         """Append a text chunk to the room's in-memory store (returns message_id)."""
         return await self.room.append_text_chunk(
@@ -74,4 +74,5 @@ class Agent:
             chunk_idx=chunk_idx,
             is_final=is_final,
             persona_id=persona_id,
+            voice=voice,
         )

@@ -8,11 +8,11 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app.bus import AudioBus
-
 # new imports
 from app.services.agents.voice.openai import OpenAIAgent
-from app.store import create_room, list_messages, upsert_text_chunk
+from app.store import create_room
 from app.store import get_room as _get_room
+from app.store import list_messages, upsert_text_chunk
 
 FullChatCallback = Callable[
     [str, list], Awaitable[None]
@@ -41,6 +41,9 @@ class Room:
 
     # Feature flag: enable word-level timestamp transcripts
     word_timestamps_enabled: bool = True
+    
+    # Internal flag for OpenAI agent text hooking
+    _openai_text_hooked: bool = False
 
     # NEW: User identification fields
     user_profile_id: str | None = None
@@ -124,6 +127,7 @@ class Room:
         chunk_idx: int,
         is_final: bool,
         persona_id: str | None = None,
+        voice: bool = False,
     ) -> str:
         msg = await upsert_text_chunk(
             self.id,
@@ -134,6 +138,7 @@ class Room:
             chunk_idx=chunk_idx,
             is_final=is_final,
             persona_id=persona_id,
+            voice=voice,
         )
 
         # The chunk we just appended is the last one; expose its ts_ms.

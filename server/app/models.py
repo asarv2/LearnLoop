@@ -409,11 +409,13 @@ class Messages(_Base, table=True):
     chat_id: uuid.UUID = Field(sa_column=Column('chat_id', Uuid(as_uuid=True)))
     role: str = Field(sa_column=Column('role', Enum('user', 'assistant', name='message_role')))
     word_timestamps: List[uuid.UUID] = Field(sa_column=Column('word_timestamps', ARRAY(JSONB(astext_type=Text())), server_default=text("'{}'::jsonb[]")))
+    voice: bool = Field(sa_column=Column('voice', Boolean, default=False, comment='if a voice message'))
     content: Optional[str] = Field(default=None, sa_column=Column('content', Text))
     training_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('training_id', Uuid(as_uuid=True)))
     error: Optional[str] = Field(default=None, sa_column=Column('error', Text))
     persona_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('persona_id', Uuid(as_uuid=True)))
     interruption_ms: Optional[int] = Field(default=None, sa_column=Column('interruption_ms', Integer, comment='when message was interrupted'))
+    parent_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('parent_id', Uuid(as_uuid=True)))
 
     chat: Optional['Chats'] = Relationship(back_populates='messages')
     persona: Optional['Personas'] = Relationship(back_populates='messages')

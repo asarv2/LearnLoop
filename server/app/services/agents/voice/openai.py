@@ -10,27 +10,28 @@ import time
 from typing import Any
 
 import numpy as np
-
 # ---- OpenAI Agents SDK (pip install openai-agents or openai-agents-python) ----
 from agents.realtime import RealtimeAgent as OARealtimeAgent
 from agents.realtime import RealtimeRunner, RealtimeSession
-from agents.realtime.config import RealtimeRunConfig, RealtimeSessionModelSettings
+from agents.realtime.config import (RealtimeRunConfig,
+                                    RealtimeSessionModelSettings)
 from agents.realtime.events import RealtimeAgentEndEvent as OAEventAgentEnd
 from agents.realtime.events import RealtimeAgentStartEvent as OAEventAgentStart
 from agents.realtime.events import RealtimeAudio as OAEventAudio
 from agents.realtime.events import RealtimeAudioEnd as OAEventAudioEnd
-from agents.realtime.events import RealtimeAudioInterrupted as OAEventAudioInterrupted
+from agents.realtime.events import \
+    RealtimeAudioInterrupted as OAEventAudioInterrupted
 from agents.realtime.events import RealtimeError as OAEventError
 from agents.realtime.events import RealtimeRawModelEvent as OAEventRaw
-from agents.realtime.model_events import RealtimeModelRawServerEvent as OAEventRawServer
-from sqlmodel import select
-
+from agents.realtime.model_events import \
+    RealtimeModelRawServerEvent as OAEventRawServer
 from app.bus import PCM_SR, SAMPLES_PER_CHUNK, AudioChunk
 from app.db import get_session
 from app.models import Chats, Documents, Messages, Personas, Scenarios
 from app.services.agents.voice.base import Agent
 from app.store import list_messages
 from app.utils.chat import get_formatted_conversation_history_with_personas
+from sqlmodel import select
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +221,7 @@ class OpenAIAgent(Agent):
                         chunk_idx=0,
                         is_final=False,
                         persona_id=persona_id,
+                        voice=True,
                     )
                     msg_id = msg_id_new
                     # Backfill mappings so future events attach correctly
@@ -315,10 +317,9 @@ class OpenAIAgent(Agent):
             return self._assistant_persona_id
 
         try:
-            from sqlmodel import select
-
             from app.db import get_session
             from app.models import Chats, Personas
+            from sqlmodel import select
 
             db_session = next(get_session())
             try:
@@ -382,10 +383,9 @@ class OpenAIAgent(Agent):
             return self.room.user_persona_id
 
         try:
-            from sqlmodel import select
-
             from app.db import get_session
             from app.models import Personas
+            from sqlmodel import select
 
             profile_id = getattr(self.room, "user_profile_id", None)
             if not profile_id:
@@ -512,6 +512,7 @@ class OpenAIAgent(Agent):
             chunk_idx: int,
             is_final: bool,
             persona_id: str | None = None,
+            voice: bool = False,
         ) -> str:
             # If a user anchor is open, route typed text into that message
             use_anchor = (
@@ -545,6 +546,7 @@ class OpenAIAgent(Agent):
                 chunk_idx=chunk_idx,
                 is_final=is_final,
                 persona_id=persona_id,
+                voice=voice,
             )
 
             # 1) Local barge-in for ANY typed user chunk (not transcript)
@@ -586,8 +588,8 @@ class OpenAIAgent(Agent):
             return mid
 
         # Patch the instance method (doesn't interfere with socket broadcasting)
-        self.room.append_text_chunk = wrapped
-        self.room._openai_text_hooked = True
+        setattr(self.room, 'append_text_chunk', wrapped)
+        setattr(self.room, '_openai_text_hooked', True)
 
     # ---- session wiring -----------------------------------------------------
 
@@ -937,6 +939,7 @@ class OpenAIAgent(Agent):
                                         chunk_idx=0,
                                         is_final=False,
                                         persona_id=persona_id,
+                                        voice=True,
                                     )
                                 # If word timestamps are enabled, do not stream the buffered text; transcript will drive UI
                                 timestamps_enabled = bool(
@@ -949,6 +952,7 @@ class OpenAIAgent(Agent):
                                         chunk_idx=st["chunk_idx"],
                                         is_final=False,
                                         persona_id=persona_id,
+                                        voice=True,
                                     )
                                     st["chunk_idx"] += 1
                                 # Save flushed text for partial CTC reference
@@ -1079,6 +1083,7 @@ class OpenAIAgent(Agent):
                             chunk_idx=next_chunk_idx,
                             is_final=True,
                             persona_id=persona_id,
+                            voice=True,
                         )
                         active_msg_id = None
                         next_chunk_idx = 0
@@ -1226,6 +1231,7 @@ class OpenAIAgent(Agent):
                                             chunk_idx=0,
                                             is_final=False,
                                             persona_id=persona_id,
+                                            voice=True,
                                         )
                                     await self.publish_text_chunk(
                                         text=delta,
@@ -1233,6 +1239,7 @@ class OpenAIAgent(Agent):
                                         chunk_idx=st["chunk_idx"],
                                         is_final=False,
                                         persona_id=persona_id,
+                                        voice=True,
                                     )
                                     st["chunk_idx"] += 1
                                 else:
@@ -1281,6 +1288,7 @@ class OpenAIAgent(Agent):
                                                 chunk_idx=0,
                                                 is_final=False,
                                                 persona_id=persona_id,
+                                                voice=True,
                                             )
                                         await self.publish_text_chunk(
                                             text=delta,
@@ -1288,6 +1296,7 @@ class OpenAIAgent(Agent):
                                             chunk_idx=st["chunk_idx"],
                                             is_final=False,
                                             persona_id=persona_id,
+                                            voice=True,
                                         )
                                         st["chunk_idx"] += 1
                                     else:
@@ -1340,6 +1349,7 @@ class OpenAIAgent(Agent):
                                         chunk_idx=0,
                                         is_final=False,
                                         persona_id=persona_id,
+                                        voice=True,
                                     )
                                     await self.publish_text_chunk(
                                         text=final_text,
@@ -1347,6 +1357,7 @@ class OpenAIAgent(Agent):
                                         chunk_idx=0,
                                         is_final=True,
                                         persona_id=persona_id,
+                                        voice=True,
                                     )
                                     self._rid_to_msg[rid] = msg_id
                                 else:
@@ -1357,6 +1368,7 @@ class OpenAIAgent(Agent):
                                         chunk_idx=st["chunk_idx"],
                                         is_final=True,
                                         persona_id=persona_id,
+                                        voice=True,
                                     )
                                     self._rid_to_msg[rid] = str(st["msg_id"])  # type: ignore[arg-type]
                             else:
@@ -1411,14 +1423,12 @@ class OpenAIAgent(Agent):
                                         # Persist final word timestamps to DB
                                         try:
                                             if (msg_id_final or "").strip():
-                                                from sqlmodel import select as _select
-
-                                                from app.db import (
-                                                    get_session as _get_session,
-                                                )
-                                                from app.models import (
-                                                    Messages as _DBMsg,
-                                                )
+                                                from app.db import \
+                                                    get_session as _get_session
+                                                from app.models import \
+                                                    Messages as _DBMsg
+                                                from sqlmodel import \
+                                                    select as _select
 
                                                 def _persist_words() -> None:
                                                     db = next(_get_session())
@@ -1579,6 +1589,7 @@ class OpenAIAgent(Agent):
                                     else 0,
                                     is_final=False,
                                     persona_id=await self._get_user_persona_id(),
+                                    voice=True,
                                 )
                                 self._user_anchor["chunk_idx"] = (
                                     self._user_anchor["chunk_idx"] or 0
