@@ -187,6 +187,41 @@ def _get_template_contract(mod: Any) -> Tuple[Type[BaseModel], Callable[[BaseMod
         raise HTTPException(status_code=500, detail="Template render is not callable.")
     return ArgsModel, render_fn, default_filename, template_description
 
+def _json_safe_default(field: Any) -> Any:
+    """Handle both default and default_factory fields safely for JSON serialization."""
+    try:
+        from pydantic_core import PydanticUndefined
+    except Exception:
+        # Create a unique object to use as fallback
+        PydanticUndefined = type('PydanticUndefined', (), {})()
+    
+    # Prefer explicit default if present
+    if getattr(field, "default", PydanticUndefined) is not PydanticUndefined:
+        return field.default
+
+    # If there's a factory, try to call it; if that fails, provide a preview
+    factory = getattr(field, "default_factory", None)
+    if factory is not None:
+        try:
+            val = factory()
+        except Exception:
+            # Gentle fallback previews for common containers
+            ann = str(field.annotation)
+            if "list" in ann.lower():
+                return []
+            if "dict" in ann.lower():
+                return {}
+            return None
+        # Ensure JSON-serializable (basic containers only)
+        try:
+            import json; json.dumps(val)
+            return val
+        except Exception:
+            return None
+
+    # No default, no factory
+    return None
+
 def _model_spec(ArgsModel: Type[BaseModel], template_description: Optional[str] = None, default_filename: Optional[str] = None) -> Dict[str, Any]:
     """
     Produce a JSON-serializable description of fields, types, defaults, and required flags.
@@ -204,17 +239,15 @@ def _model_spec(ArgsModel: Type[BaseModel], template_description: Optional[str] 
         # Determine if field is required (no default and not Optional)
         is_required = field.is_required()
         
-        # Get default value - use None for Optional types even if not explicitly set
-        if is_required:
-            default_val = None
-        else:
-            default_val = field.default
+        # Get default value safely (handles default_factory)
+        default_val = _json_safe_default(field)
         
         fields[name] = {
             "type": ftype,
             "required": is_required,
             "default": default_val,
             "description": field.description,
+            "has_default_factory": field.default_factory is not None,
         }
     spec = {
         "title": ArgsModel.__name__,
@@ -341,6 +374,19 @@ Args.model_rebuild()
                     return i
             return None
 
+        # Check for LaTeX stray backslashes in generated .tex
+        def _check_latex_stray_backslashes(tex_content: str) -> Optional[str]:
+            import re
+            lines = tex_content.splitlines()
+            for i, line in enumerate(lines, 1):
+                # Check for non-comment line ending with lone backslash
+                if re.match(r'^[^%]*?\\\s*$', line):
+                    return f"Line {i}: LaTeX line ends with lone backslash: {line.strip()}"
+                # Check for \\ immediately followed by % on same line
+                if re.search(r'\\\\\s*%', line):
+                    return f"Line {i}: LaTeX has \\\\% on same line: {line.strip()}"
+            return None
+
         bad_line = _find_stray_line_continuations(template_code)
         if bad_line:
             return JSONResponse(
@@ -462,6 +508,24 @@ Args.model_rebuild()
                             "error_details": "Generated file does not have PDF header"
                         }, status_code=400)
                     
+                    # Check for LaTeX stray backslashes in generated .tex files
+                    try:
+                        import glob
+                        tex_files = glob.glob(f"{temp_file.replace('.py', '')}*.tex")
+                        if tex_files:
+                            with open(tex_files[0], 'r', encoding='utf-8', errors='ignore') as tex_file:
+                                tex_content = tex_file.read()
+                                latex_error = _check_latex_stray_backslashes(tex_content)
+                                if latex_error:
+                                    return JSONResponse(content={
+                                        "valid": False,
+                                        "message": f"LaTeX stray backslash detected: {latex_error}",
+                                        "error_type": "LaTeXError",
+                                        "error_details": "Generated LaTeX contains stray backslashes that cause 'There's no line here to end' errors"
+                                    }, status_code=400)
+                    except Exception:
+                        pass  # Ignore LaTeX file reading errors
+                    
                     return JSONResponse(content={
                         "valid": True,
                         "message": f"Template is valid and generated {len(pdf_bytes)} byte PDF",
@@ -553,10 +617,21 @@ async def get_template_spec(template_id: UUID) -> JSONResponse:
     """
     Return the template's Args schema (fields, types, defaults) and declared return type.
     """
-    mod = await _import_template_module(template_id)
-    ArgsModel, _, default_filename, template_description = _get_template_contract(mod)
-    spec = _model_spec(ArgsModel, template_description, default_filename)
-    return JSONResponse(content=spec)
+    try:
+        mod = await _import_template_module(template_id)
+        ArgsModel, _, default_filename, template_description = _get_template_contract(mod)
+        spec = _model_spec(ArgsModel, template_description, default_filename)
+        return JSONResponse(content=spec)
+    except Exception as e:
+        logger.exception(f"Failed to generate spec for template {template_id}")
+        return JSONResponse(
+            content={
+                "error": "Failed to generate template spec",
+                "message": str(e),
+                "template_id": str(template_id)
+            },
+            status_code=500
+        )
 
 @app.post("/create")
 async def create_document(req: CreateRequest) -> StreamingResponse:
