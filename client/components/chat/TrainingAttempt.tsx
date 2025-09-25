@@ -380,7 +380,6 @@ function TrainingAttemptContent() {
             <FeedbackModal
               isOpen={showFeedback}
               onClose={() => setShowFeedback(false)}
-              feedback={(chat as ChatWithAllIncludes)?.feedback?.[0] || null}
               score={null}
               chat={chat}
             />
