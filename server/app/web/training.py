@@ -16,6 +16,7 @@ from app.db import get_session
 from app.models import Documents  # ✨ Import Personas
 from app.models import (Attempts, Chats, Fields, Messages, Parameters,
                         Personas, Scenarios, Trainings)
+from app.room import get_room
 from app.services.agents.document import run_document_agent
 from app.services.agents.generic import run_generic_agent
 from app.services.agents.grade import run_grading_agent
@@ -135,7 +136,7 @@ async def handle_start_training(sid: str, data: dict[str, Any]) -> None:
             )
             # Optionally set scenario_id if model supports it
             try:
-                chat.scenario_id = str(scenario.id)
+                chat.scenario_id = scenario.id
             except Exception:
                 pass
             db_session.add(chat)
@@ -918,6 +919,7 @@ async def handle_training_message_websocket(sid: str, data: dict[str, Any]) -> N
             message=message,
             session=None,  # Let the function create its own session
             profile_id=profile_id,
+            parent_id=data.get("parent_id"),
         )
     except Exception as e:
         logger.error(f"Error in traditional training flow: {str(e)}")
@@ -992,28 +994,11 @@ async def handle_training_message_rtc(sid: str, data: dict[str, Any]) -> None:
         # If we need persona tagging for user messages later, we can thread it through the
         # audio pipeline explicitly.
 
-        # Get the previous message ID for parent_id
-        previous_message_id = None
-        try:
-            from app.models import Messages
-            db_session = next(get_session())
-            try:
-                result = db_session.exec(
-                    select(Messages.id)
-                    .where(Messages.chat_id == chat_id)
-                    .order_by(Messages.created_at.desc())
-                    .limit(1)
-                ).one_or_none()
-                previous_message_id = str(result) if result else None
-            except Exception:
-                previous_message_id = None
-            finally:
-                try:
-                    db_session.close()
-                except Exception:
-                    pass
-        except Exception:
-            previous_message_id = None
+        # Get parent_id from client data
+        parent_id = data.get("parent_id")
+        if parent_id:
+            # Set the parent_id on the room for future messages
+            room.set_parent_id(parent_id)
 
         # Use room system to append text chunk
         await room.append_text_chunk(
@@ -1024,7 +1009,7 @@ async def handle_training_message_rtc(sid: str, data: dict[str, Any]) -> None:
             chunk_idx=0,
             is_final=True,
             persona_id=persona_id,
-            parent_id=previous_message_id,
+            parent_id=parent_id,
         )
     except Exception as e:
         logger.error(f"Error in room system flow: {str(e)}")
@@ -1079,6 +1064,7 @@ async def process_training_message_websocket(
     message: str = "",
     session: Any | None = None,
     profile_id: str | None = None,
+    parent_id: str | None = None,
 ) -> None:
     """
     Process a training message and stream the response via WebSocket
@@ -1119,19 +1105,10 @@ async def process_training_message_websocket(
                 # Fallback or error handling
                 raise ValueError(f"User persona not found for profile {profile_id}")
 
-        # Get the previous message ID for parent_id
-        previous_message_id = None
-        try:
-            from app.models import Messages
-            result = db_session.exec(
-                select(Messages.id)
-                .where(Messages.chat_id == chat_id)
-                .order_by(Messages.created_at.desc())
-                .limit(1)
-            ).one_or_none()
-            previous_message_id = str(result) if result else None
-        except Exception:
-            previous_message_id = None
+        # Set the parent_id on the room for future messages if provided
+        if parent_id:
+            room = get_room(chat_id)
+            room.set_parent_id(parent_id)
 
         # Create user message (in-memory, not saved with new field)
         user_message = Messages(
@@ -1141,7 +1118,7 @@ async def process_training_message_websocket(
             training_id=chat.training_id,
             completed=True,
             persona_id=user_persona_id,  # ✨ Associate with user's persona
-            parent_id=previous_message_id,
+            parent_id=parent_id,
         )
         db_session.add(user_message)
         db_session.commit()
@@ -1197,19 +1174,6 @@ async def process_training_message_websocket(
             logger.error(f"No persona found for chat {chat_id}")
             return
 
-        # Get the previous message ID for parent_id
-        previous_message_id = None
-        try:
-            from app.models import Messages
-            result = db_session.exec(
-                select(Messages.id)
-                .where(Messages.chat_id == chat_id)
-                .order_by(Messages.created_at.desc())
-                .limit(1)
-            ).one_or_none()
-            previous_message_id = str(result) if result else None
-        except Exception:
-            previous_message_id = None
 
         # Create assistant message placeholder
         assistant_message = Messages(
@@ -1219,7 +1183,7 @@ async def process_training_message_websocket(
             training_id=chat.training_id,
             completed=False,
             persona_id=assistant_persona_id,  # ✨ Associate with assistant's persona
-            parent_id=previous_message_id,
+            parent_id=parent_id,
         )
         db_session.add(assistant_message)
         db_session.commit()

@@ -48,6 +48,9 @@ class Room:
     # NEW: User identification fields
     user_profile_id: str | None = None
     user_persona_id: str | None = None
+    
+    # NEW: Current parent_id for message threading
+    current_parent_id: str | None = None
 
     # Track human RTC participants (by sid)
     human_sids: set[str] = field(default_factory=set)
@@ -128,8 +131,8 @@ class Room:
         is_final: bool,
         persona_id: str | None = None,
         voice: bool = False,
-        parent_id: str | None = None,
     ) -> str:
+        # Use room's current_parent_id for all messages
         msg = await upsert_text_chunk(
             self.id,
             message_id=message_id,
@@ -140,7 +143,7 @@ class Room:
             is_final=is_final,
             persona_id=persona_id,
             voice=voice,
-            parent_id=parent_id,
+            parent_id=self.current_parent_id,
         )
 
         # The chunk we just appended is the last one; expose its ts_ms.
@@ -172,6 +175,10 @@ class Room:
         if self.on_full_chat and is_final:
             await self.on_full_chat(self.id, list_messages(self.id))
         return msg.id
+
+    def set_parent_id(self, parent_id: str | None) -> None:
+        """Set the current parent_id for message threading."""
+        self.current_parent_id = parent_id
 
     async def broadcast_transcript(
         self,

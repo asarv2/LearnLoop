@@ -140,6 +140,8 @@ export function useTrainingMessages(chatId: string, enabled = true) {
           training_id: null,
           word_timestamps: [],
           interruption_ms: null,
+          parent_id: null,
+          voice: false,
         };
         return [...old, newAssistant];
       });
@@ -200,6 +202,8 @@ export function useTrainingMessages(chatId: string, enabled = true) {
             training_id: null,
             word_timestamps: [],
             interruption_ms: null,
+            parent_id: null,
+            voice: false,
           },
         ];
       });
@@ -388,12 +392,18 @@ export function useSendTrainingMessage() {
     mutationFn: async ({
       chatId,
       message,
+      parentId,
     }: {
       chatId: string;
       message: string;
+      parentId?: string;
     }) => {
       // no optimistic cache writes—server will emit the saved user message
-      emitSendTrainingMessage({ chat_id: chatId, message });
+      emitSendTrainingMessage({
+        chat_id: chatId,
+        message,
+        parent_id: parentId,
+      });
       return { success: true };
     },
     onError: (error) => logError("Error sending training message:", error),

@@ -42,7 +42,7 @@ interface TrainingContextType {
   isWaitingForFeedback: boolean; // ✅ NEW: Loading state while waiting for feedback
 
   // Training actions
-  sendMessage: (message: string) => Promise<void>;
+  sendMessage: (message: string, parentId?: string) => Promise<void>;
   endTraining: () => Promise<void>;
   getHints: (messageId: string) => Promise<void>; // ✨ Add hints action
 
@@ -189,8 +189,8 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
       rubric_grades?: unknown[];
     };
     const hasFeedback =
-      (chatWithIncludes.rubric_grades &&
-        chatWithIncludes.rubric_grades.length > 0);
+      chatWithIncludes.rubric_grades &&
+      chatWithIncludes.rubric_grades.length > 0;
 
     // Show feedback if available and we haven't processed it yet
     if (hasFeedback && !lastProcessedFeedbackRef.current) {
@@ -214,7 +214,7 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
   }, [isConnected, chatId, chat?.attempt_id, queryClient]);
 
   // Training actions
-  const sendMessage = async (message: string) => {
+  const sendMessage = async (message: string, parentId?: string) => {
     if (!message.trim() || sendMessageMutation.isPending || !isTrainingActive) {
       return;
     }
@@ -223,6 +223,7 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
       await sendMessageMutation.mutateAsync({
         chatId,
         message,
+        parentId,
       });
       logInfo(`Sent training message for chat ${chatId}`);
     } catch (error) {

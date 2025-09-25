@@ -52,7 +52,11 @@ interface WebSocketContextType {
   isRoomJoined: (chatId: string) => boolean;
 
   // Text send – prefers RTC data channel; falls back to websocket emitter
-  sendWebRTCMessage: (chatId: string, message: string) => void;
+  sendWebRTCMessage: (
+    chatId: string,
+    message: string,
+    parentId?: string
+  ) => void;
 
   // Expose the global audio element (remote mixed audio)
   audioPlaybackRef: React.RefObject<HTMLAudioElement | null>;
@@ -100,8 +104,16 @@ interface WebSocketContextType {
     chat_id: string;
     profile_id?: string;
   }) => void;
-  emitSendTrainingMessage: (data: { chat_id: string; message: string }) => void;
-  emitSendIntroMessage: (data: { chat_id: string; message: string }) => void;
+  emitSendTrainingMessage: (data: {
+    chat_id: string;
+    message: string;
+    parent_id?: string;
+  }) => void;
+  emitSendIntroMessage: (data: {
+    chat_id: string;
+    message: string;
+    parent_id?: string;
+  }) => void;
   emitStopTraining: (data: { chat_id: string }) => void;
   emitEndTraining: (data: { chat_id: string }) => void;
   emitGetHints: (data: { chat_id: string; message_id: string }) => void;
@@ -165,7 +177,7 @@ export function WebSocketProvider({
   const pendingText = useRef<string[]>([]);
   // queue for websocket fallback when socket is not connected yet
   const pendingSocketSendsRef = useRef<
-    Array<{ chatId: string; message: string }>
+    Array<{ chatId: string; message: string; parentId?: string }>
   >([]);
 
   // remote audio element
@@ -213,6 +225,7 @@ export function WebSocketProvider({
           socket.emit("send_training_message", {
             chat_id: item.chatId,
             message: item.message,
+            parent_id: item.parentId,
           });
         }
       } catch {}
@@ -1027,50 +1040,61 @@ export function WebSocketProvider({
   );
 
   // Prefer new single text channel; fallback to legacy per-chat channel or websocket emitter
-  const sendWebRTCMessage = useCallback((chatId: string, message: string) => {
-    try {
-      const payloadNew = JSON.stringify({
-        text: message,
-        chunk_idx: 0,
-        is_final: true,
-        chat_id: chatId,
-      });
-
-      // 1) New room text channel
-      if (textChanRef.current && textChanRef.current.readyState === "open") {
-        textChanRef.current.send(payloadNew);
-        return;
-      }
-      if (
-        textChanRef.current &&
-        textChanRef.current.readyState === "connecting"
-      ) {
-        pendingText.current.push(payloadNew);
-        return;
-      }
-
-      // 2) Legacy per-chat RTC channel (if you still spin these up elsewhere)
-      const label = `text-${chatId}`;
-      const legacy = webRTCDataChannels.current.get(label);
-      if (legacy && legacy.readyState === "open") {
-        legacy.send(JSON.stringify({ chat_id: chatId, content: message }));
-        return;
-      }
-
-      // 3) Fallback to websocket emitter used by server
-      if (socketRef.current?.connected) {
-        socketRef.current.emit("send_training_message", {
+  const sendWebRTCMessage = useCallback(
+    (chatId: string, message: string, parentId?: string) => {
+      try {
+        const payloadNew = JSON.stringify({
+          text: message,
+          chunk_idx: 0,
+          is_final: true,
           chat_id: chatId,
-          message,
+          parent_id: parentId,
         });
-      } else {
-        // queue until socket connects
-        pendingSocketSendsRef.current.push({ chatId, message });
+
+        // 1) New room text channel
+        if (textChanRef.current && textChanRef.current.readyState === "open") {
+          textChanRef.current.send(payloadNew);
+          return;
+        }
+        if (
+          textChanRef.current &&
+          textChanRef.current.readyState === "connecting"
+        ) {
+          pendingText.current.push(payloadNew);
+          return;
+        }
+
+        // 2) Legacy per-chat RTC channel (if you still spin these up elsewhere)
+        const label = `text-${chatId}`;
+        const legacy = webRTCDataChannels.current.get(label);
+        if (legacy && legacy.readyState === "open") {
+          legacy.send(
+            JSON.stringify({
+              chat_id: chatId,
+              content: message,
+              parent_id: parentId,
+            })
+          );
+          return;
+        }
+
+        // 3) Fallback to websocket emitter used by server
+        if (socketRef.current?.connected) {
+          socketRef.current.emit("send_training_message", {
+            chat_id: chatId,
+            message,
+            parent_id: parentId,
+          });
+        } else {
+          // queue until socket connects
+          pendingSocketSendsRef.current.push({ chatId, message, parentId });
+        }
+      } catch (err) {
+        logError("sendWebRTCMessage failed", err);
       }
-    } catch (err) {
-      logError("sendWebRTCMessage failed", err);
-    }
-  }, []);
+    },
+    []
+  );
 
   // Minimal room join/leave (unchanged semantics)
   const currentRoomsRef = useRef<Set<string>>(new Set());
@@ -1186,7 +1210,7 @@ export function WebSocketProvider({
   );
 
   const emitSendTrainingMessage = useCallback(
-    (data: { chat_id: string; message: string }) => {
+    (data: { chat_id: string; message: string; parent_id?: string }) => {
       if (!socketRef.current?.connected) {
         logError("Cannot send training message - WebSocket not connected");
         return;
@@ -1198,7 +1222,7 @@ export function WebSocketProvider({
   );
 
   const emitSendIntroMessage = useCallback(
-    async (data: { chat_id: string; message: string }) => {
+    async (data: { chat_id: string; message: string; parent_id?: string }) => {
       try {
         if (!socketRef.current?.connected) {
           logError("Cannot send message - WebSocket not connected");
@@ -1218,7 +1242,7 @@ export function WebSocketProvider({
         }
 
         // Route via the normal message path (RTC DC preferred, websocket fallback)
-        sendWebRTCMessage(data.chat_id, data.message);
+        sendWebRTCMessage(data.chat_id, data.message, data.parent_id);
       } catch (err) {
         logError("emitSendIntroMessage failed", err as Error);
       }
