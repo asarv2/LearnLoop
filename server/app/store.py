@@ -162,6 +162,12 @@ def _upsert_db_message(
         m.content = acc
         if is_final:
             m.completed = True
+        # If caller indicates this message is a voice message, persist that flag
+        try:
+            if voice and not bool(getattr(m, "voice", False)):
+                m.voice = True
+        except Exception:
+            pass
         # Backfill parent_id if it was missing on initial insert
         try:
             if m.parent_id is None and parent_id is not None:
@@ -328,6 +334,7 @@ async def upsert_text_chunk(
                             text=text,
                             is_final=is_final,
                             persona_id=persona_id,
+                            voice=voice,
                             parent_id=msg.parent_id,
                         )
                     except Exception:

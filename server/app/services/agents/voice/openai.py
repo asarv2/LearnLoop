@@ -1529,6 +1529,7 @@ class OpenAIAgent(Agent):
                                     chunk_idx=0,
                                     is_final=False,
                                     persona_id=await self._get_user_persona_id(),
+                                    voice=True,
                                 )
                                 self._user_anchor.update(
                                     {
@@ -1553,6 +1554,7 @@ class OpenAIAgent(Agent):
                                 else 0,
                                 is_final=False,
                                 persona_id=await self._get_user_persona_id(),
+                                voice=True,
                             )
                             self._user_anchor["chunk_idx"] = (
                                 self._user_anchor["chunk_idx"] or 0
@@ -1616,6 +1618,7 @@ class OpenAIAgent(Agent):
                                         else 0,
                                         is_final=True,
                                         persona_id=await self._get_user_persona_id(),
+                                        voice=True,
                                     )
                                 # Reset single-anchor state (whether we wrote text or not)
                                 self._user_anchor.update(
@@ -1646,6 +1649,7 @@ class OpenAIAgent(Agent):
                                     chunk_idx=0,
                                     is_final=False,
                                     persona_id=await self._get_user_persona_id(),
+                                    voice=True,
                                 )
                                 self._user_anchor.update(
                                     {

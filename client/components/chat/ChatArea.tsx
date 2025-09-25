@@ -94,6 +94,10 @@ export default function ChatArea({
   const [currentAssistantId, setCurrentAssistantId] = useState<string | null>(
     null
   );
+  // Retry/branch toggle: when set, next utterance will attach parent_id to this assistant
+  const [branchFromAssistantId, setBranchFromAssistantId] = useState<
+    string | null
+  >(null);
 
   // Transcript state per message id
   const [transcripts, setTranscripts] = useState<
@@ -695,9 +699,12 @@ export default function ChatArea({
       joinRoom(chat.id);
       // Prefer to wait briefly for RTC setup so we don't miss audio reply
       await waitForVoiceReady(1500);
-      // Compute parentId: default to last assistant message id if present; else undefined
+      // Compute parentId: prefer explicit branch selection -> current assistant -> last assistant -> scan
       let parentId: string | undefined =
-        currentAssistantId || lastAssistantId || undefined;
+        branchFromAssistantId ||
+        currentAssistantId ||
+        lastAssistantId ||
+        undefined;
       try {
         if (!parentId) {
           for (let i = displayMessages.length - 1; i >= 0; i--) {
@@ -716,6 +723,8 @@ export default function ChatArea({
       // sendWebRTCMessage will still fallback to socket if DC isn't ready
       sendWebRTCMessage(chat.id, message, parentId);
       setCurrentMessage("");
+      // Clear branch selection after we dispatch the next utterance
+      if (branchFromAssistantId) setBranchFromAssistantId(null);
     },
     [
       chat?.id,
@@ -728,6 +737,7 @@ export default function ChatArea({
       displayMessages,
       currentAssistantId,
       lastAssistantId,
+      branchFromAssistantId,
     ]
   );
 
@@ -737,7 +747,10 @@ export default function ChatArea({
     if (!chat?.id) return;
     if (!micOn) return;
     let parentId: string | undefined =
-      currentAssistantId || lastAssistantId || undefined;
+      branchFromAssistantId ||
+      currentAssistantId ||
+      lastAssistantId ||
+      undefined;
     try {
       if (!parentId) {
         for (let i = displayMessages.length - 1; i >= 0; i--) {
@@ -758,8 +771,30 @@ export default function ChatArea({
     displayMessages,
     currentAssistantId,
     lastAssistantId,
+    branchFromAssistantId,
     setParentCursor,
   ]);
+
+  // Clear branch toggle once the server confirms a new user message (works for both RTC and WS paths)
+  useEffect(() => {
+    const onUserSaved = (e: Event) => {
+      try {
+        const ce = e as CustomEvent;
+        const d = (ce.detail || {}) as Record<string, unknown>;
+        if (!d || !chat?.id) return;
+        const cid = (d["chatId"] as string) || (d["chat_id"] as string);
+        if (cid !== chat.id) return;
+        if (branchFromAssistantId) setBranchFromAssistantId(null);
+      } catch {}
+    };
+    window.addEventListener("userMessageSaved", onUserSaved as EventListener);
+    return () => {
+      window.removeEventListener(
+        "userMessageSaved",
+        onUserSaved as EventListener
+      );
+    };
+  }, [chat?.id, branchFromAssistantId]);
 
   // Removed auto-show feedback modal useEffect - modal should only show when user clicks button
 
@@ -913,6 +948,20 @@ export default function ChatArea({
                   transcripts[message.id]?.words?.length
                 );
 
+                // Retry toggle data (computed once, used in both branches)
+                const parentId = (
+                  message as unknown as { parent_id?: string | null }
+                ).parent_id as string | null | undefined;
+                const assistantParent = parentId
+                  ? (displayMessages.find((m) => m.id === parentId) as
+                      | (Message & { voice?: boolean })
+                      | undefined)
+                  : undefined;
+                const userVoice = (
+                  message as unknown as { voice?: boolean | null }
+                ).voice;
+                const showRetry = isUserMessage && userVoice === true;
+
                 // Show either the full message card OR the pulsating circle for empty messages
                 if (
                   !message.completed &&
@@ -922,6 +971,43 @@ export default function ChatArea({
                   // Show pulsating circle for in-progress empty message (user or assistant)
                   return (
                     <Box key={message.id}>
+                      {showRetry && (
+                        <Flex
+                          justify={isUserMessage ? "end" : "start"}
+                          style={{ marginBottom: "6px" }}
+                        >
+                          <Button
+                            size="1"
+                            variant={
+                              branchFromAssistantId === assistantParent?.id
+                                ? "solid"
+                                : "outline"
+                            }
+                            disabled={!assistantParent?.id}
+                            onClick={() => {
+                              if (!assistantParent?.id) return;
+                              setBranchFromAssistantId((prev) =>
+                                prev === assistantParent.id
+                                  ? null
+                                  : assistantParent.id
+                              );
+                              try {
+                                if (
+                                  branchFromAssistantId !==
+                                    assistantParent.id &&
+                                  assistantParent.id
+                                ) {
+                                  setParentCursor(chat.id, assistantParent.id);
+                                }
+                              } catch {}
+                            }}
+                          >
+                            {branchFromAssistantId === assistantParent?.id
+                              ? "Retrying from here (on)"
+                              : "Retry from here"}
+                          </Button>
+                        </Flex>
+                      )}
                       <Flex
                         direction={isUserMessage ? "row-reverse" : "row"}
                         align="center"
@@ -990,9 +1076,47 @@ export default function ChatArea({
                   );
                 }
 
+                // Retry toggle above user messages where the user spoke with voice
+
                 // Show normal message card for all other messages
                 return (
                   <Box key={message.id}>
+                    {showRetry && (
+                      <Flex
+                        justify={isUserMessage ? "end" : "start"}
+                        style={{ marginBottom: "6px" }}
+                      >
+                        <Button
+                          size="1"
+                          variant={
+                            branchFromAssistantId === assistantParent?.id
+                              ? "solid"
+                              : "outline"
+                          }
+                          disabled={!assistantParent?.id}
+                          onClick={() => {
+                            if (!assistantParent?.id) return;
+                            setBranchFromAssistantId((prev) =>
+                              prev === assistantParent.id
+                                ? null
+                                : assistantParent.id
+                            );
+                            try {
+                              if (
+                                branchFromAssistantId !== assistantParent.id &&
+                                assistantParent.id
+                              ) {
+                                setParentCursor(chat.id, assistantParent.id);
+                              }
+                            } catch {}
+                          }}
+                        >
+                          {branchFromAssistantId === assistantParent?.id
+                            ? "Retrying from here (on)"
+                            : "Retry from here"}
+                        </Button>
+                      </Flex>
+                    )}
                     <Flex
                       direction={isUserMessage ? "row-reverse" : "row"}
                       align="start"
