@@ -8,12 +8,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 # Use uvloop for better performance
+UVLOOP_AVAILABLE = False
 try:
     import uvloop
 
     uvloop.install()
+    UVLOOP_AVAILABLE = True
 except ImportError:
-    pass  # Fall back to default event loop
+    uvloop = None  # type: ignore[assignment]
+    UVLOOP_AVAILABLE = False  # Fall back to default event loop
 
 import socketio  # type: ignore
 from dotenv import load_dotenv
@@ -353,11 +356,13 @@ async def health_check() -> JSONResponse:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=False,
-        log_level="info",
-        loop="uvloop",
-    )
+    uvicorn_kwargs: dict[str, object] = {
+        "host": "0.0.0.0",
+        "port": 8000,
+        "reload": False,
+        "log_level": "info",
+    }
+    if UVLOOP_AVAILABLE:
+        uvicorn_kwargs["loop"] = "uvloop"
+
+    uvicorn.run("app.main:app", **uvicorn_kwargs)
