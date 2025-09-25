@@ -438,6 +438,81 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         }))
       );
 
+      // Initialize hidden fields with random values
+      const hiddenFieldIds = individualFieldIds.filter((fieldId: string) => {
+        const field = fields.find((f) => f.id === fieldId);
+        return field?.hidden === true;
+      });
+
+      if (hiddenFieldIds.length > 0) {
+        const hiddenFieldValues = hiddenFieldIds
+          .map((fieldId: string) => {
+            const field = fields.find((f) => f.id === fieldId);
+            if (!field) return null;
+
+            const paramsForField = (allParameters || []).filter(
+              (p) => p.field_id === field.id
+            );
+
+            const pickRandom = <T,>(arr: T[]): T | undefined =>
+              arr[Math.floor(Math.random() * arr.length)];
+
+            // Auto-populate based on field type
+            if (
+              field.field_type === "text" ||
+              field.field_type === "numerical"
+            ) {
+              const candidates = paramsForField.filter(
+                (p) => (p.value || "").trim() !== ""
+              );
+              if (candidates.length > 0) {
+                const choice = pickRandom(candidates)!;
+                return {
+                  fieldId,
+                  value: choice.value || "",
+                  parameterId: choice.id,
+                };
+              }
+            } else if (field.field_type === "categorical") {
+              const candidates = paramsForField.filter(
+                (p) => p.value !== null && (p.description || "").trim() !== ""
+              );
+              if (candidates.length > 0) {
+                const choice = pickRandom(candidates)!;
+                return {
+                  fieldId,
+                  value: choice.name || "",
+                  parameterId: choice.id,
+                };
+              }
+            } else if (field.field_type === "persona") {
+              const candidates = paramsForField.filter((p) => {
+                const persona = personas?.find((pp) => pp.id === p.value);
+                return persona?.active === true;
+              });
+              if (candidates.length > 0) {
+                const choice = pickRandom(candidates)!;
+                return {
+                  fieldId,
+                  value: choice.name || "",
+                  parameterId: choice.id,
+                };
+              }
+            }
+
+            // Fallback: return empty field value
+            return {
+              fieldId,
+              value: "",
+              parameterId: undefined,
+            };
+          })
+          .filter((item): item is NonNullable<typeof item> => item !== null);
+
+        // Add hidden fields to the field values
+        setFieldValues((prev) => [...prev, ...hiddenFieldValues]);
+      }
+
       // Create unique field values by combining groupId + fieldId
       const uniqueGroupFieldValues: FieldValue[] = [];
       (scenario.group_ids || []).forEach((groupId: string) => {
@@ -476,8 +551,102 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       });
 
       setGroupFieldValues(uniqueGroupFieldValues);
+
+      // Initialize hidden group fields with random values
+      (scenario.group_ids || []).forEach((groupId: string) => {
+        const group = groups.find((g) => g.id === groupId);
+        if (!group) return;
+
+        const allGroupFieldIds = [
+          group.persona_field_id,
+          group.mood_field_id,
+          group.position_field_id,
+          group.level_field_id,
+          ...(group.field_ids || []),
+        ].filter((fieldId): fieldId is string => Boolean(fieldId));
+
+        const hiddenGroupFieldIds = allGroupFieldIds.filter(
+          (fieldId: string) => {
+            const field = fields?.find((f) => f.id === fieldId);
+            return field?.hidden === true;
+          }
+        );
+
+        if (hiddenGroupFieldIds.length > 0) {
+          const hiddenGroupFieldValues = hiddenGroupFieldIds
+            .map((fieldId: string) => {
+              const field = fields?.find((f) => f.id === fieldId);
+              if (!field) return null;
+
+              const paramsForField = (allParameters || []).filter(
+                (p) => p.field_id === field.id
+              );
+
+              const pickRandom = <T,>(arr: T[]): T | undefined =>
+                arr[Math.floor(Math.random() * arr.length)];
+
+              // Auto-populate based on field type
+              if (
+                field.field_type === "text" ||
+                field.field_type === "numerical"
+              ) {
+                const candidates = paramsForField.filter(
+                  (p) => (p.value || "").trim() !== ""
+                );
+                if (candidates.length > 0) {
+                  const choice = pickRandom(candidates)!;
+                  return {
+                    fieldId,
+                    value: choice.value || "",
+                    parameterId: choice.id,
+                    groupId,
+                  };
+                }
+              } else if (field.field_type === "categorical") {
+                const candidates = paramsForField.filter(
+                  (p) => p.value !== null && (p.description || "").trim() !== ""
+                );
+                if (candidates.length > 0) {
+                  const choice = pickRandom(candidates)!;
+                  return {
+                    fieldId,
+                    value: choice.name || "",
+                    parameterId: choice.id,
+                    groupId,
+                  };
+                }
+              } else if (field.field_type === "persona") {
+                const candidates = paramsForField.filter((p) => {
+                  const persona = personas?.find((pp) => pp.id === p.value);
+                  return persona?.active === true;
+                });
+                if (candidates.length > 0) {
+                  const choice = pickRandom(candidates)!;
+                  return {
+                    fieldId,
+                    value: choice.name || "",
+                    parameterId: choice.id,
+                    groupId,
+                  };
+                }
+              }
+
+              // Fallback: return empty field value
+              return {
+                fieldId,
+                value: "",
+                parameterId: undefined,
+                groupId,
+              };
+            })
+            .filter((item): item is NonNullable<typeof item> => item !== null);
+
+          // Add hidden group fields to the group field values
+          setGroupFieldValues((prev) => [...prev, ...hiddenGroupFieldValues]);
+        }
+      });
     }
-  }, [scenario, fields, groups, training]);
+  }, [scenario, fields, groups, training, allParameters, personas]);
 
   // Cleanup timers on component unmount
   useEffect(() => {
@@ -800,36 +969,32 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   };
 
   const isStepComplete = (fieldId: string, groupId?: string) => {
-    let fieldValue: FieldValue | undefined;
-
-    if (groupId) {
-      // For group fields, find by both fieldId and groupId
-      fieldValue = groupFieldValues.find(
-        (fv) => fv.fieldId === fieldId && fv.groupId === groupId
-      );
-    } else {
-      // For regular fields, find by fieldId only
-      fieldValue = fieldValues.find((fv) => fv.fieldId === fieldId);
-    }
-
-    if (!fieldValue) return false;
-
     const field = fields?.find((f) => f.id === fieldId);
     if (!field) return false;
 
+    // ✅ If docs are disabled, treat any document field as complete
+    if (field.field_type === "document" && !training?.show_documents)
+      return true;
+
+    // find the value only after we've applied the doc bypass
+    const fieldValue = groupId
+      ? groupFieldValues.find(
+          (fv) => fv.fieldId === fieldId && fv.groupId === groupId
+        )
+      : fieldValues.find((fv) => fv.fieldId === fieldId);
+
+    if (!fieldValue) return false;
+
     if (field.field_type === "persona") {
-      // Required: must have a value selected (either a persona or "Custom")
       if (fieldValue.value === "Custom") {
         const nameOk = (customPersonaName || "").trim().length > 0;
         const voiceOk = (customVoiceType || "").trim().length > 0;
         return nameOk && voiceOk;
       }
-      // Must have selected a persona (not empty)
       return fieldValue.value.trim() !== "" && fieldValue.parameterId;
     }
 
     if (field.field_type === "categorical") {
-      // Complete if a parameter is chosen OR user typed a non-empty custom value
       if (fieldValue.parameterId && fieldValue.parameterId.trim() !== "")
         return true;
       const hasTypedCustom =
@@ -837,13 +1002,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       return hasTypedCustom;
     }
 
-    if (fieldValue.value === "Custom") {
-      return false;
-    }
+    if (fieldValue.value === "Custom") return false;
 
-    if (field.field_type === "document") {
-      return true;
-    }
+    if (field.field_type === "document") return true;
 
     return fieldValue.value.trim() !== "";
   };
@@ -899,8 +1060,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         ].filter((fieldId): fieldId is string => {
           if (!fieldId) return false;
           const field = fields?.find((f) => f.id === fieldId);
-          // Do not render hidden fields in the UI
-          return field ? !field.hidden : true;
+          if (!field) return false;
+          if (field.hidden) return false;
+          // ✅ mirror your initialization/rendering rule
+          if (field.field_type === "document" && !training?.show_documents)
+            return false;
+          return true;
         });
 
         // If this group has no visible fields, skip it
