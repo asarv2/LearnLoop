@@ -8,6 +8,11 @@ export type AnalyticsData = {
   completedSessions: number;
   avgSessionTime: number;
   avgPerformanceScore: number;
+  avgTrainingScore: number;
+  bestTraining: {
+    name: string;
+    score: number;
+  };
   companyTrainingStats: Record<
     string,
     Record<string, { total: number; completed: number }>
@@ -38,6 +43,62 @@ export type AnalyticsData = {
     company: string | null;
     role: string | null;
     active: boolean | null;
+  }>;
+  performanceChart: Array<{
+    date: string;
+    averageScore: number;
+    completions: number;
+  }>;
+  completionChart: Array<{
+    date: string;
+    count: number;
+  }>;
+  engagementMetrics: Array<{
+    id: string;
+    name: string;
+    company: string | null;
+    totalSessions: number;
+    completedSessions: number;
+    completionRate: number;
+    averageScore: number;
+    lastActive: string | null;
+  }>;
+  effectivenessData: Array<{
+    title: string;
+    type: string;
+    averageScore: number;
+    completions: number;
+    effectiveness: "High" | "Medium" | "Low";
+  }>;
+  performanceTrends: Array<{
+    date: string;
+    score: number;
+    employeeName: string;
+    trainingName: string;
+  }>;
+  trainingsByType: {
+    standard: Array<{
+      id: string;
+      title: string;
+      training_type: string;
+    }>;
+    required: Array<{
+      id: string;
+      title: string;
+      training_type: string;
+    }>;
+    custom: Array<{
+      id: string;
+      title: string;
+      training_type: string;
+    }>;
+  };
+  trainingSpecificData: Array<{
+    date: string;
+    score: number;
+    trainingId: string;
+    trainingTitle: string;
+    trainingType: string;
   }>;
 };
 

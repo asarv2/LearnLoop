@@ -329,9 +329,11 @@ export type Database = {
           error: string | null
           id: string
           interruption_ms: number | null
+          parent_id: string | null
           persona_id: string | null
           role: Database["public"]["Enums"]["message_role"]
           training_id: string | null
+          voice: boolean
           word_timestamps: Json[]
         }
         Insert: {
@@ -343,9 +345,11 @@ export type Database = {
           error?: string | null
           id?: string
           interruption_ms?: number | null
+          parent_id?: string | null
           persona_id?: string | null
           role: Database["public"]["Enums"]["message_role"]
           training_id?: string | null
+          voice?: boolean
           word_timestamps?: Json[]
         }
         Update: {
@@ -357,9 +361,11 @@ export type Database = {
           error?: string | null
           id?: string
           interruption_ms?: number | null
+          parent_id?: string | null
           persona_id?: string | null
           role?: Database["public"]["Enums"]["message_role"]
           training_id?: string | null
+          voice?: boolean
           word_timestamps?: Json[]
         }
         Relationships: [
@@ -559,6 +565,7 @@ export type Database = {
       }
       rubrics: {
         Row: {
+          company: string | null
           created_at: string | null
           description: string | null
           id: string
@@ -568,6 +575,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          company?: string | null
           created_at?: string | null
           description?: string | null
           id?: string
@@ -577,6 +585,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          company?: string | null
           created_at?: string | null
           description?: string | null
           id?: string
