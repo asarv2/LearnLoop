@@ -389,6 +389,22 @@ async def handle_create_training(sid: str, data: Dict[str, Any]) -> None:
         description = data.get("description")
         document_id = data.get("document_id")  # Optional document ID
         profile_id = data.get("profile_id")
+        
+        # New fields for admin-created trainings
+        training_type = data.get("training_type", "custom")  # Default to custom
+        company = data.get("company")  # Company assignment
+        due_date_str = data.get("due_date")  # Due date for required trainings
+        admin_created = data.get("admin_created", False)  # Flag for admin creation
+        
+        # Parse due_date if provided
+        due_date = None
+        if due_date_str:
+            try:
+                from datetime import datetime
+                due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00'))
+            except Exception as e:
+                logger.warning(f"Failed to parse due_date {due_date_str}: {e}")
+                due_date = None
 
         if not name:
             logger.error(f"Missing name in request from {sid}")
@@ -436,12 +452,14 @@ async def handle_create_training(sid: str, data: Dict[str, Any]) -> None:
                 "progress": 25
             }, room=sid)
 
-            # Create training entry with type 'custom'
+            # Create training entry with specified type (custom or required)
             training = Trainings(
                 title=name,
                 description=description,
-                training_type="custom",
+                training_type=training_type,
                 user_id=profile_id,
+                company=company,
+                due_date=due_date,
                 active=True,
                 practice=False,
                 show_documents=True
@@ -450,7 +468,7 @@ async def handle_create_training(sid: str, data: Dict[str, Any]) -> None:
             db_session.commit()
             db_session.refresh(training)
 
-            logger.info(f"Created training {training.id} with type custom")
+            logger.info(f"Created training {training.id} with type {training_type}, company {company}")
 
             # Emit progress update: generating scenario
             await sio.emit("training_creation_progress", {

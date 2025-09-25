@@ -150,6 +150,7 @@ class Profiles(_Base, table=True):
     active: Optional[bool] = Field(default=None, sa_column=Column('active', Boolean, default=False))
     last_active: Optional[datetime] = Field(default=None, sa_column=Column('last_active', DateTime(True)))
     role: Optional[str] = Field(default=None, sa_column=Column('role', Enum('employee', 'admin', 'superadmin', name='user_role'), default=r'employee'))
+    company: Optional[str] = Field(default=None, sa_column=Column('company', Text))
 
     attempts: List['Attempts'] = Relationship(back_populates='profile')
     documents: List['Documents'] = Relationship(back_populates='profile')
@@ -197,6 +198,8 @@ class Trainings(_Base, table=True):
     what_not_to_do: Optional[List[str]] = Field(default=None, sa_column=Column('what_not_to_do', ARRAY(Text())))
     training_type: Optional[str] = Field(default=None, sa_column=Column('training_type', Text, default=r'standard'))
     user_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('user_id', Uuid(as_uuid=True)))
+    due_date: Optional[datetime] = Field(default=None, sa_column=Column('due_date', DateTime(True)))
+    company: Optional[str] = Field(default=None, sa_column=Column('company', Text))
 
     user: Optional['Users'] = Relationship(back_populates='trainings')
     attempts: List['Attempts'] = Relationship(back_populates='training')

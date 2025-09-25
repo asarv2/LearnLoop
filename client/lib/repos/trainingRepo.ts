@@ -39,6 +39,8 @@ export const TrainingCreateSchema = z.object({
   training_type: z.string().nullable().optional(),
   user_id: z.string().nullable().optional(),
   updated_at: z.string().optional(),
+  due_date: z.string().datetime().nullable().optional(),
+  company: z.string().nullable().optional(),
 });
 
 export const TrainingUpdateSchema = z.object({
@@ -52,6 +54,8 @@ export const TrainingUpdateSchema = z.object({
   training_type: z.string().nullable().optional(),
   user_id: z.string().nullable().optional(),
   updated_at: z.string().optional(),
+  due_date: z.string().datetime().nullable().optional(),
+  company: z.string().nullable().optional(),
 });
 
 async function getSupabase() {
@@ -99,6 +103,29 @@ export const trainingRepo = {
       .select("*")
       .eq("training_type", type)
       .order("created_at", { ascending: false });
+    if (error) throw new HttpError(500, error.message);
+    return data;
+  },
+
+  async listByTypeAndCompany(
+    type: "standard" | "required" | "custom",
+    company: string | null
+  ) {
+    const supabase = await getSupabase();
+    let query = supabase
+      .from("trainings")
+      .select("*")
+      .eq("training_type", type);
+
+    if (company) {
+      query = query.or(`company.eq.${company},company.is.null`);
+    } else {
+      query = query.is("company", null);
+    }
+
+    query = query.order("created_at", { ascending: false });
+
+    const { data, error } = await query;
     if (error) throw new HttpError(500, error.message);
     return data;
   },

@@ -15,6 +15,7 @@ export const ProfileCreateSchema = z.object({
   last_active: z.string().datetime().nullable().optional(),
   role: z.enum(["employee", "admin", "superadmin"]).nullable().optional(),
   viewed_intro: z.boolean().optional(),
+  company: z.string().nullable().optional(),
   created_at: z.string().datetime().nullable().optional(),
   updated_at: z.string().datetime().nullable().optional(),
 });
@@ -25,6 +26,7 @@ export const ProfileUpdateSchema = z.object({
   last_active: z.string().datetime().nullable().optional(),
   role: z.enum(["employee", "admin", "superadmin"]).nullable().optional(),
   viewed_intro: z.boolean().optional(),
+  company: z.string().nullable().optional(),
   created_at: z.string().datetime().nullable().optional(),
   updated_at: z.string().datetime().nullable().optional(),
 });

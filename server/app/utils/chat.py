@@ -56,13 +56,13 @@ def get_conversation_history(
         if message.role == "user" and message.content:
             user_message_item: TResponseInputItem = {
                 "role": "user",
-                "content": message.content,
+                "content": f"[HUMAN TRAINEE]: {message.content}",
             }
             conversation_history.append(user_message_item)
         elif message.role == "assistant" and message.content:
             assistant_message_item: TResponseInputItem = {
-                "role": "assistant",
-                "content": message.content,
+                "role": "assistant", 
+                "content": f"[AI TRAINING PARTNER]: {message.content}",
             }
             conversation_history.append(assistant_message_item)
 

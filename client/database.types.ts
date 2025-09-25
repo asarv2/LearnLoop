@@ -567,6 +567,7 @@ export type Database = {
       profiles: {
         Row: {
           active: boolean | null
+          company: string | null
           created_at: string | null
           id: string
           last_active: string | null
@@ -577,6 +578,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean | null
+          company?: string | null
           created_at?: string | null
           id?: string
           last_active?: string | null
@@ -587,6 +589,7 @@ export type Database = {
         }
         Update: {
           active?: boolean | null
+          company?: string | null
           created_at?: string | null
           id?: string
           last_active?: string | null
@@ -879,8 +882,10 @@ export type Database = {
       trainings: {
         Row: {
           active: boolean | null
+          company: string | null
           created_at: string
           description: string | null
+          due_date: string | null
           id: string
           practice: boolean
           show_documents: boolean
@@ -893,8 +898,10 @@ export type Database = {
         }
         Insert: {
           active?: boolean | null
+          company?: string | null
           created_at?: string
           description?: string | null
+          due_date?: string | null
           id?: string
           practice?: boolean
           show_documents?: boolean
@@ -907,8 +914,10 @@ export type Database = {
         }
         Update: {
           active?: boolean | null
+          company?: string | null
           created_at?: string
           description?: string | null
+          due_date?: string | null
           id?: string
           practice?: boolean
           show_documents?: boolean

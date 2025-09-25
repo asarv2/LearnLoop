@@ -9,7 +9,6 @@ import {
   BookOutlined,
   CheckSquareOutlined,
   FileTextOutlined,
-  FormOutlined,
   HistoryOutlined,
   LogoutOutlined,
   MessageOutlined,
@@ -78,11 +77,6 @@ const adminMenuItems = [
     key: "/admin/feedback",
     icon: <MessageOutlined />,
     label: <Link href="/admin/feedback">Feedback</Link>,
-  },
-  {
-    key: "/admin/requests",
-    icon: <FormOutlined />,
-    label: <Link href="/admin/requests">Requests</Link>,
   },
 ];
 

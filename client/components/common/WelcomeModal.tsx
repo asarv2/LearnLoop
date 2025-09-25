@@ -112,52 +112,6 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
     }
   };
 
-  const handleCancel = async () => {
-    try {
-      // Mark viewed_intro as true even if they cancel
-      if (user?.id) {
-        // If no personas exist, create a basic profile and persona
-        if (!personas || personas.length === 0) {
-          const fullName = user.user_metadata?.full_name || "";
-          const firstName = fullName.split(" ")[0] || user.email || "User";
-
-          const profile = await createProfile.mutateAsync({
-            id: user.id,
-            name: firstName,
-            viewed_intro: true,
-          });
-
-          // Create a basic persona with general description
-          await createPersona.mutateAsync({
-            profile_id: profile.id,
-            name: firstName,
-            description:
-              "General user profile - information can be updated later",
-            position: "Employee",
-            level: "senior",
-          });
-        } else {
-          // Update existing profile to mark viewed_intro as true
-          // Don't touch existing personas
-          await updateProfile.mutateAsync({
-            viewed_intro: true,
-          });
-        }
-      }
-
-      messageApi.success(
-        "Thank you! You can always update your profile later."
-      );
-      form.resetFields();
-      onClose();
-    } catch (error) {
-      console.error("Failed to update profile on cancel:", error);
-      // Still close the modal even if update fails
-      form.resetFields();
-      onClose();
-    }
-  };
-
   return (
     <>
       {contextHolder}
@@ -169,7 +123,7 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
           </div>
         }
         open={open}
-        onCancel={handleCancel}
+        onCancel={undefined}
         footer={null}
         width={600}
         centered
@@ -233,13 +187,7 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
             </Row>
 
             {/* Row 3: Description */}
-            <Form.Item
-              label="Description"
-              name="description"
-              rules={[
-                { required: true, message: "Please enter a description" },
-              ]}
-            >
+            <Form.Item label="Description" name="description">
               <TextArea
                 rows={4}
                 placeholder="Tell us about yourself, your role, and your experience..."
@@ -257,9 +205,6 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
                 borderTop: "1px solid #f0f0f0",
               }}
             >
-              <Button onClick={handleCancel} size="large">
-                Skip
-              </Button>
               <Button
                 type="primary"
                 htmlType="submit"

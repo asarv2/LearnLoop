@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import type { Database } from "@/database.types";
+import { usePersonas } from "@/lib/api/hooks/usePersonas";
 import { useProfile } from "@/lib/api/hooks/useProfiles";
 import useSupabaseBrowser from "@/utils/supabase/supabase-browser";
 import React, { createContext, useContext, useEffect, useState } from "react";
@@ -36,6 +37,16 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     !!user
   );
   const hasViewedIntro = profile?.viewed_intro || false;
+
+  // Check if user has complete persona data
+  const { data: personas, isLoading: personasLoading } = usePersonas(
+    user?.id || ""
+  );
+  const hasCompletePersona =
+    personas &&
+    personas.length > 0 &&
+    personas[0]?.level &&
+    personas[0]?.position;
 
   useEffect(() => {
     let isCancelled = false;
@@ -106,12 +117,23 @@ export function RoleProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user, supabase]);
 
-  // Show welcome modal if user hasn't viewed intro
+  // Show welcome modal if user hasn't viewed intro OR doesn't have complete persona data
   useEffect(() => {
-    if (user && !profileLoading && !hasViewedIntro) {
+    if (
+      user &&
+      !profileLoading &&
+      !personasLoading &&
+      (!hasViewedIntro || !hasCompletePersona)
+    ) {
       setShowWelcomeModal(true);
     }
-  }, [user, profileLoading, hasViewedIntro]);
+  }, [
+    user,
+    profileLoading,
+    personasLoading,
+    hasViewedIntro,
+    hasCompletePersona,
+  ]);
 
   const switchToEmployee = () => {
     if (userRole === "superadmin") {

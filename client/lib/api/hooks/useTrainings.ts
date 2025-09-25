@@ -43,6 +43,25 @@ export function useTrainingsByType(type: "standard" | "required" | "custom") {
   });
 }
 
+export function useTrainingsByTypeAndCompany(
+  type: "standard" | "required" | "custom",
+  company: string | null
+) {
+  return useQuery({
+    queryKey: [...trainingKeys.list(), "type", type, "company", company],
+    queryFn: () => {
+      logInfo(`Fetching ${type} trainings list for company ${company}`);
+      const companyParam = company
+        ? `&company=${encodeURIComponent(company)}`
+        : "&company=";
+      return api<TrainingCreate[]>(
+        `/api/v1/trainings?type=${type}${companyParam}`
+      );
+    },
+    staleTime: 5 * 60_000, // 5 minutes
+  });
+}
+
 export function useCustomTrainingsForUser(userId: string | undefined) {
   return useQuery({
     queryKey: [...trainingKeys.list(), "custom", "user", userId],
