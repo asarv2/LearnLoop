@@ -30,9 +30,8 @@ RUN mkdir -p /app/files
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app + **bake defaults** for templates
+# Copy app
 COPY app/ ./app/
-COPY --chown=10001:10001 templates/ /opt/defaults/templates/
 
 # Non-root user
 RUN useradd -m -u 10001 appuser
