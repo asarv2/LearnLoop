@@ -16,7 +16,8 @@ export default function DocumentField({
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
-      onChange(file);
+      // ✅ pass the display value (name) AND the File so upstream can store both
+      onChange(file.name, undefined, file);
     }
   };
 

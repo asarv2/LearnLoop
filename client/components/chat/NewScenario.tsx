@@ -140,7 +140,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   };
 
   // Create personas from group field values and return payload with persona IDs
-  const createPersonasFromGroupsAndGetPayload = async (): Promise<{
+  const createPersonasFromGroupsAndGetPayload = async (
+    indivValues: FieldValue[],
+    groupValues: FieldValue[]
+  ): Promise<{
     fieldValues: {
       fieldId: string;
       value: string;
@@ -167,12 +170,30 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       }
     }
 
+    // Helper function to filter out empty document fields
+    const pushIfAllowed = (fv: FieldValue) => {
+      const f = fields?.find((ff) => ff.id === fv.fieldId);
+      if (!f) return false;
+      if (f.field_type !== "document") return true;
+      // include only if a UUID exists (i.e., uploaded)
+      return Boolean(fv.value && isUUID(fv.value));
+    };
+
     // Add individual field values
     payload.push(
-      ...fieldValues.map((fv) => ({
+      ...indivValues.filter(pushIfAllowed).map((fv) => ({
         fieldId: fv.fieldId,
         value: fv.value,
         parameterId: fv.parameterId,
+      }))
+    );
+
+    // Add group field values to payload
+    payload.push(
+      ...groupValues.filter(pushIfAllowed).map((gfv) => ({
+        fieldId: gfv.fieldId,
+        value: gfv.value,
+        parameterId: gfv.parameterId,
       }))
     );
 
@@ -199,7 +220,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
             return field ? !field.hidden : true;
           })
           .map((fieldId) => {
-            return groupFieldValues.find((gfv) => gfv.fieldId === fieldId);
+            return groupValues.find((gfv) => gfv.fieldId === fieldId);
           })
           .filter(Boolean);
 
@@ -424,8 +445,9 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       const filteredFieldIds = individualFieldIds.filter((fieldId: string) => {
         const field = fields.find((f) => f.id === fieldId);
         if (!field) return false;
+        // Always include document fields - they represent user-uploaded documents
         if (field.field_type === "document") {
-          return training?.show_documents === true;
+          return true;
         }
         return true;
       });
@@ -536,10 +558,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           const field = fields?.find((f) => f.id === fieldId);
           if (!field) return;
 
-          // Check document field visibility
-          if (field.field_type === "document") {
-            if (!training?.show_documents) return;
-          }
+          // Always include document fields - they represent user-uploaded documents
+          // (No filtering needed for document fields)
 
           uniqueGroupFieldValues.push({
             fieldId,
@@ -968,15 +988,74 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     setCustomVoiceType("");
   };
 
+  // Helper function to check if a string is a UUID
+  const isUUID = (s?: string) =>
+    !!s &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+  // Defensive guard to prevent filenames from reaching the server
+  const assertAllDocValuesAreUUIDs = (vals: FieldValue[]) => {
+    for (const fv of vals) {
+      const f = fields?.find((ff) => ff.id === fv.fieldId);
+      if (f?.field_type === "document") {
+        // optional: if no file chosen AND no stored id, skip
+        if (!fv.file && !fv.value) continue;
+        // if a value exists, it must be a UUID
+        if (fv.value && !isUUID(fv.value)) {
+          throw new Error(
+            `Document "${f.name}" is not uploaded yet. Please reselect the file and try again.`
+          );
+        }
+      }
+    }
+  };
+
+  // Helper function to upload any pending files and swap to UUIDs
+  async function resolveDocumentFilesOnce(
+    values: FieldValue[],
+    groupValues: FieldValue[],
+    userId: string | null | undefined
+  ) {
+    const process = async (arr: FieldValue[]) => {
+      const next = [...arr];
+      for (let i = 0; i < next.length; i++) {
+        const fv = next[i];
+        const field = fields?.find((f) => f.id === fv.fieldId);
+        const needsUpload =
+          field?.field_type === "document" && fv.file && !isUUID(fv.value);
+        if (!needsUpload) continue;
+
+        // Create document, upload file, then store UUID in value
+        const doc = await createDocument.mutateAsync({
+          content: "",
+          profile_id: userId || null,
+          title: fv.file!.name,
+        });
+        const formData = new FormData();
+        formData.append("file", fv.file!);
+        await uploadDocument(doc.id!, formData);
+
+        next[i] = { ...fv, value: doc.id!, file: undefined };
+      }
+      return next;
+    };
+
+    const [resolvedIndiv, resolvedGroup] = await Promise.all([
+      process(values),
+      process(groupValues),
+    ]);
+
+    return { resolvedIndiv, resolvedGroup };
+  }
+
   const isStepComplete = (fieldId: string, groupId?: string) => {
     const field = fields?.find((f) => f.id === fieldId);
     if (!field) return false;
 
-    // ✅ If docs are disabled, treat any document field as complete
+    // If docs are disabled, doc fields shouldn't block completion
     if (field.field_type === "document" && !training?.show_documents)
       return true;
 
-    // find the value only after we've applied the doc bypass
     const fieldValue = groupId
       ? groupFieldValues.find(
           (fv) => fv.fieldId === fieldId && fv.groupId === groupId
@@ -984,6 +1063,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       : fieldValues.find((fv) => fv.fieldId === fieldId);
 
     if (!fieldValue) return false;
+
+    if (field.field_type === "document") {
+      // Optional: never block completion
+      return true;
+    }
 
     if (field.field_type === "persona") {
       if (fieldValue.value === "Custom") {
@@ -1003,8 +1087,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     }
 
     if (fieldValue.value === "Custom") return false;
-
-    if (field.field_type === "document") return true;
 
     return fieldValue.value.trim() !== "";
   };
@@ -1182,38 +1264,25 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
       const scenarioToUse = savedScenarioId || scenarioId;
 
-      // 1) Upload any document files first (process both individual and group fields)
-      const allFieldValues = [...fieldValues, ...groupFieldValues];
-      const uploadedFieldValues = await Promise.all(
-        allFieldValues.map(async (fieldValue) => {
-          if (fieldValue.file) {
-            try {
-              const document = await createDocument.mutateAsync({
-                content: "",
-                profile_id: user?.id || null,
-                title: fieldValue.file.name,
-              });
-              const formData = new FormData();
-              formData.append("file", fieldValue.file);
-              await uploadDocument(document.id!, formData);
-              return {
-                ...fieldValue,
-                value: document.id!,
-                file: undefined,
-              } as FieldValue;
-            } catch (error) {
-              console.error("Error processing document:", error);
-              throw new Error(`Failed to process document: ${error}`);
-            }
-          }
-          return fieldValue;
-        })
+      // 🔸 Upload any selected files now and swap to UUIDs
+      const { resolvedIndiv, resolvedGroup } = await resolveDocumentFilesOnce(
+        fieldValues,
+        groupFieldValues,
+        user?.id
       );
+      setFieldValues(resolvedIndiv);
+      setGroupFieldValues(resolvedGroup);
+
+      // ✅ Hard stop if any filename slipped through
+      assertAllDocValuesAreUUIDs([...resolvedIndiv, ...resolvedGroup]);
+
+      // continue with your existing normalization + payload creation using resolvedIndiv/resolvedGroup
+      const allAfterDocs = [...resolvedIndiv, ...resolvedGroup];
 
       // 2) Normalize values to parameterIds (text/categorical) and create custom persona if needed
       let nextAssistantPersonaId: string | null = customAssistantPersonaId;
       const normalizedFieldValues = await Promise.all(
-        uploadedFieldValues.map(async (fv) => {
+        allAfterDocs.map(async (fv) => {
           const field = fields?.find((f) => f.id === fv.fieldId);
           if (!field) return fv;
 
@@ -1450,23 +1519,36 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         return fv;
       });
 
-      // Persist computed values locally for Start flow (separate individual and group fields)
+      // Split again (based on membership, same as before)
       const individualFields = personaCompletedFieldValues.filter((fv) =>
-        fieldValues.some((ifv) => ifv.fieldId === fv.fieldId)
+        resolvedIndiv.some(
+          (ifv) => ifv.fieldId === fv.fieldId && ifv.groupId === fv.groupId
+        )
       );
       const groupFields = personaCompletedFieldValues.filter((fv) =>
-        groupFieldValues.some((gfv) => gfv.fieldId === fv.fieldId)
+        resolvedGroup.some(
+          (gfv) => gfv.fieldId === fv.fieldId && gfv.groupId === fv.groupId
+        )
       );
 
+      // (Optional) update UI
       setFieldValues(individualFields);
       setGroupFieldValues(groupFields);
       if (nextAssistantPersonaId !== customAssistantPersonaId) {
         setCustomAssistantPersonaId(nextAssistantPersonaId);
       }
 
-      // 5) Create personas from groups and update scenario parameters on server
+      // 4) Build payload **from arrays** you just computed
       const { fieldValues: payloadFieldValues, personaIds } =
-        await createPersonasFromGroupsAndGetPayload();
+        await createPersonasFromGroupsAndGetPayload(
+          individualFields,
+          groupFields
+        );
+
+      // Final safety: no filenames in payload
+      assertAllDocValuesAreUUIDs(
+        payloadFieldValues.map(({ fieldId, value }) => ({ fieldId, value }))
+      );
 
       // Record this generation's parameters for change detection
       setLastGeneratedSignature(makeSignatureFromPayload(payloadFieldValues));
@@ -1511,10 +1593,25 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     setIsLoading(true);
 
     try {
+      // 🔸 Same: resolve files on click
+      const { resolvedIndiv, resolvedGroup } = await resolveDocumentFilesOnce(
+        fieldValues,
+        groupFieldValues,
+        user?.id
+      );
+      setFieldValues(resolvedIndiv);
+      setGroupFieldValues(resolvedGroup);
+
+      // ✅ Hard stop if any filename slipped through
+      assertAllDocValuesAreUUIDs([...resolvedIndiv, ...resolvedGroup]);
+
       // Update active scenario's parameter ids before starting
       const scenarioToUse = savedScenarioId || scenarioId;
       const { fieldValues: updateFieldValues, personaIds } =
-        await createPersonasFromGroupsAndGetPayload();
+        await createPersonasFromGroupsAndGetPayload(
+          resolvedIndiv,
+          resolvedGroup
+        );
 
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
