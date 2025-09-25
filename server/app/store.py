@@ -27,6 +27,8 @@ def _uuid_or_none(x: str | None) -> UUID | None:
         return None
 
 
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,6 +55,7 @@ class Message:
     chunks: list[TextChunk] = field(default_factory=list)
     persona_id: str | None = None
     voice: bool = False  # whether this is a voice message
+    parent_id: str | None = None  # ID of the previous message in the chat
 
 
 @dataclass
@@ -126,6 +129,7 @@ def _upsert_db_message(
     is_final: bool,
     persona_id: str | None = None,
     voice: bool = False,
+    parent_id: str | None = None,
 ) -> tuple[DBMessage, str]:
     """
     Create/update a DB message row. We store the concatenated content so fetches are simple.
@@ -146,6 +150,7 @@ def _upsert_db_message(
             completed=is_final,
             persona_id=_uuid_or_none(persona_id),
             voice=voice,
+            parent_id=_uuid_or_none(parent_id),
         )
         db.add(m)
         db.commit()
@@ -216,6 +221,7 @@ async def _flush_pending_writes(
                 is_final=force,
                 persona_id=msg.persona_id,
                 voice=msg.voice,
+                parent_id=msg.parent_id,
             )
         except Exception:
             # Make sure the aborted txn is rolled back before returning the conn to the pool
@@ -247,6 +253,7 @@ async def upsert_text_chunk(
     is_final: bool,
     persona_id: str | None = None,  # optional: allow caller to tag persona
     voice: bool = False,  # optional: mark as voice message
+    parent_id: str | None = None,  # optional: ID of previous message
 ) -> Message:
     """
     1) Update in-memory store (for streaming UX)
@@ -268,6 +275,7 @@ async def upsert_text_chunk(
             created_ms=created_ms_now,
             persona_id=persona_id,
             voice=voice,
+            parent_id=parent_id,
         )
         room.messages[mid] = msg
         logger.debug(

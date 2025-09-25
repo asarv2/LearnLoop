@@ -12,38 +12,25 @@ from typing import Any, cast
 
 import socketio  # type: ignore
 from agents.items import TResponseInputItem
-from openai.types.responses import (
-    EasyInputMessageParam,
-    ResponseInputImageParam,
-    ResponseInputMessageContentListParam,
-    ResponseInputTextParam,
-)
-from sqlalchemy import text
-from sqlmodel import select
-
 from app.db import get_session
-from app.models import (
-    Attempts,
-    Chats,
-    Documents,  # ✨ Import Personas
-    Fields,
-    Messages,
-    Parameters,
-    Personas,
-    Scenarios,
-    Trainings,
-)
+from app.models import Documents  # ✨ Import Personas
+from app.models import (Attempts, Chats, Fields, Messages, Parameters,
+                        Personas, Scenarios, Trainings)
 from app.services.agents.document import run_document_agent
 from app.services.agents.generic import run_generic_agent
 from app.services.agents.grade import run_grading_agent
 from app.services.agents.hint import run_hint_agent
 from app.services.agents.scenario import run_scenario_agent
 from app.utils.chat import get_conversation_history, get_preamble
-from app.utils.document import (
-    convert_pdf_to_images,
-    get_document_base64_and_content,
-    upload_template_to_supabase_storage,
-)
+from app.utils.document import (convert_pdf_to_images,
+                                get_document_base64_and_content,
+                                upload_template_to_supabase_storage)
+from openai.types.responses import (EasyInputMessageParam,
+                                    ResponseInputImageParam,
+                                    ResponseInputMessageContentListParam,
+                                    ResponseInputTextParam)
+from sqlalchemy import text
+from sqlmodel import select
 
 logger = logging.getLogger(__name__)
 
@@ -478,7 +465,8 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
             # Get profile_id from WebSocket session if not provided
             if not profile_id:
                 try:
-                    from app.main import get_profile_id_for_sid, get_socketio_instance
+                    from app.main import (get_profile_id_for_sid,
+                                          get_socketio_instance)
 
                     sio = get_socketio_instance()
                     try:
@@ -1004,6 +992,29 @@ async def handle_training_message_rtc(sid: str, data: dict[str, Any]) -> None:
         # If we need persona tagging for user messages later, we can thread it through the
         # audio pipeline explicitly.
 
+        # Get the previous message ID for parent_id
+        previous_message_id = None
+        try:
+            from app.models import Messages
+            db_session = next(get_session())
+            try:
+                result = db_session.exec(
+                    select(Messages.id)
+                    .where(Messages.chat_id == chat_id)
+                    .order_by(Messages.created_at.desc())
+                    .limit(1)
+                ).one_or_none()
+                previous_message_id = str(result) if result else None
+            except Exception:
+                previous_message_id = None
+            finally:
+                try:
+                    db_session.close()
+                except Exception:
+                    pass
+        except Exception:
+            previous_message_id = None
+
         # Use room system to append text chunk
         await room.append_text_chunk(
             source_id=sid,  # or profile id
@@ -1013,6 +1024,7 @@ async def handle_training_message_rtc(sid: str, data: dict[str, Any]) -> None:
             chunk_idx=0,
             is_final=True,
             persona_id=persona_id,
+            parent_id=previous_message_id,
         )
     except Exception as e:
         logger.error(f"Error in room system flow: {str(e)}")
@@ -1107,6 +1119,20 @@ async def process_training_message_websocket(
                 # Fallback or error handling
                 raise ValueError(f"User persona not found for profile {profile_id}")
 
+        # Get the previous message ID for parent_id
+        previous_message_id = None
+        try:
+            from app.models import Messages
+            result = db_session.exec(
+                select(Messages.id)
+                .where(Messages.chat_id == chat_id)
+                .order_by(Messages.created_at.desc())
+                .limit(1)
+            ).one_or_none()
+            previous_message_id = str(result) if result else None
+        except Exception:
+            previous_message_id = None
+
         # Create user message (in-memory, not saved with new field)
         user_message = Messages(
             chat_id=chat_id,
@@ -1115,6 +1141,7 @@ async def process_training_message_websocket(
             training_id=chat.training_id,
             completed=True,
             persona_id=user_persona_id,  # ✨ Associate with user's persona
+            parent_id=previous_message_id,
         )
         db_session.add(user_message)
         db_session.commit()
@@ -1170,6 +1197,20 @@ async def process_training_message_websocket(
             logger.error(f"No persona found for chat {chat_id}")
             return
 
+        # Get the previous message ID for parent_id
+        previous_message_id = None
+        try:
+            from app.models import Messages
+            result = db_session.exec(
+                select(Messages.id)
+                .where(Messages.chat_id == chat_id)
+                .order_by(Messages.created_at.desc())
+                .limit(1)
+            ).one_or_none()
+            previous_message_id = str(result) if result else None
+        except Exception:
+            previous_message_id = None
+
         # Create assistant message placeholder
         assistant_message = Messages(
             chat_id=chat_id,
@@ -1178,6 +1219,7 @@ async def process_training_message_websocket(
             training_id=chat.training_id,
             completed=False,
             persona_id=assistant_persona_id,  # ✨ Associate with assistant's persona
+            parent_id=previous_message_id,
         )
         db_session.add(assistant_message)
         db_session.commit()
@@ -1422,7 +1464,8 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
             # Get profile_id from WebSocket session
             profile_id = None
             try:
-                from app.main import get_profile_id_for_sid, get_socketio_instance
+                from app.main import (get_profile_id_for_sid,
+                                      get_socketio_instance)
 
                 sio = get_socketio_instance()
                 try:
@@ -1686,9 +1729,8 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 or not isinstance(stop_ts_ms, (int, float))
             ):
                 return
-            from sqlalchemy import text as _text
-
             from app.db import get_session as _gs
+            from sqlalchemy import text as _text
 
             sess = next(_gs())
             try:
