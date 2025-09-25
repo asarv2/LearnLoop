@@ -38,7 +38,7 @@ const { TextArea } = Input;
 
 export default function AdminCreatePage() {
   const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [progress, setProgress] = useState({
     visible: false,
@@ -203,7 +203,7 @@ export default function AdminCreatePage() {
         company: currentProfile.company,
         due_date: values.dueDate ? values.dueDate.toISOString() : undefined,
         admin_created: true,
-      } as any);
+      });
     } catch (error) {
       console.error("Error in training creation:", error);
       messageApi.error("Failed to create training. Please try again.");

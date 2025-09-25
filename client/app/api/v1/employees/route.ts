@@ -62,7 +62,7 @@ export async function GET(request: Request) {
       `
       )
       .eq("company", company)
-      .order("last_active", { ascending: false, nullsLast: true });
+      .order("last_active", { ascending: false, nullsFirst: false });
 
     if (employeesError) throw employeesError;
 

@@ -36,14 +36,14 @@ interface Attempt {
   updated_at: string;
 }
 
-interface Chat {
-  id: string;
-  attempt_id: string;
-  title: string;
-  completed: boolean;
-  completed_at?: string;
-  created_at: string;
-}
+// interface Chat {
+//   id: string;
+//   attempt_id: string;
+//   title: string;
+//   completed: boolean;
+//   completed_at?: string;
+//   created_at: string;
+// }
 
 interface Training {
   id: string;

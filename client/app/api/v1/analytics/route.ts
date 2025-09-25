@@ -9,7 +9,7 @@ async function getSupabase() {
 }
 
 // GET /api/v1/analytics - get analytics data
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const supabase = await getSupabase();
 
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     const userCompany = currentProfile.company;
 
     // Build analytics queries
-    const analyticsQueries = [];
+    // const analyticsQueries = [];
 
     // 1. Total employees (filtered by company)
     let employeesQuery = supabase
@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
     // 2. Active trainings
     const {
-      data: trainings,
+      // data: trainings,
       count: activeTrainings,
       error: trainingsError,
     } = await supabase
@@ -85,7 +85,7 @@ export async function GET(request: Request) {
     }
 
     const {
-      data: completedSessions,
+      // data: completedSessions,
       count: totalCompletedSessions,
       error: sessionsError,
     } = await completedSessionsQuery;
