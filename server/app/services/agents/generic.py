@@ -89,7 +89,7 @@ async def run_generic_agent(
 
     agent_instance = GenericAgent(
         agent_name=persona.name,
-        system_prompt=persona.system_prompt or "",
+        system_prompt=persona.description or "",
         temperature=persona.temperature or 0.0,
     )
 
