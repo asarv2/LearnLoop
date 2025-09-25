@@ -347,8 +347,6 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                   name: personaName,
                   description: personaDescription,
                   profile_id: null,
-                  system_prompt: "", // Leave empty
-                  realtime_prompt: "", // Leave empty
                   temperature: 0, // Set to 0
                   voice: personaVoice, // Use parent's voice
                   active: false, // Don't show in dropdowns
@@ -1348,8 +1346,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 name: customPersonaName,
                 description: `Custom persona: ${customPersonaName}`,
                 profile_id: null,
-                system_prompt: `You are ${customPersonaName}, a professional employee.`,
-                realtime_prompt: `You are ${customPersonaName}. Respond naturally and professionally.`,
+                // system_prompt: `You are ${customPersonaName}, a professional employee.`, // REMOVED
+                // realtime_prompt: `You are ${customPersonaName}. Respond naturally and professionally.`, // REMOVED
                 temperature: 0.7, // Default temperature
                 voice: voicePersona?.voice || null,
                 active: false, // so it does not show up in the persona dropdown
