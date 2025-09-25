@@ -292,6 +292,80 @@ export default function ChatArea({
     return new Map(allPersonas.map((p) => [p.id, p.name]));
   }, [allPersonas]);
 
+  // Compute the current conversation thread (root -> tip) by backtracking parent_id from the latest tip
+  const threadMessages = React.useMemo(() => {
+    try {
+      if (!Array.isArray(displayMessages) || displayMessages.length === 0) {
+        return [] as Message[];
+      }
+
+      // Build quick lookup of message by id
+      const byId = new Map<string, Message>();
+      for (const m of displayMessages) {
+        if (m && m.id) byId.set(m.id, m);
+      }
+
+      // Choose tip: prefer current assistant start, then last completed assistant, else last message
+      const getParentId = (m: Message): string | null | undefined =>
+        (m as unknown as { parent_id?: string | null }).parent_id;
+
+      let tipId: string | undefined = undefined;
+      const preferIds = [
+        currentAssistantId,
+        lastAssistantId,
+        displayMessages[displayMessages.length - 1]?.id,
+      ];
+      for (const candidate of preferIds) {
+        if (candidate && byId.has(candidate)) {
+          tipId = candidate;
+          break;
+        }
+      }
+      if (!tipId) {
+        // Fallback: find last assistant or last item present in map
+        for (let i = displayMessages.length - 1; i >= 0; i--) {
+          const m = displayMessages[i];
+          if (!m?.id) continue;
+          tipId = m.id;
+          break;
+        }
+        if (!tipId) return [] as Message[];
+      }
+
+      // Backtrack parent chain to root
+      const chain: Message[] = [];
+      const visited = new Set<string>();
+      let cur: Message | undefined = byId.get(tipId);
+      let endedMissingParent = false;
+      while (cur && !visited.has(cur.id)) {
+        chain.push(cur);
+        visited.add(cur.id);
+        const pid = getParentId(cur);
+        if (!pid) {
+          // reached a message with null parent_id
+          break;
+        }
+        cur = byId.get(String(pid));
+        if (!cur) {
+          endedMissingParent = true; // parent exists but not yet in list (e.g., streaming race)
+          break;
+        }
+      }
+
+      // If we ended because the parent isn't loaded yet, fall back to the full list
+      // to preserve streaming UX. Only use the chain when it reaches a true root or
+      // contains at least 2 messages (so we don't hide history on single-message chains).
+      if (endedMissingParent || chain.length < 2) {
+        return [] as Message[];
+      }
+
+      // We built tip->root; reverse to root->tip for rendering
+      return chain.reverse();
+    } catch {
+      return [] as Message[];
+    }
+  }, [displayMessages, currentAssistantId, lastAssistantId]);
+
   // Handle hints button click
   const handleHintsClick = useCallback(() => {
     setShowHints((s) => !s);
@@ -827,25 +901,101 @@ export default function ChatArea({
               </Box>
             )}
 
-            {displayMessages.map((message) => {
-              const isUserMessage =
-                message.role === "user" ||
-                message.persona_id === userPersona?.id;
-              const isAssistantMessage = message.role === "assistant";
-              const isEmptyContent =
-                !message.content || String(message.content).trim() === "";
-              const hasTranscriptWords = Boolean(
-                transcripts[message.id]?.words?.length
-              );
+            {(threadMessages.length > 0 ? threadMessages : displayMessages).map(
+              (message) => {
+                const isUserMessage =
+                  message.role === "user" ||
+                  message.persona_id === userPersona?.id;
+                const isAssistantMessage = message.role === "assistant";
+                const isEmptyContent =
+                  !message.content || String(message.content).trim() === "";
+                const hasTranscriptWords = Boolean(
+                  transcripts[message.id]?.words?.length
+                );
 
-              // Show either the full message card OR the pulsating circle for empty messages
-              if (!message.completed && isEmptyContent && !hasTranscriptWords) {
-                // Show pulsating circle for in-progress empty message (user or assistant)
+                // Show either the full message card OR the pulsating circle for empty messages
+                if (
+                  !message.completed &&
+                  isEmptyContent &&
+                  !hasTranscriptWords
+                ) {
+                  // Show pulsating circle for in-progress empty message (user or assistant)
+                  return (
+                    <Box key={message.id}>
+                      <Flex
+                        direction={isUserMessage ? "row-reverse" : "row"}
+                        align="center"
+                        gap="3"
+                      >
+                        {/* Avatar */}
+                        <Card
+                          size="1"
+                          style={{
+                            padding: "8px",
+                            background: isUserMessage
+                              ? "var(--blue-3)"
+                              : "var(--green-3)",
+                            border: `1px solid ${
+                              isUserMessage ? "var(--blue-6)" : "var(--green-6)"
+                            }`,
+                            opacity: 0.8,
+                          }}
+                        >
+                          {isUserMessage ? (
+                            <PersonIcon color="var(--blue-9)" />
+                          ) : (
+                            <ChatBubbleIcon color="var(--green-9)" />
+                          )}
+                        </Card>
+
+                        {/* Pulsating Circle */}
+                        <Box style={{ maxWidth: "30%" }}>
+                          <div
+                            style={{
+                              width: `${Math.max(
+                                isUserMessage ? 8 : 14,
+                                Math.min(
+                                  isUserMessage ? 40 : 48,
+                                  ((audioBufferRef.current[
+                                    audioBufferRef.current.length - 1
+                                  ] || 0) /
+                                    255) *
+                                    (isUserMessage ? 32 : 34) +
+                                    (isUserMessage ? 8 : 14)
+                                )
+                              )}px`,
+                              height: `${Math.max(
+                                isUserMessage ? 8 : 14,
+                                Math.min(
+                                  isUserMessage ? 40 : 48,
+                                  ((audioBufferRef.current[
+                                    audioBufferRef.current.length - 1
+                                  ] || 0) /
+                                    255) *
+                                    (isUserMessage ? 32 : 34) +
+                                    (isUserMessage ? 8 : 14)
+                                )
+                              )}px`,
+                              borderRadius: "50%",
+                              background: isUserMessage
+                                ? "var(--blue-9)"
+                                : "var(--green-9)",
+                              animation: "pulse 1.5s ease-in-out infinite",
+                              transition: "width 0.1s ease, height 0.1s ease",
+                            }}
+                          />
+                        </Box>
+                      </Flex>
+                    </Box>
+                  );
+                }
+
+                // Show normal message card for all other messages
                 return (
                   <Box key={message.id}>
                     <Flex
                       direction={isUserMessage ? "row-reverse" : "row"}
-                      align="center"
+                      align="start"
                       gap="3"
                     >
                       {/* Avatar */}
@@ -859,7 +1009,7 @@ export default function ChatArea({
                           border: `1px solid ${
                             isUserMessage ? "var(--blue-6)" : "var(--green-6)"
                           }`,
-                          opacity: 0.8,
+                          opacity: message.completed ? 1 : 0.6,
                         }}
                       >
                         {isUserMessage ? (
@@ -869,221 +1019,153 @@ export default function ChatArea({
                         )}
                       </Card>
 
-                      {/* Pulsating Circle */}
-                      <Box style={{ maxWidth: "30%" }}>
-                        <div
+                      {/* Message Content */}
+                      <Box style={{ maxWidth: "70%" }}>
+                        <Card
+                          size="2"
                           style={{
-                            width: `${Math.max(
-                              isUserMessage ? 8 : 14,
-                              Math.min(
-                                isUserMessage ? 40 : 48,
-                                ((audioBufferRef.current[
-                                  audioBufferRef.current.length - 1
-                                ] || 0) /
-                                  255) *
-                                  (isUserMessage ? 32 : 34) +
-                                  (isUserMessage ? 8 : 14)
-                              )
-                            )}px`,
-                            height: `${Math.max(
-                              isUserMessage ? 8 : 14,
-                              Math.min(
-                                isUserMessage ? 40 : 48,
-                                ((audioBufferRef.current[
-                                  audioBufferRef.current.length - 1
-                                ] || 0) /
-                                  255) *
-                                  (isUserMessage ? 32 : 34) +
-                                  (isUserMessage ? 8 : 14)
-                              )
-                            )}px`,
-                            borderRadius: "50%",
                             background: isUserMessage
-                              ? "var(--blue-9)"
-                              : "var(--green-9)",
-                            animation: "pulse 1.5s ease-in-out infinite",
-                            transition: "width 0.1s ease, height 0.1s ease",
+                              ? "var(--blue-2)"
+                              : "var(--gray-2)",
+                            border: `1px solid ${
+                              isUserMessage ? "var(--blue-7)" : "var(--gray-7)"
+                            }`,
+                            opacity: message.completed ? 1 : 0.8,
                           }}
-                        />
+                        >
+                          <Flex direction="column" gap="2">
+                            <Text
+                              size="1"
+                              style={{ color: "var(--gray-11)" }}
+                              weight="medium"
+                            >
+                              {isUserMessage
+                                ? "You"
+                                : personaMap.get(message.persona_id || "") ||
+                                  "Assistant"}
+                            </Text>
+                            <Text
+                              size="2"
+                              style={{
+                                lineHeight: "1.5",
+                                color: "var(--gray-12)",
+                              }}
+                            >
+                              <Markdown>
+                                {(() => {
+                                  // Prefer transcript-driven progressive rendering if present
+                                  const tr = transcripts[message.id];
+                                  if (
+                                    tr &&
+                                    isAssistantMessage &&
+                                    Array.isArray(tr.words) &&
+                                    tr.words.length > 0
+                                  ) {
+                                    const start = Number(tr.start_ts_ms) || 0;
+                                    const stop = transcriptStops[message.id];
+                                    let elapsed = nowMs - start;
+                                    if (Number.isFinite(stop)) {
+                                      elapsed = Math.min(elapsed, stop - start);
+                                    }
+                                    if (elapsed <= 0) return "";
+                                    const visible = tr.words
+                                      .filter((w) => w.start_ms <= elapsed)
+                                      .map((w) => w.text);
+                                    return visible
+                                      .join(" ")
+                                      .replace(/\s+([,.;!?])/g, "$1");
+                                  }
+                                  // Historical DB render with interruption clamp via word_timestamps
+                                  try {
+                                    const isAssistant = isAssistantMessage;
+                                    const wtAny = (
+                                      message as unknown as {
+                                        word_timestamps?: unknown;
+                                      }
+                                    ).word_timestamps;
+                                    const hasWT =
+                                      Array.isArray(wtAny) && wtAny.length > 0;
+                                    const interruption = (
+                                      message as unknown as {
+                                        interruption_ms?: number | null;
+                                      }
+                                    ).interruption_ms;
+
+                                    if (
+                                      isAssistant &&
+                                      hasWT &&
+                                      typeof interruption === "number" &&
+                                      interruption > 0
+                                    ) {
+                                      // interruption_ms is already relative to message created_at (stored in DB)
+                                      const cutoffRel = interruption;
+
+                                      const words: {
+                                        start_ms: number;
+                                        end_ms: number;
+                                        text: string;
+                                      }[] = (wtAny as Array<unknown>)
+                                        .map((w) => {
+                                          const obj = w as {
+                                            start_ms?: unknown;
+                                            end_ms?: unknown;
+                                            text?: unknown;
+                                          };
+                                          return {
+                                            start_ms: Number(
+                                              (obj && obj.start_ms) ?? 0
+                                            ),
+                                            end_ms: Number(
+                                              (obj && obj.end_ms) ?? 0
+                                            ),
+                                            text: String(
+                                              (obj && obj.text) ?? ""
+                                            ),
+                                          };
+                                        })
+                                        .filter(
+                                          (w) =>
+                                            Number.isFinite(w.start_ms) &&
+                                            Number.isFinite(w.end_ms) &&
+                                            !!w.text
+                                        );
+
+                                      if (words.length > 0) {
+                                        // Find the last word that would have been spoken before interruption
+                                        // Sort words by start_ms to ensure proper order
+                                        const sortedWords = words.sort(
+                                          (a, b) => a.start_ms - b.start_ms
+                                        );
+
+                                        // Find the last word that would have been completed before interruption
+                                        const visibleWords = sortedWords.filter(
+                                          (w) => w.end_ms <= cutoffRel
+                                        );
+
+                                        if (visibleWords.length > 0) {
+                                          const result = visibleWords
+                                            .map((w) => w.text)
+                                            .join(" ")
+                                            .replace(/\s+([,.;!?])/g, "$1");
+
+                                          return result;
+                                        }
+                                      }
+                                    }
+                                  } catch {}
+
+                                  return message.content || "";
+                                })()}
+                              </Markdown>
+                            </Text>
+                          </Flex>
+                        </Card>
                       </Box>
                     </Flex>
                   </Box>
                 );
               }
-
-              // Show normal message card for all other messages
-              return (
-                <Box key={message.id}>
-                  <Flex
-                    direction={isUserMessage ? "row-reverse" : "row"}
-                    align="start"
-                    gap="3"
-                  >
-                    {/* Avatar */}
-                    <Card
-                      size="1"
-                      style={{
-                        padding: "8px",
-                        background: isUserMessage
-                          ? "var(--blue-3)"
-                          : "var(--green-3)",
-                        border: `1px solid ${
-                          isUserMessage ? "var(--blue-6)" : "var(--green-6)"
-                        }`,
-                        opacity: message.completed ? 1 : 0.6,
-                      }}
-                    >
-                      {isUserMessage ? (
-                        <PersonIcon color="var(--blue-9)" />
-                      ) : (
-                        <ChatBubbleIcon color="var(--green-9)" />
-                      )}
-                    </Card>
-
-                    {/* Message Content */}
-                    <Box style={{ maxWidth: "70%" }}>
-                      <Card
-                        size="2"
-                        style={{
-                          background: isUserMessage
-                            ? "var(--blue-2)"
-                            : "var(--gray-2)",
-                          border: `1px solid ${
-                            isUserMessage ? "var(--blue-7)" : "var(--gray-7)"
-                          }`,
-                          opacity: message.completed ? 1 : 0.8,
-                        }}
-                      >
-                        <Flex direction="column" gap="2">
-                          <Text
-                            size="1"
-                            style={{ color: "var(--gray-11)" }}
-                            weight="medium"
-                          >
-                            {isUserMessage
-                              ? "You"
-                              : personaMap.get(message.persona_id || "") ||
-                                "Assistant"}
-                          </Text>
-                          <Text
-                            size="2"
-                            style={{
-                              lineHeight: "1.5",
-                              color: "var(--gray-12)",
-                            }}
-                          >
-                            <Markdown>
-                              {(() => {
-                                // Prefer transcript-driven progressive rendering if present
-                                const tr = transcripts[message.id];
-                                if (
-                                  tr &&
-                                  isAssistantMessage &&
-                                  Array.isArray(tr.words) &&
-                                  tr.words.length > 0
-                                ) {
-                                  const start = Number(tr.start_ts_ms) || 0;
-                                  const stop = transcriptStops[message.id];
-                                  let elapsed = nowMs - start;
-                                  if (Number.isFinite(stop)) {
-                                    elapsed = Math.min(elapsed, stop - start);
-                                  }
-                                  if (elapsed <= 0) return "";
-                                  const visible = tr.words
-                                    .filter((w) => w.start_ms <= elapsed)
-                                    .map((w) => w.text);
-                                  return visible
-                                    .join(" ")
-                                    .replace(/\s+([,.;!?])/g, "$1");
-                                }
-                                // Historical DB render with interruption clamp via word_timestamps
-                                try {
-                                  const isAssistant = isAssistantMessage;
-                                  const wtAny = (
-                                    message as unknown as {
-                                      word_timestamps?: unknown;
-                                    }
-                                  ).word_timestamps;
-                                  const hasWT =
-                                    Array.isArray(wtAny) && wtAny.length > 0;
-                                  const interruption = (
-                                    message as unknown as {
-                                      interruption_ms?: number | null;
-                                    }
-                                  ).interruption_ms;
-
-                                  if (
-                                    isAssistant &&
-                                    hasWT &&
-                                    typeof interruption === "number" &&
-                                    interruption > 0
-                                  ) {
-                                    // interruption_ms is already relative to message created_at (stored in DB)
-                                    const cutoffRel = interruption;
-
-                                    const words: {
-                                      start_ms: number;
-                                      end_ms: number;
-                                      text: string;
-                                    }[] = (wtAny as Array<unknown>)
-                                      .map((w) => {
-                                        const obj = w as {
-                                          start_ms?: unknown;
-                                          end_ms?: unknown;
-                                          text?: unknown;
-                                        };
-                                        return {
-                                          start_ms: Number(
-                                            (obj && obj.start_ms) ?? 0
-                                          ),
-                                          end_ms: Number(
-                                            (obj && obj.end_ms) ?? 0
-                                          ),
-                                          text: String((obj && obj.text) ?? ""),
-                                        };
-                                      })
-                                      .filter(
-                                        (w) =>
-                                          Number.isFinite(w.start_ms) &&
-                                          Number.isFinite(w.end_ms) &&
-                                          !!w.text
-                                      );
-
-                                    if (words.length > 0) {
-                                      // Find the last word that would have been spoken before interruption
-                                      // Sort words by start_ms to ensure proper order
-                                      const sortedWords = words.sort(
-                                        (a, b) => a.start_ms - b.start_ms
-                                      );
-
-                                      // Find the last word that would have been completed before interruption
-                                      const visibleWords = sortedWords.filter(
-                                        (w) => w.end_ms <= cutoffRel
-                                      );
-
-                                      if (visibleWords.length > 0) {
-                                        const result = visibleWords
-                                          .map((w) => w.text)
-                                          .join(" ")
-                                          .replace(/\s+([,.;!?])/g, "$1");
-
-                                        return result;
-                                      }
-                                    }
-                                  }
-                                } catch {}
-
-                                return message.content || "";
-                              })()}
-                            </Markdown>
-                          </Text>
-                        </Flex>
-                      </Card>
-                    </Box>
-                  </Flex>
-                </Box>
-              );
-            })}
+            )}
 
             <div ref={messagesEndRef} />
           </Flex>
