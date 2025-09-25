@@ -104,10 +104,6 @@ interface WebSocketContextType {
   emitSendIntroMessage: (data: { chat_id: string; message: string }) => void;
   emitStopTraining: (data: { chat_id: string }) => void;
   emitEndTraining: (data: { chat_id: string }) => void;
-  emitSubmitAssessment: (data: {
-    chat_id: string;
-    responses: Record<string, unknown>;
-  }) => void;
   emitGetHints: (data: { chat_id: string; message_id: string }) => void;
   emitCreateTraining: (data: {
     name: string;
@@ -542,27 +538,6 @@ export function WebSocketProvider({
     );
 
     socket.on(
-      "assessment_submitted",
-      (data: { success: boolean; message: string; chat_id: string }) => {
-        logInfo("Assessment submitted", data);
-        if (data.success) {
-          toast.success(data.message);
-          window.dispatchEvent(
-            new CustomEvent("assessmentSubmitted", {
-              detail: {
-                chatId: data.chat_id,
-                success: data.success,
-                message: data.message,
-              },
-            })
-          );
-        } else {
-          toast.error(data.message);
-        }
-      }
-    );
-
-    socket.on(
       "grading_completed",
       (data: { chat_id: string; rubric_grade_id: string; message: string }) => {
         logInfo("Grading completed", data);
@@ -575,32 +550,6 @@ export function WebSocketProvider({
             },
           })
         );
-      }
-    );
-
-    socket.on(
-      "assessment_completed",
-      (data: {
-        success: boolean;
-        message: string;
-        chat_id: string;
-        assessment_id: string;
-      }) => {
-        logInfo("Assessment completed", data);
-        if (data.success) {
-          window.dispatchEvent(
-            new CustomEvent("assessmentCompleted", {
-              detail: {
-                chatId: data.chat_id,
-                success: data.success,
-                message: data.message,
-                assessmentId: data.assessment_id,
-              },
-            })
-          );
-        } else {
-          toast.error(data.message);
-        }
       }
     );
 
@@ -1297,19 +1246,6 @@ export function WebSocketProvider({
     socketRef.current.emit("end_training", data);
   }, []);
 
-  const emitSubmitAssessment = useCallback(
-    (data: { chat_id: string; responses: Record<string, unknown> }) => {
-      if (!socketRef.current?.connected) {
-        logError("Cannot submit assessment - WebSocket not connected");
-        toast.error("WebSocket not connected. Please refresh the page.");
-        return;
-      }
-      logInfo("Emitting submit_assessment", data);
-      socketRef.current.emit("submit_assessment", data);
-    },
-    []
-  );
-
   const emitGetHints = useCallback(
     (data: { chat_id: string; message_id: string }) => {
       if (!socketRef.current?.connected) {
@@ -1374,7 +1310,6 @@ export function WebSocketProvider({
     emitSendIntroMessage,
     emitStopTraining,
     emitEndTraining,
-    emitSubmitAssessment,
     emitGetHints,
     emitCreateTraining,
     getLocalMicStream,
