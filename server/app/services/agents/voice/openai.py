@@ -45,6 +45,7 @@ class RealtimeContext:
     session: Any  # SQLAlchemy session
     chat_id: uuid.UUID
     scenario_id: uuid.UUID
+    last_user_id: uuid.UUID | None = None
 
 
 # ---------- audio helpers ----------
@@ -105,6 +106,9 @@ class OpenAIAgent(Agent):
 
         self.model_name = "gpt-4o-mini-realtime-preview"
         self.voice_name = "alloy"
+        
+        # Hold reference to the RealtimeContext for updates
+        self._rtctx: RealtimeContext | None = None
 
         td_type = "semantic_vad"
         self.turn_detection = {
@@ -395,6 +399,13 @@ class OpenAIAgent(Agent):
 
         return None
 
+    def _update_ctx_last_user(self, mid: str | None) -> None:
+        """Update the last_user_id in the RealtimeContext."""
+        try:
+            if self._rtctx is not None:
+                self._rtctx.last_user_id = uuid.UUID(str(mid)) if mid else None
+        except Exception:
+            pass
 
     async def _drain_tts(self) -> None:
         try:
@@ -658,6 +669,7 @@ class OpenAIAgent(Agent):
             session = context.session
             chat_id = context.chat_id
             scenario_id = context.scenario_id
+            last_user_id = context.last_user_id
             
             # Get chat and persona from session
             chat = session.exec(
@@ -687,7 +699,7 @@ class OpenAIAgent(Agent):
 
             # Format conversation history with persona names
             formatted_history = get_formatted_conversation_history_with_personas(
-                messages, session, parent_id=self.room.last_user_id
+                messages, session, last_user_id=last_user_id
             )
 
             # Build enhanced instructions: persona prompt + description + documents + history
@@ -785,13 +797,14 @@ class OpenAIAgent(Agent):
         runner = RealtimeRunner(oa_agent, config=run_cfg)
         
         # Create RealtimeContext with database session and IDs
-        realtime_context = RealtimeContext(
+        self._rtctx = RealtimeContext(
             session=db_session,
             chat_id=chat.id,
-            scenario_id=chat.scenario_id
+            scenario_id=chat.scenario_id,
+            last_user_id=uuid.UUID(self.room.last_user_id) if self.room.last_user_id else None
         )
         
-        session: RealtimeSession = await runner.run(context=realtime_context)
+        session: RealtimeSession = await runner.run(context=self._rtctx)
         session = await session.enter()  # ✅ correct way to enter
         logger.debug("[openai] realtime session started")
         return session

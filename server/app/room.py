@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -206,8 +207,23 @@ class Room:
         self.next_user_parent_id = parent_id
 
     def set_last_user(self, mid: str | None) -> None:
-        """Set the last user message ID."""
+        """Set the last user message ID and notify the OpenAI agent context."""
         self.last_user_id = mid
+        try:
+            # If the OpenAI agent is alive, push the update into its context
+            if self.openai_agent is not None and self.openai_agent._rtctx is not None:
+                # either call the helper...
+                if hasattr(self.openai_agent, "_update_ctx_last_user"):
+                    self.openai_agent._update_ctx_last_user(mid)
+                else:
+                    # ...or inline it if you prefer no helper
+                    if self.openai_agent._rtctx is not None:
+                        self.openai_agent._rtctx.last_user_id = (
+                            uuid.UUID(str(mid)) if mid else None
+                        )
+        except Exception:
+            # never let this break chat flow
+            pass
 
     def set_last_assistant(self, mid: str | None) -> None:
         """Set the last assistant message ID."""
