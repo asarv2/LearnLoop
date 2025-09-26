@@ -25,10 +25,12 @@ import {
 } from "@radix-ui/themes";
 // Removed mic icons in favor of a consistent "Voice Mode" label
 import React, {
+  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -115,6 +117,7 @@ export default function ChatArea({
   const nearBottomRef = React.useRef(true);
   const forceScrollRef = React.useRef(false);
   const lastMsgIdRef = React.useRef<string | null>(null);
+  const prevScrollHeightRef = React.useRef(0);
 
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
@@ -236,12 +239,68 @@ export default function ChatArea({
   >({});
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  // Lightweight render clock (~30fps)
+  // Transcript buffering for smooth updates
+  const trBufRef = useRef<
+    Record<
+      string,
+      {
+        start_ts_ms: number;
+        words: { start_ms: number; end_ms: number; text: string }[];
+        text: string;
+      }
+    >
+  >({});
+  const [trVersion, setTrVersion] = useState(0); // cheap counter for effects
+  const flushTimerRef = useRef<number | null>(null);
+
+  const scheduleTranscriptFlush = useCallback(() => {
+    if (flushTimerRef.current) return;
+    flushTimerRef.current = window.setTimeout(() => {
+      const batch = trBufRef.current;
+      trBufRef.current = {};
+      flushTimerRef.current = null;
+
+      // Mark low priority so typing / clicks stay snappy
+      startTransition(() => {
+        setTranscripts((prev) => ({ ...prev, ...batch }));
+        setTrVersion((v) => v + 1);
+      });
+    }, 80); // 80–120ms feels great
+  }, []);
+
+  // Stop buffering for transcript stops
+  const stopBufRef = useRef<Record<string, number>>({});
+  const stopFlushTimerRef = useRef<number | null>(null);
+
+  const scheduleStopFlush = useCallback(() => {
+    if (stopFlushTimerRef.current) return;
+    stopFlushTimerRef.current = window.setTimeout(() => {
+      const batch = stopBufRef.current;
+      stopBufRef.current = {};
+      stopFlushTimerRef.current = null;
+
+      startTransition(() => {
+        setTranscriptStops((prev) => ({ ...prev, ...batch }));
+      });
+    }, 80);
+  }, []);
+
+  // Check if any transcript is currently active
+  const hasLiveTranscript = useMemo(() => {
+    for (const id in transcripts) {
+      if (!transcriptStops[id]) return true;
+    }
+    return false;
+  }, [transcriptStops, transcripts]); // use the cheap counter
+
+  // Optimized render clock - only when someone is talking, slower tick
   useEffect(() => {
+    if (!hasLiveTranscript) return;
     let raf: number | null = null;
     let last = 0;
     const loop = (t: number) => {
-      if (t - last >= 33) {
+      if (t - last >= 90) {
+        // 80-100ms feels great
         setNowMs(Date.now());
         last = t;
       }
@@ -251,24 +310,20 @@ export default function ChatArea({
     return () => {
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [chat?.id, transcripts]);
+  }, [hasLiveTranscript, chat?.id]);
 
-  // Use IntersectionObserver to track "at bottom?"
+  // Use stable scroll handler to track "at bottom?"
   useEffect(() => {
-    const root = listRef.current;
-    const sentinel = messagesEndRef.current;
-    if (!root || !sentinel) return;
-
-    const io = new IntersectionObserver(
-      (entries) => {
-        nearBottomRef.current = Boolean(entries[0]?.isIntersecting);
-      },
-      { root, threshold: 1.0 }
-    );
-
-    io.observe(sentinel);
-    return () => io.disconnect();
-  }, [messagesEndRef]);
+    const el = listRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      nearBottomRef.current =
+        el.scrollTop + el.clientHeight >= el.scrollHeight - 80;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Subscribe to transcript events from websocket-context
   useEffect(() => {
@@ -281,14 +336,12 @@ export default function ChatArea({
         words: { start_ms: number; end_ms: number; text: string }[];
       };
       if (!d.message_id) return;
-      setTranscripts((prev) => ({
-        ...prev,
-        [d.message_id as string]: {
-          start_ts_ms: Number(d.start_ts_ms) || Date.now(),
-          words: Array.isArray(d.words) ? d.words : [],
-          text: String(d.text || ""),
-        },
-      }));
+      trBufRef.current[d.message_id] = {
+        start_ts_ms: Number(d.start_ts_ms) || Date.now(),
+        words: Array.isArray(d.words) ? d.words : [],
+        text: String(d.text || ""),
+      };
+      scheduleTranscriptFlush();
     };
 
     const onAgentTranscriptStop = (evt: Event) => {
@@ -298,10 +351,8 @@ export default function ChatArea({
         stop_ts_ms: number;
       };
       if (!d.message_id) return;
-      setTranscriptStops((prev) => ({
-        ...prev,
-        [d.message_id as string]: Number(d.stop_ts_ms) || Date.now(),
-      }));
+      stopBufRef.current[d.message_id] = Number(d.stop_ts_ms) || Date.now();
+      scheduleStopFlush();
       // Defer client stop dispatch until UI-visible boundary is settled
       try {
         const mid = String(d.message_id);
@@ -327,7 +378,7 @@ export default function ChatArea({
         onAgentTranscriptStop as EventListener
       );
     };
-  }, []);
+  }, [scheduleTranscriptFlush, scheduleStopFlush]);
 
   // Track message ids awaiting client-side interruption boundary dispatch
   const [pendingClientStops, setPendingClientStops] = useState<
@@ -659,83 +710,81 @@ export default function ChatArea({
 
     const freqArray = new Uint8Array(analyser.frequencyBinCount);
 
-    const draw = () => {
+    let last = 0;
+    const draw = (t: number) => {
       if (!canvas || !canvasCtx || !analyserRef.current) return;
+      if (t - last >= updateInterval) {
+        last = t;
 
-      const dpr = window.devicePixelRatio || 1;
-      const cssWidth = canvas.clientWidth || 1;
-      const cssHeight = canvas.clientHeight || 1;
-      if (
-        canvas.width !== Math.floor(cssWidth * dpr) ||
-        canvas.height !== Math.floor(cssHeight * dpr)
-      ) {
-        canvas.width = Math.floor(cssWidth * dpr);
-        canvas.height = Math.floor(cssHeight * dpr);
-        canvasCtx.scale(dpr, dpr);
-      }
-
-      canvasCtx.clearRect(0, 0, cssWidth, cssHeight);
-
-      // Get current audio data and add to buffer
-      analyserRef.current.getByteFrequencyData(freqArray);
-      const currentAvg =
-        freqArray.reduce((sum, val) => sum + val, 0) / freqArray.length;
-
-      // Add new audio data to the right side of buffer
-      audioBufferRef.current.push(currentAvg);
-
-      // Keep only the last 60 seconds worth of data
-      if (audioBufferRef.current.length > bufferSize) {
-        audioBufferRef.current.shift(); // Remove oldest data from left
-      }
-
-      // Draw the time-based waveform
-      const numSegments = Math.min(audioBufferRef.current.length, bufferSize);
-      const segmentGap = 3;
-      const segmentWidth = cssWidth / numSegments - segmentGap;
-      const centerY = cssHeight / 2;
-
-      for (let i = 0; i < numSegments; i++) {
-        const audioValue = audioBufferRef.current[i];
-        const amplitude = (audioValue / 255) * (cssHeight * 0.4);
-
-        // Position segments from right (newest) to left (oldest)
-        const x = cssWidth - (numSegments - i) * (segmentWidth + segmentGap);
-
-        // Draw top segment (above center)
-        if (amplitude > 0) {
-          const topY = centerY - amplitude;
-          canvasCtx.fillStyle = "var(--blue-9)";
-          canvasCtx.fillRect(
-            x,
-            topY,
-            Math.max(1, segmentWidth),
-            Math.max(1, amplitude)
-          );
+        const dpr = window.devicePixelRatio || 1;
+        const cssWidth = canvas.clientWidth || 1;
+        const cssHeight = canvas.clientHeight || 1;
+        if (
+          canvas.width !== Math.floor(cssWidth * dpr) ||
+          canvas.height !== Math.floor(cssHeight * dpr)
+        ) {
+          canvas.width = Math.floor(cssWidth * dpr);
+          canvas.height = Math.floor(cssHeight * dpr);
+          canvasCtx.scale(dpr, dpr);
         }
 
-        // Draw bottom segment (below center) - creates the wave effect
-        if (amplitude > 0) {
-          const bottomY = centerY;
-          canvasCtx.fillStyle = "var(--blue-9)";
-          canvasCtx.fillRect(
-            x,
-            bottomY,
-            Math.max(1, segmentWidth),
-            Math.max(1, amplitude)
-          );
+        canvasCtx.clearRect(0, 0, cssWidth, cssHeight);
+
+        // Get current audio data and add to buffer
+        analyserRef.current.getByteFrequencyData(freqArray);
+        const currentAvg =
+          freqArray.reduce((sum, val) => sum + val, 0) / freqArray.length;
+
+        // Add new audio data to the right side of buffer
+        audioBufferRef.current.push(currentAvg);
+
+        // Keep only the last 60 seconds worth of data
+        if (audioBufferRef.current.length > bufferSize) {
+          audioBufferRef.current.shift(); // Remove oldest data from left
+        }
+
+        // Draw the time-based waveform
+        const numSegments = Math.min(audioBufferRef.current.length, bufferSize);
+        const segmentGap = 3;
+        const segmentWidth = cssWidth / numSegments - segmentGap;
+        const centerY = cssHeight / 2;
+
+        for (let i = 0; i < numSegments; i++) {
+          const audioValue = audioBufferRef.current[i];
+          const amplitude = (audioValue / 255) * (cssHeight * 0.4);
+
+          // Position segments from right (newest) to left (oldest)
+          const x = cssWidth - (numSegments - i) * (segmentWidth + segmentGap);
+
+          // Draw top segment (above center)
+          if (amplitude > 0) {
+            const topY = centerY - amplitude;
+            canvasCtx.fillStyle = "var(--blue-9)";
+            canvasCtx.fillRect(
+              x,
+              topY,
+              Math.max(1, segmentWidth),
+              Math.max(1, amplitude)
+            );
+          }
+
+          // Draw bottom segment (below center) - creates the wave effect
+          if (amplitude > 0) {
+            const bottomY = centerY;
+            canvasCtx.fillStyle = "var(--blue-9)";
+            canvasCtx.fillRect(
+              x,
+              bottomY,
+              Math.max(1, segmentWidth),
+              Math.max(1, amplitude)
+            );
+          }
         }
       }
-
-      // Schedule next update based on time interval instead of animation frame
-      setTimeout(() => {
-        if (micOn) {
-          rafRef.current = requestAnimationFrame(draw);
-        }
-      }, updateInterval);
+      rafRef.current = requestAnimationFrame(draw);
     };
 
-    draw();
+    rafRef.current = requestAnimationFrame(draw);
 
     return () => {
       cleanupWaveform();
@@ -873,52 +922,45 @@ export default function ChatArea({
     };
   }, [chat?.id, cutWin]);
 
-  // Scroll helper functions
-  const jumpToBottom = useCallback(() => {
-    const el = listRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight; // instant, stable
-  }, []);
-
-  const smoothToBottom = useCallback(() => {
-    const el = listRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, []);
+  // Scroll helper functions (now handled inline for better performance)
 
   // Pin while content is streaming/growing
   useLayoutEffect(() => {
-    if (cutWin.isActive) return; // don't move during retry slicing
-    if (!nearBottomRef.current) return; // user scrolled up—respect them
-    // Any render that changes height (deltas, transcript ticks) → stay pinned
-    jumpToBottom();
-    // Dependencies that reflect "height can change":
+    const el = listRef.current;
+    if (!el || cutWin.isActive) return;
+
+    const grew = el.scrollHeight > prevScrollHeightRef.current;
+    if (grew && nearBottomRef.current) {
+      // instant during streaming, smoother for discrete jumps below
+      const behavior: ScrollBehavior = hasLiveTranscript ? "auto" : "smooth";
+      el.scrollTo({ top: el.scrollHeight, behavior });
+    }
+    prevScrollHeightRef.current = el.scrollHeight;
   }, [
-    nowMs,
+    trVersion,
     visibleMessages.length,
-    transcripts,
     transcriptStops,
     cutWin.isActive,
-    jumpToBottom,
+    hasLiveTranscript,
   ]);
 
   // Smooth only when a *new tail message id* appears
   useEffect(() => {
     const last = visibleMessages[visibleMessages.length - 1];
     const changed = last?.id !== lastMsgIdRef.current;
-    if (!changed) return;
-
+    if (!changed || cutWin.isActive) return;
     lastMsgIdRef.current = last?.id ?? null;
 
-    if (cutWin.isActive) return;
-
-    // Smooth only when we were already at the bottom or an action forced it.
     if (nearBottomRef.current || forceScrollRef.current) {
-      smoothToBottom();
+      const el = listRef.current;
+      if (el)
+        el.scrollTo({
+          top: el.scrollHeight,
+          behavior: hasLiveTranscript ? "auto" : "smooth",
+        });
     }
-
-    forceScrollRef.current = false; // consume the force
-  }, [visibleMessages, cutWin.isActive, smoothToBottom]);
+    forceScrollRef.current = false;
+  }, [visibleMessages, cutWin.isActive, hasLiveTranscript]);
 
   // Removed auto-show feedback modal useEffect - modal should only show when user clicks button
 
@@ -956,6 +998,21 @@ export default function ChatArea({
               transform: scale(1.1);
             }
           }
+          
+          @media (prefers-reduced-motion: reduce) {
+            * { 
+              animation-duration: 0.001ms !important; 
+              animation-iteration-count: 1 !important; 
+              transition-duration: 0.001ms !important; 
+            }
+          }
+          
+          .md-reset, .md-reset * { font-size: inherit; line-height: inherit; }
+          .md-reset p { margin: 0; }
+          .md-reset h1,.md-reset h2,.md-reset h3,.md-reset h4,.md-reset h5,.md-reset h6 { 
+            font-size: 1em; font-weight: 600; margin: 0; 
+          }
+          .md-reset ul, .md-reset ol { margin: 0; padding-left: 1.25em; }
         `}
       </style>
       <Box
@@ -980,6 +1037,10 @@ export default function ChatArea({
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
+            overflowAnchor: "none",
+            contain: "layout paint size",
+            contentVisibility: "auto",
+            containIntrinsicSize: "0 64px",
           }}
         >
           <Flex direction="column" gap="4">
@@ -1097,152 +1158,10 @@ export default function ChatArea({
               const showRetry =
                 isUserMessage && userVoice && Boolean(assistantParent?.id);
 
-              // Show either the full message card OR the pulsating circle for empty messages
-              if (!message.completed && isEmptyContent && !hasTranscriptWords) {
-                // Show pulsating circle for in-progress empty message (user or assistant)
-                return (
-                  <React.Fragment key={message.id}>
-                    <Box>
-                      {showRetry && (
-                        <Flex
-                          justify={isUserMessage ? "end" : "start"}
-                          style={{ marginBottom: "6px" }}
-                          gap="2"
-                        >
-                          <Button
-                            size="1"
-                            variant={
-                              cutWin.cut.afterAssistantId ===
-                              assistantParent?.id
-                                ? "solid"
-                                : "outline"
-                            }
-                            disabled={!assistantParent?.id}
-                            onClick={() => {
-                              if (!assistantParent?.id) return;
-                              if (
-                                cutWin.cut.afterAssistantId ===
-                                assistantParent.id
-                              ) {
-                                // If already active, undo it
-                                undoRetry();
-                              } else {
-                                // Start retry from this assistant, hiding this user message and everything after
-                                cutWin.startRetry(
-                                  assistantParent.id,
-                                  message.id
-                                );
-                                try {
-                                  setParentCursor(chat.id, assistantParent.id);
-                                } catch {}
-                              }
-                            }}
-                          >
-                            {cutWin.cut.afterAssistantId === assistantParent?.id
-                              ? "Retrying from here"
-                              : "Retry from here"}
-                          </Button>
+              // Determine if we're in listening state
+              const isListening =
+                !message.completed && isEmptyContent && !hasTranscriptWords;
 
-                          {/* Explicit Undo button when active for extra clarity */}
-                          {cutWin.cut.afterAssistantId ===
-                            assistantParent?.id && (
-                            <Button
-                              size="1"
-                              variant="ghost"
-                              onClick={undoRetry}
-                            >
-                              Undo
-                            </Button>
-                          )}
-                        </Flex>
-                      )}
-                      <Flex
-                        direction={isUserMessage ? "row-reverse" : "row"}
-                        align="center"
-                        gap="3"
-                      >
-                        {/* Avatar */}
-                        <Card
-                          size="1"
-                          style={{
-                            padding: "8px",
-                            background: isUserMessage
-                              ? "var(--blue-3)"
-                              : "var(--green-3)",
-                            border: `1px solid ${
-                              isUserMessage ? "var(--blue-6)" : "var(--green-6)"
-                            }`,
-                            opacity: 0.8,
-                          }}
-                        >
-                          {isUserMessage ? (
-                            <PersonIcon color="var(--blue-9)" />
-                          ) : (
-                            <ChatBubbleIcon color="var(--green-9)" />
-                          )}
-                        </Card>
-
-                        {/* Pulsating Circle */}
-                        <Box style={{ maxWidth: "30%" }}>
-                          <div
-                            style={{
-                              width: `${Math.max(
-                                isUserMessage ? 8 : 14,
-                                Math.min(
-                                  isUserMessage ? 40 : 48,
-                                  ((audioBufferRef.current[
-                                    audioBufferRef.current.length - 1
-                                  ] || 0) /
-                                    255) *
-                                    (isUserMessage ? 32 : 34) +
-                                    (isUserMessage ? 8 : 14)
-                                )
-                              )}px`,
-                              height: `${Math.max(
-                                isUserMessage ? 8 : 14,
-                                Math.min(
-                                  isUserMessage ? 40 : 48,
-                                  ((audioBufferRef.current[
-                                    audioBufferRef.current.length - 1
-                                  ] || 0) /
-                                    255) *
-                                    (isUserMessage ? 32 : 34) +
-                                    (isUserMessage ? 8 : 14)
-                                )
-                              )}px`,
-                              borderRadius: "50%",
-                              background: isUserMessage
-                                ? "var(--blue-9)"
-                                : "var(--green-9)",
-                              animation: "pulse 1.5s ease-in-out infinite",
-                              transition: "width 0.1s ease, height 0.1s ease",
-                            }}
-                          />
-                        </Box>
-                      </Flex>
-                    </Box>
-
-                    {/* Show banner after this message if it's the last visible one and retry is active */}
-                    {showRetryBanner && bannerAfterId === message.id && (
-                      <Box
-                        style={{
-                          display: "flex",
-                          justifyContent: "flex-end",
-                          marginTop: 6,
-                        }}
-                      >
-                        <Box style={{ maxWidth: "70%" }}>
-                          <LocalRetryBanner onUndo={undoRetry} />
-                        </Box>
-                      </Box>
-                    )}
-                  </React.Fragment>
-                );
-              }
-
-              // Retry toggle above user messages where the user spoke with voice
-
-              // Show normal message card for all other messages
               return (
                 <React.Fragment key={message.id}>
                   <Box>
@@ -1292,7 +1211,7 @@ export default function ChatArea({
                     )}
                     <Flex
                       direction={isUserMessage ? "row-reverse" : "row"}
-                      align="start"
+                      align={isListening ? "center" : "start"}
                       gap="3"
                     >
                       {/* Avatar */}
@@ -1316,7 +1235,7 @@ export default function ChatArea({
                         )}
                       </Card>
 
-                      {/* Message Content */}
+                      {/* Message Content - Single Card that morphs */}
                       <Box style={{ maxWidth: "70%" }}>
                         <Card
                           size="2"
@@ -1327,10 +1246,68 @@ export default function ChatArea({
                             border: `1px solid ${
                               isUserMessage ? "var(--blue-7)" : "var(--gray-7)"
                             }`,
-                            opacity: message.completed ? 1 : 0.8,
+                            paddingInline: isListening ? 4 : 16,
+                            paddingBlock: isListening ? 0 : 18,
+                            minHeight: 56,
+                            minWidth: isListening ? 56 : undefined,
+                            transition:
+                              "opacity 180ms ease, transform 180ms ease",
                           }}
                         >
-                          <Flex direction="column" gap="2">
+                          {/* Listening layer */}
+                          <div
+                            style={{
+                              display: isListening ? "grid" : "none",
+                              placeItems: "center",
+                              height: 56,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: `${Math.max(
+                                  isUserMessage ? 8 : 14,
+                                  Math.min(
+                                    isUserMessage ? 40 : 48,
+                                    ((audioBufferRef.current[
+                                      audioBufferRef.current.length - 1
+                                    ] || 0) /
+                                      255) *
+                                      (isUserMessage ? 32 : 34) +
+                                      (isUserMessage ? 8 : 14)
+                                  )
+                                )}px`,
+                                height: `${Math.max(
+                                  isUserMessage ? 8 : 14,
+                                  Math.min(
+                                    isUserMessage ? 40 : 48,
+                                    ((audioBufferRef.current[
+                                      audioBufferRef.current.length - 1
+                                    ] || 0) /
+                                      255) *
+                                      (isUserMessage ? 32 : 34) +
+                                      (isUserMessage ? 8 : 14)
+                                  )
+                                )}px`,
+                                borderRadius: "50%",
+                                background: isUserMessage
+                                  ? "var(--blue-9)"
+                                  : "var(--green-9)",
+                                animation: "pulse 1.5s ease-in-out infinite",
+                                transition: "width 0.1s ease, height 0.1s ease",
+                              }}
+                            />
+                          </div>
+
+                          {/* Text layer (always mounted) */}
+                          <div
+                            style={{
+                              display: isListening ? "none" : "flex",
+                              flexDirection: "column",
+                              height: "100%",
+                              justifyContent: "space-between",
+                              gap: "8px",
+                            }}
+                          >
                             <Text
                               size="1"
                               style={{ color: "var(--gray-11)" }}
@@ -1342,21 +1319,24 @@ export default function ChatArea({
                                   "Assistant"}
                             </Text>
                             <Text
-                              size="2"
+                              as="div"
+                              size="3"
                               style={{
-                                lineHeight: "1.5",
+                                lineHeight: "1.6",
                                 color: "var(--gray-12)",
                               }}
                             >
-                              <Markdown>
-                                {renderMessageContent(message, {
-                                  nowMs,
-                                  transcripts,
-                                  transcriptStops,
-                                })}
-                              </Markdown>
+                              <div className="md-reset">
+                                <Markdown>
+                                  {renderMessageContent(message, {
+                                    nowMs,
+                                    transcripts,
+                                    transcriptStops,
+                                  })}
+                                </Markdown>
+                              </div>
                             </Text>
-                          </Flex>
+                          </div>
                         </Card>
                       </Box>
                     </Flex>
