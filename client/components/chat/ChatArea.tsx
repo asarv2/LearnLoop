@@ -104,6 +104,12 @@ export default function ChatArea({
   // Auto-enable voice mode once per chat
   const autoEnableVoiceModeRef = React.useRef<string | null>(null);
 
+  // Scroll tracking refs
+  const listRef = React.useRef<HTMLDivElement | null>(null);
+  const nearBottomRef = React.useRef(true);
+  const forceScrollRef = React.useRef(false);
+  const lastMsgIdRef = React.useRef<string | null>(null);
+
   // Hints-related state
   const [showHints, setShowHints] = useState(false);
   const [hintsDifficulty, setHintsDifficulty] = useState<"easy" | "hard">(
@@ -129,6 +135,55 @@ export default function ChatArea({
     () => cutWin.project(displayMessages),
     [displayMessages, cutWin]
   );
+
+  // Build a quick lookup over the visible thread
+  const byId = React.useMemo(() => {
+    const map = new Map<string, Message & { parent_id?: string | null }>();
+    visibleMessages.forEach((m) =>
+      map.set(m.id, m as Message & { parent_id?: string | null })
+    );
+    return map;
+  }, [visibleMessages]);
+
+  // Walk ancestry: does "startId" have "targetId" in its parent chain?
+  const hits = React.useCallback(
+    (startId: string | null | undefined, targetId: string) => {
+      let cur = startId;
+      let hop = 0; // guard against cycles
+      while (cur && hop++ < 2048) {
+        if (cur === targetId) return true;
+        const p = byId.get(cur)?.parent_id ?? null;
+        cur = typeof p === "string" ? p : null;
+      }
+      return false;
+    },
+    [byId]
+  );
+
+  // Show the banner only until any new tail (replacement branch) appears
+  const showRetryBanner = React.useMemo(() => {
+    if (!cutWin.isActive || !cutWin.cut.afterAssistantId) return false;
+    const root = cutWin.cut.afterAssistantId;
+    const old = cutWin.cut.beforeUserId;
+
+    // Any message on the root branch (not the anchor itself),
+    // and NOT under the old user subtree => hide banner.
+    const hasTail = visibleMessages.some((m) => {
+      if (m.id === root) return false; // ignore the anchor itself
+      const pid = (m as Message & { parent_id?: string | null }).parent_id;
+      const onRoot = hits(pid, root);
+      const underOld = old ? hits(m.id, old) : false;
+      return onRoot && !underOld;
+    });
+
+    return !hasTail;
+  }, [
+    cutWin.isActive,
+    cutWin.cut.afterAssistantId,
+    cutWin.cut.beforeUserId,
+    visibleMessages,
+    hits,
+  ]);
 
   // Optional: tiny banner placement (right after the last visible bubble)
   const bannerAfterId = React.useMemo(() => {
@@ -191,6 +246,24 @@ export default function ChatArea({
       if (raf) cancelAnimationFrame(raf);
     };
   }, [chat?.id, transcripts]);
+
+  // Track near-bottom scroll position
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+
+    const onScroll = () => {
+      const { scrollTop, clientHeight, scrollHeight } = el;
+      // 80px grace so tiny movements don't disable auto-scroll
+      nearBottomRef.current = scrollTop + clientHeight >= scrollHeight - 80;
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    // initialize
+    onScroll();
+
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Subscribe to transcript events from websocket-context
   useEffect(() => {
@@ -689,12 +762,12 @@ export default function ChatArea({
       const message = (messageOverride || currentMessage).trim();
       if (!message || !chat?.id) return;
 
-      // Try to unlock audio on first user interaction
+      // Try to unlock audio on first user interaction (fire and forget)
       try {
         const el = document.querySelector("audio") as HTMLAudioElement;
         if (el) {
           el.muted = false;
-          await el.play();
+          el.play().catch(() => {}); // Fire and forget
         }
       } catch (error) {
         console.error("Failed to unlock audio on message send", error);
@@ -702,8 +775,8 @@ export default function ChatArea({
 
       // Ensure room join just in case (idempotent, cheap)
       joinRoom(chat.id);
-      // Prefer to wait briefly for RTC setup so we don't miss audio reply
-      await waitForVoiceReady(1500);
+      // Fire and forget voice setup - don't await to avoid delay
+      waitForVoiceReady(1500).catch(() => {});
       // Compute parentId: prefer explicit cut anchor -> current assistant -> last assistant -> scan visible messages
       let parentId: string | undefined =
         cutWin.cut.afterAssistantId ||
@@ -725,6 +798,8 @@ export default function ChatArea({
       try {
         if (parentId) setParentCursor(chat.id, parentId);
       } catch {}
+      // Force scroll after user sends a message
+      forceScrollRef.current = true;
       // sendWebRTCMessage will still fallback to socket if DC isn't ready
       sendWebRTCMessage(chat.id, message, parentId);
       setCurrentMessage("");
@@ -793,12 +868,25 @@ export default function ChatArea({
     };
   }, [chat?.id, cutWin]);
 
-  // Stop auto-scroll while cutting (this is what causes the jump to bottom)
+  // Smarter auto-scroll effect
   useEffect(() => {
+    const last = visibleMessages[visibleMessages.length - 1];
+    const changed = last?.id !== lastMsgIdRef.current;
+    if (!changed) return;
+    lastMsgIdRef.current = last?.id ?? null;
+
+    // While cutting, do *not* auto-scroll (prevents jump while retry window active)
     if (cutWin.isActive) return;
-    const el = messagesEndRef.current;
-    if (el) el.scrollIntoView({ block: "end", behavior: "auto" });
-  }, [visibleMessages.length, cutWin.isActive, messagesEndRef]);
+
+    // Only scroll if the user is already near bottom OR we set a force
+    if (!nearBottomRef.current && !forceScrollRef.current) return;
+
+    const behavior: ScrollBehavior =
+      forceScrollRef.current || last?.role === "assistant" ? "smooth" : "auto";
+
+    messagesEndRef.current?.scrollIntoView({ block: "end", behavior });
+    forceScrollRef.current = false;
+  }, [visibleMessages, cutWin.isActive, messagesEndRef]);
 
   // Removed auto-show feedback modal useEffect - modal should only show when user clicks button
 
@@ -851,6 +939,7 @@ export default function ChatArea({
       >
         {/* Messages */}
         <Box
+          ref={listRef}
           style={{
             flex: 1,
             padding: "24px",
@@ -859,6 +948,7 @@ export default function ChatArea({
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
+            overflowAnchor: "none",
           }}
         >
           <Flex direction="column" gap="4">
@@ -941,7 +1031,7 @@ export default function ChatArea({
             )}
 
             {/* Show banner at top if retry is active and no messages visible */}
-            {cutWin.isActive && visibleMessages.length === 0 && (
+            {showRetryBanner && visibleMessages.length === 0 && (
               <Box style={{ display: "flex", justifyContent: "flex-end" }}>
                 <Box style={{ maxWidth: "70%" }}>
                   <LocalRetryBanner onUndo={undoRetry} />
@@ -1102,7 +1192,7 @@ export default function ChatArea({
                     </Box>
 
                     {/* Show banner after this message if it's the last visible one and retry is active */}
-                    {cutWin.isActive && bannerAfterId === message.id && (
+                    {showRetryBanner && bannerAfterId === message.id && (
                       <Box
                         style={{
                           display: "flex",
@@ -1242,7 +1332,7 @@ export default function ChatArea({
                   </Box>
 
                   {/* Show banner after this message if it's the last visible one and retry is active */}
-                  {cutWin.isActive && bannerAfterId === message.id && (
+                  {showRetryBanner && bannerAfterId === message.id && (
                     <Box
                       style={{
                         display: "flex",
