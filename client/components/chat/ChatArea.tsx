@@ -705,8 +705,7 @@ export default function ChatArea({
       setRealtimeLowHints(null); // Clear any previous real-time hints
       setRealtimeHighHints(null); // Clear any previous real-time hints
 
-      // Clear the cut window when the new assistant finishes
-      cutWin.clear();
+      // Note: Retry is now cleared immediately when user sends message, not here
     };
 
     window.addEventListener(
@@ -1031,7 +1030,8 @@ export default function ChatArea({
       // sendWebRTCMessage will still fallback to socket if DC isn't ready
       sendWebRTCMessage(chat.id, message, parentId);
       setCurrentMessage("");
-      // Don't clear retry immediately - wait for server confirmation with parent_id
+      // Clear retry immediately when user sends message to show new message/voice circle
+      if (cutWin.isActive) cutWin.clear();
     },
     [
       chat?.id,
