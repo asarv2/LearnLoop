@@ -213,6 +213,23 @@ class Room:
         """Set the last assistant message ID."""
         self.last_assistant_id = mid
 
+    async def is_empty_assistant(self, message_id: str) -> bool:
+        """Check if an assistant message is empty (no content)."""
+        try:
+            from app.db import get_session
+            from sqlalchemy import text as _text
+            db = next(get_session())
+            try:
+                row = db.connection().execute(
+                    _text("SELECT content FROM messages WHERE id = :id AND role = 'assistant'"),
+                    {"id": message_id},
+                ).fetchone()
+                return not row or not (row[0] or "").strip()
+            finally:
+                db.close()
+        except Exception:
+            return True
+
     async def broadcast_transcript(
         self,
         *,

@@ -997,7 +997,14 @@ async def handle_training_message_rtc(sid: str, data: dict[str, Any]) -> None:
         # Get parent_id from client data for branching (if specified)
         parent_id = data.get("parent_id")
         if not parent_id:
-            parent_id = room.next_user_parent_id or room.last_assistant_id
+            preferred = room.next_user_parent_id or room.last_assistant_id
+            # If preferred points to an empty assistant, ignore it
+            try:
+                if preferred and await room.is_empty_assistant(preferred):
+                    preferred = room.last_assistant_id
+            except Exception:
+                pass
+            parent_id = preferred
         
         # Use room system to append text chunk
         # The room will automatically update its current_parent_id when is_final=True

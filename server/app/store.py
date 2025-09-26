@@ -214,6 +214,8 @@ async def _flush_pending_writes(
 
     # Concatenate all pending chunks
     pending_text = "".join(PENDING_WRITES[message_id])
+    if not (pending_text or "").strip() and not force:
+        return None
     PENDING_WRITES[message_id].clear()
     LAST_FLUSH[message_id] = now
 
@@ -313,7 +315,12 @@ async def upsert_text_chunk(
     )
 
     # Add to pending writes for batched DB persistence
-    PENDING_WRITES[mid].append(text or "")
+    # Avoid polluting batched writes with empty assistant placeholders
+    if role != "user":
+        if (text or "").strip():
+            PENDING_WRITES[mid].append(text)
+    else:
+        PENDING_WRITES[mid].append(text or "")
 
     # Emit events your frontend already expects
     if _emit:
@@ -539,3 +546,23 @@ async def upsert_text_chunk(
                     asyncio.create_task(_schedule_hints())
 
     return msg
+
+
+async def prune_empty_assistant_messages(max_age_seconds: int = 120) -> None:
+    """Delete empty assistant messages older than max_age_seconds."""
+    from sqlalchemy import text as _text
+    db = next(get_session())
+    try:
+        db.connection().execute(
+            _text("""
+                DELETE FROM messages
+                WHERE role = 'assistant'
+                  AND (content IS NULL OR content = '')
+                  AND COALESCE(completed, false) = false
+                  AND now() - created_at > make_interval(secs := :age)
+            """),
+            {"age": max_age_seconds},
+        )
+        db.commit()
+    finally:
+        db.close()
