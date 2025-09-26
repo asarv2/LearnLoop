@@ -82,7 +82,7 @@ export default function Evaluation() {
 
   const { data: trainings } = useTrainings();
   const { data: scenarios } = useScenarios();
-  const { data: rubrics } = useRubrics();
+  const { data: rubrics } = useRubrics(null);
   const { data: standards } = useStandards();
 
   // Filter trainings that are practice mode and sort active ones first

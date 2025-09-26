@@ -104,12 +104,18 @@ export async function POST(request: Request) {
 
     // Create standards for this rubric
     if (standards && standards.length > 0) {
-      const standardsData = standards.map((standard: any) => ({
-        rubric_id: rubric.id,
-        name: standard.name,
-        description: standard.description || null,
-        items: standard.items || [],
-      }));
+      const standardsData = standards.map(
+        (standard: {
+          name: string;
+          description?: string;
+          items?: string[];
+        }) => ({
+          rubric_id: rubric.id,
+          name: standard.name,
+          description: standard.description || null,
+          items: standard.items || [],
+        })
+      );
 
       const { error: standardsError } = await supabase
         .from("standards")

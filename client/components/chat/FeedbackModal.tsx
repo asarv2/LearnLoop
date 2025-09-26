@@ -3,12 +3,7 @@
 import { useRubrics } from "@/lib/api/hooks/useRubrics";
 import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import type { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
-import type {
-  Chat,
-  Rubric,
-  RubricGrade,
-  StandardGrade,
-} from "@/types";
+import type { Chat, Rubric, RubricGrade, StandardGrade } from "@/types";
 import * as Accordion from "@radix-ui/react-accordion";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
@@ -40,7 +35,7 @@ export default function FeedbackModal({
   const [currentPage, setCurrentPage] = useState(0);
 
   const { data: scenarios } = useScenariosByTrainingId(chat?.training_id || "");
-  const { data: rubrics } = useRubrics();
+  const { data: rubrics } = useRubrics(null);
 
   const cleanText = (text: string) => {
     // Remove markdown bold formatting (**text**)
