@@ -24,7 +24,13 @@ import {
   Text,
 } from "@radix-ui/themes";
 // Removed mic icons in favor of a consistent "Voice Mode" label
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "react";
 
 // Import necessary hooks
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -247,23 +253,22 @@ export default function ChatArea({
     };
   }, [chat?.id, transcripts]);
 
-  // Track near-bottom scroll position
+  // Use IntersectionObserver to track "at bottom?"
   useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
+    const root = listRef.current;
+    const sentinel = messagesEndRef.current;
+    if (!root || !sentinel) return;
 
-    const onScroll = () => {
-      const { scrollTop, clientHeight, scrollHeight } = el;
-      // 80px grace so tiny movements don't disable auto-scroll
-      nearBottomRef.current = scrollTop + clientHeight >= scrollHeight - 80;
-    };
+    const io = new IntersectionObserver(
+      (entries) => {
+        nearBottomRef.current = Boolean(entries[0]?.isIntersecting);
+      },
+      { root, threshold: 1.0 }
+    );
 
-    el.addEventListener("scroll", onScroll, { passive: true });
-    // initialize
-    onScroll();
-
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [messagesEndRef]);
 
   // Subscribe to transcript events from websocket-context
   useEffect(() => {
@@ -868,25 +873,52 @@ export default function ChatArea({
     };
   }, [chat?.id, cutWin]);
 
-  // Smarter auto-scroll effect
+  // Scroll helper functions
+  const jumpToBottom = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight; // instant, stable
+  }, []);
+
+  const smoothToBottom = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, []);
+
+  // Pin while content is streaming/growing
+  useLayoutEffect(() => {
+    if (cutWin.isActive) return; // don't move during retry slicing
+    if (!nearBottomRef.current) return; // user scrolled up—respect them
+    // Any render that changes height (deltas, transcript ticks) → stay pinned
+    jumpToBottom();
+    // Dependencies that reflect "height can change":
+  }, [
+    nowMs,
+    visibleMessages.length,
+    transcripts,
+    transcriptStops,
+    cutWin.isActive,
+    jumpToBottom,
+  ]);
+
+  // Smooth only when a *new tail message id* appears
   useEffect(() => {
     const last = visibleMessages[visibleMessages.length - 1];
     const changed = last?.id !== lastMsgIdRef.current;
     if (!changed) return;
+
     lastMsgIdRef.current = last?.id ?? null;
 
-    // While cutting, do *not* auto-scroll (prevents jump while retry window active)
     if (cutWin.isActive) return;
 
-    // Only scroll if the user is already near bottom OR we set a force
-    if (!nearBottomRef.current && !forceScrollRef.current) return;
+    // Smooth only when we were already at the bottom or an action forced it.
+    if (nearBottomRef.current || forceScrollRef.current) {
+      smoothToBottom();
+    }
 
-    const behavior: ScrollBehavior =
-      forceScrollRef.current || last?.role === "assistant" ? "smooth" : "auto";
-
-    messagesEndRef.current?.scrollIntoView({ block: "end", behavior });
-    forceScrollRef.current = false;
-  }, [visibleMessages, cutWin.isActive, messagesEndRef]);
+    forceScrollRef.current = false; // consume the force
+  }, [visibleMessages, cutWin.isActive, smoothToBottom]);
 
   // Removed auto-show feedback modal useEffect - modal should only show when user clicks button
 
@@ -948,7 +980,6 @@ export default function ChatArea({
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
-            overflowAnchor: "none",
           }}
         >
           <Flex direction="column" gap="4">

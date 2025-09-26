@@ -321,6 +321,24 @@ class OpenAIAgent(Agent):
         except Exception:
             pass
 
+    async def _delete_message_if_empty(self, msg_id: str) -> None:
+        """Delete a message if it has no content (pure placeholder)."""
+        try:
+            from sqlalchemy import text as _text
+            db = next(get_session())
+            try:
+                conn = db.connection()
+                conn.execute(_text("""
+                    DELETE FROM messages
+                    WHERE id = :id
+                      AND (content IS NULL OR content = '')
+                """), {"id": str(msg_id)})
+                db.commit()
+            finally:
+                db.close()
+        except Exception:
+            pass
+
     async def _get_assistant_persona_id(self) -> str | None:
         """Get assistant persona from chat.persona_ids; specifically look for agent personas (profile_id is null)."""
         if self._assistant_persona_id is not None:
@@ -955,7 +973,12 @@ class OpenAIAgent(Agent):
                         if st is not None and not st.get("has_received_audio"):
                             st["has_received_audio"] = True
                             buffered_text = "".join(st.get("buffer", []))
-                            if buffered_text:
+                            timestamps_enabled = bool(
+                                getattr(self.room, "word_timestamps_enabled", True)
+                            )
+                            
+                            # Only create message if we have buffered text AND timestamps are disabled
+                            if not timestamps_enabled and buffered_text:
                                 persona_id = await self._get_assistant_persona_id()
                                 if st.get("msg_id") is None:
                                     # AFTER: recompute parent at creation time to beat the race
@@ -976,24 +999,21 @@ class OpenAIAgent(Agent):
                                     print(f"[assist:msg] mid={st['msg_id']} parent={parent_now}")
                                     self.room.set_last_assistant(st["msg_id"])
                                     self.room.set_next_user_parent(st["msg_id"])
-                                # If word timestamps are enabled, do not stream the buffered text; transcript will drive UI
-                                timestamps_enabled = bool(
-                                    getattr(self.room, "word_timestamps_enabled", True)
+                                
+                                await self.publish_text_chunk(
+                                    text=buffered_text,
+                                    message_id=st["msg_id"],
+                                    chunk_idx=st["chunk_idx"],
+                                    is_final=False,
+                                    persona_id=persona_id,
+                                    voice=True,
+                                    parent_id=st["parent_id"],
                                 )
-                                if not timestamps_enabled:
-                                    await self.publish_text_chunk(
-                                        text=buffered_text,
-                                        message_id=st["msg_id"],
-                                        chunk_idx=st["chunk_idx"],
-                                        is_final=False,
-                                        persona_id=persona_id,
-                                        voice=True,
-                                        parent_id=st["parent_id"],
-                                    )
-                                    st["chunk_idx"] += 1
+                                st["chunk_idx"] += 1
                                 # Save flushed text for partial CTC reference
                                 st["last_flushed_text"] = buffered_text
                                 st["buffer"].clear()
+                            # else: do NOT create a message yet; wait for a text delta or CTC words
 
                     # bytes or base64 string depending on SDK/version
                     audio_bytes = (
@@ -1091,11 +1111,19 @@ class OpenAIAgent(Agent):
                                     )
                                     logger.debug(f"[ctc][partial] words={len(words_p)}")
                                     if words_p:
+                                        # Ensure message exists before broadcasting transcript
+                                        if st2.get("msg_id") is None:
+                                            parent_now = (st2.get("parent_id")
+                                                          or (self._user_anchor["msg_id"] if self._user_anchor["open"] and self._user_anchor["msg_id"]
+                                                              else self.room.last_user_id))
+                                            st2["parent_id"] = parent_now
+                                            st2["msg_id"] = await self.publish_text_chunk(text="", is_final=False, persona_id=await self._get_assistant_persona_id(), voice=True, parent_id=parent_now)
+                                            self.room.set_last_assistant(st2["msg_id"])
+                                            self.room.set_next_user_parent(st2["msg_id"])
+                                        
                                         await self.room.broadcast_transcript(
                                             agent_id=self.id,
-                                            message_id=str(st2["msg_id"])
-                                            if st2.get("msg_id") is not None
-                                            else None,
+                                            message_id=str(st2["msg_id"]),
                                             start_ts_ms=start_ts,
                                             words=words_p,
                                             full_text=reference_text,
@@ -1213,6 +1241,15 @@ class OpenAIAgent(Agent):
                                 await self._mark_interruption_for_active_response()
                             except Exception:
                                 pass
+                            
+                            # Clean up pure placeholder on cancel/interruption
+                            try:
+                                st = self._resp_streams.get(self._current_response_id or "", {})
+                                if st and st.get("msg_id") and int(st.get("chunk_idx") or 0) == 0 and not (st.get("last_flushed_text") or st.get("buffer")):
+                                    await self._delete_message_if_empty(str(st["msg_id"]))
+                            except Exception:
+                                pass
+                            
                             if not self._resp_streams and self._pending_user_msgs:
                                 next_text = self._pending_user_msgs.pop(0)
                                 try:
@@ -1396,6 +1433,15 @@ class OpenAIAgent(Agent):
                                 ):
                                     final_text = buffered_all
 
+                            # Trim finals and skip blank/whitespace outputs
+                            final_text = (final_text or "").strip()
+                            
+                            # Fall back to buffered text if longer
+                            if st:
+                                buffered_all = (st.get("last_flushed_text") or "") + "".join(st.get("buffer", []))
+                                if len(buffered_all.strip()) > len(final_text):
+                                    final_text = buffered_all.strip()
+
                             if final_text:
                                 # if we never created a message, do a one-shot create+finalize now
                                 persona_id = await self._get_assistant_persona_id()
@@ -1479,6 +1525,21 @@ class OpenAIAgent(Agent):
                                     )
                                     msg_id_final = self._rid_to_msg.get(rid)
                                     if words:
+                                        # Ensure message exists before broadcasting final transcript
+                                        if not msg_id_final:
+                                            # Create message if it doesn't exist
+                                            st_final = self._resp_streams.get(rid, {})
+                                            if st_final and st_final.get("msg_id") is None:
+                                                parent_now = (st_final.get("parent_id")
+                                                              or (self._user_anchor["msg_id"] if self._user_anchor["open"] and self._user_anchor["msg_id"]
+                                                                  else self.room.last_user_id))
+                                                st_final["parent_id"] = parent_now
+                                                st_final["msg_id"] = await self.publish_text_chunk(text="", is_final=False, persona_id=await self._get_assistant_persona_id(), voice=True, parent_id=parent_now)
+                                                self.room.set_last_assistant(st_final["msg_id"])
+                                                self.room.set_next_user_parent(st_final["msg_id"])
+                                                msg_id_final = str(st_final["msg_id"])
+                                                self._rid_to_msg[rid] = msg_id_final
+                                        
                                         await self.room.broadcast_transcript(
                                             agent_id=self.id,
                                             message_id=msg_id_final,
