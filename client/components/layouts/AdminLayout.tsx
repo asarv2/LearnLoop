@@ -73,11 +73,6 @@ const adminMenuItems = [
     icon: <CheckSquareOutlined />,
     label: <Link href="/admin/rubrics">Rubrics</Link>,
   },
-  {
-    key: "/admin/feedback",
-    icon: <MessageOutlined />,
-    label: <Link href="/admin/feedback">Feedback</Link>,
-  },
 ];
 
 const getUserMenuItems = (
