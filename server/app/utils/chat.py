@@ -145,6 +145,7 @@ def get_conversation_history(messages: Sequence[Messages]) -> list[TResponseInpu
 def get_formatted_conversation_history_with_personas(
     messages: Sequence[Messages],
     session: Session,
+    last_user_id: str | None = None,
 ) -> str:
     """
     Get the conversation history formatted with persona names instead of roles using DAG approach.
@@ -152,6 +153,7 @@ def get_formatted_conversation_history_with_personas(
     Args:
         messages: List of Messages objects from the database
         session: Database session for persona lookups
+        last_user_id: Optional ID of the last user message to start backtracking from
 
     Returns:
         Formatted conversation string like "Ashok:\nHi, how are you?\nSarah:\nI'm well, what about you."
@@ -159,8 +161,8 @@ def get_formatted_conversation_history_with_personas(
     if not messages:
         return ""
 
-    # Build ancestry from latest message using DAG approach
-    ancestry = build_ancestry(messages)
+    # Build ancestry from latest message or specified last_user_id using DAG approach
+    ancestry = build_ancestry(messages, tip_id=last_user_id)
     
     conversation_lines = []
 
