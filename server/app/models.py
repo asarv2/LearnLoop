@@ -114,6 +114,7 @@ class Rubrics(_Base, table=True):
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
     total_points: Optional[int] = Field(default=None, sa_column=Column('total_points', Integer, default=100))
     standard_length: Optional[int] = Field(default=None, sa_column=Column('standard_length', Integer, default=5))
+    company: Optional[str] = Field(default=None, sa_column=Column('company', Text))
 
     standards: List['Standards'] = Relationship(back_populates='rubric')
     scenarios: List['Scenarios'] = Relationship(back_populates='rubric')

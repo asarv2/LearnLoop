@@ -29,15 +29,42 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 // Import necessary hooks
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
+import { useRetry } from "@/hooks/useRetry";
+import { useThread } from "@/hooks/useThread";
 import { useLatestMessageHints } from "@/lib/api/hooks/useHints";
 import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
+import { renderMessageContent } from "@/lib/renderMessageContent";
 
 const INTRO_MESSAGES = [
   "Hey, how's your day been?",
   "Hi! How are you doing?",
   "Hey, how's everything going?",
 ];
+
+// Local retry banner component
+function LocalRetryBanner({ onUndo }: { onUndo: () => void }) {
+  return (
+    <Card
+      size="2"
+      style={{
+        border: "1px solid var(--amber-7)",
+        background: "var(--amber-2)",
+        borderRadius: "12px",
+      }}
+    >
+      <Flex align="center" justify="between" gap="3">
+        <Text size="2" style={{ color: "var(--amber-11)" }}>
+          Retrying from here — this user turn and all following messages are
+          hidden.
+        </Text>
+        <Button size="1" variant="outline" onClick={onUndo}>
+          Undo
+        </Button>
+      </Flex>
+    </Card>
+  );
+}
 
 interface ChatAreaProps {
   displayMessages: Message[];
@@ -94,10 +121,34 @@ export default function ChatArea({
   const [currentAssistantId, setCurrentAssistantId] = useState<string | null>(
     null
   );
-  // Retry/branch toggle: when set, next utterance will attach parent_id to this assistant
-  const [branchFromAssistantId, setBranchFromAssistantId] = useState<
-    string | null
-  >(null);
+
+  // New unified retry state management
+  const retry = useRetry();
+
+  // Undo retry helper that clears anchor and restores server cursor to latest tip
+  const undoRetry = useCallback(() => {
+    if (!chat?.id) return;
+    retry.clearRetry();
+    // Optionally restore server cursor to the most recent assistant tip
+    const restoreTo =
+      currentAssistantId ||
+      lastAssistantId ||
+      // fallback: scan for the last assistant in displayMessages
+      [...displayMessages].reverse().find((m) => m.role === "assistant")?.id;
+
+    if (restoreTo) {
+      try {
+        setParentCursor(chat.id, restoreTo);
+      } catch {}
+    }
+  }, [
+    chat?.id,
+    retry,
+    currentAssistantId,
+    lastAssistantId,
+    displayMessages,
+    setParentCursor,
+  ]);
 
   // Transcript state per message id
   const [transcripts, setTranscripts] = useState<
@@ -296,79 +347,18 @@ export default function ChatArea({
     return new Map(allPersonas.map((p) => [p.id, p.name]));
   }, [allPersonas]);
 
-  // Compute the current conversation thread (root -> tip) by backtracking parent_id from the latest tip
-  const threadMessages = React.useMemo(() => {
-    try {
-      if (!Array.isArray(displayMessages) || displayMessages.length === 0) {
-        return [] as Message[];
-      }
-
-      // Build quick lookup of message by id
-      const byId = new Map<string, Message>();
-      for (const m of displayMessages) {
-        if (m && m.id) byId.set(m.id, m);
-      }
-
-      // Choose tip: prefer current assistant start, then last completed assistant, else last message
-      const getParentId = (m: Message): string | null | undefined =>
-        (m as unknown as { parent_id?: string | null }).parent_id;
-
-      let tipId: string | undefined = undefined;
-      const preferIds = [
-        currentAssistantId,
-        lastAssistantId,
-        displayMessages[displayMessages.length - 1]?.id,
-      ];
-      for (const candidate of preferIds) {
-        if (candidate && byId.has(candidate)) {
-          tipId = candidate;
-          break;
-        }
-      }
-      if (!tipId) {
-        // Fallback: find last assistant or last item present in map
-        for (let i = displayMessages.length - 1; i >= 0; i--) {
-          const m = displayMessages[i];
-          if (!m?.id) continue;
-          tipId = m.id;
-          break;
-        }
-        if (!tipId) return [] as Message[];
-      }
-
-      // Backtrack parent chain to root
-      const chain: Message[] = [];
-      const visited = new Set<string>();
-      let cur: Message | undefined = byId.get(tipId);
-      let endedMissingParent = false;
-      while (cur && !visited.has(cur.id)) {
-        chain.push(cur);
-        visited.add(cur.id);
-        const pid = getParentId(cur);
-        if (!pid) {
-          // reached a message with null parent_id
-          break;
-        }
-        cur = byId.get(String(pid));
-        if (!cur) {
-          endedMissingParent = true; // parent exists but not yet in list (e.g., streaming race)
-          break;
-        }
-      }
-
-      // If we ended because the parent isn't loaded yet, fall back to the full list
-      // to preserve streaming UX. Only use the chain when it reaches a true root or
-      // contains at least 2 messages (so we don't hide history on single-message chains).
-      if (endedMissingParent || chain.length < 2) {
-        return [] as Message[];
-      }
-
-      // We built tip->root; reverse to root->tip for rendering
-      return chain.reverse();
-    } catch {
-      return [] as Message[];
-    }
-  }, [displayMessages, currentAssistantId, lastAssistantId]);
+  // Use the new unified thread management
+  const { visibleMessages, bannerAfterId, bannerAtTop, anchorPresent } =
+    useThread({
+      messages: displayMessages,
+      currentAssistantId,
+      lastAssistantId,
+      retry: {
+        anchorAssistantId: retry.anchorAssistantId,
+        userMessageId: retry.userMessageId,
+        isActive: retry.isActive,
+      },
+    });
 
   // Handle hints button click
   const handleHintsClick = useCallback(() => {
@@ -699,9 +689,9 @@ export default function ChatArea({
       joinRoom(chat.id);
       // Prefer to wait briefly for RTC setup so we don't miss audio reply
       await waitForVoiceReady(1500);
-      // Compute parentId: prefer explicit branch selection -> current assistant -> last assistant -> scan
+      // Compute parentId: prefer explicit retry anchor -> current assistant -> last assistant -> scan
       let parentId: string | undefined =
-        branchFromAssistantId ||
+        retry.anchorAssistantId ||
         currentAssistantId ||
         lastAssistantId ||
         undefined;
@@ -723,8 +713,7 @@ export default function ChatArea({
       // sendWebRTCMessage will still fallback to socket if DC isn't ready
       sendWebRTCMessage(chat.id, message, parentId);
       setCurrentMessage("");
-      // Clear branch selection after we dispatch the next utterance
-      if (branchFromAssistantId) setBranchFromAssistantId(null);
+      // Don't clear retry immediately - wait for server confirmation with parent_id
     },
     [
       chat?.id,
@@ -737,7 +726,7 @@ export default function ChatArea({
       displayMessages,
       currentAssistantId,
       lastAssistantId,
-      branchFromAssistantId,
+      retry,
     ]
   );
 
@@ -747,7 +736,7 @@ export default function ChatArea({
     if (!chat?.id) return;
     if (!micOn) return;
     let parentId: string | undefined =
-      branchFromAssistantId ||
+      retry.anchorAssistantId ||
       currentAssistantId ||
       lastAssistantId ||
       undefined;
@@ -771,7 +760,7 @@ export default function ChatArea({
     displayMessages,
     currentAssistantId,
     lastAssistantId,
-    branchFromAssistantId,
+    retry.anchorAssistantId,
     setParentCursor,
   ]);
 
@@ -784,7 +773,20 @@ export default function ChatArea({
         if (!d || !chat?.id) return;
         const cid = (d["chatId"] as string) || (d["chat_id"] as string);
         if (cid !== chat.id) return;
-        if (branchFromAssistantId) setBranchFromAssistantId(null);
+
+        // Prefer nested message.parent_id, fall back to top-level parent_id
+        const savedParent =
+          (d.message as Record<string, unknown>)?.parent_id ??
+          d.parent_id ??
+          null;
+
+        // Only clear the fence once we see the server threaded this user msg
+        if (
+          retry.anchorAssistantId &&
+          savedParent === retry.anchorAssistantId
+        ) {
+          retry.clearRetry();
+        }
       } catch {}
     };
     window.addEventListener("userMessageSaved", onUserSaved as EventListener);
@@ -794,7 +796,7 @@ export default function ChatArea({
         onUserSaved as EventListener
       );
     };
-  }, [chat?.id, branchFromAssistantId]);
+  }, [chat?.id, retry]);
 
   // Removed auto-show feedback modal useEffect - modal should only show when user clicks button
 
@@ -936,76 +938,99 @@ export default function ChatArea({
               </Box>
             )}
 
-            {(threadMessages.length > 0 ? threadMessages : displayMessages).map(
-              (message) => {
-                const isUserMessage =
-                  message.role === "user" ||
-                  message.persona_id === userPersona?.id;
-                const isAssistantMessage = message.role === "assistant";
-                const isEmptyContent =
-                  !message.content || String(message.content).trim() === "";
-                const hasTranscriptWords = Boolean(
-                  transcripts[message.id]?.words?.length
-                );
+            {/* If retry is active, anchor hasn't arrived yet, and cut is at the top */}
+            {retry.isActive && !anchorPresent && bannerAtTop && (
+              <Box style={{ display: "flex", justifyContent: "flex-end" }}>
+                <Box style={{ maxWidth: "70%" }}>
+                  <LocalRetryBanner onUndo={undoRetry} />
+                </Box>
+              </Box>
+            )}
 
-                // Retry toggle data (computed once, used in both branches)
-                const parentId = (
-                  message as unknown as { parent_id?: string | null }
-                ).parent_id as string | null | undefined;
-                const assistantParent = parentId
-                  ? (displayMessages.find((m) => m.id === parentId) as
-                      | (Message & { voice?: boolean })
-                      | undefined)
-                  : undefined;
-                const userVoice = (
-                  message as unknown as { voice?: boolean | null }
-                ).voice;
-                const showRetry = isUserMessage && userVoice === true;
+            {visibleMessages.map((message) => {
+              const isAnchor =
+                retry.isActive && retry.anchorAssistantId === message.id;
+              const isUserMessage =
+                message.role === "user" ||
+                message.persona_id === userPersona?.id;
+              const isEmptyContent =
+                !message.content || String(message.content).trim() === "";
+              const hasTranscriptWords = Boolean(
+                transcripts[message.id]?.words?.length
+              );
 
-                // Show either the full message card OR the pulsating circle for empty messages
-                if (
-                  !message.completed &&
-                  isEmptyContent &&
-                  !hasTranscriptWords
-                ) {
-                  // Show pulsating circle for in-progress empty message (user or assistant)
-                  return (
-                    <Box key={message.id}>
+              // Retry toggle data (computed once, used in both branches)
+              const parentId = (
+                message as unknown as { parent_id?: string | null }
+              ).parent_id as string | null | undefined;
+              const assistantParent = parentId
+                ? (displayMessages.find((m) => m.id === parentId) as
+                    | (Message & { voice?: boolean })
+                    | undefined)
+                : undefined;
+              const userVoice = Boolean(
+                (message as unknown as { voice?: boolean }).voice
+              );
+              // Only allow "Retry from here" if this is a user message, it has a parent assistant,
+              // and the user message was produced via voice:
+              const showRetry =
+                isUserMessage && userVoice && Boolean(assistantParent?.id);
+
+              // Show either the full message card OR the pulsating circle for empty messages
+              if (!message.completed && isEmptyContent && !hasTranscriptWords) {
+                // Show pulsating circle for in-progress empty message (user or assistant)
+                return (
+                  <React.Fragment key={message.id}>
+                    <Box>
                       {showRetry && (
                         <Flex
                           justify={isUserMessage ? "end" : "start"}
                           style={{ marginBottom: "6px" }}
+                          gap="2"
                         >
                           <Button
                             size="1"
                             variant={
-                              branchFromAssistantId === assistantParent?.id
+                              retry.anchorAssistantId === assistantParent?.id
                                 ? "solid"
                                 : "outline"
                             }
                             disabled={!assistantParent?.id}
                             onClick={() => {
                               if (!assistantParent?.id) return;
-                              setBranchFromAssistantId((prev) =>
-                                prev === assistantParent.id
+                              const nextAnchor =
+                                retry.anchorAssistantId === assistantParent.id
                                   ? null
-                                  : assistantParent.id
+                                  : assistantParent.id;
+
+                              // pass both the anchor assistant id and THIS user message id
+                              retry.toggleRetryFrom(
+                                nextAnchor,
+                                nextAnchor ? message.id : null
                               );
+
                               try {
-                                if (
-                                  branchFromAssistantId !==
-                                    assistantParent.id &&
-                                  assistantParent.id
-                                ) {
-                                  setParentCursor(chat.id, assistantParent.id);
-                                }
+                                if (nextAnchor)
+                                  setParentCursor(chat.id, nextAnchor);
+                                else undoRetry(); // will clear + restore; harmless if already cleared
                               } catch {}
                             }}
                           >
-                            {branchFromAssistantId === assistantParent?.id
-                              ? "Retrying from here (on)"
+                            {retry.anchorAssistantId === assistantParent?.id
+                              ? "Retrying from here"
                               : "Retry from here"}
                           </Button>
+
+                          {/* Explicit Undo button when active for extra clarity */}
+                          {retry.anchorAssistantId === assistantParent?.id && (
+                            <Button
+                              size="1"
+                              variant="ghost"
+                              onClick={undoRetry}
+                            >
+                              Undo
+                            </Button>
+                          )}
                         </Flex>
                       )}
                       <Flex
@@ -1073,48 +1098,94 @@ export default function ChatArea({
                         </Box>
                       </Flex>
                     </Box>
-                  );
-                }
 
-                // Retry toggle above user messages where the user spoke with voice
+                    {/* inject local banner exactly where the replaced user message would be */}
+                    {isAnchor && (
+                      <Box
+                        // place it with the same alignment as a user bubble
+                        style={{
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          marginTop: 6,
+                        }}
+                      >
+                        <Box style={{ maxWidth: "70%" }}>
+                          <LocalRetryBanner onUndo={undoRetry} />
+                        </Box>
+                      </Box>
+                    )}
 
-                // Show normal message card for all other messages
-                return (
-                  <Box key={message.id}>
+                    {/* If retry is active and we should place the banner AFTER this message */}
+                    {retry.isActive &&
+                      !anchorPresent &&
+                      bannerAfterId === message.id && (
+                        <Box
+                          style={{
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            marginTop: 6,
+                          }}
+                        >
+                          <Box style={{ maxWidth: "70%" }}>
+                            <LocalRetryBanner onUndo={undoRetry} />
+                          </Box>
+                        </Box>
+                      )}
+                  </React.Fragment>
+                );
+              }
+
+              // Retry toggle above user messages where the user spoke with voice
+
+              // Show normal message card for all other messages
+              return (
+                <React.Fragment key={message.id}>
+                  <Box>
                     {showRetry && (
                       <Flex
                         justify={isUserMessage ? "end" : "start"}
                         style={{ marginBottom: "6px" }}
+                        gap="2"
                       >
                         <Button
                           size="1"
                           variant={
-                            branchFromAssistantId === assistantParent?.id
+                            retry.anchorAssistantId === assistantParent?.id
                               ? "solid"
                               : "outline"
                           }
                           disabled={!assistantParent?.id}
                           onClick={() => {
                             if (!assistantParent?.id) return;
-                            setBranchFromAssistantId((prev) =>
-                              prev === assistantParent.id
+                            const nextAnchor =
+                              retry.anchorAssistantId === assistantParent.id
                                 ? null
-                                : assistantParent.id
+                                : assistantParent.id;
+
+                            // pass both the anchor assistant id and THIS user message id
+                            retry.toggleRetryFrom(
+                              nextAnchor,
+                              nextAnchor ? message.id : null
                             );
+
                             try {
-                              if (
-                                branchFromAssistantId !== assistantParent.id &&
-                                assistantParent.id
-                              ) {
-                                setParentCursor(chat.id, assistantParent.id);
-                              }
+                              if (nextAnchor)
+                                setParentCursor(chat.id, nextAnchor);
+                              else undoRetry(); // will clear + restore; harmless if already cleared
                             } catch {}
                           }}
                         >
-                          {branchFromAssistantId === assistantParent?.id
-                            ? "Retrying from here (on)"
+                          {retry.anchorAssistantId === assistantParent?.id
+                            ? "Retrying from here"
                             : "Retry from here"}
                         </Button>
+
+                        {/* Explicit Undo button when active for extra clarity */}
+                        {retry.anchorAssistantId === assistantParent?.id && (
+                          <Button size="1" variant="ghost" onClick={undoRetry}>
+                            Undo
+                          </Button>
+                        )}
                       </Flex>
                     )}
                     <Flex
@@ -1176,110 +1247,11 @@ export default function ChatArea({
                               }}
                             >
                               <Markdown>
-                                {(() => {
-                                  // Prefer transcript-driven progressive rendering if present
-                                  const tr = transcripts[message.id];
-                                  if (
-                                    tr &&
-                                    isAssistantMessage &&
-                                    Array.isArray(tr.words) &&
-                                    tr.words.length > 0
-                                  ) {
-                                    const start = Number(tr.start_ts_ms) || 0;
-                                    const stop = transcriptStops[message.id];
-                                    let elapsed = nowMs - start;
-                                    if (Number.isFinite(stop)) {
-                                      elapsed = Math.min(elapsed, stop - start);
-                                    }
-                                    if (elapsed <= 0) return "";
-                                    const visible = tr.words
-                                      .filter((w) => w.start_ms <= elapsed)
-                                      .map((w) => w.text);
-                                    return visible
-                                      .join(" ")
-                                      .replace(/\s+([,.;!?])/g, "$1");
-                                  }
-                                  // Historical DB render with interruption clamp via word_timestamps
-                                  try {
-                                    const isAssistant = isAssistantMessage;
-                                    const wtAny = (
-                                      message as unknown as {
-                                        word_timestamps?: unknown;
-                                      }
-                                    ).word_timestamps;
-                                    const hasWT =
-                                      Array.isArray(wtAny) && wtAny.length > 0;
-                                    const interruption = (
-                                      message as unknown as {
-                                        interruption_ms?: number | null;
-                                      }
-                                    ).interruption_ms;
-
-                                    if (
-                                      isAssistant &&
-                                      hasWT &&
-                                      typeof interruption === "number" &&
-                                      interruption > 0
-                                    ) {
-                                      // interruption_ms is already relative to message created_at (stored in DB)
-                                      const cutoffRel = interruption;
-
-                                      const words: {
-                                        start_ms: number;
-                                        end_ms: number;
-                                        text: string;
-                                      }[] = (wtAny as Array<unknown>)
-                                        .map((w) => {
-                                          const obj = w as {
-                                            start_ms?: unknown;
-                                            end_ms?: unknown;
-                                            text?: unknown;
-                                          };
-                                          return {
-                                            start_ms: Number(
-                                              (obj && obj.start_ms) ?? 0
-                                            ),
-                                            end_ms: Number(
-                                              (obj && obj.end_ms) ?? 0
-                                            ),
-                                            text: String(
-                                              (obj && obj.text) ?? ""
-                                            ),
-                                          };
-                                        })
-                                        .filter(
-                                          (w) =>
-                                            Number.isFinite(w.start_ms) &&
-                                            Number.isFinite(w.end_ms) &&
-                                            !!w.text
-                                        );
-
-                                      if (words.length > 0) {
-                                        // Find the last word that would have been spoken before interruption
-                                        // Sort words by start_ms to ensure proper order
-                                        const sortedWords = words.sort(
-                                          (a, b) => a.start_ms - b.start_ms
-                                        );
-
-                                        // Find the last word that would have been completed before interruption
-                                        const visibleWords = sortedWords.filter(
-                                          (w) => w.end_ms <= cutoffRel
-                                        );
-
-                                        if (visibleWords.length > 0) {
-                                          const result = visibleWords
-                                            .map((w) => w.text)
-                                            .join(" ")
-                                            .replace(/\s+([,.;!?])/g, "$1");
-
-                                          return result;
-                                        }
-                                      }
-                                    }
-                                  } catch {}
-
-                                  return message.content || "";
-                                })()}
+                                {renderMessageContent(message, {
+                                  nowMs,
+                                  transcripts,
+                                  transcriptStops,
+                                })}
                               </Markdown>
                             </Text>
                           </Flex>
@@ -1287,9 +1259,42 @@ export default function ChatArea({
                       </Box>
                     </Flex>
                   </Box>
-                );
-              }
-            )}
+
+                  {/* inject local banner exactly where the replaced user message would be */}
+                  {isAnchor && (
+                    <Box
+                      // place it with the same alignment as a user bubble
+                      style={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        marginTop: 6,
+                      }}
+                    >
+                      <Box style={{ maxWidth: "70%" }}>
+                        <LocalRetryBanner onUndo={undoRetry} />
+                      </Box>
+                    </Box>
+                  )}
+
+                  {/* If retry is active and we should place the banner AFTER this message */}
+                  {retry.isActive &&
+                    !anchorPresent &&
+                    bannerAfterId === message.id && (
+                      <Box
+                        style={{
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          marginTop: 6,
+                        }}
+                      >
+                        <Box style={{ maxWidth: "70%" }}>
+                          <LocalRetryBanner onUndo={undoRetry} />
+                        </Box>
+                      </Box>
+                    )}
+                </React.Fragment>
+              );
+            })}
 
             <div ref={messagesEndRef} />
           </Flex>

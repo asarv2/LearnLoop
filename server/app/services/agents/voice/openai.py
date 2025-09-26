@@ -215,6 +215,12 @@ class OpenAIAgent(Agent):
                 except Exception:
                     persona_id = None
                 try:
+                    # Use snapshot from stream or fallback to last user
+                    st = self._resp_streams.get(rid) or {}
+                    parent_snap = (st.get("parent_id")
+                                  or (self._user_anchor["msg_id"]
+                                      if self._user_anchor["open"] and self._user_anchor["msg_id"]
+                                      else self.room.last_user_id))
                     msg_id_new = await self.publish_text_chunk(
                         text="",
                         message_id=None,
@@ -222,7 +228,11 @@ class OpenAIAgent(Agent):
                         is_final=False,
                         persona_id=persona_id,
                         voice=True,
+                        parent_id=parent_snap,
                     )
+                    self.room.set_last_assistant(msg_id_new)
+                    self.room.set_next_user_parent(msg_id_new)
+                    st["msg_id"] = msg_id_new
                     msg_id = msg_id_new
                     # Backfill mappings so future events attach correctly
                     try:
@@ -514,6 +524,7 @@ class OpenAIAgent(Agent):
             is_final: bool,
             persona_id: str | None = None,
             voice: bool = False,
+            parent_id: str | None = None,
         ) -> str:
             # If a user anchor is open, route typed text into that message
             use_anchor = (
@@ -539,6 +550,12 @@ class OpenAIAgent(Agent):
             if role == "user" and not persona_id:
                 persona_id = await agent_self._get_user_persona_id()
 
+            # Fallback parent selection for USER turns
+            if role == "user" and parent_id is None:
+                parent_id = (agent_self.room.next_user_parent_id
+                             or agent_self.room.last_assistant_id)
+                logger.debug(f"[user:append] parent_id={parent_id} override={agent_self.room.next_user_parent_id} last_assist={agent_self.room.last_assistant_id}")
+
             mid = await orig(
                 source_id=source_id,
                 role=role,
@@ -548,7 +565,16 @@ class OpenAIAgent(Agent):
                 is_final=is_final,
                 persona_id=persona_id,
                 voice=voice,
+                parent_id=parent_id,
             )
+
+            # On user finalization: update pointers and consume override
+            if role == "user" and is_final:
+                try:
+                    agent_self.room.set_last_user(mid)
+                    agent_self.room.set_next_user_parent(None)
+                except Exception:
+                    pass
 
             # 1) Local barge-in for ANY typed user chunk (not transcript)
             if role == "user" and source_id != TRANSCRIPT_SOURCE_ID:
@@ -902,9 +928,7 @@ class OpenAIAgent(Agent):
         - Audio events: convert pcm16 → float32, resample to 48k, chunk to 20ms, publish.
         - History events: when assistant output text appears, stream to chat.
         """
-        # For streaming assistant text
-        active_msg_id: str | None = None
-        next_chunk_idx = 0
+        # For streaming assistant text (legacy variables removed)
 
         async for ev in session:
             try:
@@ -934,6 +958,12 @@ class OpenAIAgent(Agent):
                             if buffered_text:
                                 persona_id = await self._get_assistant_persona_id()
                                 if st.get("msg_id") is None:
+                                    # AFTER: recompute parent at creation time to beat the race
+                                    parent_now = (st.get("parent_id")
+                                                or (self._user_anchor["msg_id"]
+                                                    if self._user_anchor["open"] and self._user_anchor["msg_id"]
+                                                    else self.room.last_user_id))
+                                    st["parent_id"] = parent_now
                                     st["msg_id"] = await self.publish_text_chunk(
                                         text="",
                                         message_id=None,
@@ -941,7 +971,11 @@ class OpenAIAgent(Agent):
                                         is_final=False,
                                         persona_id=persona_id,
                                         voice=True,
+                                        parent_id=parent_now,
                                     )
+                                    print(f"[assist:msg] mid={st['msg_id']} parent={parent_now}")
+                                    self.room.set_last_assistant(st["msg_id"])
+                                    self.room.set_next_user_parent(st["msg_id"])
                                 # If word timestamps are enabled, do not stream the buffered text; transcript will drive UI
                                 timestamps_enabled = bool(
                                     getattr(self.room, "word_timestamps_enabled", True)
@@ -954,6 +988,7 @@ class OpenAIAgent(Agent):
                                         is_final=False,
                                         persona_id=persona_id,
                                         voice=True,
+                                        parent_id=st["parent_id"],
                                     )
                                     st["chunk_idx"] += 1
                                 # Save flushed text for partial CTC reference
@@ -1076,18 +1111,8 @@ class OpenAIAgent(Agent):
 
                 # --- Agent end (close text message cleanly) ---
                 elif isinstance(ev, OAEventAgentEnd):
-                    if active_msg_id is not None:
-                        persona_id = await self._get_assistant_persona_id()
-                        await self.publish_text_chunk(
-                            text="",
-                            message_id=active_msg_id,
-                            chunk_idx=next_chunk_idx,
-                            is_final=True,
-                            persona_id=persona_id,
-                            voice=True,
-                        )
-                        active_msg_id = None
-                        next_chunk_idx = 0
+                    # Legacy path removed - all assistant message finalization handled via response.* events
+                    pass
 
                 elif isinstance(ev, OAEventError):
                     raw_msg = getattr(ev, "error", None)
@@ -1155,7 +1180,11 @@ class OpenAIAgent(Agent):
                                 or (payload.get("response") or {}).get("id")
                                 or "_default"
                             )
-                            # Track it but DON'T create a room message yet - wait for audio or actual text
+                            # AFTER: prefer open user anchor if present
+                            parent_user = (self._user_anchor["msg_id"]
+                                         if self._user_anchor["open"] and self._user_anchor["msg_id"]
+                                         else self.room.last_user_id)
+
                             st = self._resp_streams.setdefault(
                                 rid,
                                 {
@@ -1164,8 +1193,12 @@ class OpenAIAgent(Agent):
                                     "buffer": [],
                                     "has_received_audio": False,
                                     "partial_ctc_done": False,
+                                    "parent_id": parent_user,  # tentative
                                 },
                             )
+                            print(f"[assist:create] rid={rid} parent_snap={st['parent_id']} "
+                                  f"anchor_open={self._user_anchor['open']} anchor_id={self._user_anchor['msg_id']} "
+                                  f"last_user={self.room.last_user_id}")
                             # Remember latest response id for associating first audio chunks
                             self._current_response_id = rid
 
@@ -1226,6 +1259,12 @@ class OpenAIAgent(Agent):
                                 if st.get("has_received_audio"):
                                     persona_id = await self._get_assistant_persona_id()
                                     if st["msg_id"] is None:
+                                        # AFTER: recompute parent at creation time to beat the race
+                                        parent_now = (st.get("parent_id")
+                                                    or (self._user_anchor["msg_id"]
+                                                        if self._user_anchor["open"] and self._user_anchor["msg_id"]
+                                                        else self.room.last_user_id))
+                                        st["parent_id"] = parent_now
                                         st["msg_id"] = await self.publish_text_chunk(
                                             text="",
                                             message_id=None,
@@ -1233,7 +1272,11 @@ class OpenAIAgent(Agent):
                                             is_final=False,
                                             persona_id=persona_id,
                                             voice=True,
+                                            parent_id=parent_now,
                                         )
+                                        print(f"[assist:msg] mid={st['msg_id']} parent={parent_now}")
+                                        self.room.set_last_assistant(st["msg_id"])
+                                        self.room.set_next_user_parent(st["msg_id"])
                                     await self.publish_text_chunk(
                                         text=delta,
                                         message_id=st["msg_id"],
@@ -1241,6 +1284,7 @@ class OpenAIAgent(Agent):
                                         is_final=False,
                                         persona_id=persona_id,
                                         voice=True,
+                                        parent_id=st["parent_id"],
                                     )
                                     st["chunk_idx"] += 1
                                 else:
@@ -1281,6 +1325,12 @@ class OpenAIAgent(Agent):
                                             await self._get_assistant_persona_id()
                                         )
                                         if st["msg_id"] is None:
+                                            # AFTER: recompute parent at creation time to beat the race
+                                            parent_now = (st.get("parent_id")
+                                                        or (self._user_anchor["msg_id"]
+                                                            if self._user_anchor["open"] and self._user_anchor["msg_id"]
+                                                            else self.room.last_user_id))
+                                            st["parent_id"] = parent_now
                                             st[
                                                 "msg_id"
                                             ] = await self.publish_text_chunk(
@@ -1290,7 +1340,12 @@ class OpenAIAgent(Agent):
                                                 is_final=False,
                                                 persona_id=persona_id,
                                                 voice=True,
+                                                parent_id=parent_now,
                                             )
+                                            print(f"[assist:msg] mid={st['msg_id']} parent={parent_now}")
+                                            # DO NOT: self.room.set_parent_id(st["msg_id"])
+                                            # Set next user parent override for voice threading
+                                            self.room.set_next_user_parent(st["msg_id"])
                                         await self.publish_text_chunk(
                                             text=delta,
                                             message_id=st["msg_id"],
@@ -1298,6 +1353,7 @@ class OpenAIAgent(Agent):
                                             is_final=False,
                                             persona_id=persona_id,
                                             voice=True,
+                                            parent_id=st["parent_id"],
                                         )
                                         st["chunk_idx"] += 1
                                     else:
@@ -1344,6 +1400,10 @@ class OpenAIAgent(Agent):
                                 # if we never created a message, do a one-shot create+finalize now
                                 persona_id = await self._get_assistant_persona_id()
                                 if not st or st["msg_id"] is None:
+                                    # In response.*.done one-shot finalization
+                                    parent_snap = (st.get("parent_id") if st else None) or (self._user_anchor["msg_id"]
+                                                                                              if self._user_anchor["open"] and self._user_anchor["msg_id"]
+                                                                                              else self.room.last_user_id)
                                     msg_id = await self.publish_text_chunk(
                                         text="",
                                         message_id=None,
@@ -1351,7 +1411,10 @@ class OpenAIAgent(Agent):
                                         is_final=False,
                                         persona_id=persona_id,
                                         voice=True,
+                                        parent_id=parent_snap,
                                     )
+                                    self.room.set_last_assistant(msg_id)
+                                    self.room.set_next_user_parent(msg_id)
                                     await self.publish_text_chunk(
                                         text=final_text,
                                         message_id=msg_id,
@@ -1359,6 +1422,7 @@ class OpenAIAgent(Agent):
                                         is_final=True,
                                         persona_id=persona_id,
                                         voice=True,
+                                        parent_id=parent_snap,
                                     )
                                     self._rid_to_msg[rid] = msg_id
                                 else:
@@ -1370,6 +1434,7 @@ class OpenAIAgent(Agent):
                                         is_final=True,
                                         persona_id=persona_id,
                                         voice=True,
+                                        parent_id=st["parent_id"],
                                     )
                                     self._rid_to_msg[rid] = str(st["msg_id"])  # type: ignore[arg-type]
                             else:
@@ -1521,6 +1586,8 @@ class OpenAIAgent(Agent):
                                 not self._user_anchor["open"]
                                 or self._user_anchor["msg_id"] is None
                             ):
+                                # Use override if present, otherwise last assistant
+                                parent = self.room.next_user_parent_id or self.room.last_assistant_id
                                 msg_id = await self.room.append_text_chunk(
                                     source_id="openai:user-transcript",
                                     role="user",
@@ -1530,7 +1597,9 @@ class OpenAIAgent(Agent):
                                     is_final=False,
                                     persona_id=await self._get_user_persona_id(),
                                     voice=True,
+                                    parent_id=parent,  # ← respect override
                                 )
+                                # This will be handled by the user wrapper finalization logic
                                 self._user_anchor.update(
                                     {
                                         "msg_id": msg_id,
@@ -1556,6 +1625,7 @@ class OpenAIAgent(Agent):
                                 persona_id=await self._get_user_persona_id(),
                                 voice=True,
                             )
+                            # Parent ID will be set by user wrapper on finalization
                             self._user_anchor["chunk_idx"] = (
                                 self._user_anchor["chunk_idx"] or 0
                             ) + 1
@@ -1594,6 +1664,7 @@ class OpenAIAgent(Agent):
                                     persona_id=await self._get_user_persona_id(),
                                     voice=True,
                                 )
+                                # Parent ID will be set by user wrapper on finalization
                                 self._user_anchor["chunk_idx"] = (
                                     self._user_anchor["chunk_idx"] or 0
                                 ) + 1
@@ -1620,6 +1691,7 @@ class OpenAIAgent(Agent):
                                         persona_id=await self._get_user_persona_id(),
                                         voice=True,
                                     )
+                                    # Parent ID will be set by user wrapper on finalization
                                 # Reset single-anchor state (whether we wrote text or not)
                                 self._user_anchor.update(
                                     {
@@ -1641,6 +1713,8 @@ class OpenAIAgent(Agent):
 
                             # Open (or reuse) the single anchor
                             if not self._user_anchor["open"]:
+                                # Use override if present, otherwise last assistant
+                                parent = self.room.next_user_parent_id or self.room.last_assistant_id
                                 msg_id = await self.room.append_text_chunk(
                                     source_id="openai:user-transcript",
                                     role="user",
@@ -1650,7 +1724,9 @@ class OpenAIAgent(Agent):
                                     is_final=False,
                                     persona_id=await self._get_user_persona_id(),
                                     voice=True,
+                                    parent_id=parent,  # ← respect override
                                 )
+                                # This will be handled by the user wrapper finalization logic
                                 self._user_anchor.update(
                                     {
                                         "msg_id": msg_id,
