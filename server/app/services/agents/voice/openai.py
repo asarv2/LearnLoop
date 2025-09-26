@@ -141,6 +141,7 @@ class OpenAIAgent(Agent):
             "chunk_idx": 0,
             "had_text": False,
             "open": False,
+            "parent_id": None,
         }
         self._anchor_item_ids: set[str] = (
             set()
@@ -540,10 +541,13 @@ class OpenAIAgent(Agent):
             if role == "user" and not persona_id:
                 persona_id = await agent_self._get_user_persona_id()
 
-            # Fallback parent selection for USER turns
+            # Fallback only for typed text. For voice transcript, keep the anchor's parent.
             if role == "user" and parent_id is None:
-                parent_id = (agent_self.room.next_user_parent_id
-                             or agent_self.room.last_assistant_id)
+                if source_id == "openai:user-transcript":
+                    parent_id = agent_self._user_anchor.get("parent_id")
+                else:
+                    parent_id = (agent_self.room.next_user_parent_id
+                                 or agent_self.room.last_assistant_id)
                 logger.debug(f"[user:append] parent_id={parent_id} override={agent_self.room.next_user_parent_id} last_assist={agent_self.room.last_assistant_id}")
 
             mid = await orig(
@@ -1130,7 +1134,7 @@ class OpenAIAgent(Agent):
                                             st2["parent_id"] = parent_now
                                             st2["msg_id"] = await self.publish_text_chunk(text="", is_final=False, persona_id=await self._get_assistant_persona_id(), voice=True, parent_id=parent_now)
                                             self.room.set_last_assistant(st2["msg_id"])
-                                            self.room.set_next_user_parent(st2["msg_id"])
+                                            # Do not set_next_user_parent yet - wait for first non-empty content
                                         
                                         await self.room.broadcast_transcript(
                                             agent_id=self.id,
@@ -1688,6 +1692,7 @@ class OpenAIAgent(Agent):
                                         "chunk_idx": 0,
                                         "had_text": False,
                                         "open": True,
+                                        "parent_id": parent,
                                     }
                                 )
                                 self._anchor_item_ids.clear()
@@ -1706,6 +1711,7 @@ class OpenAIAgent(Agent):
                                 is_final=False,
                                 persona_id=await self._get_user_persona_id(),
                                 voice=True,
+                                parent_id=self._user_anchor.get("parent_id"),
                             )
                             # Parent ID will be set by user wrapper on finalization
                             self._user_anchor["chunk_idx"] = (
@@ -1745,6 +1751,7 @@ class OpenAIAgent(Agent):
                                     is_final=False,
                                     persona_id=await self._get_user_persona_id(),
                                     voice=True,
+                                    parent_id=self._user_anchor.get("parent_id"),
                                 )
                                 # Parent ID will be set by user wrapper on finalization
                                 self._user_anchor["chunk_idx"] = (
@@ -1772,6 +1779,7 @@ class OpenAIAgent(Agent):
                                         is_final=True,
                                         persona_id=await self._get_user_persona_id(),
                                         voice=True,
+                                        parent_id=self._user_anchor.get("parent_id"),
                                     )
                                     # Parent ID will be set by user wrapper on finalization
                                 # Reset single-anchor state (whether we wrote text or not)
@@ -1781,6 +1789,7 @@ class OpenAIAgent(Agent):
                                         "chunk_idx": 0,
                                         "had_text": False,
                                         "open": False,
+                                        "parent_id": None,
                                     }
                                 )
                                 self._anchor_item_ids.clear()
@@ -1815,6 +1824,7 @@ class OpenAIAgent(Agent):
                                         "chunk_idx": 0,
                                         "had_text": False,
                                         "open": True,
+                                        "parent_id": parent,
                                     }
                                 )
                                 self._anchor_item_ids.clear()

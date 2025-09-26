@@ -42,7 +42,7 @@ interface TrainingContextType {
   isWaitingForFeedback: boolean; // ✅ NEW: Loading state while waiting for feedback
 
   // Training actions
-  sendMessage: (message: string, parentId?: string) => Promise<void>;
+  sendMessage: (message: string, parentId?: string | null) => Promise<void>;
   endTraining: () => Promise<void>;
   getHints: (messageId: string) => Promise<void>; // ✨ Add hints action
 
@@ -215,7 +215,7 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
   }, [isConnected, chatId, chat?.attempt_id, queryClient]);
 
   // Training actions
-  const sendMessage = async (message: string, parentId?: string) => {
+  const sendMessage = async (message: string, parentId?: string | null) => {
     if (!message.trim() || sendMessageMutation.isPending || !isTrainingActive) {
       return;
     }
@@ -226,9 +226,9 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         joinRoom(chatId);
       } catch {}
       try {
-        if (parentId) setParentCursor(chatId, parentId);
+        setParentCursor(chatId, parentId ?? null);
       } catch {}
-      sendWebRTCMessage(chatId, message, parentId);
+      sendWebRTCMessage(chatId, message, parentId ?? undefined);
       logInfo(`Sent training message for chat ${chatId}`);
     } catch (error) {
       logError("Error sending training message:", error);
