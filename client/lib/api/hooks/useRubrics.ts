@@ -1,82 +1,54 @@
-// lib/api/hooks/useRubrics.ts
-import type {
-  RubricCreate,
-  RubricGrade,
-  RubricUpdate,
-} from "@/lib/repos/rubricRepo";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../fetcher";
-import { rubricKeys } from "../keys";
+import { api } from "@/lib/api/fetcher";
+import { useQuery } from "@tanstack/react-query";
 
-// ---------- Queries ----------
-export function useRubrics() {
+export interface Rubric {
+  id: string;
+  name: string;
+  description: string | null;
+  total_points: number | null;
+  standard_length: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  company: string | null;
+}
+
+export interface Standard {
+  id: string;
+  name: string;
+  description: string | null;
+  points: number | null;
+  order_index: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface RubricWithStandards {
+  rubric: {
+    id: string;
+    name: string;
+    company: string | null;
+  };
+  standards: Standard[];
+}
+
+export function useRubrics(company: string | null) {
   return useQuery({
-    queryKey: rubricKeys.list(),
-    queryFn: () => api<RubricCreate[]>("/api/v1/rubrics"),
+    queryKey: ["rubrics", company],
+    queryFn: () =>
+      api<Rubric[]>(
+        `/api/v1/rubrics?company=${encodeURIComponent(company || "")}`
+      ),
+    staleTime: 0, // Always fetch fresh data
+    refetchOnWindowFocus: true, // Refetch when window regains focus
+  });
+}
+
+export function useRubricStandards(rubricId: string | null) {
+  return useQuery({
+    queryKey: ["rubric-standards", rubricId],
+    queryFn: () =>
+      api<RubricWithStandards>(`/api/v1/rubrics/${rubricId}/standards`),
+    enabled: !!rubricId,
     staleTime: 5 * 60_000, // 5 minutes
-  });
-}
-
-export function useRubric(id: string, enabled = true) {
-  return useQuery({
-    queryKey: rubricKeys.detail(id),
-    queryFn: () => api<RubricCreate>(`/api/v1/rubrics/${id}`),
-    enabled,
-  });
-}
-
-export function useRubricGrades(rubricId: string, enabled = true) {
-  return useQuery({
-    queryKey: [...rubricKeys.detail(rubricId), "grades"],
-    queryFn: () => api<RubricGrade[]>(`/api/v1/rubrics/${rubricId}/grades`),
-    enabled,
-  });
-}
-
-export function useAllRubricGrades() {
-  return useQuery({
-    queryKey: ["rubric_grades", "all"],
-    queryFn: () => api<RubricGrade[]>("/api/v1/rubrics/grades"),
-    staleTime: 5 * 60_000, // 5 minutes
-  });
-}
-
-// ---------- Mutations ----------
-export function useCreateRubric() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: RubricCreate) =>
-      api<RubricCreate>("/api/v1/rubrics", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess() {
-      qc.invalidateQueries({ queryKey: rubricKeys.all });
-    },
-  });
-}
-
-export function useUpdateRubric(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (patch: RubricUpdate) =>
-      api<RubricCreate>(`/api/v1/rubrics/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(patch),
-      }),
-    onSuccess() {
-      qc.invalidateQueries({ queryKey: rubricKeys.detail(id) });
-    },
-  });
-}
-
-export function useDeleteRubric(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api<void>(`/api/v1/rubrics/${id}`, { method: "DELETE" }),
-    onSuccess() {
-      // remove both list & detail caches
-      qc.invalidateQueries({ queryKey: rubricKeys.all });
-    },
   });
 }
