@@ -112,11 +112,6 @@ interface WebSocketContextType {
     message: string;
     parent_id?: string;
   }) => void;
-  emitSendIntroMessage: (data: {
-    chat_id: string;
-    message: string;
-    parent_id?: string;
-  }) => void;
   emitStopTraining: (data: { chat_id: string }) => void;
   emitEndTraining: (data: { chat_id: string }) => void;
   emitGetHints: (data: { chat_id: string; message_id: string }) => void;
@@ -367,14 +362,26 @@ export function WebSocketProvider({
 
     socket.on(
       "training_message_start",
-      (data: { chat_id: string; message_id: string; persona_id: string }) => {
+      (data: {
+        chat_id: string;
+        message_id: string;
+        persona_id: string;
+        parent_id?: string | null;
+      }) => {
         logInfo("Training message start", data);
+        // Debug: Log what we're receiving from server
+        console.log("🔍 Client received training_message_start:", {
+          messageId: data.message_id,
+          parentId: data.parent_id,
+          rawData: data,
+        });
         window.dispatchEvent(
           new CustomEvent("trainingMessageStart", {
             detail: {
               chatId: data.chat_id,
               messageId: data.message_id,
               personaId: data.persona_id,
+              parentId: data.parent_id ?? null,
             },
           })
         );
@@ -408,6 +415,7 @@ export function WebSocketProvider({
         chat_id: string;
         message_id: string;
         final_content: string;
+        parent_id?: string | null;
       }) => {
         logInfo("Training message complete", data);
         window.dispatchEvent(
@@ -416,6 +424,7 @@ export function WebSocketProvider({
               chatId: data.chat_id,
               messageId: data.message_id,
               finalContent: data.final_content,
+              parentId: data.parent_id ?? null,
             },
           })
         );
@@ -1224,35 +1233,6 @@ export function WebSocketProvider({
     []
   );
 
-  const emitSendIntroMessage = useCallback(
-    async (data: { chat_id: string; message: string; parent_id?: string }) => {
-      try {
-        if (!socketRef.current?.connected) {
-          logError("Cannot send message - WebSocket not connected");
-          toast.error("WebSocket not connected. Please refresh the page.");
-          return;
-        }
-
-        // Ensure we're joined and RTC/voice path is ready (like Training page)
-        try {
-          joinRoom(data.chat_id);
-        } catch {}
-
-        try {
-          await enableVoiceMode(data.chat_id);
-        } catch (e) {
-          logError("Failed to enable voice mode for intro message", e as Error);
-        }
-
-        // Route via the normal message path (RTC DC preferred, websocket fallback)
-        sendWebRTCMessage(data.chat_id, data.message, data.parent_id);
-      } catch (err) {
-        logError("emitSendIntroMessage failed", err as Error);
-      }
-    },
-    [enableVoiceMode, joinRoom, sendWebRTCMessage]
-  );
-
   const emitStopTraining = useCallback((data: { chat_id: string }) => {
     if (!socketRef.current?.connected) {
       logError("Cannot stop training - WebSocket not connected");
@@ -1344,7 +1324,6 @@ export function WebSocketProvider({
     emitUpdateScenarioParameters,
     emitJoinTraining,
     emitSendTrainingMessage,
-    emitSendIntroMessage,
     emitStopTraining,
     emitEndTraining,
     emitGetHints,

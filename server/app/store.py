@@ -469,6 +469,7 @@ async def upsert_text_chunk(
                             "chat_id": room_id,
                             "message_id": mid,
                             "persona_id": persona_id,
+                            "parent_id": parent_id,  # Include parent_id for proper threading
                         },
                     )
 
@@ -501,6 +502,7 @@ async def upsert_text_chunk(
                             "chat_id": room_id,
                             "message_id": str(db_msg.id),
                             "final_content": acc,
+                            "parent_id": parent_id,  # Include parent_id for proper threading
                         },
                     )
 
