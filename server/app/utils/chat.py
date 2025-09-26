@@ -3,19 +3,10 @@ import uuid
 from collections.abc import Sequence
 
 from agents.items import TResponseInputItem
-from sqlmodel import Session, select
-
 from app.db import get_session
-from app.models import (
-    Documents,
-    Fields,
-    Messages,
-    Parameters,
-    Personas,
-    Rubrics,
-    Scenarios,
-    Standards,
-)
+from app.models import (Documents, Fields, Messages, Parameters, Personas,
+                        Rubrics, Scenarios, Standards)
+from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +30,85 @@ def get_preamble(scenario: Scenarios) -> TResponseInputItem:
     return {"role": "user", "content": content}
 
 
+def pick_latest_message(messages: Sequence[Messages]) -> Messages | None:
+    """
+    Pick the latest message by created_at timestamp, with id as tiebreaker.
+    
+    Args:
+        messages: List of Messages objects from the database
+        
+    Returns:
+        The latest message or None if no messages
+    """
+    if not messages:
+        return None
+    
+    latest: Messages | None = None
+    latest_ts = 0.0
+    
+    for message in messages:
+        ts = message.created_at.timestamp() if message.created_at else 0.0
+        if latest is None or ts > latest_ts or (ts == latest_ts and str(message.id) > str(latest.id)):
+            latest = message
+            latest_ts = ts
+    
+    return latest
+
+
+def build_ancestry(messages: Sequence[Messages], tip_id: str | None = None, max_hops: int = 4096) -> list[Messages]:
+    """
+    Build linear ancestry from a tip by following parent_id until null.
+    - Ignores messages not on this chain (by design).
+    - Stops on missing parent or cycle.
+    - Returns array ordered root -> tip.
+    
+    Args:
+        messages: List of Messages objects from the database
+        tip_id: ID of the tip message to start from (if None, uses latest message)
+        max_hops: Maximum number of hops to prevent infinite loops
+        
+    Returns:
+        List of messages ordered from root to tip
+    """
+    if not messages:
+        return []
+    
+    # Create a map for quick lookup
+    by_id: dict[str, Messages] = {str(msg.id): msg for msg in messages}
+    
+    # Find the tip message
+    tip = by_id.get(tip_id) if tip_id else pick_latest_message(messages)
+    if not tip:
+        return []
+    
+    path = []
+    seen = set()
+    
+    # Climb: tip -> ... -> root
+    current: Messages | None = tip
+    hops = 0
+    while current and hops < max_hops:
+        if current.id in seen:
+            break  # cycle guard
+        seen.add(current.id)
+        path.append(current)
+        
+        # Get parent_id (assuming Messages has parent_id attribute)
+        parent_id = getattr(current, 'parent_id', None)
+        if not parent_id:
+            break  # reached root
+        current = by_id.get(str(parent_id))
+        if not current:
+            break  # missing parent? stop
+        hops += 1
+    
+    # Return root -> tip
+    return path[::-1]
+
+
 def get_conversation_history(messages: Sequence[Messages]) -> list[TResponseInputItem]:
     """
-    Get the conversation history for a given list of messages.
+    Get the conversation history for a given list of messages using DAG approach.
 
     Args:
         messages: List of Messages objects from the database
@@ -51,10 +118,10 @@ def get_conversation_history(messages: Sequence[Messages]) -> list[TResponseInpu
     """
     conversation_history: list[TResponseInputItem] = []
 
-    # Sort messages by created_at
-    sorted_messages = sorted(messages, key=lambda x: x.created_at)
-
-    for message in sorted_messages:
+    # Build ancestry from latest message
+    ancestry = build_ancestry(messages)
+    
+    for message in ancestry:
         if message.role == "user" and message.content:
             user_message_item: TResponseInputItem = {
                 "role": "user",
@@ -69,7 +136,7 @@ def get_conversation_history(messages: Sequence[Messages]) -> list[TResponseInpu
             conversation_history.append(assistant_message_item)
 
     logger.info(
-        f"Generated conversation history with {len(conversation_history)} messages"
+        f"Generated conversation history with {len(conversation_history)} messages using DAG approach"
     )
 
     return conversation_history
@@ -80,7 +147,7 @@ def get_formatted_conversation_history_with_personas(
     session: Session,
 ) -> str:
     """
-    Get the conversation history formatted with persona names instead of roles.
+    Get the conversation history formatted with persona names instead of roles using DAG approach.
 
     Args:
         messages: List of Messages objects from the database
@@ -92,12 +159,12 @@ def get_formatted_conversation_history_with_personas(
     if not messages:
         return ""
 
-    # Sort messages by created_at
-    sorted_messages = sorted(messages, key=lambda x: x.created_at)
-
+    # Build ancestry from latest message using DAG approach
+    ancestry = build_ancestry(messages)
+    
     conversation_lines = []
 
-    for message in sorted_messages:
+    for message in ancestry:
         if not message.content or not message.content.strip():
             continue
 
@@ -118,7 +185,7 @@ def get_formatted_conversation_history_with_personas(
 
     formatted_history = "\n".join(conversation_lines)
     logger.info(
-        f"Generated formatted conversation history with {len(conversation_lines)} messages"
+        f"Generated formatted conversation history with {len(conversation_lines)} messages using DAG approach"
     )
 
     return formatted_history
