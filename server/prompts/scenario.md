@@ -234,6 +234,31 @@ You must call these tools to complete the scenario generation:
 4. `create_agent1_prompt`:
    - `prompt`: "You are agent1, an employee being terminated due to performance issues. You're disappointed but understand the decision. Be respectful, ask questions about next steps, and maintain professionalism."
 
+### Example (Offboarding Conversation)
+
+**⚠️ ROLE ASSIGNMENT CLARIFICATION:**
+- **user1 (Jordan)**: The supervisor PRACTICING how to conduct offboarding
+- **agent1 (Riley)**: The employee BEING OFFBOARDED
+
+**Tool Calls:**
+
+1. `generate_scenario`:
+   - `title`: "Jordan Conducts Offboarding Discussion with Riley"
+   - `problem_statement`: "After 8 months of employment, Riley's role is being eliminated due to company restructuring. The position will be absorbed by the existing team, and Riley's last day will be in 2 weeks. Jordan, as the supervisor, must conduct a respectful offboarding conversation to explain the situation and provide transition support."
+
+2. `generate_objectives`:
+   - `objectives`: [
+     "Clearly explain the offboarding decision with empathy and transparency",
+     "Provide comprehensive details on final pay, benefits, and transition support",
+     "Maintain a supportive environment while ensuring all company policies are followed"
+   ]
+
+3. `create_user1_prompt`:
+   - `prompt`: "You are user1, a supervisor conducting an offboarding conversation with an employee due to role elimination. Be empathetic but clear about the decision, provide details on next steps, and ensure all company policies are followed."
+
+4. `create_agent1_prompt`:
+   - `prompt`: "You are agent1, an employee being offboarded due to role elimination. You are unaware of the offboarding until the supervisor tells you. Start the conversation normally, then react appropriately when you learn about the offboarding. Be professional, ask questions about next steps, and show understanding of the business decision."
+
 
 ---
 

@@ -994,14 +994,14 @@ async def handle_training_message_rtc(sid: str, data: dict[str, Any]) -> None:
         # If we need persona tagging for user messages later, we can thread it through the
         # audio pipeline explicitly.
 
-        # Get parent_id from client data
+        # Get parent_id from client data for branching (if specified)
         parent_id = data.get("parent_id")
-        if parent_id:
-            # Set the parent_id on the room for future messages
-            room.set_parent_id(parent_id)
-
+        if not parent_id:
+            parent_id = room.next_user_parent_id or room.last_assistant_id
+        
         # Use room system to append text chunk
-        await room.append_text_chunk(
+        # The room will automatically update its current_parent_id when is_final=True
+        user_message_id = await room.append_text_chunk(
             source_id=sid,  # or profile id
             role="user",
             text=message,
@@ -1009,7 +1009,12 @@ async def handle_training_message_rtc(sid: str, data: dict[str, Any]) -> None:
             chunk_idx=0,
             is_final=True,
             persona_id=persona_id,
+            parent_id=parent_id,  # Use explicit parent_id or room's current_parent_id as fallback
         )
+        
+        # Update role-specific pointers and consume override
+        room.set_last_user(user_message_id)
+        room.set_next_user_parent(None)
     except Exception as e:
         logger.error(f"Error in room system flow: {str(e)}")
         await emit_error(sid, f"Failed to process message: {str(e)}")

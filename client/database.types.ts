@@ -565,6 +565,7 @@ export type Database = {
       }
       rubrics: {
         Row: {
+          company: string | null
           created_at: string | null
           description: string | null
           id: string
@@ -574,6 +575,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          company?: string | null
           created_at?: string | null
           description?: string | null
           id?: string
@@ -583,6 +585,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          company?: string | null
           created_at?: string | null
           description?: string | null
           id?: string
