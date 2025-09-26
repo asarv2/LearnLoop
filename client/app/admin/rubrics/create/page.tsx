@@ -255,7 +255,7 @@ export default function CreateRubricPage() {
       key: `score_${index}`,
       width: "15%",
       align: "center" as const,
-      render: (text: any, record: Standard) => (
+      render: (text: string, record: Standard) => (
         <TextArea
           value={record.items[index] || ""}
           onChange={(e) => updateStandardItem(record.id, index, e.target.value)}

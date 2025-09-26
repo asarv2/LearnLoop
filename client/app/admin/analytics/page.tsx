@@ -102,7 +102,7 @@ export default function AdminAnalyticsPage() {
 
     // Determine date range and filtering
     let startDate: Date;
-    let endDate = now;
+    const endDate = now;
     let isMonthly = false;
 
     if (timeFilter === "ytd") {
@@ -113,27 +113,29 @@ export default function AdminAnalyticsPage() {
     }
 
     // Filter training data based on main training type and sub-filters
-    let filteredTrainingData = analytics.trainingSpecificData.filter((item) => {
-      const itemDate = new Date(item.date);
-      if (itemDate < startDate || itemDate > endDate) return false;
+    const filteredTrainingData = analytics.trainingSpecificData.filter(
+      (item) => {
+        const itemDate = new Date(item.date);
+        if (itemDate < startDate || itemDate > endDate) return false;
 
-      // Filter based on main training type selection
-      if (mainTrainingType === "all") {
-        return true; // Show all training types
-      } else if (mainTrainingType === "standard") {
-        if (item.trainingType !== "standard") return false;
-        if (standardFilter === "cumulative") return true;
-        return item.trainingId === standardFilter;
-      } else if (mainTrainingType === "required") {
-        if (item.trainingType !== "required") return false;
-        if (requiredFilter === "cumulative") return true;
-        return item.trainingId === requiredFilter;
-      } else if (mainTrainingType === "custom") {
-        return item.trainingType === "custom";
+        // Filter based on main training type selection
+        if (mainTrainingType === "all") {
+          return true; // Show all training types
+        } else if (mainTrainingType === "standard") {
+          if (item.trainingType !== "standard") return false;
+          if (standardFilter === "cumulative") return true;
+          return item.trainingId === standardFilter;
+        } else if (mainTrainingType === "required") {
+          if (item.trainingType !== "required") return false;
+          if (requiredFilter === "cumulative") return true;
+          return item.trainingId === requiredFilter;
+        } else if (mainTrainingType === "custom") {
+          return item.trainingType === "custom";
+        }
+
+        return false;
       }
-
-      return false;
-    });
+    );
 
     // Generate continuous date range
     const dateRange = generateDateRange(startDate, endDate, isMonthly);
@@ -323,7 +325,8 @@ export default function AdminAnalyticsPage() {
                     <Option value="cumulative">
                       All Standard (Cumulative)
                     </Option>
-                    {analytics?.trainingsByType?.standard?.length > 0 ? (
+                    {analytics?.trainingsByType?.standard &&
+                    analytics.trainingsByType.standard.length > 0 ? (
                       analytics.trainingsByType.standard.map((training) => (
                         <Option key={training.id} value={training.id}>
                           {training.title}
@@ -358,7 +361,8 @@ export default function AdminAnalyticsPage() {
                     <Option value="cumulative">
                       All Required (Cumulative)
                     </Option>
-                    {analytics?.trainingsByType?.required?.length > 0 ? (
+                    {analytics?.trainingsByType?.required &&
+                    analytics.trainingsByType.required.length > 0 ? (
                       analytics.trainingsByType.required.map((training) => (
                         <Option key={training.id} value={training.id}>
                           {training.title}

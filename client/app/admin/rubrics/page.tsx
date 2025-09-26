@@ -2,7 +2,11 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useProfile } from "@/lib/api/hooks/useProfiles";
-import { useRubrics, useRubricStandards } from "@/lib/api/hooks/useRubrics";
+import {
+  Standard,
+  useRubrics,
+  useRubricStandards,
+} from "@/lib/api/hooks/useRubrics";
 import {
   CheckSquareOutlined,
   DeleteOutlined,
@@ -128,7 +132,7 @@ export default function AdminRubricsPage() {
       title: "Standard",
       dataIndex: "name",
       key: "name",
-      render: (text: string, record: any) => (
+      render: (text: string, record: Standard) => (
         <div>
           <div style={{ fontWeight: "bold", marginBottom: "4px" }}>{text}</div>
           {record.description && (
@@ -146,14 +150,13 @@ export default function AdminRubricsPage() {
       key: "score_1",
       width: "15%",
       align: "center" as const,
-      render: (text: any, record: any) => (
+      render: (text: string, record: Standard) => (
         <div
           style={{
             fontSize: "11px",
             lineHeight: "1.3",
             padding: "8px 4px",
-            backgroundColor:
-              record.items && record.items[0] ? "#fff2f0" : "#fafafa",
+            backgroundColor: record.points ? "#fff2f0" : "#fafafa",
             borderRadius: "4px",
             minHeight: "40px",
             display: "flex",
@@ -161,7 +164,7 @@ export default function AdminRubricsPage() {
             justifyContent: "center",
           }}
         >
-          {record.items && record.items[0] ? record.items[0] : "-"}
+          {record.points || "-"}
         </div>
       ),
     },
@@ -170,14 +173,13 @@ export default function AdminRubricsPage() {
       key: "score_2",
       width: "15%",
       align: "center" as const,
-      render: (text: any, record: any) => (
+      render: (text: string, record: Standard) => (
         <div
           style={{
             fontSize: "11px",
             lineHeight: "1.3",
             padding: "8px 4px",
-            backgroundColor:
-              record.items && record.items[1] ? "#fff7e6" : "#fafafa",
+            backgroundColor: record.points ? "#fff7e6" : "#fafafa",
             borderRadius: "4px",
             minHeight: "40px",
             display: "flex",
@@ -185,7 +187,7 @@ export default function AdminRubricsPage() {
             justifyContent: "center",
           }}
         >
-          {record.items && record.items[1] ? record.items[1] : "-"}
+          {record.points || "-"}
         </div>
       ),
     },
@@ -194,14 +196,13 @@ export default function AdminRubricsPage() {
       key: "score_3",
       width: "15%",
       align: "center" as const,
-      render: (text: any, record: any) => (
+      render: (text: string, record: Standard) => (
         <div
           style={{
             fontSize: "11px",
             lineHeight: "1.3",
             padding: "8px 4px",
-            backgroundColor:
-              record.items && record.items[2] ? "#f6ffed" : "#fafafa",
+            backgroundColor: record.points ? "#f6ffed" : "#fafafa",
             borderRadius: "4px",
             minHeight: "40px",
             display: "flex",
@@ -209,7 +210,7 @@ export default function AdminRubricsPage() {
             justifyContent: "center",
           }}
         >
-          {record.items && record.items[2] ? record.items[2] : "-"}
+          {record.points || "-"}
         </div>
       ),
     },
@@ -218,14 +219,13 @@ export default function AdminRubricsPage() {
       key: "score_4",
       width: "15%",
       align: "center" as const,
-      render: (text: any, record: any) => (
+      render: (text: string, record: Standard) => (
         <div
           style={{
             fontSize: "11px",
             lineHeight: "1.3",
             padding: "8px 4px",
-            backgroundColor:
-              record.items && record.items[3] ? "#e6f7ff" : "#fafafa",
+            backgroundColor: record.points ? "#e6f7ff" : "#fafafa",
             borderRadius: "4px",
             minHeight: "40px",
             display: "flex",
@@ -233,7 +233,7 @@ export default function AdminRubricsPage() {
             justifyContent: "center",
           }}
         >
-          {record.items && record.items[3] ? record.items[3] : "-"}
+          {record.points || "-"}
         </div>
       ),
     },
@@ -242,14 +242,13 @@ export default function AdminRubricsPage() {
       key: "score_5",
       width: "15%",
       align: "center" as const,
-      render: (text: any, record: any) => (
+      render: (text: string, record: Standard) => (
         <div
           style={{
             fontSize: "11px",
             lineHeight: "1.3",
             padding: "8px 4px",
-            backgroundColor:
-              record.items && record.items[4] ? "#f0f5ff" : "#fafafa",
+            backgroundColor: record.points ? "#f0f5ff" : "#fafafa",
             borderRadius: "4px",
             minHeight: "40px",
             display: "flex",
@@ -257,7 +256,7 @@ export default function AdminRubricsPage() {
             justifyContent: "center",
           }}
         >
-          {record.items && record.items[4] ? record.items[4] : "-"}
+          {record.points || "-"}
         </div>
       ),
     },

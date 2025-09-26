@@ -52,3 +52,20 @@ export function useRubricStandards(rubricId: string | null) {
     staleTime: 5 * 60_000, // 5 minutes
   });
 }
+
+export interface RubricGrade {
+  id: string;
+  chat_id: string;
+  score: number;
+  strengths: string[];
+  improvements: string[];
+  created_at: string;
+}
+
+export function useAllRubricGrades() {
+  return useQuery({
+    queryKey: ["rubric-grades"],
+    queryFn: () => api<RubricGrade[]>("/api/v1/rubric-grades"),
+    staleTime: 5 * 60_000, // 5 minutes
+  });
+}
