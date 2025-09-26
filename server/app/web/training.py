@@ -1207,12 +1207,16 @@ async def process_training_message_websocket(
         db_session.refresh(assistant_message)
 
         # ✨ 4. Emit message start event with the assistant's persona_id
+        parent_id_str = str(assistant_message.parent_id) if assistant_message.parent_id else None
+        logger.info(f"🔍 Server emitting training_message_start: parent_id={parent_id_str}, assistant_id={assistant_message.id}")
         await sio.emit(
             "training_message_start",
             {
                 "chat_id": chat_id,
                 "message_id": str(assistant_message.id),
                 "persona_id": str(assistant_persona_id),  # Add persona_id
+                # Include assistant parent for correct client-side threading
+                "parent_id": parent_id_str,
             },
             room=chat_id,
         )
@@ -1364,6 +1368,10 @@ async def process_training_message_websocket(
                     "chat_id": chat_id,
                     "message_id": str(assistant_message.id),
                     "final_content": accumulated_content,
+                # Include parent_id on completion as well (belt-and-suspenders)
+                "parent_id": str(assistant_message.parent_id)
+                if assistant_message.parent_id
+                else None,
                 },
                 room=chat_id,
             )

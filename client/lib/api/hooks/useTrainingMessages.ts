@@ -18,6 +18,8 @@ type EventDetail = {
   message_id?: string;
   personaId?: string;
   persona_id?: string;
+  parentId?: string | null;
+  parent_id?: string | null;
   accumulatedContent?: string;
   accumulated_content?: string;
   finalContent?: string;
@@ -122,6 +124,13 @@ export function useTrainingMessages(chatId: string, enabled = true) {
       startedIdsRef.current.add(mid);
 
       logInfo("AI message started", d);
+      // Debug: Log parent_id values
+      console.log("🔍 Assistant message parent_id debug:", {
+        messageId: mid,
+        parentId: d.parentId,
+        parent_id: d.parent_id,
+        finalParentId: d.parentId ?? d.parent_id ?? null,
+      });
 
       const qk = trainingMessageKeys.list(chatId);
       queryClient.setQueryData<Message[]>(qk, (old = []) => {
@@ -140,7 +149,7 @@ export function useTrainingMessages(chatId: string, enabled = true) {
           training_id: null,
           word_timestamps: [],
           interruption_ms: null,
-          parent_id: null,
+          parent_id: (d.parentId ?? d.parent_id ?? null) as string | null,
           voice: false,
         };
         return [...old, newAssistant];
@@ -245,6 +254,10 @@ export function useTrainingMessages(chatId: string, enabled = true) {
                 // ✅ snap to final authoritative text on completion
                 content: (d.finalContent ?? d.final_content) || m.content || "",
                 completed: true,
+                parent_id: (d.parentId ??
+                  d.parent_id ??
+                  m.parent_id ??
+                  null) as string | null,
               }
             : m
         )
