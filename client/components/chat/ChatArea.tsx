@@ -9,6 +9,8 @@
 import Markdown from "@/components/common/Markdown";
 import { Chat, Message } from "@/types";
 import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
   ChatBubbleIcon,
   PaperPlaneIcon,
   PersonIcon,
@@ -43,6 +45,109 @@ import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
 import { renderMessageContent } from "@/lib/renderMessageContent";
 
+// Ancestry utility functions for bullet-proof message threading
+function ts(x: string | number | Date): number {
+  if (x instanceof Date) return x.getTime();
+  if (typeof x === "number") return Number.isFinite(x) ? x : 0;
+  const t = Date.parse(String(x));
+  return Number.isFinite(t) ? t : 0;
+}
+
+function pickLatestTip(messages: Message[]): Message | null {
+  let best: Message | null = null;
+  let bestTs = -1;
+  for (const m of messages) {
+    const t = ts(m.created_at);
+    if (t > bestTs || (t === bestTs && m.id > (best?.id ?? ""))) {
+      best = m;
+      bestTs = t;
+    }
+  }
+  return best;
+}
+
+/**
+ * Build linear ancestry from a tip by following parent_id until null.
+ * - Ignores messages not on this chain (by design).
+ * - Stops on missing parent or cycle.
+ * - Returns array ordered root -> tip.
+ */
+function buildAncestry(
+  messages: Message[],
+  tipId?: string | null,
+  maxHops = 4096
+): Message[] {
+  if (!messages?.length) return [];
+
+  const byId = new Map<string, Message>();
+  for (const m of messages) byId.set(m.id, m);
+
+  const tip = tipId ? byId.get(tipId) ?? null : pickLatestTip(messages);
+  if (!tip) return [];
+
+  const path: Message[] = [];
+  const seen = new Set<string>();
+
+  // climb: tip -> ... -> root
+  let cur: Message | undefined | null = tip;
+  let hops = 0;
+  while (cur && hops++ < maxHops) {
+    if (seen.has(cur.id)) break; // cycle guard
+    seen.add(cur.id);
+    path.push(cur);
+    const p: string | null =
+      (cur as Message & { parent_id?: string | null }).parent_id ?? null;
+    if (!p) break; // reached root
+    cur = byId.get(p) ?? null; // missing parent? stop
+  }
+
+  // return root -> tip
+  return path.reverse();
+}
+
+/**
+ * Project with cut window applied - locally clamps the visible thread when retry is active
+ */
+function projectWithCut(
+  messages: Message[],
+  cut: {
+    isActive: boolean;
+    afterAssistantId?: string | null;
+    beforeUserId?: string | null;
+  }
+): Message[] {
+  if (!messages?.length) return [];
+
+  const byIdAll = new Map<string, Message>();
+  for (const m of messages) byIdAll.set(m.id, m);
+
+  const tip = pickLatestTip(messages);
+  if (!tip) return [];
+
+  const chain = buildAncestry(messages, tip.id); // root -> tip
+
+  if (!cut.isActive) return chain;
+
+  const beforeUser = cut.beforeUserId ?? null;
+  const afterAssistant = cut.afterAssistantId ?? null;
+
+  // If the beforeUser is on this chain, clamp at its parent
+  if (beforeUser) {
+    const idx = chain.findIndex((m) => m.id === beforeUser);
+    if (idx >= 0) {
+      // slice up to parent of the beforeUser (exclude the user turn and anything after)
+      return chain.slice(0, Math.max(0, idx));
+    }
+  }
+
+  // Otherwise if we have an anchor assistant, re-root at that anchor's chain
+  if (afterAssistant && byIdAll.has(afterAssistant)) {
+    return buildAncestry(messages, afterAssistant);
+  }
+
+  return chain;
+}
+
 const INTRO_MESSAGES = [
   "Hey, how's your day been?",
   "Hi! How are you doing?",
@@ -52,24 +157,74 @@ const INTRO_MESSAGES = [
 // Local retry banner component
 function LocalRetryBanner({ onUndo }: { onUndo: () => void }) {
   return (
-    <Card
-      size="2"
-      style={{
-        border: "1px solid var(--amber-7)",
-        background: "var(--amber-2)",
-        borderRadius: "12px",
-      }}
-    >
-      <Flex align="center" justify="between" gap="3">
-        <Text size="2" style={{ color: "var(--amber-11)" }}>
-          Retrying from here — this user turn and all following messages are
-          hidden.
-        </Text>
-        <Button size="1" variant="outline" onClick={onUndo}>
-          Undo
-        </Button>
+    <Flex direction="row-reverse" align="start" gap="3">
+      {/* Avatar */}
+      <Flex direction="column" align="center" gap="2">
+        <Card
+          size="1"
+          style={{
+            padding: "8px",
+            background: "var(--amber-3)",
+            border: "1px solid var(--amber-6)",
+            opacity: 1,
+          }}
+        >
+          <PersonIcon color="var(--amber-9)" />
+        </Card>
+        <Card
+          size="1"
+          style={{
+            padding: "8px",
+            background: "var(--amber-3)",
+            border: "1px solid var(--amber-6)",
+            opacity: 1,
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+          }}
+          onClick={onUndo}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--amber-4)";
+            e.currentTarget.style.borderColor = "var(--amber-7)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "var(--amber-3)";
+            e.currentTarget.style.borderColor = "var(--amber-6)";
+          }}
+        >
+          <ArrowLeftIcon color="var(--amber-9)" />
+        </Card>
       </Flex>
-    </Card>
+
+      {/* Message Content */}
+      <Box>
+        <Card
+          size="2"
+          style={{
+            background: "var(--amber-2)",
+            border: "1px solid var(--amber-7)",
+            paddingInline: 16,
+            paddingBlock: 18,
+            minHeight: 56,
+          }}
+        >
+          <Flex direction="column" gap="2">
+            <Text size="1" style={{ color: "var(--gray-11)" }} weight="medium">
+              You
+            </Text>
+            <Text
+              size="3"
+              style={{
+                lineHeight: "1.6",
+                color: "var(--amber-11)",
+              }}
+            >
+              Retrying from here — this user turn and all following messages are
+              hidden.
+            </Text>
+          </Flex>
+        </Card>
+      </Box>
+    </Flex>
   );
 }
 
@@ -136,9 +291,6 @@ export default function ChatArea({
     null
   );
 
-  // Voice user turn tracking
-  const [voiceUserIds, setVoiceUserIds] = useState<Record<string, 1>>({});
-
   // Track mic on/off recency to infer voice when the emitter doesn't send a flag
   const lastMicOnAtRef = useRef(0);
   const lastMicOffAtRef = useRef(0);
@@ -151,20 +303,30 @@ export default function ChatArea({
   // Cut window for retry state management
   const cutWin = useCutWindow(chat?.id);
 
-  // Project displayMessages through the cut window
+  // Project to the latest-by-created_at ancestry every render with cut window applied
   const visibleMessages = React.useMemo(
-    () => cutWin.project(displayMessages),
-    [displayMessages, cutWin]
+    () =>
+      projectWithCut(displayMessages, {
+        isActive: cutWin.isActive,
+        afterAssistantId: cutWin.cut.afterAssistantId,
+        beforeUserId: cutWin.cut.beforeUserId,
+      }),
+    [
+      displayMessages,
+      cutWin.isActive,
+      cutWin.cut.afterAssistantId,
+      cutWin.cut.beforeUserId,
+    ]
   );
 
-  // Build a quick lookup over the visible thread
-  const byId = React.useMemo(() => {
-    const map = new Map<string, Message & { parent_id?: string | null }>();
-    visibleMessages.forEach((m) =>
-      map.set(m.id, m as Message & { parent_id?: string | null })
+  // Build ancestry lookups over ALL messages (not just visible)
+  const byIdAll = React.useMemo(() => {
+    const m = new Map<string, Message & { parent_id?: string | null }>();
+    displayMessages.forEach((x) =>
+      m.set(x.id, x as Message & { parent_id?: string | null })
     );
-    return map;
-  }, [visibleMessages]);
+    return m;
+  }, [displayMessages]);
 
   // Walk ancestry: does "startId" have "targetId" in its parent chain?
   const hits = React.useCallback(
@@ -173,12 +335,12 @@ export default function ChatArea({
       let hop = 0; // guard against cycles
       while (cur && hop++ < 2048) {
         if (cur === targetId) return true;
-        const p = byId.get(cur)?.parent_id ?? null;
+        const p = byIdAll.get(cur)?.parent_id ?? null;
         cur = typeof p === "string" ? p : null;
       }
       return false;
     },
-    [byId]
+    [byIdAll]
   );
 
   // Show the banner only until any new tail (replacement branch) appears
@@ -920,42 +1082,6 @@ export default function ChatArea({
     setParentCursor,
   ]);
 
-  // Track voice user turns locally (live)
-  useEffect(() => {
-    const onUserSaved = (evt: Event) => {
-      const e = evt as CustomEvent;
-      const d = (e.detail || {}) as {
-        message_id?: string;
-        messageId?: string;
-        role?: string; // ideally 'user'
-        voice?: boolean; // ideally provided by server
-        input_type?: string; // e.g. 'voice'|'text' if you have it
-      };
-
-      const id = d.message_id || d.messageId;
-      if (!id || d.role !== "user") return;
-
-      const recentlyMic =
-        Date.now() -
-          (micOn ? lastMicOnAtRef.current : lastMicOffAtRef.current) <
-        2500;
-      const wasVoice = Boolean(
-        d.voice || d.input_type === "voice" || recentlyMic
-      );
-
-      if (wasVoice) {
-        setVoiceUserIds((prev) => (prev[id] ? prev : { ...prev, [id]: 1 }));
-      }
-    };
-
-    window.addEventListener("userMessageSaved", onUserSaved as EventListener);
-    return () =>
-      window.removeEventListener(
-        "userMessageSaved",
-        onUserSaved as EventListener
-      );
-  }, [micOn]);
-
   // Scroll helper functions (now handled inline for better performance)
 
   // Pin while content is streaming/growing
@@ -1078,83 +1204,85 @@ export default function ChatArea({
           }}
         >
           <Flex direction="column" gap="4">
-            {/* Show starter prompts when there are no messages and session is active */}
-            {visibleMessages.length === 0 && isSessionActive && (
-              <Box
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flex: 1,
-                  padding: "40px 20px",
-                }}
-              >
-                <Box mb="4">
-                  <Heading
-                    size="4"
-                    weight="medium"
-                    style={{
-                      textAlign: "center",
-                      color: "var(--gray-11)",
-                      marginBottom: "16px",
-                    }}
-                  >
-                    Select a prompt or type your own
-                  </Heading>
-                </Box>
-
-                <Flex
-                  direction="column"
-                  gap="2"
-                  style={{ maxWidth: "480px", width: "100%" }}
+            {/* Show starter prompts when there are no messages and session is active, but not during a cut */}
+            {visibleMessages.length === 0 &&
+              isSessionActive &&
+              !cutWin.isActive && (
+                <Box
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flex: 1,
+                    padding: "40px 20px",
+                  }}
                 >
-                  {INTRO_MESSAGES.map((message, index) => (
-                    <Button
-                      key={index}
-                      variant="outline"
+                  <Box mb="4">
+                    <Heading
                       size="4"
-                      onClick={() => onSend(message)}
+                      weight="medium"
                       style={{
-                        background: "white",
-                        border: "2px solid var(--gray-6)",
-                        cursor: "pointer",
-                        transition: "all 0.2s ease",
                         textAlign: "center",
-                        justifyContent: "center",
-                        padding: "20px 24px",
-                        height: "auto",
-                        minHeight: "72px",
-                        borderRadius: "12px",
-                        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.06)",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = "var(--blue-1)";
-                        e.currentTarget.style.borderColor = "var(--blue-7)";
-                        e.currentTarget.style.transform = "translateY(-2px)";
-                        e.currentTarget.style.boxShadow =
-                          "0 4px 16px rgba(0, 0, 0, 0.12)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "white";
-                        e.currentTarget.style.borderColor = "var(--gray-6)";
-                        e.currentTarget.style.transform = "translateY(0px)";
-                        e.currentTarget.style.boxShadow =
-                          "0 2px 8px rgba(0, 0, 0, 0.06)";
+                        color: "var(--gray-11)",
+                        marginBottom: "16px",
                       }}
                     >
-                      <Text
+                      Select a prompt or type your own
+                    </Heading>
+                  </Box>
+
+                  <Flex
+                    direction="column"
+                    gap="2"
+                    style={{ maxWidth: "480px", width: "100%" }}
+                  >
+                    {INTRO_MESSAGES.map((message, index) => (
+                      <Button
+                        key={index}
+                        variant="outline"
                         size="4"
-                        weight="medium"
-                        style={{ lineHeight: "1.4" }}
+                        onClick={() => onSend(message)}
+                        style={{
+                          background: "white",
+                          border: "2px solid var(--gray-6)",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                          textAlign: "center",
+                          justifyContent: "center",
+                          padding: "20px 24px",
+                          height: "auto",
+                          minHeight: "72px",
+                          borderRadius: "12px",
+                          boxShadow: "0 2px 8px rgba(0, 0, 0, 0.06)",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "var(--blue-1)";
+                          e.currentTarget.style.borderColor = "var(--blue-7)";
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                          e.currentTarget.style.boxShadow =
+                            "0 4px 16px rgba(0, 0, 0, 0.12)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "white";
+                          e.currentTarget.style.borderColor = "var(--gray-6)";
+                          e.currentTarget.style.transform = "translateY(0px)";
+                          e.currentTarget.style.boxShadow =
+                            "0 2px 8px rgba(0, 0, 0, 0.06)";
+                        }}
                       >
-                        {message}
-                      </Text>
-                    </Button>
-                  ))}
-                </Flex>
-              </Box>
-            )}
+                        <Text
+                          size="4"
+                          weight="medium"
+                          style={{ lineHeight: "1.4" }}
+                        >
+                          {message}
+                        </Text>
+                      </Button>
+                    ))}
+                  </Flex>
+                </Box>
+              )}
 
             {/* Show banner at top if retry is active and no messages visible */}
             {showRetryBanner && visibleMessages.length === 0 && (
@@ -1183,32 +1311,28 @@ export default function ChatArea({
               // Robust assistant parent (works even before parent_id is set)
               let assistantParent: (Message & { voice?: boolean }) | undefined;
               if (parentId) {
-                assistantParent = byId.get(parentId) as
+                assistantParent = byIdAll.get(parentId) as
                   | (Message & { voice?: boolean })
                   | undefined;
               } else {
-                const idx = visibleMessages.findIndex(
+                // Fall back to scanning displayMessages instead of visibleMessages
+                const idx = displayMessages.findIndex(
                   (m) => m.id === message.id
                 );
                 for (let i = idx - 1; i >= 0; i--) {
-                  if (visibleMessages[i]?.role === "assistant") {
-                    assistantParent = visibleMessages[i] as Message & {
+                  if (displayMessages[i]?.role === "assistant") {
+                    assistantParent = displayMessages[i] as Message & {
                       voice?: boolean;
                     };
                     break;
                   }
                 }
                 if (!assistantParent && lastAssistantId) {
-                  assistantParent = byId.get(lastAssistantId) as
+                  assistantParent = byIdAll.get(lastAssistantId) as
                     | (Message & { voice?: boolean })
                     | undefined;
                 }
               }
-
-              // Treat as voice if either the message has voice flag OR we marked it locally
-              const userVoice =
-                Boolean((message as Message & { voice?: boolean })?.voice) ||
-                Boolean(voiceUserIds[message.id]);
 
               // Determine if we're in listening (dot) vs display (text) mode
               const isListening =
@@ -1218,85 +1342,117 @@ export default function ChatArea({
               const isDisplayMode = Boolean(message.completed);
 
               // Only allow "Retry from here" if this is a user message, it has a parent assistant,
-              // the user message was produced via voice, and we're in display mode:
+              // and we're in display mode (removed userVoice gate to allow typed message retry):
               const showRetry =
                 isDisplayMode && // <— NEW hard gate
                 isUserMessage &&
-                userVoice &&
                 Boolean(assistantParent?.id);
 
               return (
                 <React.Fragment key={message.id}>
                   <Box>
-                    {showRetry && (
-                      <Flex
-                        justify={isUserMessage ? "end" : "start"}
-                        style={{ marginBottom: "6px" }}
-                        gap="2"
-                      >
-                        <Button
-                          size="1"
-                          variant={
-                            cutWin.cut.afterAssistantId === assistantParent?.id
-                              ? "solid"
-                              : "outline"
-                          }
-                          disabled={!assistantParent?.id}
-                          onClick={() => {
-                            if (!assistantParent?.id) return;
-                            if (
-                              cutWin.cut.afterAssistantId === assistantParent.id
-                            ) {
-                              // If already active, undo it
-                              undoRetry();
-                            } else {
-                              // Start retry from this assistant, hiding this user message and everything after
-                              cutWin.startRetry(assistantParent.id, message.id);
-                              try {
-                                setParentCursor(chat.id, assistantParent.id);
-                              } catch {}
-                            }
-                          }}
-                        >
-                          {cutWin.cut.afterAssistantId === assistantParent?.id
-                            ? "Retrying from here"
-                            : "Retry from here"}
-                        </Button>
-
-                        {/* Explicit Undo button when active for extra clarity */}
-                        {cutWin.cut.afterAssistantId ===
-                          assistantParent?.id && (
-                          <Button size="1" variant="ghost" onClick={undoRetry}>
-                            Undo
-                          </Button>
-                        )}
-                      </Flex>
-                    )}
                     <Flex
                       direction={isUserMessage ? "row-reverse" : "row"}
                       align={isListening ? "center" : "start"}
                       gap="3"
                     >
                       {/* Avatar */}
-                      <Card
-                        size="1"
-                        style={{
-                          padding: "8px",
-                          background: isUserMessage
-                            ? "var(--blue-3)"
-                            : "var(--green-3)",
-                          border: `1px solid ${
-                            isUserMessage ? "var(--blue-6)" : "var(--green-6)"
-                          }`,
-                          opacity: message.completed ? 1 : 0.6,
-                        }}
-                      >
-                        {isUserMessage ? (
-                          <PersonIcon color="var(--blue-9)" />
-                        ) : (
+                      {isUserMessage ? (
+                        <Flex direction="column" align="center" gap="2">
+                          <Card
+                            size="1"
+                            style={{
+                              padding: "8px",
+                              background: "var(--blue-3)",
+                              border: "1px solid var(--blue-6)",
+                              opacity: message.completed ? 1 : 0.6,
+                            }}
+                          >
+                            <PersonIcon color="var(--blue-9)" />
+                          </Card>
+                          {showRetry && (
+                            <Card
+                              size="1"
+                              style={{
+                                padding: "8px",
+                                background:
+                                  cutWin.cut.afterAssistantId ===
+                                  assistantParent?.id
+                                    ? "var(--blue-5)"
+                                    : "var(--blue-3)",
+                                border: `1px solid ${
+                                  cutWin.cut.afterAssistantId ===
+                                  assistantParent?.id
+                                    ? "var(--blue-8)"
+                                    : "var(--blue-6)"
+                                }`,
+                                opacity: message.completed ? 1 : 0.6,
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                              }}
+                              onClick={() => {
+                                if (!assistantParent?.id) return;
+                                if (
+                                  cutWin.cut.afterAssistantId ===
+                                  assistantParent.id
+                                ) {
+                                  // If already active, undo it
+                                  undoRetry();
+                                } else {
+                                  // Start retry from this assistant, hiding this user message and everything after
+                                  cutWin.startRetry(
+                                    assistantParent.id,
+                                    message.id
+                                  );
+                                  // Fire & forget — UI is already correct locally
+                                  try {
+                                    setParentCursor(
+                                      chat.id,
+                                      assistantParent.id
+                                    );
+                                  } catch {}
+                                }
+                              }}
+                              onMouseEnter={(e) => {
+                                if (
+                                  cutWin.cut.afterAssistantId !==
+                                  assistantParent?.id
+                                ) {
+                                  e.currentTarget.style.background =
+                                    "var(--blue-4)";
+                                  e.currentTarget.style.borderColor =
+                                    "var(--blue-7)";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (
+                                  cutWin.cut.afterAssistantId !==
+                                  assistantParent?.id
+                                ) {
+                                  e.currentTarget.style.background =
+                                    "var(--blue-3)";
+                                  e.currentTarget.style.borderColor =
+                                    "var(--blue-6)";
+                                }
+                              }}
+                            >
+                              <ArrowRightIcon color="var(--blue-9)" />
+                            </Card>
+                          )}
+                        </Flex>
+                      ) : (
+                        <Card
+                          size="1"
+                          style={{
+                            padding: "8px",
+                            background: "var(--green-3)",
+                            border: "1px solid var(--green-6)",
+                            opacity: message.completed ? 1 : 0.6,
+                          }}
+                        >
                           <ChatBubbleIcon color="var(--green-9)" />
-                        )}
-                      </Card>
+                        </Card>
+                      )}
 
                       {/* Message Content - Single Card that morphs */}
                       <Box style={{ maxWidth: "70%" }}>
