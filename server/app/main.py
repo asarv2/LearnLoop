@@ -354,13 +354,7 @@ async def health_check() -> JSONResponse:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn_kwargs: dict[str, object] = {
-        "host": "0.0.0.0",
-        "port": 8000,
-        "reload": False,
-        "log_level": "info",
-    }
     if UVLOOP_AVAILABLE:
-        uvicorn_kwargs["loop"] = "uvloop"
-
-    uvicorn.run("app.main:app", **uvicorn_kwargs)
+        uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False, log_level="info", loop="uvloop")
+    else:
+        uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=False, log_level="info")
