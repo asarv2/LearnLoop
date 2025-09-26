@@ -378,6 +378,7 @@ async def upsert_text_chunk(
                             "parent_id": str(db_msg.parent_id)
                             if db_msg.parent_id
                             else None,  # Add parent_id for retry functionality
+                            "voice": db_msg.voice,  # Add voice flag for retry functionality
                         },
                     },
                 )

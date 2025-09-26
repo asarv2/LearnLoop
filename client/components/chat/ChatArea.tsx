@@ -136,6 +136,18 @@ export default function ChatArea({
     null
   );
 
+  // Voice user turn tracking
+  const [voiceUserIds, setVoiceUserIds] = useState<Record<string, 1>>({});
+
+  // Track mic on/off recency to infer voice when the emitter doesn't send a flag
+  const lastMicOnAtRef = useRef(0);
+  const lastMicOffAtRef = useRef(0);
+
+  useEffect(() => {
+    if (micOn) lastMicOnAtRef.current = Date.now();
+    else lastMicOffAtRef.current = Date.now();
+  }, [micOn]);
+
   // Cut window for retry state management
   const cutWin = useCutWindow(chat?.id);
 
@@ -908,19 +920,41 @@ export default function ChatArea({
     setParentCursor,
   ]);
 
-  // Clear branch toggle once the server confirms a new user message (works for both RTC and WS paths)
+  // Track voice user turns locally (live)
   useEffect(() => {
-    const onUserSaved = () => {
-      // (no-op) — don't clear retry here, wait for assistant completion
+    const onUserSaved = (evt: Event) => {
+      const e = evt as CustomEvent;
+      const d = (e.detail || {}) as {
+        message_id?: string;
+        messageId?: string;
+        role?: string; // ideally 'user'
+        voice?: boolean; // ideally provided by server
+        input_type?: string; // e.g. 'voice'|'text' if you have it
+      };
+
+      const id = d.message_id || d.messageId;
+      if (!id || d.role !== "user") return;
+
+      const recentlyMic =
+        Date.now() -
+          (micOn ? lastMicOnAtRef.current : lastMicOffAtRef.current) <
+        2500;
+      const wasVoice = Boolean(
+        d.voice || d.input_type === "voice" || recentlyMic
+      );
+
+      if (wasVoice) {
+        setVoiceUserIds((prev) => (prev[id] ? prev : { ...prev, [id]: 1 }));
+      }
     };
+
     window.addEventListener("userMessageSaved", onUserSaved as EventListener);
-    return () => {
+    return () =>
       window.removeEventListener(
         "userMessageSaved",
         onUserSaved as EventListener
       );
-    };
-  }, [chat?.id, cutWin]);
+  }, [micOn]);
 
   // Scroll helper functions (now handled inline for better performance)
 
@@ -1145,22 +1179,51 @@ export default function ChatArea({
               const parentId = (
                 message as unknown as { parent_id?: string | null }
               ).parent_id as string | null | undefined;
-              const assistantParent = parentId
-                ? (visibleMessages.find((m) => m.id === parentId) as
-                    | (Message & { voice?: boolean })
-                    | undefined)
-                : undefined;
-              const userVoice = Boolean(
-                (message as unknown as { voice?: boolean }).voice
-              );
-              // Only allow "Retry from here" if this is a user message, it has a parent assistant,
-              // and the user message was produced via voice:
-              const showRetry =
-                isUserMessage && userVoice && Boolean(assistantParent?.id);
 
-              // Determine if we're in listening state
+              // Robust assistant parent (works even before parent_id is set)
+              let assistantParent: (Message & { voice?: boolean }) | undefined;
+              if (parentId) {
+                assistantParent = byId.get(parentId) as
+                  | (Message & { voice?: boolean })
+                  | undefined;
+              } else {
+                const idx = visibleMessages.findIndex(
+                  (m) => m.id === message.id
+                );
+                for (let i = idx - 1; i >= 0; i--) {
+                  if (visibleMessages[i]?.role === "assistant") {
+                    assistantParent = visibleMessages[i] as Message & {
+                      voice?: boolean;
+                    };
+                    break;
+                  }
+                }
+                if (!assistantParent && lastAssistantId) {
+                  assistantParent = byId.get(lastAssistantId) as
+                    | (Message & { voice?: boolean })
+                    | undefined;
+                }
+              }
+
+              // Treat as voice if either the message has voice flag OR we marked it locally
+              const userVoice =
+                Boolean((message as Message & { voice?: boolean })?.voice) ||
+                Boolean(voiceUserIds[message.id]);
+
+              // Determine if we're in listening (dot) vs display (text) mode
               const isListening =
                 !message.completed && isEmptyContent && !hasTranscriptWords;
+
+              // Only show retry once the user message is fully completed (display mode)
+              const isDisplayMode = Boolean(message.completed);
+
+              // Only allow "Retry from here" if this is a user message, it has a parent assistant,
+              // the user message was produced via voice, and we're in display mode:
+              const showRetry =
+                isDisplayMode && // <— NEW hard gate
+                isUserMessage &&
+                userVoice &&
+                Boolean(assistantParent?.id);
 
               return (
                 <React.Fragment key={message.id}>

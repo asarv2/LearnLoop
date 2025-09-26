@@ -1009,6 +1009,7 @@ async def handle_training_message_rtc(sid: str, data: dict[str, Any]) -> None:
             chunk_idx=0,
             is_final=True,
             persona_id=persona_id,
+            voice=False,  # Always False for text messages
             parent_id=parent_id,  # Use explicit parent_id or room's current_parent_id as fallback
         )
         
@@ -1123,6 +1124,7 @@ async def process_training_message_websocket(
             completed=True,
             persona_id=user_persona_id,
             parent_id=parent_id,
+            voice=False,  # Always False for text messages
         )
         db_session.add(user_message)
         db_session.commit()
@@ -1148,6 +1150,7 @@ async def process_training_message_websocket(
                     "parent_id": str(user_message.parent_id)
                     if user_message.parent_id
                     else None,  # Add parent_id for retry functionality
+                    "voice": user_message.voice,  # Add voice flag for retry functionality
                     "completed": user_message.completed,
                     "created_at": user_message.created_at.isoformat(),
                     "completed_at": user_message.completed_at.isoformat()
