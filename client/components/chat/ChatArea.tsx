@@ -744,6 +744,77 @@ export default function ChatArea({
     };
   }, [cutWin]);
 
+  // Event-driven cut window clearing - only clear when new user message is actually created on the retry branch
+  useEffect(() => {
+    if (!chat?.id) return;
+
+    const maybeClearOnNewUser = (evt: Event) => {
+      const e = evt as CustomEvent;
+      const d = (e.detail || {}) as {
+        chatId?: string;
+        chat_id?: string;
+        message?: Message;
+        messageId?: string;
+        message_id?: string;
+        parentId?: string | null;
+        parent_id?: string | null;
+      };
+      const cid = d.chatId ?? d.chat_id;
+      if (cid !== chat.id) return;
+      if (!cutWin.isActive || !cutWin.cut.afterAssistantId) return;
+
+      // Prefer the full message if provided (userMessageSaved sends it)
+      const m: (Message & { parent_id?: string | null }) | undefined =
+        d.message as (Message & { parent_id?: string | null }) | undefined;
+      if (!m) return;
+
+      // Don't clear for the very user message we're hiding
+      if (cutWin.cut.beforeUserId && m.id === cutWin.cut.beforeUserId) return;
+
+      const anchor = cutWin.cut.afterAssistantId!;
+      const pid = m.parent_id ?? d.parentId ?? d.parent_id ?? null;
+
+      // Fast path: direct parent is the anchor
+      if (pid === anchor) {
+        cutWin.clear();
+        return;
+      }
+
+      // Slow path: use your ancestry walk to verify it's under the anchor
+      // (byIdAll already exists in ChatArea)
+      if (hits(pid, anchor)) {
+        cutWin.clear();
+        return;
+      }
+    };
+
+    // Clear only when the server actually saved/completed the new user turn
+    window.addEventListener(
+      "userMessageSaved",
+      maybeClearOnNewUser as EventListener
+    );
+    window.addEventListener(
+      "userMessageComplete",
+      maybeClearOnNewUser as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        "userMessageSaved",
+        maybeClearOnNewUser as EventListener
+      );
+      window.removeEventListener(
+        "userMessageComplete",
+        maybeClearOnNewUser as EventListener
+      );
+    };
+  }, [
+    chat?.id,
+    cutWin,
+    // reuse your existing ancestry helper & global map
+    hits,
+  ]);
+
   // Listen for hints generated events to show them immediately
   useEffect(() => {
     const handleHintsGenerated = (event: CustomEvent) => {
@@ -1030,8 +1101,8 @@ export default function ChatArea({
       // sendWebRTCMessage will still fallback to socket if DC isn't ready
       sendWebRTCMessage(chat.id, message, parentId);
       setCurrentMessage("");
-      // Clear retry immediately when user sends message to show new message/voice circle
-      if (cutWin.isActive) cutWin.clear();
+      // Note: Cut window clearing is now handled by event-driven listeners
+      // that wait for the new user message to actually be created on the anchor branch
     },
     [
       chat?.id,
