@@ -7,9 +7,12 @@ import logging
 import os
 import re
 import time
-from typing import Any
+import uuid
+from dataclasses import dataclass
+from typing import Any, Awaitable, Union
 
 import numpy as np
+from agents import RunContextWrapper
 # ---- OpenAI Agents SDK (pip install openai-agents or openai-agents-python) ----
 from agents.realtime import RealtimeAgent as OARealtimeAgent
 from agents.realtime import RealtimeRunner, RealtimeSession
@@ -25,6 +28,7 @@ from agents.realtime.events import RealtimeError as OAEventError
 from agents.realtime.events import RealtimeRawModelEvent as OAEventRaw
 from agents.realtime.model_events import \
     RealtimeModelRawServerEvent as OAEventRawServer
+from agents.util._types import MaybeAwaitable
 from app.bus import PCM_SR, SAMPLES_PER_CHUNK, AudioChunk
 from app.db import get_session
 from app.models import Chats, Documents, Messages, Personas, Scenarios
@@ -34,6 +38,13 @@ from app.utils.chat import get_formatted_conversation_history_with_personas
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RealtimeContext:
+    session: Any  # SQLAlchemy session
+    chat_id: uuid.UUID
+    scenario_id: uuid.UUID
 
 
 # ---------- audio helpers ----------
@@ -622,91 +633,6 @@ class OpenAIAgent(Agent):
         if not chat.scenario_id:
             raise ValueError(f"Chat {chat_id} has no scenario_id")
 
-        scenario = db_session.exec(
-            select(Scenarios).where(Scenarios.id == chat.scenario_id)
-        ).one_or_none()
-        if not scenario:
-            raise ValueError(
-                f"Scenario {chat.scenario_id} not found for chat {chat_id}"
-            )
-
-        # get all messages for the chat
-        messages = db_session.exec(
-            select(Messages).where(Messages.chat_id == chat_id)
-        ).all()
-
-        # Format conversation history with persona names
-        formatted_history = get_formatted_conversation_history_with_personas(
-            messages, db_session
-        )
-
-        # Build enhanced instructions: persona prompt + description + documents + history
-        instructions_parts = []
-
-        # 1. Get persona-specific prompt from chat.prompts
-        chat_prompts = chat.prompts or {}
-        persona_prompt = chat_prompts.get(str(persona_id))
-        if persona_prompt:
-            instructions_parts.append(persona_prompt)
-
-        # 2. Add persona description
-        if persona.description:
-            instructions_parts.append(persona.description)
-
-        # 3. Add relevant documents from scenario
-        if scenario and scenario.document_ids:
-            try:
-                logger.info(
-                    f"Fetching documents for scenario {scenario.id}, document_ids: {scenario.document_ids}"
-                )
-                # Fetch documents from the database
-                documents = []
-                for doc_id in scenario.document_ids:
-                    doc = db_session.exec(
-                        select(Documents).where(Documents.id == doc_id)
-                    ).one_or_none()
-                    if doc:
-                        documents.append(doc)
-                        logger.info(f"Found document: {doc.title}")
-                    else:
-                        logger.warning(f"Document not found: {doc_id}")
-
-                if documents:
-                    doc_info = []
-                    doc_info.append(
-                        "These are the relevant documents for this scenario:"
-                    )
-                    for doc in documents:
-                        if doc.title and doc.content:
-                            doc_info.append(f"Document: {doc.title}")
-                            doc_info.append(f"Content: {doc.content}")
-                            doc_info.append("")  # Empty line for separation
-
-                    if doc_info:
-                        instructions_parts.append("\n".join(doc_info))
-                        logger.info(f"Added {len(documents)} documents to instructions")
-                else:
-                    logger.info("No documents found or documents have no title/content")
-            except Exception as e:
-                logger.warning(
-                    f"Failed to fetch documents for scenario {scenario.id}: {e}"
-                )
-        else:
-            logger.info(
-                f"No scenario or document_ids found. Scenario: {scenario is not None}, document_ids: {scenario.document_ids if scenario else None}"
-            )
-
-        # 4. Add formatted conversation history if available
-        if formatted_history:
-            instructions_parts.append(f"Conversation history:\n{formatted_history}")
-
-        # Join all parts with double newlines for clarity
-        realtime_instructions = (
-            "\n\n".join(instructions_parts)
-            if instructions_parts
-            else "Be helpful and respond to the user's messages."
-        )
-
         realtime_voice = persona.voice
         valid_voices = [
             "alloy",
@@ -721,9 +647,121 @@ class OpenAIAgent(Agent):
         if realtime_voice not in valid_voices:
             realtime_voice = "alloy"
 
-        oa_agent = OARealtimeAgent(
+        # Example function for dynamic instructions
+        def create_dynamic_instructions(ctx: RunContextWrapper, agent: OARealtimeAgent) -> MaybeAwaitable[str]:
+            """
+            Example function that generates instructions dynamically.
+            Signature matches: Callable[[RunContextWrapper[TContext], RealtimeAgent[TContext]], MaybeAwaitable[str]]
+            """
+            # Access context data from the RealtimeContext
+            context = ctx.context  # This is our RealtimeContext instance
+            session = context.session
+            chat_id = context.chat_id
+            scenario_id = context.scenario_id
+            
+            # Get chat and persona from session
+            chat = session.exec(
+                select(Chats).where(Chats.id == chat_id)
+            ).one_or_none()
+            if not chat:
+                raise ValueError(f"Chat with ID {chat_id} not found")
+            
+            persona = session.exec(
+                select(Personas).where(Personas.id == persona_id)
+            ).one_or_none()
+            if not persona:
+                raise ValueError(f"Persona with ID {persona_id} not found")
+            
+            scenario = session.exec(
+                select(Scenarios).where(Scenarios.id == scenario_id)
+            ).one_or_none()
+            if not scenario:
+                raise ValueError(
+                    f"Scenario {scenario_id} not found for chat {chat_id}"
+                )
+
+            # get all messages for the chat
+            messages = session.exec(
+                select(Messages).where(Messages.chat_id == chat_id)
+            ).all()
+
+            # Format conversation history with persona names
+            formatted_history = get_formatted_conversation_history_with_personas(
+                messages, session, parent_id=self.room.last_user_id
+            )
+
+            # Build enhanced instructions: persona prompt + description + documents + history
+            instructions_parts = []
+
+            # 1. Get persona-specific prompt from chat.prompts
+            chat_prompts = chat.prompts or {}
+            persona_prompt = chat_prompts.get(str(persona_id))
+            if persona_prompt:
+                instructions_parts.append(persona_prompt)
+
+            # 2. Add persona description
+            if persona.description:
+                instructions_parts.append(persona.description)
+
+            # 3. Add relevant documents from scenario
+            if scenario and scenario.document_ids:
+                try:
+                    logger.info(
+                        f"Fetching documents for scenario {scenario.id}, document_ids: {scenario.document_ids}"
+                    )
+                    # Fetch documents from the database
+                    documents = []
+                    for doc_id in scenario.document_ids:
+                        doc = session.exec(
+                            select(Documents).where(Documents.id == doc_id)
+                        ).one_or_none()
+                        if doc:
+                            documents.append(doc)
+                            logger.info(f"Found document: {doc.title}")
+                        else:
+                            logger.warning(f"Document not found: {doc_id}")
+
+                    if documents:
+                        doc_info = []
+                        doc_info.append(
+                            "These are the relevant documents for this scenario:"
+                        )
+                        for doc in documents:
+                            if doc.title and doc.content:
+                                doc_info.append(f"Document: {doc.title}")
+                                doc_info.append(f"Content: {doc.content}")
+                                doc_info.append("")  # Empty line for separation
+
+                        if doc_info:
+                            instructions_parts.append("\n".join(doc_info))
+                            logger.info(f"Added {len(documents)} documents to instructions")
+                    else:
+                        logger.info("No documents found or documents have no title/content")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to fetch documents for scenario {scenario.id}: {e}"
+                    )
+            else:
+                logger.info(
+                    f"No scenario or document_ids found. Scenario: {scenario is not None}, document_ids: {scenario.document_ids if scenario else None}"
+                )
+
+            # 4. Add formatted conversation history if available
+            if formatted_history:
+                instructions_parts.append(f"Conversation history:\n{formatted_history}")
+
+            # Join all parts with double newlines for clarity
+            realtime_instructions = (
+                "\n\n".join(instructions_parts)
+                if instructions_parts
+                else "Be helpful and respond to the user's messages."
+            )
+            
+            return realtime_instructions
+
+        oa_agent = OARealtimeAgent[RealtimeContext](
             name="OpenAI Realtime",
-            instructions=realtime_instructions,
+            instructions=create_dynamic_instructions,
         )
 
         model_settings: RealtimeSessionModelSettings = {
@@ -745,7 +783,15 @@ class OpenAIAgent(Agent):
         run_cfg = RealtimeRunConfig(model_settings=model_settings)
 
         runner = RealtimeRunner(oa_agent, config=run_cfg)
-        session: RealtimeSession = await runner.run()
+        
+        # Create RealtimeContext with database session and IDs
+        realtime_context = RealtimeContext(
+            session=db_session,
+            chat_id=chat.id,
+            scenario_id=chat.scenario_id
+        )
+        
+        session: RealtimeSession = await runner.run(context=realtime_context)
         session = await session.enter()  # ✅ correct way to enter
         logger.debug("[openai] realtime session started")
         return session
