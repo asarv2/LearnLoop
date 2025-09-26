@@ -29,8 +29,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 // Import necessary hooks
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
-import { useRetry } from "@/hooks/useRetry";
-import { useThread } from "@/hooks/useThread";
+import { useCutWindow } from "@/hooks/useCutWindow";
 import { useLatestMessageHints } from "@/lib/api/hooks/useHints";
 import { usePersonas, useUserPersona } from "@/lib/api/hooks/usePersonas";
 import { useScenario } from "@/lib/api/hooks/useScenarios";
@@ -122,31 +121,41 @@ export default function ChatArea({
     null
   );
 
-  // New unified retry state management
-  const retry = useRetry();
+  // Cut window for retry state management
+  const cutWin = useCutWindow(chat?.id);
 
-  // Undo retry helper that clears anchor and restores server cursor to latest tip
+  // Project displayMessages through the cut window
+  const visibleMessages = React.useMemo(
+    () => cutWin.project(displayMessages),
+    [displayMessages, cutWin]
+  );
+
+  // Optional: tiny banner placement (right after the last visible bubble)
+  const bannerAfterId = React.useMemo(() => {
+    if (!cutWin.isActive || visibleMessages.length === 0) return null;
+    return visibleMessages[visibleMessages.length - 1]?.id ?? null;
+  }, [cutWin.isActive, visibleMessages]);
+
+  // Undo retry helper that clears cut and restores server cursor to latest tip
   const undoRetry = useCallback(() => {
-    if (!chat?.id) return;
-    retry.clearRetry();
-    // Optionally restore server cursor to the most recent assistant tip
+    cutWin.clear();
+    // Optional: restore server tip to the last assistant we can see
     const restoreTo =
-      currentAssistantId ||
-      lastAssistantId ||
-      // fallback: scan for the last assistant in displayMessages
-      [...displayMessages].reverse().find((m) => m.role === "assistant")?.id;
-
+      [...visibleMessages].reverse().find((m) => m.role === "assistant")?.id ??
+      lastAssistantId ??
+      currentAssistantId ??
+      null;
     if (restoreTo) {
       try {
-        setParentCursor(chat.id, restoreTo);
+        setParentCursor(chat?.id, restoreTo);
       } catch {}
     }
   }, [
-    chat?.id,
-    retry,
-    currentAssistantId,
+    cutWin,
+    visibleMessages,
     lastAssistantId,
-    displayMessages,
+    currentAssistantId,
+    chat?.id,
     setParentCursor,
   ]);
 
@@ -305,7 +314,7 @@ export default function ChatArea({
   // Use the composite hook to get hints for the latest assistant message
   const { hints, isLoading: isLoadingHints } = useLatestMessageHints(
     chat?.id,
-    displayMessages, // seed from props for instant pick
+    visibleMessages, // seed from props for instant pick
     true // enabled
   );
 
@@ -347,19 +356,6 @@ export default function ChatArea({
     return new Map(allPersonas.map((p) => [p.id, p.name]));
   }, [allPersonas]);
 
-  // Use the new unified thread management
-  const { visibleMessages, bannerAfterId, bannerAtTop, anchorPresent } =
-    useThread({
-      messages: displayMessages,
-      currentAssistantId,
-      lastAssistantId,
-      retry: {
-        anchorAssistantId: retry.anchorAssistantId,
-        userMessageId: retry.userMessageId,
-        isActive: retry.isActive,
-      },
-    });
-
   // Handle hints button click
   const handleHintsClick = useCallback(() => {
     setShowHints((s) => !s);
@@ -367,7 +363,7 @@ export default function ChatArea({
 
   // Track AI responses for hints generation
   useEffect(() => {
-    const lastMessage = displayMessages[displayMessages.length - 1];
+    const lastMessage = visibleMessages[visibleMessages.length - 1];
     if (
       lastMessage &&
       lastMessage.role === "assistant" &&
@@ -379,7 +375,7 @@ export default function ChatArea({
         setLastAIResponse(newResponse);
       }
     }
-  }, [displayMessages, lastAIResponse]);
+  }, [visibleMessages, lastAIResponse]);
 
   // Request hints when the assistant signals it's DONE
   useEffect(() => {
@@ -405,6 +401,9 @@ export default function ChatArea({
       setCurrentAssistantId(null);
       setRealtimeLowHints(null); // Clear any previous real-time hints
       setRealtimeHighHints(null); // Clear any previous real-time hints
+
+      // Clear the cut window when the new assistant finishes
+      cutWin.clear();
     };
 
     window.addEventListener(
@@ -425,7 +424,23 @@ export default function ChatArea({
         onComplete as EventListener
       );
     };
-  }, [chat?.id]);
+  }, [chat?.id, cutWin]);
+
+  // Optional safety: clear clamp on explicit failure
+  useEffect(() => {
+    const onErr = () => {
+      if (cutWin.isActive) cutWin.clear();
+    };
+    window.addEventListener("trainingMessageError", onErr as EventListener);
+    window.addEventListener("trainingStopped", onErr as EventListener);
+    return () => {
+      window.removeEventListener(
+        "trainingMessageError",
+        onErr as EventListener
+      );
+      window.removeEventListener("trainingStopped", onErr as EventListener);
+    };
+  }, [cutWin]);
 
   // Listen for hints generated events to show them immediately
   useEffect(() => {
@@ -689,16 +704,16 @@ export default function ChatArea({
       joinRoom(chat.id);
       // Prefer to wait briefly for RTC setup so we don't miss audio reply
       await waitForVoiceReady(1500);
-      // Compute parentId: prefer explicit retry anchor -> current assistant -> last assistant -> scan
+      // Compute parentId: prefer explicit cut anchor -> current assistant -> last assistant -> scan visible messages
       let parentId: string | undefined =
-        retry.anchorAssistantId ||
+        cutWin.cut.afterAssistantId ||
         currentAssistantId ||
         lastAssistantId ||
         undefined;
       try {
         if (!parentId) {
-          for (let i = displayMessages.length - 1; i >= 0; i--) {
-            const m = displayMessages[i];
+          for (let i = visibleMessages.length - 1; i >= 0; i--) {
+            const m = visibleMessages[i];
             if (m.role === "assistant" && (m.completed || m.content === "")) {
               parentId = m.id;
               break;
@@ -723,10 +738,10 @@ export default function ChatArea({
       setParentCursor,
       setCurrentMessage,
       waitForVoiceReady,
-      displayMessages,
+      visibleMessages,
       currentAssistantId,
       lastAssistantId,
-      retry,
+      cutWin,
     ]
   );
 
@@ -736,14 +751,14 @@ export default function ChatArea({
     if (!chat?.id) return;
     if (!micOn) return;
     let parentId: string | undefined =
-      retry.anchorAssistantId ||
+      cutWin.cut.afterAssistantId ||
       currentAssistantId ||
       lastAssistantId ||
       undefined;
     try {
       if (!parentId) {
-        for (let i = displayMessages.length - 1; i >= 0; i--) {
-          const m = displayMessages[i];
+        for (let i = visibleMessages.length - 1; i >= 0; i--) {
+          const m = visibleMessages[i];
           if (m.role === "assistant" && (m.completed || m.content === "")) {
             parentId = m.id;
             break;
@@ -757,37 +772,17 @@ export default function ChatArea({
   }, [
     micOn,
     chat?.id,
-    displayMessages,
+    visibleMessages,
     currentAssistantId,
     lastAssistantId,
-    retry.anchorAssistantId,
+    cutWin.cut.afterAssistantId,
     setParentCursor,
   ]);
 
   // Clear branch toggle once the server confirms a new user message (works for both RTC and WS paths)
   useEffect(() => {
-    const onUserSaved = (e: Event) => {
-      try {
-        const ce = e as CustomEvent;
-        const d = (ce.detail || {}) as Record<string, unknown>;
-        if (!d || !chat?.id) return;
-        const cid = (d["chatId"] as string) || (d["chat_id"] as string);
-        if (cid !== chat.id) return;
-
-        // Prefer nested message.parent_id, fall back to top-level parent_id
-        const savedParent =
-          (d.message as Record<string, unknown>)?.parent_id ??
-          d.parent_id ??
-          null;
-
-        // Only clear the fence once we see the server threaded this user msg
-        if (
-          retry.anchorAssistantId &&
-          savedParent === retry.anchorAssistantId
-        ) {
-          retry.clearRetry();
-        }
-      } catch {}
+    const onUserSaved = () => {
+      // (no-op) — don't clear retry here, wait for assistant completion
     };
     window.addEventListener("userMessageSaved", onUserSaved as EventListener);
     return () => {
@@ -796,7 +791,14 @@ export default function ChatArea({
         onUserSaved as EventListener
       );
     };
-  }, [chat?.id, retry]);
+  }, [chat?.id, cutWin]);
+
+  // Stop auto-scroll while cutting (this is what causes the jump to bottom)
+  useEffect(() => {
+    if (cutWin.isActive) return;
+    const el = messagesEndRef.current;
+    if (el) el.scrollIntoView({ block: "end", behavior: "auto" });
+  }, [visibleMessages.length, cutWin.isActive, messagesEndRef]);
 
   // Removed auto-show feedback modal useEffect - modal should only show when user clicks button
 
@@ -861,7 +863,7 @@ export default function ChatArea({
         >
           <Flex direction="column" gap="4">
             {/* Show starter prompts when there are no messages and session is active */}
-            {displayMessages.length === 0 && isSessionActive && (
+            {visibleMessages.length === 0 && isSessionActive && (
               <Box
                 style={{
                   display: "flex",
@@ -938,8 +940,8 @@ export default function ChatArea({
               </Box>
             )}
 
-            {/* If retry is active, anchor hasn't arrived yet, and cut is at the top */}
-            {retry.isActive && !anchorPresent && bannerAtTop && (
+            {/* Show banner at top if retry is active and no messages visible */}
+            {cutWin.isActive && visibleMessages.length === 0 && (
               <Box style={{ display: "flex", justifyContent: "flex-end" }}>
                 <Box style={{ maxWidth: "70%" }}>
                   <LocalRetryBanner onUndo={undoRetry} />
@@ -948,8 +950,6 @@ export default function ChatArea({
             )}
 
             {visibleMessages.map((message) => {
-              const isAnchor =
-                retry.isActive && retry.anchorAssistantId === message.id;
               const isUserMessage =
                 message.role === "user" ||
                 message.persona_id === userPersona?.id;
@@ -964,7 +964,7 @@ export default function ChatArea({
                 message as unknown as { parent_id?: string | null }
               ).parent_id as string | null | undefined;
               const assistantParent = parentId
-                ? (displayMessages.find((m) => m.id === parentId) as
+                ? (visibleMessages.find((m) => m.id === parentId) as
                     | (Message & { voice?: boolean })
                     | undefined)
                 : undefined;
@@ -991,38 +991,40 @@ export default function ChatArea({
                           <Button
                             size="1"
                             variant={
-                              retry.anchorAssistantId === assistantParent?.id
+                              cutWin.cut.afterAssistantId ===
+                              assistantParent?.id
                                 ? "solid"
                                 : "outline"
                             }
                             disabled={!assistantParent?.id}
                             onClick={() => {
                               if (!assistantParent?.id) return;
-                              const nextAnchor =
-                                retry.anchorAssistantId === assistantParent.id
-                                  ? null
-                                  : assistantParent.id;
-
-                              // pass both the anchor assistant id and THIS user message id
-                              retry.toggleRetryFrom(
-                                nextAnchor,
-                                nextAnchor ? message.id : null
-                              );
-
-                              try {
-                                if (nextAnchor)
-                                  setParentCursor(chat.id, nextAnchor);
-                                else undoRetry(); // will clear + restore; harmless if already cleared
-                              } catch {}
+                              if (
+                                cutWin.cut.afterAssistantId ===
+                                assistantParent.id
+                              ) {
+                                // If already active, undo it
+                                undoRetry();
+                              } else {
+                                // Start retry from this assistant, hiding this user message and everything after
+                                cutWin.startRetry(
+                                  assistantParent.id,
+                                  message.id
+                                );
+                                try {
+                                  setParentCursor(chat.id, assistantParent.id);
+                                } catch {}
+                              }
                             }}
                           >
-                            {retry.anchorAssistantId === assistantParent?.id
+                            {cutWin.cut.afterAssistantId === assistantParent?.id
                               ? "Retrying from here"
                               : "Retry from here"}
                           </Button>
 
                           {/* Explicit Undo button when active for extra clarity */}
-                          {retry.anchorAssistantId === assistantParent?.id && (
+                          {cutWin.cut.afterAssistantId ===
+                            assistantParent?.id && (
                             <Button
                               size="1"
                               variant="ghost"
@@ -1099,10 +1101,9 @@ export default function ChatArea({
                       </Flex>
                     </Box>
 
-                    {/* inject local banner exactly where the replaced user message would be */}
-                    {isAnchor && (
+                    {/* Show banner after this message if it's the last visible one and retry is active */}
+                    {cutWin.isActive && bannerAfterId === message.id && (
                       <Box
-                        // place it with the same alignment as a user bubble
                         style={{
                           display: "flex",
                           justifyContent: "flex-end",
@@ -1114,23 +1115,6 @@ export default function ChatArea({
                         </Box>
                       </Box>
                     )}
-
-                    {/* If retry is active and we should place the banner AFTER this message */}
-                    {retry.isActive &&
-                      !anchorPresent &&
-                      bannerAfterId === message.id && (
-                        <Box
-                          style={{
-                            display: "flex",
-                            justifyContent: "flex-end",
-                            marginTop: 6,
-                          }}
-                        >
-                          <Box style={{ maxWidth: "70%" }}>
-                            <LocalRetryBanner onUndo={undoRetry} />
-                          </Box>
-                        </Box>
-                      )}
                   </React.Fragment>
                 );
               }
@@ -1150,38 +1134,35 @@ export default function ChatArea({
                         <Button
                           size="1"
                           variant={
-                            retry.anchorAssistantId === assistantParent?.id
+                            cutWin.cut.afterAssistantId === assistantParent?.id
                               ? "solid"
                               : "outline"
                           }
                           disabled={!assistantParent?.id}
                           onClick={() => {
                             if (!assistantParent?.id) return;
-                            const nextAnchor =
-                              retry.anchorAssistantId === assistantParent.id
-                                ? null
-                                : assistantParent.id;
-
-                            // pass both the anchor assistant id and THIS user message id
-                            retry.toggleRetryFrom(
-                              nextAnchor,
-                              nextAnchor ? message.id : null
-                            );
-
-                            try {
-                              if (nextAnchor)
-                                setParentCursor(chat.id, nextAnchor);
-                              else undoRetry(); // will clear + restore; harmless if already cleared
-                            } catch {}
+                            if (
+                              cutWin.cut.afterAssistantId === assistantParent.id
+                            ) {
+                              // If already active, undo it
+                              undoRetry();
+                            } else {
+                              // Start retry from this assistant, hiding this user message and everything after
+                              cutWin.startRetry(assistantParent.id, message.id);
+                              try {
+                                setParentCursor(chat.id, assistantParent.id);
+                              } catch {}
+                            }
                           }}
                         >
-                          {retry.anchorAssistantId === assistantParent?.id
+                          {cutWin.cut.afterAssistantId === assistantParent?.id
                             ? "Retrying from here"
                             : "Retry from here"}
                         </Button>
 
                         {/* Explicit Undo button when active for extra clarity */}
-                        {retry.anchorAssistantId === assistantParent?.id && (
+                        {cutWin.cut.afterAssistantId ===
+                          assistantParent?.id && (
                           <Button size="1" variant="ghost" onClick={undoRetry}>
                             Undo
                           </Button>
@@ -1260,10 +1241,9 @@ export default function ChatArea({
                     </Flex>
                   </Box>
 
-                  {/* inject local banner exactly where the replaced user message would be */}
-                  {isAnchor && (
+                  {/* Show banner after this message if it's the last visible one and retry is active */}
+                  {cutWin.isActive && bannerAfterId === message.id && (
                     <Box
-                      // place it with the same alignment as a user bubble
                       style={{
                         display: "flex",
                         justifyContent: "flex-end",
@@ -1275,23 +1255,6 @@ export default function ChatArea({
                       </Box>
                     </Box>
                   )}
-
-                  {/* If retry is active and we should place the banner AFTER this message */}
-                  {retry.isActive &&
-                    !anchorPresent &&
-                    bannerAfterId === message.id && (
-                      <Box
-                        style={{
-                          display: "flex",
-                          justifyContent: "flex-end",
-                          marginTop: 6,
-                        }}
-                      >
-                        <Box style={{ maxWidth: "70%" }}>
-                          <LocalRetryBanner onUndo={undoRetry} />
-                        </Box>
-                      </Box>
-                    )}
                 </React.Fragment>
               );
             })}

@@ -1136,7 +1136,7 @@ async def process_training_message_websocket(
             "user_message_saved",
             {
                 "chat_id": chat_id,
-                # ✨ 2. Enrich the message payload with the persona_id
+                # ✨ 2. Enrich the message payload with the persona_id and parent_id
                 "message": {
                     "id": str(user_message.id),
                     "chat_id": str(user_message.chat_id),
@@ -1145,6 +1145,9 @@ async def process_training_message_websocket(
                     "persona_id": str(user_persona_id)
                     if user_persona_id
                     else None,  # Add persona_id
+                    "parent_id": str(user_message.parent_id)
+                    if user_message.parent_id
+                    else None,  # Add parent_id for retry functionality
                     "completed": user_message.completed,
                     "created_at": user_message.created_at.isoformat(),
                     "completed_at": user_message.completed_at.isoformat()
