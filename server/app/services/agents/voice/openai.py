@@ -184,7 +184,7 @@ class OpenAIAgent(Agent):
 
     async def _mark_interruption_for_active_response(self) -> None:
         """Emit transcript_stop for the in-flight assistant message and persist interruption_ms.
-        If no message exists yet for the active response, create an empty placeholder first.
+        Only works with existing messages - never creates placeholders.
         """
         try:
             # Identify the current response id
@@ -208,43 +208,9 @@ class OpenAIAgent(Agent):
                     msg_id = None
             if not msg_id:
                 msg_id = self._rid_to_msg.get(rid)
-            if not msg_id:
-                # Create a placeholder assistant message so clients can clamp by id
-                try:
-                    persona_id = await self._get_assistant_persona_id()
-                except Exception:
-                    persona_id = None
-                try:
-                    # Use snapshot from stream or fallback to last user
-                    st = self._resp_streams.get(rid) or {}
-                    parent_snap = (st.get("parent_id")
-                                  or (self._user_anchor["msg_id"]
-                                      if self._user_anchor["open"] and self._user_anchor["msg_id"]
-                                      else self.room.last_user_id))
-                    msg_id_new = await self.publish_text_chunk(
-                        text="",
-                        message_id=None,
-                        chunk_idx=0,
-                        is_final=False,
-                        persona_id=persona_id,
-                        voice=True,
-                        parent_id=parent_snap,
-                    )
-                    self.room.set_last_assistant(msg_id_new)
-                    self.room.set_next_user_parent(msg_id_new)
-                    st["msg_id"] = msg_id_new
-                    msg_id = msg_id_new
-                    # Backfill mappings so future events attach correctly
-                    try:
-                        if rid:
-                            self._rid_to_msg[rid] = msg_id_new
-                            st2 = self._resp_streams.get(rid)
-                            if st2 is not None:
-                                st2["msg_id"] = msg_id_new
-                    except Exception:
-                        pass
-                except Exception:
-                    msg_id = None
+            
+            # If we don't already have a concrete assistant message id, there is
+            # nothing to "stop" – do NOT create placeholders here.
             if not msg_id:
                 return
 
@@ -260,42 +226,26 @@ class OpenAIAgent(Agent):
             except Exception:
                 pass
 
-            # Persist interruption timestamp on the message (raw SQL to avoid session races)
+            # Persist interruption timestamp only if the row already exists AND has content
             try:
                 from sqlalchemy import text as _text
 
                 db_session = next(get_session())
                 try:
                     conn = db_session.connection()
-                    # Ensure the DB row exists for this message id (assistant placeholder may not have been flushed yet)
-                    try:
-                        persona_id = await self._get_assistant_persona_id()
-                    except Exception:
-                        persona_id = None
-                    conn.execute(
-                        _text(
-                            """
-                            INSERT INTO messages (id, chat_id, role, content, completed, persona_id)
-                            VALUES (:id, :chat_id, 'assistant', '', false, :persona_id)
-                            ON CONFLICT (id) DO NOTHING
-                            """
-                        ),
-                        {
-                            "id": str(msg_id),
-                            "chat_id": str(self.room.id),
-                            "persona_id": persona_id,
-                        },
-                    )
-                    # Compute relative ms from created_at so it fits int4
+                    # Only set interruption against real, non-empty messages
                     row = conn.execute(
-                        _text("SELECT created_at FROM messages WHERE id = :id"),
+                        _text("SELECT created_at, content FROM messages WHERE id = :id"),
                         {"id": str(msg_id)},
                     ).fetchone()
+                    if not row or not (row[1] or "").strip():
+                        return
+                    created_at = row[0]
+                    # Compute relative ms from created_at so it fits int4
                     rel_ms = 0
                     try:
                         import datetime as _dt
 
-                        created_at = row[0] if row else None
                         if isinstance(created_at, _dt.datetime):
                             if created_at.tzinfo is None:
                                 created_at = created_at.replace(tzinfo=_dt.UTC)
@@ -987,7 +937,7 @@ class OpenAIAgent(Agent):
                                                     if self._user_anchor["open"] and self._user_anchor["msg_id"]
                                                     else self.room.last_user_id))
                                     st["parent_id"] = parent_now
-                                    st["msg_id"] = await self.publish_text_chunk(
+                                    st["msg_id"] = st["msg_id"] or await self.publish_text_chunk(
                                         text="",
                                         message_id=None,
                                         chunk_idx=0,
@@ -998,7 +948,7 @@ class OpenAIAgent(Agent):
                                     )
                                     print(f"[assist:msg] mid={st['msg_id']} parent={parent_now}")
                                     self.room.set_last_assistant(st["msg_id"])
-                                    self.room.set_next_user_parent(st["msg_id"])
+                                    # do NOT set_next_user_parent yet - wait for first non-empty content
                                 
                                 await self.publish_text_chunk(
                                     text=buffered_text,
@@ -1009,6 +959,8 @@ class OpenAIAgent(Agent):
                                     voice=True,
                                     parent_id=st["parent_id"],
                                 )
+                                # Now it's safe to thread the next user turn to this real message
+                                self.room.set_next_user_parent(st["msg_id"])
                                 st["chunk_idx"] += 1
                                 # Save flushed text for partial CTC reference
                                 st["last_flushed_text"] = buffered_text
@@ -1243,10 +1195,15 @@ class OpenAIAgent(Agent):
                                 pass
                             
                             # Clean up pure placeholder on cancel/interruption
+                            # Try current and any stream that has an id but no text
                             try:
-                                st = self._resp_streams.get(self._current_response_id or "", {})
-                                if st and st.get("msg_id") and int(st.get("chunk_idx") or 0) == 0 and not (st.get("last_flushed_text") or st.get("buffer")):
-                                    await self._delete_message_if_empty(str(st["msg_id"]))
+                                for rid_k, st_k in list(self._resp_streams.items()):
+                                    mid_k = st_k.get("msg_id")
+                                    if not mid_k:
+                                        continue
+                                    no_text = not ((st_k.get("last_flushed_text") or "").strip() or "".join(st_k.get("buffer", [])).strip())
+                                    if int(st_k.get("chunk_idx") or 0) == 0 and no_text:
+                                        await self._delete_message_if_empty(str(mid_k))
                             except Exception:
                                 pass
                             
@@ -1302,7 +1259,7 @@ class OpenAIAgent(Agent):
                                                         if self._user_anchor["open"] and self._user_anchor["msg_id"]
                                                         else self.room.last_user_id))
                                         st["parent_id"] = parent_now
-                                        st["msg_id"] = await self.publish_text_chunk(
+                                        st["msg_id"] = st["msg_id"] or await self.publish_text_chunk(
                                             text="",
                                             message_id=None,
                                             chunk_idx=0,
@@ -1313,7 +1270,7 @@ class OpenAIAgent(Agent):
                                         )
                                         print(f"[assist:msg] mid={st['msg_id']} parent={parent_now}")
                                         self.room.set_last_assistant(st["msg_id"])
-                                        self.room.set_next_user_parent(st["msg_id"])
+                                        # do NOT set_next_user_parent yet - wait for first non-empty content
                                     await self.publish_text_chunk(
                                         text=delta,
                                         message_id=st["msg_id"],
@@ -1323,6 +1280,8 @@ class OpenAIAgent(Agent):
                                         voice=True,
                                         parent_id=st["parent_id"],
                                     )
+                                    # Now it's safe to thread the next user turn to this real message
+                                    self.room.set_next_user_parent(st["msg_id"])
                                     st["chunk_idx"] += 1
                                 else:
                                     st["buffer"].append(delta)
@@ -1370,7 +1329,7 @@ class OpenAIAgent(Agent):
                                             st["parent_id"] = parent_now
                                             st[
                                                 "msg_id"
-                                            ] = await self.publish_text_chunk(
+                                            ] = st["msg_id"] or await self.publish_text_chunk(
                                                 text="",
                                                 message_id=None,
                                                 chunk_idx=0,
@@ -1381,8 +1340,7 @@ class OpenAIAgent(Agent):
                                             )
                                             print(f"[assist:msg] mid={st['msg_id']} parent={parent_now}")
                                             # DO NOT: self.room.set_parent_id(st["msg_id"])
-                                            # Set next user parent override for voice threading
-                                            self.room.set_next_user_parent(st["msg_id"])
+                                            # do NOT set_next_user_parent yet - wait for first non-empty content
                                         await self.publish_text_chunk(
                                             text=delta,
                                             message_id=st["msg_id"],
@@ -1392,6 +1350,8 @@ class OpenAIAgent(Agent):
                                             voice=True,
                                             parent_id=st["parent_id"],
                                         )
+                                        # Now it's safe to thread the next user turn to this real message
+                                        self.room.set_next_user_parent(st["msg_id"])
                                         st["chunk_idx"] += 1
                                     else:
                                         st["buffer"].append(delta)
@@ -1534,9 +1494,9 @@ class OpenAIAgent(Agent):
                                                               or (self._user_anchor["msg_id"] if self._user_anchor["open"] and self._user_anchor["msg_id"]
                                                                   else self.room.last_user_id))
                                                 st_final["parent_id"] = parent_now
-                                                st_final["msg_id"] = await self.publish_text_chunk(text="", is_final=False, persona_id=await self._get_assistant_persona_id(), voice=True, parent_id=parent_now)
+                                                st_final["msg_id"] = st_final.get("msg_id") or await self.publish_text_chunk(text="", is_final=False, persona_id=await self._get_assistant_persona_id(), voice=True, parent_id=parent_now)
                                                 self.room.set_last_assistant(st_final["msg_id"])
-                                                self.room.set_next_user_parent(st_final["msg_id"])
+                                                # do NOT set_next_user_parent yet - wait for content
                                                 msg_id_final = str(st_final["msg_id"])
                                                 self._rid_to_msg[rid] = msg_id_final
                                         
@@ -1547,6 +1507,8 @@ class OpenAIAgent(Agent):
                                             words=words,
                                             full_text=tr_text or effective_text,
                                         )
+                                        # Now it's safe to thread the next user turn to this real message
+                                        self.room.set_next_user_parent(st_final["msg_id"])
                                         # Persist final word timestamps to DB
                                         try:
                                             if (msg_id_final or "").strip():
