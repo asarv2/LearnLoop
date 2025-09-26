@@ -996,15 +996,16 @@ async def handle_training_message_rtc(sid: str, data: dict[str, Any]) -> None:
 
         # Get parent_id from client data for branching (if specified)
         parent_id = data.get("parent_id")
-        if not parent_id:
-            preferred = room.next_user_parent_id or room.last_assistant_id
-            # If preferred points to an empty assistant, ignore it
-            try:
-                if preferred and await room.is_empty_assistant(preferred):
-                    preferred = room.last_assistant_id
-            except Exception:
-                pass
+        if parent_id is None:
+            # Prefer the branch cursor if it was set (by client or server),
+            # otherwise fall back to the last assistant.
+            preferred = getattr(room, "next_user_parent_id", None)
+            if preferred is None:
+                preferred = getattr(room, "current_parent_id", None)
+            if preferred is None:
+                preferred = getattr(room, "last_assistant_id", None)
             parent_id = preferred
+        logger.info(f"[rtc] chat={chat_id} choosing parent_id={parent_id}")
         
         # Use room system to append text chunk
         # The room will automatically update its current_parent_id when is_final=True
@@ -1117,10 +1118,13 @@ async def process_training_message_websocket(
                 # Fallback or error handling
                 raise ValueError(f"User persona not found for profile {profile_id}")
 
-        # Set the parent_id on the room for this turn if provided (branching)
-        if parent_id:
+        # Seed room cursors so *any* subsequent RTC/voice turn sees the same branch
+        if parent_id is not None:
             room = get_room(chat_id)
-            room.set_parent_id(parent_id)
+            if hasattr(room, "set_parent_id"):
+                room.set_parent_id(parent_id)
+            if hasattr(room, "set_next_user_parent"):
+                room.set_next_user_parent(parent_id)
 
         # Create user message; link to provided parent (previous assistant or start)
         user_message = Messages(
@@ -1396,6 +1400,8 @@ async def process_training_message_websocket(
             try:
                 room = get_room(chat_id)
                 room.set_parent_id(str(assistant_message.id))
+                if hasattr(room, "set_last_assistant"):
+                    room.set_last_assistant(str(assistant_message.id))
             except Exception:
                 pass
 
@@ -1422,6 +1428,8 @@ async def process_training_message_websocket(
             try:
                 room = get_room(chat_id)
                 room.set_parent_id(str(assistant_message.id))
+                if hasattr(room, "set_last_assistant"):
+                    room.set_last_assistant(str(assistant_message.id))
             except Exception:
                 pass
 
@@ -1712,10 +1720,26 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 await emit_error(sid, "Missing chat_id")
                 return
             room = get_room(str(chat_id))
-            room.set_parent_id(str(parent_id) if parent_id else None)
+            pid = str(parent_id) if parent_id else None
+            # Current / general cursor
+            if hasattr(room, "set_parent_id"):
+                room.set_parent_id(pid)
+            # Cursor specifically consumed by the next inbound USER turn on RTC path
+            if hasattr(room, "set_next_user_parent"):
+                room.set_next_user_parent(pid)
+            # Optional: log current pointers for diagnostics
+            try:
+                logger.info(
+                    f"[cursor] chat={chat_id} set to pid={pid} "
+                    f"(next_user_parent={getattr(room, 'next_user_parent_id', None)}, "
+                    f"current_parent={getattr(room, 'current_parent_id', None)}, "
+                    f"last_assistant={getattr(room, 'last_assistant_id', None)})"
+                )
+            except Exception:
+                pass
             await sio.emit(
                 "parent_cursor_set",
-                {"chat_id": str(chat_id), "parent_id": parent_id or None},
+                {"chat_id": str(chat_id), "parent_id": pid},
                 room=sid,
             )
         except Exception as e:

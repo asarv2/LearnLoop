@@ -383,11 +383,9 @@ export default function ChatArea({
       lastAssistantId ??
       currentAssistantId ??
       null;
-    if (restoreTo) {
-      try {
-        setParentCursor(chat?.id, restoreTo);
-      } catch {}
-    }
+    try {
+      setParentCursor(chat?.id || "", restoreTo);
+    } catch {}
   }, [
     cutWin,
     visibleMessages,
@@ -870,8 +868,39 @@ export default function ChatArea({
   // Toggle mic handler
   const onToggleMic = useCallback(() => {
     if (!isRTCConnected) return;
+    // If we're about to turn mic ON, seed the server cursor synchronously.
+    if (!micOn && chat?.id) {
+      // pick best assistant anchor in this order:
+      let parentId: string | null =
+        cutWin.cut.afterAssistantId ||
+        currentAssistantId ||
+        lastAssistantId ||
+        null;
+      if (!parentId) {
+        for (let i = visibleMessages.length - 1; i >= 0; i--) {
+          const m = visibleMessages[i];
+          if (m.role === "assistant" && (m.completed || m.content === "")) {
+            parentId = m.id;
+            break;
+          }
+        }
+      }
+      try {
+        setParentCursor(chat.id, parentId ?? null);
+      } catch {}
+    }
     toggleMic();
-  }, [isRTCConnected, toggleMic]);
+  }, [
+    isRTCConnected,
+    micOn,
+    chat?.id,
+    cutWin.cut.afterAssistantId,
+    currentAssistantId,
+    lastAssistantId,
+    visibleMessages,
+    setParentCursor,
+    toggleMic,
+  ]);
 
   // ────────────────────────────────────────────────────────────────────────────
   // Waveform visualization (when mic is ON)
@@ -1094,7 +1123,7 @@ export default function ChatArea({
       } catch {}
       // Optionally inform server to branch cursor before sending
       try {
-        if (parentId) setParentCursor(chat.id, parentId);
+        setParentCursor(chat.id, parentId ?? null);
       } catch {}
       // Force scroll after user sends a message
       forceScrollRef.current = true;
@@ -1124,11 +1153,11 @@ export default function ChatArea({
   useEffect(() => {
     if (!chat?.id) return;
     if (!micOn) return;
-    let parentId: string | undefined =
+    let parentId: string | null =
       cutWin.cut.afterAssistantId ||
       currentAssistantId ||
       lastAssistantId ||
-      undefined;
+      null;
     try {
       if (!parentId) {
         for (let i = visibleMessages.length - 1; i >= 0; i--) {
@@ -1141,7 +1170,7 @@ export default function ChatArea({
       }
     } catch {}
     try {
-      if (parentId) setParentCursor(chat.id, parentId);
+      setParentCursor(chat.id, parentId ?? null);
     } catch {}
   }, [
     micOn,
