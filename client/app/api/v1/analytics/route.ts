@@ -307,7 +307,7 @@ export async function GET() {
       avgPerformanceScore = Math.round(totalScore / performanceData.length);
     }
 
-    // 8. Average training score for standard and required trainings (not custom)
+    // 8. Average training score for all active trainings (standard, required, and custom)
     let avgTrainingScoreQuery = supabase
       .from("rubric_grades")
       .select(
@@ -319,12 +319,13 @@ export async function GET() {
           training_id,
           profile_id,
           completed_at,
-          trainings!inner(id, title, training_type),
+          trainings!inner(id, title, training_type, active),
           profiles!inner(company, name)
         )
       `
       )
-      .not("score", "is", null);
+      .not("score", "is", null)
+      .eq("chats.trainings.active", true);
 
     if (userCompany) {
       avgTrainingScoreQuery = avgTrainingScoreQuery.eq(
