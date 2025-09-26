@@ -350,7 +350,11 @@ export default function AdminAnalyticsPage() {
     );
 
     // Get available trainings based on the selected filter
-    let relevantTrainings: any[] = [];
+    let relevantTrainings: {
+      id: string;
+      title: string;
+      training_type: string;
+    }[] = [];
 
     if (mainTrainingType === "all") {
       relevantTrainings = [
