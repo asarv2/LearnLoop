@@ -68,16 +68,14 @@ fastapi_app.add_middleware(
 app = socketio.ASGIApp(sio, fastapi_app, socketio_path="socket.io")
 
 # ── Import training events exactly as before ──────────────────────────────────
-from app.web.training import register_training_events  # keep your existing semantics
+from app.web.training import \
+    register_training_events  # keep your existing semantics
 
 register_training_events(sio)
 
 # ── Import new WebRTC primitives (from your NEWMAIN extraction) ───────────────
-from app.rtc import (
-    WebRTCSession,
-    get_room,  # get_room from your new code
-    sessions,
-)
+from app.rtc import get_room  # get_room from your new code
+from app.rtc import WebRTCSession, sessions
 
 
 # ── Loop lag watchdog ─────────────────────────────────────────────────────────

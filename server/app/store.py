@@ -375,6 +375,9 @@ async def upsert_text_chunk(
                             "persona_id": str(db_msg.persona_id)
                             if db_msg.persona_id
                             else None,
+                            "parent_id": str(db_msg.parent_id)
+                            if db_msg.parent_id
+                            else None,  # Add parent_id for retry functionality
                         },
                     },
                 )
