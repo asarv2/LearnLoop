@@ -416,6 +416,7 @@ function CreateCustomTrainingModal({
     null
   );
   const { user } = useAuth();
+  const { data: currentProfile } = useProfile(user?.id || "", !!user);
   const { emitCreateTraining } = useWebSocket();
   const queryClient = useQueryClient();
 
@@ -574,6 +575,7 @@ function CreateCustomTrainingModal({
           description: values.description,
           document_id: documentId,
           profile_id: user?.id,
+          company: currentProfile?.company || undefined,
         });
       } catch (error) {
         console.error("Error in training creation:", error);
