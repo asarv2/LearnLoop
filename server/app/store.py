@@ -1,6 +1,7 @@
 # store.py
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -68,6 +69,9 @@ class RoomRecord:
 # --- global in-memory store ---
 ROOMS: dict[str, RoomRecord] = {}
 
+# --- reverse index for O(1) message->room lookup ---
+MESSAGE_TO_ROOM: dict[str, str] = {}  # message_id -> room_id
+
 # --- idempotency guards for multi-worker safety ---
 STARTED: set[str] = set()  # tracks which messages have emitted "start"
 
@@ -78,11 +82,23 @@ PENDING_WRITES: dict[str, list[str]] = defaultdict(
 LAST_FLUSH: dict[str, float] = {}  # message_id -> last flush timestamp
 FLUSH_INTERVAL = 0.2  # 200ms between flushes
 
+# --- Global batch writer task ---
+_BATCH_WRITER_TASK: asyncio.Task | None = None
+_BATCH_WRITER_RUNNING = False
+
 
 def create_room(room_id: str | None = None) -> RoomRecord:
     rid = room_id or gen_id("room")
     rec = RoomRecord(id=rid, created_ms=int(time.time() * 1000))
     ROOMS[rid] = rec
+    
+    # Auto-start global batch writer on first room creation
+    if len(ROOMS) == 1:
+        try:
+            start_global_batch_writer()
+        except Exception as e:
+            logger.warning(f"Failed to start batch writer: {e}")
+    
     return rec
 
 
@@ -93,6 +109,60 @@ def get_room(room_id: str) -> RoomRecord:
 def list_messages(room_id: str) -> list[Message]:
     room = get_room(room_id)
     return list(room.messages.values())
+
+
+# ---- Global batch writer --------------------------------------------------------
+
+
+async def _global_batch_writer() -> None:
+    """
+    Global background task that periodically flushes all pending writes.
+    More efficient than per-message timers under multi-user load.
+    """
+    global _BATCH_WRITER_RUNNING
+    _BATCH_WRITER_RUNNING = True
+    logger.info("[batch-writer] Started global batch writer (interval=200ms)")
+    
+    try:
+        while _BATCH_WRITER_RUNNING:
+            await asyncio.sleep(FLUSH_INTERVAL)
+            
+            # Flush all messages with pending writes
+            if PENDING_WRITES:
+                flushed_count = 0
+                for msg_id in list(PENDING_WRITES.keys()):
+                    try:
+                        result = await _flush_pending_writes(msg_id, force=False)
+                        if result:
+                            flushed_count += 1
+                    except Exception as e:
+                        logger.error(f"[batch-writer] Error flushing {msg_id}: {e}")
+                
+                if flushed_count > 0:
+                    logger.debug(f"[batch-writer] Flushed {flushed_count} messages")
+    except asyncio.CancelledError:
+        logger.info("[batch-writer] Stopped global batch writer")
+        raise
+    except Exception as e:
+        logger.error(f"[batch-writer] Fatal error: {e}")
+        _BATCH_WRITER_RUNNING = False
+
+
+def start_global_batch_writer() -> None:
+    """Start the global batch writer task if not already running."""
+    global _BATCH_WRITER_TASK
+    if _BATCH_WRITER_TASK is None or _BATCH_WRITER_TASK.done():
+        _BATCH_WRITER_TASK = asyncio.create_task(_global_batch_writer())
+        logger.info("[batch-writer] Task created")
+
+
+def stop_global_batch_writer() -> None:
+    """Stop the global batch writer task."""
+    global _BATCH_WRITER_RUNNING, _BATCH_WRITER_TASK
+    _BATCH_WRITER_RUNNING = False
+    if _BATCH_WRITER_TASK and not _BATCH_WRITER_TASK.done():
+        _BATCH_WRITER_TASK.cancel()
+        logger.info("[batch-writer] Task cancelled")
 
 
 # ---- event emitter plumbing (set by main) ------------------------------------
@@ -200,16 +270,17 @@ async def _flush_pending_writes(
     if not force and (now - last_flush) < FLUSH_INTERVAL:
         return None
 
-    # Get the message details from in-memory store
-    msg = None
-    room_id = None
-    for rid, room in ROOMS.items():
-        if message_id in room.messages:
-            msg = room.messages[message_id]
-            room_id = rid
-            break
-
-    if not msg or not room_id:
+    # Get the message details from in-memory store using O(1) reverse index
+    room_id = MESSAGE_TO_ROOM.get(message_id)
+    if not room_id:
+        return None
+    
+    room = ROOMS.get(room_id)
+    if not room:
+        return None
+    
+    msg = room.messages.get(message_id)
+    if not msg:
         return None
 
     # Concatenate all pending chunks
@@ -292,6 +363,8 @@ async def upsert_text_chunk(
             parent_id=parent_id,
         )
         room.messages[mid] = msg
+        # Update reverse index for O(1) lookups
+        MESSAGE_TO_ROOM[mid] = room_id
         logger.debug(
             f"Created new message: mid={mid}, role={role}, chunk_idx={chunk_idx}"
         )
