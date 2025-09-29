@@ -320,7 +320,7 @@ export default function AdminRubricsPage() {
         </Col>
 
         {/* Rubric Cards */}
-        {filteredRubrics.map((rubric) => (
+        {filteredRubrics.map((rubric) => rubric.id === "a121c3fe-7559-41cf-bbcd-499a2f515af6" && (
           <Col key={rubric.id} xs={24} sm={12} md={8} lg={6}>
             <Card
               hoverable
