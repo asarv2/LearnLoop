@@ -34,7 +34,7 @@ import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import type { Dayjs } from "dayjs";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import TrainingDetailsModal from "./TrainingDetailsModal";
+// import TrainingDetailsModal from "./TrainingDetailsModal"; // Commented out - using direct navigation instead
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -95,10 +95,11 @@ export default function History() {
   const [dateRange, setDateRange] = useState<
     [Dayjs | null, Dayjs | null] | null
   >(null);
-  const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(
-    null
-  );
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Modal functionality commented out - now using direct navigation
+  // const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(
+  //   null
+  // );
+  // const [isModalOpen, setIsModalOpen] = useState(false);
 
   const { data: attempts, isLoading: attemptsLoading } = useAttempts();
   const { data: chats, isLoading: chatsLoading } = useChats();
@@ -106,15 +107,16 @@ export default function History() {
 
   const isLoading = attemptsLoading || chatsLoading || trainingsLoading;
 
-  const handleViewAttempt = (attemptId: string) => {
-    setSelectedAttemptId(attemptId);
-    setIsModalOpen(true);
-  };
+  // Modal handlers commented out - now using direct navigation
+  // const handleViewAttempt = (attemptId: string) => {
+  //   setSelectedAttemptId(attemptId);
+  //   setIsModalOpen(true);
+  // };
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setSelectedAttemptId(null);
-  };
+  // const handleCloseModal = () => {
+  //   setIsModalOpen(false);
+  //   setSelectedAttemptId(null);
+  // };
 
   // Compile attempt data with chat information
   const attemptsWithChatInfo = useMemo(() => {
@@ -289,14 +291,13 @@ export default function History() {
       key: "actions",
       render: (_, record: AttemptWithChatInfo) => (
         <Space>
-          <Button
-            type="primary"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => handleViewAttempt(record.id)}
+          <Link
+            href={`/dashboard/trainings/t/${record.training_id}/a/${record.id}`}
           >
-            View
-          </Button>
+            <Button type="primary" size="small" icon={<EyeOutlined />}>
+              View
+            </Button>
+          </Link>
         </Space>
       ),
       width: 100,
@@ -403,14 +404,14 @@ export default function History() {
         )}
       </Card>
 
-      {/* Training Details Modal */}
-      {selectedAttemptId && (
+      {/* Training Details Modal - commented out, now using direct navigation */}
+      {/* {selectedAttemptId && (
         <TrainingDetailsModal
           isOpen={isModalOpen}
           onClose={handleCloseModal}
           attemptId={selectedAttemptId}
         />
-      )}
+      )} */}
     </div>
   );
 }

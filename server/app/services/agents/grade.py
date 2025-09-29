@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import uuid
@@ -35,6 +36,34 @@ def create_safe_field_name(standard_name: str) -> str:
 grading_results: dict[str, Any] = {}
 grading_progress: dict[str, bool] = {}
 
+# Context for socket routing
+_grading_socket_context: dict[str, str] = {}  # chat_id -> socket_id
+
+
+def _emit_progress_fire_and_forget(
+    event: str, data: dict[str, Any], to: str | None = None
+) -> None:
+    """Fire-and-forget socketio emit to avoid blocking tool execution."""
+    try:
+        from app.main import get_socketio_instance
+
+        sio = get_socketio_instance()
+
+        # Use provided 'to' or try to find socket context
+        target = to
+        if not target and _grading_socket_context:
+            # Use the first available socket context (for simplicity)
+            # In a more complex setup, you'd pass chat_id to identify the right socket
+            target = next(iter(_grading_socket_context.values()))
+
+        # Create fire-and-forget task
+        if target:
+            asyncio.create_task(sio.emit(event, data, to=target))
+        else:
+            asyncio.create_task(sio.emit(event, data))
+    except Exception as e:
+        logger.warning(f"Failed to emit {event}: {e}")
+
 
 def create_grading_function(standard: Standards) -> Any:
     """Create a function tool for a specific standard."""
@@ -64,6 +93,20 @@ def create_grading_function(standard: Standards) -> Any:
         """
         grading_results[safe_name] = {"score": score, "feedback": feedback}
         grading_progress[safe_name] = True
+
+        # Emit progress event (fire-and-forget)
+        _emit_progress_fire_and_forget(
+            "grading_progress",
+            {
+                "type": "standard_grade",
+                "completed": True,
+                "message": f"Graded {standard.name}: {score}/5",
+                "standard_name": standard.name,
+                "score": score,
+                "feedback_preview": feedback[:100] + "..." if len(feedback) > 100 else feedback,
+            },
+        )
+
         logger.info(f"✓ Graded {standard.name}: {score}/5 - {feedback[:50]}...")
         return f"Graded {standard.name} with score {score}"
 
@@ -92,6 +135,19 @@ def create_strengths_function() -> Any:
         """
         grading_results["strengths"] = strengths
         grading_progress["strengths"] = True
+
+        # Emit progress event (fire-and-forget)
+        _emit_progress_fire_and_forget(
+            "grading_progress",
+            {
+                "type": "strengths",
+                "completed": True,
+                "message": f"Identified {len(strengths)} strengths",
+                "count": len(strengths),
+                "strengths_preview": [s[:50] + "..." if len(s) > 50 else s for s in strengths[:3]],
+            },
+        )
+
         logger.info(
             f"✓ Identified {len(strengths)} strengths: {[s[:30] + '...' if len(s) > 30 else s for s in strengths[:3]]}"
         )
@@ -118,6 +174,19 @@ def create_improvements_function() -> Any:
         """
         grading_results["improvements"] = improvements
         grading_progress["improvements"] = True
+
+        # Emit progress event (fire-and-forget)
+        _emit_progress_fire_and_forget(
+            "grading_progress",
+            {
+                "type": "improvements",
+                "completed": True,
+                "message": f"Identified {len(improvements)} areas for improvement",
+                "count": len(improvements),
+                "improvements_preview": [i[:50] + "..." if len(i) > 50 else i for i in improvements[:3]],
+            },
+        )
+
         logger.info(
             f"✓ Identified {len(improvements)} improvements: {[i[:30] + '...' if len(i) > 30 else i for i in improvements[:3]]}"
         )
@@ -206,6 +275,7 @@ async def run_grading_agent(
     chat_id: uuid.UUID,
     rubric_id: uuid.UUID,
     session: Session,
+    socket_id: str | None = None,
 ) -> str:
     """
     This function is used to run the grading agent for assessment chats.
@@ -214,6 +284,8 @@ async def run_grading_agent(
     Args:
         chat_id: The ID of the chat
         rubric_id: The ID of the rubric to use for grading
+        session: Database session
+        socket_id: Optional socket ID for progress events
 
     Returns:
         A string of the rubric_grade id.
@@ -223,6 +295,10 @@ async def run_grading_agent(
         global grading_results, grading_progress
         grading_results.clear()
         grading_progress.clear()
+
+        # Store socket context for routing progress events
+        if socket_id:
+            _grading_socket_context[str(chat_id)] = socket_id
 
         # Get the chat from the chat_id
         chat = session.exec(select(Chats).where(Chats.id == chat_id)).one()
@@ -256,6 +332,18 @@ async def run_grading_agent(
             f"Starting parallel grading for chat {chat_id} with rubric {rubric.name}"
         )
         logger.info(f"Found {len(standards)} standards")
+
+        # Emit initial progress event
+        _emit_progress_fire_and_forget(
+            "grading_progress",
+            {
+                "type": "start",
+                "message": "Starting grading process",
+                "rubric_name": rubric.name,
+                "standards_count": len(standards),
+                "total_tools": len(standards) + 2,  # standards + strengths + improvements
+            },
+        )
 
         # Build rubric input using utility function
         rubric_input = get_dynamic_rubric(rubric, list(standards))
@@ -471,6 +559,21 @@ async def run_grading_agent(
         session.refresh(rubric_grade)
 
         logger.info(f"Grading completed successfully with grade ID: {rubric_grade.id}")
+
+        # Emit completion progress event
+        _emit_progress_fire_and_forget(
+            "grading_progress",
+            {
+                "type": "complete",
+                "message": "Grading completed successfully",
+                "grade_id": str(rubric_grade.id),
+                "total_score": score,
+                "standards_graded": standard_grade_count,
+                "strengths_count": len(strengths_list),
+                "improvements_count": len(improvements_list),
+            },
+        )
+
         return str(rubric_grade.id)
 
     except Exception as e:

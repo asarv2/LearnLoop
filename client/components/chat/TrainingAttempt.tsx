@@ -46,6 +46,7 @@ function TrainingAttemptContent() {
     showFeedback,
     setShowFeedback,
     endTraining,
+    gradingProgress, // ✅ NEW: Grading progress state
   } = useTraining();
 
   // Get scenario data from the chat's scenario_id (the authoritative source)
@@ -373,13 +374,14 @@ function TrainingAttemptContent() {
             </Box>
           )}
 
-          {/* Feedback Modal - only show if feedback exists */}
-          {hasFeedback() && (
+          {/* Feedback Modal - show if grading is in progress or feedback exists */}
+          {(gradingProgress.isGrading || hasFeedback()) && (
             <FeedbackModal
               isOpen={showFeedback}
               onClose={() => setShowFeedback(false)}
               score={null}
               chat={chat}
+              gradingProgress={gradingProgress}
             />
           )}
 

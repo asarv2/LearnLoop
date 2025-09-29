@@ -44,8 +44,26 @@ active_training_runs: dict[str, Any] = {}
 _recent_joins: dict[str, float] = {}
 
 
+# Idempotency guard for hint generation (chat_id:message_id -> timestamp)
+_hint_generation_guard: dict[str, float] = {}
+
+
 async def _schedule_hints_for_message(chat_id: str, message_id: str) -> None:
     """Background hint generation keyed to a specific assistant message."""
+    # Idempotency guard: prevent duplicate hint generation for same message
+    hint_key = f"{chat_id}:{message_id}"
+    now = time.time()
+    last_scheduled = _hint_generation_guard.get(hint_key, 0.0)
+    
+    # Ignore if hints were recently scheduled (within 5 seconds)
+    if (now - last_scheduled) < 5.0:
+        logger.info(
+            f"Ignoring duplicate hint generation for message {message_id} in chat {chat_id}"
+        )
+        return
+    
+    _hint_generation_guard[hint_key] = now
+    
     try:
 
         def _sync(msg_uuid: uuid.UUID) -> dict[str, Any]:
@@ -69,7 +87,14 @@ async def _schedule_hints_for_message(chat_id: str, message_id: str) -> None:
             room=chat_id,
         )
     except Exception as e:
+        logger.exception(f"Failed to generate hints for message {message_id}: {e}")
         await emit_error(chat_id, f"Failed to generate hints: {e}")
+    finally:
+        # Clean up old entries (keep last 100)
+        if len(_hint_generation_guard) > 100:
+            sorted_keys = sorted(_hint_generation_guard.items(), key=lambda x: x[1])
+            for key, _ in sorted_keys[:-100]:
+                _hint_generation_guard.pop(key, None)
 
 
 def get_sio_instance() -> socketio.AsyncServer:
@@ -791,7 +816,7 @@ async def handle_end_training(sid: str, data: dict[str, Any]) -> None:
                     grading_session = next(get_session())
                     try:
                         rubric_grade_id = await run_grading_agent(
-                            chat_id, rubric_id, grading_session
+                            chat_id, rubric_id, grading_session, socket_id=sid
                         )
                     finally:
                         grading_session.close()
@@ -1038,6 +1063,20 @@ async def handle_get_hints(sid: str, data: dict[str, Any]) -> None:
         await emit_error(sid, "Missing chat_id or message_id")
         return
 
+    # Idempotency guard: prevent duplicate hint generation
+    hint_key = f"{chat_id}:{message_id}"
+    now = time.time()
+    last_scheduled = _hint_generation_guard.get(hint_key, 0.0)
+    
+    # Ignore if hints were recently scheduled (within 5 seconds)
+    if (now - last_scheduled) < 5.0:
+        logger.info(
+            f"Ignoring duplicate hint request for message {message_id} in chat {chat_id}"
+        )
+        return
+    
+    _hint_generation_guard[hint_key] = now
+
     # Fire a background job in a thread so the main loop stays hot.
     async def _bg() -> None:
         try:
@@ -1067,6 +1106,12 @@ async def handle_get_hints(sid: str, data: dict[str, Any]) -> None:
         except Exception as e:
             logger.exception("Error generating hints (bg)")
             await emit_error(sid, f"Failed to generate hints: {e}")
+        finally:
+            # Clean up old entries (keep last 100)
+            if len(_hint_generation_guard) > 100:
+                sorted_keys = sorted(_hint_generation_guard.items(), key=lambda x: x[1])
+                for key, _ in sorted_keys[:-100]:
+                    _hint_generation_guard.pop(key, None)
 
     # Don't await; schedule and return immediately.
     asyncio.create_task(_bg())
