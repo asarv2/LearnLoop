@@ -85,6 +85,7 @@ class EmailSubscriptions(_Base, table=True):
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     status: Optional[str] = Field(default=None, sa_column=Column('status', Text, default=r'active'))
+    source: Optional[str] = Field(default=None, sa_column=Column('source', Text, default=r'landing_page'))
 
 
 class Fields(_Base, table=True):

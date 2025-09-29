@@ -1,5 +1,4 @@
 import {
-  Award,
   CheckCircle2,
   Clock,
   Mail,
@@ -509,7 +508,7 @@ const LandingPage = () => {
           data.error || "Something went wrong. Please try again."
         );
       }
-    } catch (error) {
+    } catch {
       setSubscriptionStatus("error");
       setSubscriptionMessage(
         "Network error. Please check your connection and try again."
@@ -540,27 +539,6 @@ const LandingPage = () => {
       description:
         "Receive a detailed score breakdown and personalized feedback to help you improve for next time.",
       icon: <TrendingUp className="w-6 h-6" />,
-    },
-  ];
-
-  const features = [
-    {
-      icon: <Users className="w-8 h-8 text-blue-600" />,
-      title: "Multiple Personality Types",
-      description:
-        "Practice with different personality types - confused, defensive, dissapointed, etc...",
-    },
-    {
-      icon: <MessageSquare className="w-8 h-8 text-blue-600" />,
-      title: "Dynamic Hints",
-      description:
-        "Get dynamic hints during conversations when you need help knowing what to say",
-    },
-    {
-      icon: <Award className="w-8 h-8 text-blue-600" />,
-      title: "Voice Training",
-      description:
-        "Voice-based training that feels natural and realistic, just like an actual conversation",
     },
   ];
 
@@ -624,13 +602,13 @@ const LandingPage = () => {
 
       {/* Hero Section - Redesigned */}
       <section className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-        <div className="max-w-7xl mx-auto px-6 py-20 lg:py-28">
+        <div className="max-w-[88rem] mx-auto px-6 py-20 lg:py-28">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
             {/* Left Side - Text */}
             <div className="space-y-8">
               <div className="space-y-6">
                 <h1 className="text-5xl lg:text-6xl font-bold text-gray-900 leading-tight">
-                  Your People Deserve Better Training — Not Just Another Boring One-Size-Fits-All
+                  Your People Deserve Trainings That Engage, Not Lecture
                 </h1>
 
                 <p className="text-xl text-gray-600 leading-relaxed">
@@ -658,7 +636,7 @@ const LandingPage = () => {
           </div>
 
           {/* Benefits - Centered Below Hero Content */}
-          <div className="max-w-4xl mx-auto pt-16">
+          <div className="max-w-5xl mx-auto pt-16">
             <div className="grid grid-cols-2 gap-8 pt-8 border-t border-gray-200">
               {benefits.map((benefit, index) => (
                 <div key={index} className="flex items-center space-x-3">
@@ -765,7 +743,7 @@ const LandingPage = () => {
       {/* Email Subscription Section - Professional Design */}
       <section
         id="subscribe"
-        className="py-20 lg:py-28 bg-gradient-to-br from-blue-50 via-white to-indigo-50"
+        className="py-12 lg:py-16 bg-gradient-to-br from-blue-50 via-white to-indigo-50"
       >
         <div className="max-w-4xl mx-auto px-6">
           <div className="text-center mb-12">
@@ -777,7 +755,7 @@ const LandingPage = () => {
             </h2>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
               Join our early access program and be the first to experience the
-              future of workplace training.
+              future of workplace training
             </p>
           </div>
 
@@ -834,50 +812,13 @@ const LandingPage = () => {
 
               <p className="text-sm text-gray-500 text-center">
                 Be part of our founding community and help shape the future of
-                workplace training.
+                workplace training
                 <br />
                 <span className="font-medium">
                   No spam, unsubscribe at any time.
                 </span>
               </p>
             </form>
-          </div>
-
-          {/* Trust Indicators */}
-          <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
-            <div className="flex flex-col items-center">
-              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-3">
-                <Shield className="w-6 h-6 text-blue-600" />
-              </div>
-              <h3 className="font-semibold text-gray-900 mb-1">
-                Privacy First
-              </h3>
-              <p className="text-sm text-gray-600">
-                Your email is secure and will never be shared
-              </p>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mb-3">
-                <Award className="w-6 h-6 text-green-600" />
-              </div>
-              <h3 className="font-semibold text-gray-900 mb-1">
-                Exclusive Access
-              </h3>
-              <p className="text-sm text-gray-600">
-                Be among the first organizations to use LearnLoop
-              </p>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-3">
-                <Users className="w-6 h-6 text-purple-600" />
-              </div>
-              <h3 className="font-semibold text-gray-900 mb-1">
-                Direct Communication
-              </h3>
-              <p className="text-sm text-gray-600">
-                Get personal updates from our team on your progress
-              </p>
-            </div>
           </div>
         </div>
       </section>

@@ -156,7 +156,7 @@ export default function AdminRubricsPage() {
             fontSize: "11px",
             lineHeight: "1.3",
             padding: "8px 4px",
-            backgroundColor: record.points ? "#fff2f0" : "#fafafa",
+            backgroundColor: record.items?.[0] ? "#fff2f0" : "#fafafa",
             borderRadius: "4px",
             minHeight: "40px",
             display: "flex",
@@ -164,7 +164,7 @@ export default function AdminRubricsPage() {
             justifyContent: "center",
           }}
         >
-          {record.points || "-"}
+          {record.items?.[0] || "-"}
         </div>
       ),
     },
@@ -179,7 +179,7 @@ export default function AdminRubricsPage() {
             fontSize: "11px",
             lineHeight: "1.3",
             padding: "8px 4px",
-            backgroundColor: record.points ? "#fff7e6" : "#fafafa",
+            backgroundColor: record.items?.[1] ? "#fff7e6" : "#fafafa",
             borderRadius: "4px",
             minHeight: "40px",
             display: "flex",
@@ -187,7 +187,7 @@ export default function AdminRubricsPage() {
             justifyContent: "center",
           }}
         >
-          {record.points || "-"}
+          {record.items?.[1] || "-"}
         </div>
       ),
     },
@@ -202,7 +202,7 @@ export default function AdminRubricsPage() {
             fontSize: "11px",
             lineHeight: "1.3",
             padding: "8px 4px",
-            backgroundColor: record.points ? "#f6ffed" : "#fafafa",
+            backgroundColor: record.items?.[2] ? "#f6ffed" : "#fafafa",
             borderRadius: "4px",
             minHeight: "40px",
             display: "flex",
@@ -210,7 +210,7 @@ export default function AdminRubricsPage() {
             justifyContent: "center",
           }}
         >
-          {record.points || "-"}
+          {record.items?.[2] || "-"}
         </div>
       ),
     },
@@ -225,7 +225,7 @@ export default function AdminRubricsPage() {
             fontSize: "11px",
             lineHeight: "1.3",
             padding: "8px 4px",
-            backgroundColor: record.points ? "#e6f7ff" : "#fafafa",
+            backgroundColor: record.items?.[3] ? "#e6f7ff" : "#fafafa",
             borderRadius: "4px",
             minHeight: "40px",
             display: "flex",
@@ -233,7 +233,7 @@ export default function AdminRubricsPage() {
             justifyContent: "center",
           }}
         >
-          {record.points || "-"}
+          {record.items?.[3] || "-"}
         </div>
       ),
     },
@@ -248,7 +248,7 @@ export default function AdminRubricsPage() {
             fontSize: "11px",
             lineHeight: "1.3",
             padding: "8px 4px",
-            backgroundColor: record.points ? "#f0f5ff" : "#fafafa",
+            backgroundColor: record.items?.[4] ? "#f0f5ff" : "#fafafa",
             borderRadius: "4px",
             minHeight: "40px",
             display: "flex",
@@ -256,7 +256,7 @@ export default function AdminRubricsPage() {
             justifyContent: "center",
           }}
         >
-          {record.points || "-"}
+          {record.items?.[4] || "-"}
         </div>
       ),
     },

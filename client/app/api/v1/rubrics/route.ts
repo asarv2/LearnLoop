@@ -35,9 +35,15 @@ export async function GET(request: Request) {
     }
 
     // Build query - show rubrics from user's company or global rubrics (company = null)
+    // Exclude custom training rubrics from admin interface
     let query = supabase
       .from("rubrics")
       .select("*")
+      .not(
+        "name",
+        "in",
+        "(Interview Assessment Rubric,Termination Conversation Rubric,Idea Pitch Assessment Rubric,Constructive Feedback Rubric)"
+      )
       .order("created_at", { ascending: false });
 
     if (company) {
