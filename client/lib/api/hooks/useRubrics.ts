@@ -16,7 +16,7 @@ export interface Standard {
   id: string;
   name: string;
   description: string | null;
-  points: number | null;
+  items: string[] | null;
   order_index: number | null;
   created_at: string | null;
   updated_at: string | null;
