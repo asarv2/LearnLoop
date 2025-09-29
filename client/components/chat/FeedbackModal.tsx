@@ -1,13 +1,14 @@
 "use client";
 
-import { useRubrics } from "@/lib/api/hooks/useRubrics";
+import { useRubrics, useRubricStandards } from "@/lib/api/hooks/useRubrics";
 import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import type { ChatWithAllIncludes } from "@/lib/repos/chatRepo";
 import type { Chat, RubricGrade, StandardGrade } from "@/types";
 import * as Accordion from "@radix-ui/react-accordion";
 import * as Dialog from "@radix-ui/react-dialog";
-import { ChevronDownIcon, Cross2Icon } from "@radix-ui/react-icons";
-import { Box, Button, Flex, Heading, Text } from "@radix-ui/themes";
+import { CheckIcon, ChevronDownIcon, Cross2Icon } from "@radix-ui/react-icons";
+import { Box, Button, Flex, Heading, Spinner, Text } from "@radix-ui/themes";
+import { useEffect, useRef, useState } from "react";
 
 const TEXT_COLOR = "#000000"; // Black text for all content
 
@@ -78,10 +79,84 @@ export default function FeedbackModal({
   const { data: scenarios } = useScenariosByTrainingId(chat?.training_id || "");
   const { data: rubrics } = useRubrics(null);
 
+  // Artificial loading state management
+  const [artificialProgress, setArtificialProgress] = useState({
+    currentStep: 0,
+    isRunning: false,
+  });
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isRunningRef = useRef(false);
+
+  // Get rubric ID for fetching standards
+  const rubric_id = scenarios?.[0]?.rubric_id;
+  const { data: rubricWithStandards } = useRubricStandards(rubric_id || null);
+
   const cleanText = (text: string) => {
     // Remove markdown bold formatting (**text**)
     return text.replace(/\*\*(.*?)\*\*/g, "$1");
   };
+
+  // Debug: Log grading progress changes
+  useEffect(() => {
+    if (gradingProgress?.isGrading) {
+      console.log("FeedbackModal - Grading Progress Update:", {
+        isGrading: gradingProgress.isGrading,
+        currentStep: gradingProgress.currentStep,
+        completedSteps: gradingProgress.completedSteps,
+        standards_count: gradingProgress.progress.standards_count,
+        standards_graded: gradingProgress.progress.standards_graded,
+      });
+    }
+  }, [gradingProgress]);
+
+  // Store standards count in a ref so the interval can access the latest value
+  const standardsCountRef = useRef(0);
+  standardsCountRef.current = gradingProgress?.progress?.standards_count || 0;
+
+  // Effect to manage artificial loading progress
+  useEffect(() => {
+    const isGrading = gradingProgress?.isGrading;
+
+    if (isGrading && !isRunningRef.current) {
+      // Start artificial loading - begin at step 0 (no steps completed yet)
+      console.log("Starting artificial progress for grading", {
+        standardsCount: standardsCountRef.current,
+      });
+      isRunningRef.current = true;
+      setArtificialProgress({ currentStep: 0, isRunning: true });
+
+      const interval = setInterval(() => {
+        setArtificialProgress((prev) => {
+          const totalSteps = standardsCountRef.current + 3; // +3 for start, strengths, improvements
+          // Advance to next step if we haven't completed all steps
+          if (prev.currentStep < totalSteps) {
+            const nextStep = prev.currentStep + 1;
+            console.log(`Artificial progress: ${nextStep}/${totalSteps}`);
+            return { ...prev, currentStep: nextStep };
+          }
+          return prev; // Don't advance past the last step
+        });
+      }, 1000); // Advance one step per second
+
+      progressIntervalRef.current = interval;
+    } else if (!isGrading && isRunningRef.current) {
+      // Stop artificial loading
+      console.log("Stopping artificial progress - grading complete");
+      isRunningRef.current = false;
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+      setArtificialProgress({ currentStep: 0, isRunning: false });
+    }
+
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+        progressIntervalRef.current = null;
+      }
+    };
+  }, [gradingProgress?.isGrading]);
 
   const getScoreColorHex = (score: number, maxScore: number = 5) => {
     // Convert to percentage for color mapping
@@ -94,7 +169,6 @@ export default function FeedbackModal({
 
   // Extract rubric and standard grades if present on chat include
   const chatWithIncludes = chat as unknown as ChatWithAllIncludes | undefined;
-  const rubric_id = scenarios?.[0]?.rubric_id;
   const rubric = rubrics?.find((r) => r.id === rubric_id);
   const rubricGrades: RubricGrade[] =
     (chatWithIncludes?.rubric_grades as unknown as RubricGrade[]) || [];
@@ -111,6 +185,66 @@ export default function FeedbackModal({
 
   // Show grading progress if currently grading
   if (gradingProgress?.isGrading) {
+    // Get standards from the rubric to use actual names
+    const rubricStandards = rubricWithStandards?.standards || [];
+
+    // Create grading steps based on progress data with artificial loading
+    const gradingSteps = [
+      {
+        label: "Starting grading process",
+        complete: gradingProgress.completedSteps.includes("start"),
+        stepIndex: 0,
+      },
+      ...(gradingProgress.progress.standards_count
+        ? Array.from(
+            { length: gradingProgress.progress.standards_count },
+            (_, i) => {
+              // Show loading skeleton if standards aren't loaded yet
+              if (rubricStandards.length === 0) {
+                return {
+                  label: "Grading standards...",
+                  complete: gradingProgress.progress.standards_graded
+                    ? gradingProgress.progress.standards_graded > i
+                    : false,
+                  stepIndex: i + 1,
+                };
+              }
+              // Use actual standard name if available, fallback to generic name
+              const standardName =
+                rubricStandards[i]?.name || `Standard ${i + 1}`;
+              return {
+                label: `Grading ${standardName}`,
+                complete: gradingProgress.progress.standards_graded
+                  ? gradingProgress.progress.standards_graded > i
+                  : false,
+                stepIndex: i + 1,
+              };
+            }
+          )
+        : []),
+      {
+        label: "Identifying strengths",
+        complete: gradingProgress.completedSteps.includes("strengths"),
+        stepIndex: (gradingProgress.progress.standards_count || 0) + 1,
+      },
+      {
+        label: "Identifying improvements",
+        complete: gradingProgress.completedSteps.includes("improvements"),
+        stepIndex: (gradingProgress.progress.standards_count || 0) + 2,
+      },
+    ];
+
+    // Use artificial progress for display, but real progress for completion
+    const displaySteps = gradingSteps.map((step) => ({
+      ...step,
+      // A step is complete if server says so OR if artificial progress has passed it
+      isComplete:
+        step.complete || artificialProgress.currentStep > step.stepIndex,
+    }));
+
+    const completed = displaySteps.filter((s) => s.isComplete).length;
+    const percent = Math.round((completed / displaySteps.length) * 100);
+
     return (
       <Dialog.Root open={isOpen} onOpenChange={onClose}>
         <Dialog.Portal>
@@ -130,107 +264,134 @@ export default function FeedbackModal({
               transform: "translate(-50%, -50%)",
               backgroundColor: "white",
               borderRadius: "8px",
-              padding: "32px",
+              padding: "0",
               width: "90vw",
               maxWidth: "600px",
+              height: "45vh",
+              overflow: "hidden",
               boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
               border: "1px solid var(--gray-6)",
             }}
           >
-            <Flex
-              direction="column"
-              gap="6"
-              align="center"
-              style={{ textAlign: "center" }}
+            {/* Header */}
+            <Box
+              style={{
+                background: "var(--gray-1)",
+                padding: "16px 24px",
+                borderBottom: "1px solid var(--gray-6)",
+              }}
             >
-              <Dialog.Title asChild>
-                <Heading size="5" weight="medium" style={{ color: "#000000" }}>
-                  Grading in Progress
-                </Heading>
-              </Dialog.Title>
+              <Flex align="center" justify="between">
+                <Flex align="center" gap="4">
+                  <Dialog.Title asChild>
+                    <Heading
+                      size="4"
+                      weight="medium"
+                      style={{ color: "#000000" }}
+                    >
+                      {chat?.title || "Assessment Feedback"}
+                    </Heading>
+                  </Dialog.Title>
+                </Flex>
+                <Dialog.Close asChild>
+                  <Button
+                    variant="ghost"
+                    size="2"
+                    style={{
+                      backgroundColor: "rgba(239, 68, 68, 0.1)",
+                      color: "#ef4444",
+                      border: "1px solid rgba(239, 68, 68, 0.2)",
+                      borderRadius: "6px",
+                    }}
+                  >
+                    <Cross2Icon width="16" height="16" />
+                  </Button>
+                </Dialog.Close>
+              </Flex>
+            </Box>
 
-              {/* Progress indicator */}
-              <Box
-                style={{
-                  width: "100%",
-                  backgroundColor: "var(--gray-2)",
-                  borderRadius: "8px",
-                  padding: "16px",
-                  marginBottom: "16px",
-                }}
+            {/* Main Content */}
+            <Box
+              style={{
+                flex: 1,
+                overflow: "auto",
+                height: "calc(45vh - 50px)",
+                background: "white",
+                padding: "20px",
+              }}
+            >
+              <Flex
+                direction="column"
+                gap="6"
+                align="start"
+                style={{ textAlign: "left" }}
               >
-                <Text
-                  size="3"
-                  style={{ color: "#000000", marginBottom: "12px" }}
-                >
-                  {gradingProgress.currentStep}
-                </Text>
-
-                {/* Progress bar */}
-                <Box
-                  style={{
-                    width: "100%",
-                    height: "8px",
-                    backgroundColor: "var(--gray-4)",
-                    borderRadius: "4px",
-                    overflow: "hidden",
-                  }}
-                >
+                {/* Progress section - matching NewScenario exactly */}
+                <Box style={{ width: "100%" }}>
                   <Box
                     style={{
-                      height: "100%",
-                      backgroundColor: "#3b82f6",
-                      width: `${Math.min(
-                        100,
-                        (gradingProgress.completedSteps.length /
-                          (gradingProgress.progress.total_tools || 1)) *
-                          100
-                      )}%`,
-                      transition: "width 0.3s ease",
+                      width: "100%",
+                      height: "8px",
+                      background: "var(--gray-4)",
+                      borderRadius: "999px",
+                      overflow: "hidden",
+                      marginBottom: "8px",
                     }}
-                  />
-                </Box>
-
-                <Text size="2" style={{ color: "#64748b", marginTop: "8px" }}>
-                  {gradingProgress.completedSteps.length} of{" "}
-                  {gradingProgress.progress.total_tools || 0} steps completed
-                </Text>
-              </Box>
-
-              {/* Latest update */}
-              {gradingProgress.latestUpdate && (
-                <Box
-                  style={{
-                    width: "100%",
-                    backgroundColor: "var(--gray-1)",
-                    borderRadius: "6px",
-                    padding: "12px",
-                    border: "1px solid var(--gray-4)",
-                  }}
-                >
-                  <Text
-                    size="2"
-                    style={{ color: "#000000", fontWeight: "500" }}
                   >
-                    Latest: {gradingProgress.latestUpdate.message}
-                  </Text>
-                  {gradingProgress.latestUpdate.standard_name && (
-                    <Text
-                      size="2"
-                      style={{ color: "#64748b", marginTop: "4px" }}
-                    >
-                      {gradingProgress.latestUpdate.standard_name}:{" "}
-                      {gradingProgress.latestUpdate.score}/5
-                    </Text>
-                  )}
-                </Box>
-              )}
+                    <Box
+                      style={{
+                        width: `${percent}%`,
+                        height: "100%",
+                        background: "var(--violet-9)",
+                        transition: "width 300ms ease",
+                      }}
+                    />
+                  </Box>
 
-              <Text size="3" style={{ color: "#000000", lineHeight: "1.6" }}>
-                Please wait while we analyze your performance and generate
-                detailed feedback...
-              </Text>
-            </Flex>
+                  <Flex direction="column" gap="2">
+                    {displaySteps.map((step, idx) => (
+                      <Flex key={idx} align="center" gap="4">
+                        <Box
+                          style={{
+                            width: "18px",
+                            height: "18px",
+                            borderRadius: "50%",
+                            border: `2px solid ${
+                              step.isComplete
+                                ? "var(--green-9)"
+                                : "var(--gray-7)"
+                            }`,
+                            background: step.isComplete
+                              ? "var(--green-9)"
+                              : "transparent",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {step.isComplete ? (
+                            <CheckIcon width="10" height="10" color="white" />
+                          ) : (
+                            <Spinner size="1" />
+                          )}
+                        </Box>
+                        <Text
+                          size="3"
+                          style={{
+                            opacity: step.isComplete ? 0.8 : 1,
+                            flex: 1,
+                            paddingLeft: "8px",
+                          }}
+                        >
+                          {step.label}
+                        </Text>
+                      </Flex>
+                    ))}
+                  </Flex>
+                </Box>
+              </Flex>
+            </Box>
           </Dialog.Content>
         </Dialog.Portal>
 

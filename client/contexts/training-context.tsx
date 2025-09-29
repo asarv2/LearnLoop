@@ -232,7 +232,7 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
           case "start":
             newProgress.isGrading = true;
             newProgress.currentStep = "Starting grading process";
-            newProgress.completedSteps = [];
+            newProgress.completedSteps = ["start"];
             newProgress.progress = {
               rubric_name: data.rubric_name,
               standards_count: data.standards_count,
