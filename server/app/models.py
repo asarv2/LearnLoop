@@ -70,6 +70,24 @@ class Users(_Base, table=True):
     logs: List['Logs'] = Relationship(back_populates='user')
 
 
+class EmailSubscriptions(_Base, table=True):
+    __tablename__ = 'email_subscriptions'
+    __table_args__ = (
+        CheckConstraint("status = ANY (ARRAY['active'::text, 'unsubscribed'::text])", name='email_subscriptions_status_check'),
+        PrimaryKeyConstraint('id', name='email_subscriptions_pkey'),
+        UniqueConstraint('email', name='email_subscriptions_email_key'),
+        Index('idx_email_subscriptions_created_at', 'created_at'),
+        Index('idx_email_subscriptions_email', 'email')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    email: str = Field(sa_column=Column('email', Text))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    status: Optional[str] = Field(default=None, sa_column=Column('status', Text, default=r'active'))
+    source: Optional[str] = Field(default=None, sa_column=Column('source', Text, default=r'landing_page'))
+
+
 class Fields(_Base, table=True):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='fields_pkey'),
