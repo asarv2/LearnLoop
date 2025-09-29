@@ -9,6 +9,8 @@
 import { useAttempts } from "@/lib/api/hooks/useAttempts";
 import { useChats } from "@/lib/api/hooks/useChats";
 import { useRubricGradesByChat } from "@/lib/api/hooks/useRubricGrades";
+import { useRubrics } from "@/lib/api/hooks/useRubrics";
+import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import { useTrainings } from "@/lib/api/hooks/useTrainings";
 import { Attempt, Training } from "@/types";
 import {
@@ -43,14 +45,24 @@ const { RangePicker } = DatePicker;
 function ChatScore({
   chatId,
   isCompleted,
+  trainingId,
 }: {
   chatId: string;
   isCompleted: boolean;
+  trainingId?: string;
 }) {
   const { data: grades, isLoading } = useRubricGradesByChat(
     chatId,
     isCompleted
   );
+
+  // Fetch rubric data like FeedbackModal does
+  const { data: scenarios } = useScenariosByTrainingId(trainingId || "");
+  const { data: rubrics } = useRubrics(null);
+
+  // Get the rubric for this training
+  const rubric_id = scenarios?.[0]?.rubric_id;
+  const rubric = rubrics?.find((r) => r.id === rubric_id);
 
   if (!isCompleted) {
     return <Text>Incomplete</Text>;
@@ -64,12 +76,17 @@ function ChatScore({
     return <Text>No score</Text>;
   }
 
-  // Calculate average score from all rubric grades
-  const totalScore = grades.reduce((sum, grade) => sum + (grade.score || 0), 0);
-  const averageScore =
-    grades.length > 0 ? Math.round(totalScore / grades.length) : 0;
+  // Calculate percentage score based on rubric total_points (following FeedbackModal pattern)
+  const totalPointsEarned = grades.reduce(
+    (sum, grade) => sum + (grade.score || 0),
+    0
+  );
 
-  return <Text>{averageScore}%</Text>;
+  // Use the actual rubric's total_points, fallback to 100 if not available
+  const totalPoints = rubric?.total_points || 100;
+  const percentageScore = Math.round((totalPointsEarned / totalPoints) * 100);
+
+  return <Text>{percentageScore}%</Text>;
 }
 
 // Extended attempt type with compiled chat information
@@ -268,6 +285,7 @@ export default function History() {
         <ChatScore
           chatId={chatId || ""}
           isCompleted={record.chatInfo?.isCompleted || false}
+          trainingId={record.training_id || undefined}
         />
       ),
       width: 140,
