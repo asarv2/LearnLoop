@@ -1441,12 +1441,21 @@ export default function ChatArea({
               // Only show retry once the user message is fully completed (display mode)
               const isDisplayMode = Boolean(message.completed);
 
+              // Check if this is the very first user message in the conversation
+              const isFirstUserMessage =
+                displayMessages
+                  .filter(
+                    (m) => m.role === "user" || m.persona_id === userPersona?.id
+                  )
+                  .indexOf(message) === 0;
+
               // Only allow "Retry from here" if this is a user message, it has a parent assistant,
-              // and we're in display mode (removed userVoice gate to allow typed message retry):
+              // we're in display mode, and it's NOT the very first user message:
               const showRetry =
                 isDisplayMode && // <— NEW hard gate
                 isUserMessage &&
-                Boolean(assistantParent?.id);
+                Boolean(assistantParent?.id) &&
+                !isFirstUserMessage; // Don't show retry on the very first user message
 
               return (
                 <React.Fragment key={message.id}>
