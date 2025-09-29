@@ -603,9 +603,9 @@ const LandingPage = () => {
       {/* Hero Section - Redesigned */}
       <section className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50">
         <div className="max-w-[88rem] mx-auto px-6 py-20 lg:py-28">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+          <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
             {/* Left Side - Text */}
-            <div className="space-y-8">
+            <div className="space-y-8 pl-12 lg:pl-20">
               <div className="space-y-6">
                 <h1 className="text-5xl lg:text-6xl font-bold text-gray-900 leading-tight">
                   Your People Deserve Trainings That Engage, Not Lecture
@@ -750,10 +750,10 @@ const LandingPage = () => {
             <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl mb-6">
               <Mail className="w-8 h-8 text-white" />
             </div>
-            <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-6">
+            <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-6 max-w-3xl mx-auto leading-tight">
               Be Among the First to Transform Your Training
             </h2>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
+            <p className="text-xl text-gray-600 max-w-4xl mx-auto leading-relaxed">
               Join our early access program and be the first to experience the
               future of workplace training
             </p>
