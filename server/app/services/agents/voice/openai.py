@@ -1664,7 +1664,7 @@ class OpenAIAgent(Agent):
             self._user_anchor.update(
                 {
                     "msg_id": msg_id,
-                    "chunk_idx": 0,
+                    "chunk_idx": 1,
                     "had_text": False,
                     "open": True,
                     "parent_id": parent,
