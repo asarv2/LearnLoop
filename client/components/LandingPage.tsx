@@ -2,6 +2,7 @@ import {
   Award,
   CheckCircle2,
   Clock,
+  Mail,
   MessageSquare,
   Mic,
   Shield,
@@ -469,9 +470,53 @@ const LandingPage = () => {
   const [previewPosition, setPreviewPosition] = useState("");
   const [previewPersonality, setPreviewPersonality] = useState("");
 
+  // Email subscription state
+  const [email, setEmail] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<
+    "idle" | "success" | "error"
+  >("idle");
+  const [subscriptionMessage, setSubscriptionMessage] = useState("");
+
   const handleGetStarted = () => {
     setAuthMode("signup");
     setAuthModalOpen(true);
+  };
+
+  const handleEmailSubscription = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setSubscriptionStatus("idle");
+
+    try {
+      const response = await fetch("/api/v1/subscribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSubscriptionStatus("success");
+        setSubscriptionMessage(data.message);
+        setEmail("");
+      } else {
+        setSubscriptionStatus("error");
+        setSubscriptionMessage(
+          data.error || "Something went wrong. Please try again."
+        );
+      }
+    } catch (error) {
+      setSubscriptionStatus("error");
+      setSubscriptionMessage(
+        "Network error. Please check your connection and try again."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const processSteps = [
@@ -521,20 +566,23 @@ const LandingPage = () => {
 
   const benefits = [
     {
-      icon: <Shield className="w-5 h-5" />,
-      text: "Practice-based learning, not passive content — employees learn by doing, not just watching",
+      icon: <CheckCircle2 className="w-5 h-5" />,
+      text: "Technology utilized by over 200 users across leading organizations, delivering measurable skill improvements and lasting behavior change",
+      highlight: "200",
     },
+
     {
       icon: <Clock className="w-5 h-5" />,
       text: "50k+ minutes practiced — real conversations with measurable skill development and confidence building",
+      highlight: "50k+",
     },
     {
       icon: <TrendingUp className="w-5 h-5" />,
-      text: "Built to scale with your needs — from tough conversations today to onboarding, leadership, and DEI tomorrow",
+      text: "Built to scale with your needs — from tough conversations today to offboarding and leadership tomorrow",
     },
     {
-      icon: <CheckCircle2 className="w-5 h-5" />,
-      text: "Technology utilized by over 200 users across leading organizations, delivering measurable skill improvements and lasting behavior change",
+      icon: <Shield className="w-5 h-5" />,
+      text: "Practice-based learning, not passive content — employees learn by doing, not just watching",
     },
   ];
 
@@ -582,12 +630,12 @@ const LandingPage = () => {
             <div className="space-y-8">
               <div className="space-y-6">
                 <h1 className="text-5xl lg:text-6xl font-bold text-gray-900 leading-tight">
-                  Your People Deserve Better Training — Not Another Slide Deck
+                  Your People Deserve Better Training — Not Just Another Boring One-Size-Fits-All
                 </h1>
 
                 <p className="text-xl text-gray-600 leading-relaxed">
                   Traditional training doesn&apos;t stick. LearnLoop transforms
-                  how employees build skills — through safe, interactive,
+                  how employees build skills — through custom, interactive,
                   AI-powered practice that turns theory into lasting behavior
                   change.
                 </p>
@@ -618,19 +666,25 @@ const LandingPage = () => {
                     {benefit.icon}
                   </div>
                   <span className="text-sm text-gray-600 font-medium">
-                    {benefit.text}
+                    {benefit.highlight
+                      ? benefit.text
+                          .split(benefit.highlight)
+                          .map((part, partIndex) => (
+                            <span key={partIndex}>
+                              {part}
+                              {partIndex <
+                                benefit.text.split(benefit.highlight).length -
+                                  1 && (
+                                <span className="bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent font-bold text-base">
+                                  {benefit.highlight}
+                                </span>
+                              )}
+                            </span>
+                          ))
+                      : benefit.text}
                   </span>
                 </div>
               ))}
-            </div>
-
-            {/* Pilot Program Notice */}
-            <div className="text-center mt-8 pt-6 border-t border-gray-100">
-              <p className="text-sm text-gray-500">
-                Currently piloting with teams that want to master critical
-                workplace conversations — ask us about joining the pilot
-                program.
-              </p>
             </div>
           </div>
         </div>
@@ -708,36 +762,122 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* Features Section - Redesigned */}
-      <section id="features" className="py-20 lg:py-28 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-16">
+      {/* Email Subscription Section - Professional Design */}
+      <section
+        id="subscribe"
+        className="py-20 lg:py-28 bg-gradient-to-br from-blue-50 via-white to-indigo-50"
+      >
+        <div className="max-w-4xl mx-auto px-6">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl mb-6">
+              <Mail className="w-8 h-8 text-white" />
+            </div>
             <h2 className="text-4xl lg:text-5xl font-bold text-gray-900 mb-6">
-              Why Choose LearnLoop?
+              Be Among the First to Transform Your Training
             </h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Advanced AI technology meets proven learning methodologies to
-              deliver unparalleled conversation training
+            <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
+              Join our early access program and be the first to experience the
+              future of workplace training.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
-            {features.map((feature, index) => (
-              <div
-                key={index}
-                className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300 group"
-              >
-                <div className="mb-6 group-hover:scale-110 transition-transform duration-300">
-                  {feature.icon}
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8 lg:p-12">
+            <form onSubmit={handleEmailSubscription} className="space-y-6">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email address"
+                    required
+                    disabled={isSubmitting}
+                    className="w-full px-6 py-4 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-4">
-                  {feature.title}
-                </h3>
-                <p className="text-gray-600 leading-relaxed">
-                  {feature.description}
-                </p>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !email.trim()}
+                  className="px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
+                >
+                  {isSubmitting ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Subscribing...
+                    </div>
+                  ) : (
+                    "Subscribe"
+                  )}
+                </button>
               </div>
-            ))}
+
+              {/* Status Messages */}
+              {subscriptionStatus === "success" && (
+                <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
+                  <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                  <p className="text-green-800 font-medium">
+                    {subscriptionMessage}
+                  </p>
+                </div>
+              )}
+
+              {subscriptionStatus === "error" && (
+                <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+                  <div className="w-5 h-5 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0">
+                    <span className="text-white text-xs font-bold">!</span>
+                  </div>
+                  <p className="text-red-800 font-medium">
+                    {subscriptionMessage}
+                  </p>
+                </div>
+              )}
+
+              <p className="text-sm text-gray-500 text-center">
+                Be part of our founding community and help shape the future of
+                workplace training.
+                <br />
+                <span className="font-medium">
+                  No spam, unsubscribe at any time.
+                </span>
+              </p>
+            </form>
+          </div>
+
+          {/* Trust Indicators */}
+          <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
+            <div className="flex flex-col items-center">
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-3">
+                <Shield className="w-6 h-6 text-blue-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-1">
+                Privacy First
+              </h3>
+              <p className="text-sm text-gray-600">
+                Your email is secure and will never be shared
+              </p>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mb-3">
+                <Award className="w-6 h-6 text-green-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-1">
+                Exclusive Access
+              </h3>
+              <p className="text-sm text-gray-600">
+                Be among the first organizations to use LearnLoop
+              </p>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-3">
+                <Users className="w-6 h-6 text-purple-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-1">
+                Direct Communication
+              </h3>
+              <p className="text-sm text-gray-600">
+                Get personal updates from our team on your progress
+              </p>
+            </div>
           </div>
         </div>
       </section>
