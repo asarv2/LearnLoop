@@ -2,21 +2,15 @@ import logging
 import uuid
 from typing import Any
 
-from agents import (
-    Runner,
-    ToolsToFinalOutputResult,
-    TResponseInputItem,
-    function_tool,
-    trace,
-)
-from pydantic import Field
-from sqlmodel import Session, select
-
+from agents import (Runner, ToolsToFinalOutputResult, TResponseInputItem,
+                    function_tool, trace)
 from app.db import get_session
 from app.extensions import load_prompt
 from app.models import Chats, Hints, Messages, Personas, Scenarios
 from app.services.agents.generic import GenericAgent
 from app.utils.chat import get_conversation_history
+from pydantic import Field
+from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +24,7 @@ def create_hint_dif_low_function() -> Any:
 
     async def hints_dif_low(
         hints: list[str] = Field(
-            description="List of low difficulty hints using 'Say: \"[exact quote]\"' format for direct speech"
+            description="List of low difficulty hints using 'Say: \"[exact quote]\"' format for direct speech (MAXIMUM 3 HINTS)"
         ),
     ) -> str:
         """Generate low difficulty hints for the user.
@@ -39,15 +33,17 @@ def create_hint_dif_low_function() -> Any:
         is a complete sentence the manager can speak immediately in their conversation.
 
         Args:
-            hints: List of hints in "Say: '[quote]'" format that can be spoken directly
+            hints: List of hints in "Say: '[quote]'" format that can be spoken directly (MAXIMUM 3 HINTS)
 
         Returns:
             Confirmation message
         """
-        hint_results["dif_low"] = hints
+        # Limit to maximum 3 hints
+        limited_hints = hints[:3] if len(hints) > 3 else hints
+        hint_results["dif_low"] = limited_hints
         hint_progress["dif_low"] = True
-        logger.info(f"✓ Generated {len(hints)} low difficulty hints")
-        return f"Generated {len(hints)} low difficulty hints"
+        logger.info(f"✓ Generated {len(limited_hints)} low difficulty hints (limited from {len(hints)})")
+        return f"Generated {len(limited_hints)} low difficulty hints"
 
     return function_tool(hints_dif_low)
 
@@ -57,7 +53,7 @@ def create_hint_dif_high_function() -> Any:
 
     async def hints_dif_high(
         hints: list[str] = Field(
-            description="List of high difficulty hints that provide specific, actionable guidance for complex situations"
+            description="List of high difficulty hints that provide specific, actionable guidance for complex situations (MAXIMUM 3 HINTS)"
         ),
     ) -> str:
         """Generate high difficulty hints for the user.
@@ -66,15 +62,17 @@ def create_hint_dif_high_function() -> Any:
         or dynamics mentioned in the conversation, telling the manager exactly what to focus on.
 
         Args:
-            hints: List of specific guidance that addresses concrete issues or concerns raised
+            hints: List of specific guidance that addresses concrete issues or concerns raised (MAXIMUM 3 HINTS)
 
         Returns:
             Confirmation message
         """
-        hint_results["dif_high"] = hints
+        # Limit to maximum 3 hints
+        limited_hints = hints[:3] if len(hints) > 3 else hints
+        hint_results["dif_high"] = limited_hints
         hint_progress["dif_high"] = True
-        logger.info(f"✓ Generated {len(hints)} high difficulty hints")
-        return f"Generated {len(hints)} high difficulty hints"
+        logger.info(f"✓ Generated {len(limited_hints)} high difficulty hints (limited from {len(hints)})")
+        return f"Generated {len(limited_hints)} high difficulty hints"
 
     return function_tool(hints_dif_high)
 

@@ -578,6 +578,42 @@ export function WebSocketProvider({
       }
     );
 
+    // Grading progress events
+    socket.on(
+      "grading_progress",
+      (data: {
+        type:
+          | "start"
+          | "standard_grade"
+          | "strengths"
+          | "improvements"
+          | "complete";
+        message: string;
+        completed?: boolean;
+        standard_name?: string;
+        score?: number;
+        feedback_preview?: string;
+        count?: number;
+        strengths_preview?: string[];
+        improvements_preview?: string[];
+        rubric_name?: string;
+        standards_count?: number;
+        total_tools?: number;
+        grade_id?: string;
+        total_score?: number;
+        standards_graded?: number;
+        strengths_count?: number;
+        improvements_count?: number;
+      }) => {
+        logInfo("Grading progress update", data);
+        window.dispatchEvent(
+          new CustomEvent("gradingProgress", {
+            detail: data,
+          })
+        );
+      }
+    );
+
     socket.on(
       "hints_generated",
       (data: {

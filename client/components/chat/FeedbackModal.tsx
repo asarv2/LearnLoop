@@ -46,6 +46,26 @@ interface FeedbackModalProps {
   onClose: () => void;
   score?: number | null;
   chat?: Chat | null;
+  gradingProgress?: {
+    isGrading: boolean;
+    currentStep: string;
+    completedSteps: string[];
+    progress: {
+      rubric_name?: string;
+      standards_count?: number;
+      total_tools?: number;
+      standards_graded?: number;
+      strengths_count?: number;
+      improvements_count?: number;
+    };
+    latestUpdate?: {
+      type: string;
+      message: string;
+      standard_name?: string;
+      score?: number;
+      feedback_preview?: string;
+    };
+  };
 }
 
 export default function FeedbackModal({
@@ -53,6 +73,7 @@ export default function FeedbackModal({
   onClose,
   score,
   chat,
+  gradingProgress,
 }: FeedbackModalProps) {
   const { data: scenarios } = useScenariosByTrainingId(chat?.training_id || "");
   const { data: rubrics } = useRubrics(null);
@@ -87,6 +108,145 @@ export default function FeedbackModal({
       (bestRubricGrade as unknown as { standard_grades?: StandardGrade[] })
         .standard_grades) ||
     [];
+
+  // Show grading progress if currently grading
+  if (gradingProgress?.isGrading) {
+    return (
+      <Dialog.Root open={isOpen} onOpenChange={onClose}>
+        <Dialog.Portal>
+          <Dialog.Overlay
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.6)",
+              animation: "fadeIn 0.2s ease-out",
+            }}
+          />
+          <Dialog.Content
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              backgroundColor: "white",
+              borderRadius: "8px",
+              padding: "32px",
+              width: "90vw",
+              maxWidth: "600px",
+              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.1)",
+              border: "1px solid var(--gray-6)",
+            }}
+          >
+            <Flex
+              direction="column"
+              gap="6"
+              align="center"
+              style={{ textAlign: "center" }}
+            >
+              <Dialog.Title asChild>
+                <Heading size="5" weight="medium" style={{ color: "#000000" }}>
+                  Grading in Progress
+                </Heading>
+              </Dialog.Title>
+
+              {/* Progress indicator */}
+              <Box
+                style={{
+                  width: "100%",
+                  backgroundColor: "var(--gray-2)",
+                  borderRadius: "8px",
+                  padding: "16px",
+                  marginBottom: "16px",
+                }}
+              >
+                <Text
+                  size="3"
+                  style={{ color: "#000000", marginBottom: "12px" }}
+                >
+                  {gradingProgress.currentStep}
+                </Text>
+
+                {/* Progress bar */}
+                <Box
+                  style={{
+                    width: "100%",
+                    height: "8px",
+                    backgroundColor: "var(--gray-4)",
+                    borderRadius: "4px",
+                    overflow: "hidden",
+                  }}
+                >
+                  <Box
+                    style={{
+                      height: "100%",
+                      backgroundColor: "#3b82f6",
+                      width: `${Math.min(
+                        100,
+                        (gradingProgress.completedSteps.length /
+                          (gradingProgress.progress.total_tools || 1)) *
+                          100
+                      )}%`,
+                      transition: "width 0.3s ease",
+                    }}
+                  />
+                </Box>
+
+                <Text size="2" style={{ color: "#64748b", marginTop: "8px" }}>
+                  {gradingProgress.completedSteps.length} of{" "}
+                  {gradingProgress.progress.total_tools || 0} steps completed
+                </Text>
+              </Box>
+
+              {/* Latest update */}
+              {gradingProgress.latestUpdate && (
+                <Box
+                  style={{
+                    width: "100%",
+                    backgroundColor: "var(--gray-1)",
+                    borderRadius: "6px",
+                    padding: "12px",
+                    border: "1px solid var(--gray-4)",
+                  }}
+                >
+                  <Text
+                    size="2"
+                    style={{ color: "#000000", fontWeight: "500" }}
+                  >
+                    Latest: {gradingProgress.latestUpdate.message}
+                  </Text>
+                  {gradingProgress.latestUpdate.standard_name && (
+                    <Text
+                      size="2"
+                      style={{ color: "#64748b", marginTop: "4px" }}
+                    >
+                      {gradingProgress.latestUpdate.standard_name}:{" "}
+                      {gradingProgress.latestUpdate.score}/5
+                    </Text>
+                  )}
+                </Box>
+              )}
+
+              <Text size="3" style={{ color: "#000000", lineHeight: "1.6" }}>
+                Please wait while we analyze your performance and generate
+                detailed feedback...
+              </Text>
+            </Flex>
+          </Dialog.Content>
+        </Dialog.Portal>
+
+        <style jsx global>{`
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+            }
+            to {
+              opacity: 1;
+            }
+          }
+        `}</style>
+      </Dialog.Root>
+    );
+  }
 
   // If no feedback is available (neither old feedback nor rubric_grades), show a loading/empty state
   if (rubricGrades.length === 0) {

@@ -8,7 +8,7 @@ import uuid
 from collections import OrderedDict, defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from app.db import get_session
@@ -74,6 +74,7 @@ MESSAGE_TO_ROOM: dict[str, str] = {}  # message_id -> room_id
 
 # --- idempotency guards for multi-worker safety ---
 STARTED: set[str] = set()  # tracks which messages have emitted "start"
+HINTS_SCHEDULED: set[str] = set()  # tracks which messages have scheduled hints
 
 # --- batched DB writes ---
 PENDING_WRITES: dict[str, list[str]] = defaultdict(
@@ -209,44 +210,92 @@ def _upsert_db_message(
         select(DBMessage).where(DBMessage.id == msg_id)
     ).one_or_none()
     now = time.time()
+    acc = ""  # Initialize acc to ensure it's always defined
 
     if m is None:
-        # Create new DB message row
-        m = DBMessage(
-            id=UUID(msg_id),  # msg_id is already a valid UUID string now
-            chat_id=chat_id,
-            role="assistant" if role == "agent" else "user",
-            content=text or "",
-            completed=is_final,
-            persona_id=_uuid_or_none(persona_id),
-            voice=voice,
-            parent_id=_uuid_or_none(parent_id),
-        )
-        db.add(m)
-        db.commit()
-        db.refresh(m)
-        acc = m.content or ""
+        # Create new DB message row with duplicate protection
+        try:
+            m = DBMessage(
+                id=UUID(msg_id),  # msg_id is already a valid UUID string now
+                chat_id=chat_id,
+                role="assistant" if role == "agent" else "user",
+                content=text or "",
+                completed=is_final,
+                persona_id=_uuid_or_none(persona_id),
+                voice=voice,
+                parent_id=_uuid_or_none(parent_id),
+            )
+            db.add(m)
+            db.commit()
+            db.refresh(m)
+            acc = m.content or ""
+        except Exception as e:
+            # Handle race condition: message was created by another process
+            error_str = str(e).lower()
+            if "unique" in error_str or "duplicate" in error_str:
+                logger.warning(f"Message {msg_id} already exists (race condition), fetching it")
+                db.rollback()
+                # Fetch the existing message
+                m = db.exec(
+                    select(DBMessage).where(DBMessage.id == msg_id)
+                ).one_or_none()
+                if m is None:
+                    # Extremely rare case: message doesn't exist after all
+                    logger.error(f"Failed to fetch message {msg_id} after duplicate key error")
+                    raise
+                # Update the existing message with new content
+                acc = (m.content or "") + (text or "")
+                m.content = acc
+                if is_final:
+                    m.completed = True
+                if voice and not bool(getattr(m, "voice", False)):
+                    m.voice = True
+                if m.parent_id is None and parent_id is not None:
+                    m.parent_id = _uuid_or_none(parent_id)
+                db.add(m)
+                db.commit()
+                db.refresh(m)
+            else:
+                # Some other database error
+                raise
     else:
         # Append chunk text
-        acc = (m.content or "") + (text or "")
-        m.content = acc
-        if is_final:
-            m.completed = True
-        # If caller indicates this message is a voice message, persist that flag
         try:
-            if voice and not bool(getattr(m, "voice", False)):
-                m.voice = True
-        except Exception:
-            pass
-        # Backfill parent_id if it was missing on initial insert
-        try:
-            if m.parent_id is None and parent_id is not None:
-                m.parent_id = _uuid_or_none(parent_id)
-        except Exception:
-            pass
-        db.add(m)
-        db.commit()
-        db.refresh(m)
+            acc = (m.content or "") + (text or "")
+            m.content = acc
+            if is_final:
+                m.completed = True
+            # If caller indicates this message is a voice message, persist that flag
+            try:
+                if voice and not bool(getattr(m, "voice", False)):
+                    m.voice = True
+            except Exception:
+                pass
+            # Backfill parent_id if it was missing on initial insert
+            try:
+                if m.parent_id is None and parent_id is not None:
+                    m.parent_id = _uuid_or_none(parent_id)
+            except Exception:
+                pass
+            db.add(m)
+            db.commit()
+            db.refresh(m)
+        except Exception as e:
+            error_str = str(e).lower()
+            if "unique" in error_str or "duplicate" in error_str:
+                # Concurrent update - rollback and retry fetch
+                logger.warning(f"Concurrent update for message {msg_id}, retrying")
+                db.rollback()
+                m = cast(DBMessage, db.exec(
+                    select(DBMessage).where(DBMessage.id == msg_id)
+                ).one())
+                acc = m.content or ""
+            else:
+                raise
+    
+    # Ensure m is not None before returning
+    if m is None:
+        raise ValueError(f"Failed to create or fetch message {msg_id}")
 
     return m, acc
 
@@ -586,37 +635,47 @@ async def upsert_text_chunk(
                         },
                     )
 
-                    # Schedule hint generation for this message
+                    # Schedule hint generation for this message (with idempotency guard)
                     import asyncio
 
-                    async def _schedule_hints() -> None:
-                        try:
+                    # Only schedule hints once per message
+                    hint_key = f"{room_id}:{str(db_msg.id)}"
+                    if hint_key not in HINTS_SCHEDULED:
+                        HINTS_SCHEDULED.add(hint_key)
 
-                            def _sync(msg_uuid: uuid.UUID) -> dict[str, Any]:
-                                import asyncio as _asyncio
+                        async def _schedule_hints() -> None:
+                            try:
 
-                                return _asyncio.run(run_hint_agent(msg_uuid))
+                                def _sync(msg_uuid: uuid.UUID) -> dict[str, Any]:
+                                    import asyncio as _asyncio
 
-                            result = await asyncio.to_thread(
-                                _sync, uuid.UUID(str(db_msg.id))
-                            )
-                            await _emit(
-                                room_id,
-                                "hints_generated",
-                                {
-                                    "chat_id": room_id,
-                                    "message_id": str(db_msg.id),
-                                    "success": result.get("success", False),
-                                    "hints": result.get("hints", []),
-                                    "low_hints": result.get("dif_low_hints", []),
-                                    "high_hints": result.get("dif_high_hints", []),
-                                    "message": result.get("message", ""),
-                                },
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to generate hints: {e}")
+                                    return _asyncio.run(run_hint_agent(msg_uuid))
 
-                    asyncio.create_task(_schedule_hints())
+                                result = await asyncio.to_thread(
+                                    _sync, uuid.UUID(str(db_msg.id))
+                                )
+                                await _emit(
+                                    room_id,
+                                    "hints_generated",
+                                    {
+                                        "chat_id": room_id,
+                                        "message_id": str(db_msg.id),
+                                        "success": result.get("success", False),
+                                        "hints": result.get("hints", []),
+                                        "low_hints": result.get("dif_low_hints", []),
+                                        "high_hints": result.get("dif_high_hints", []),
+                                        "message": result.get("message", ""),
+                                    },
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to generate hints: {e}")
+                            finally:
+                                # Remove from guard after completion (success or failure)
+                                HINTS_SCHEDULED.discard(hint_key)
+
+                        asyncio.create_task(_schedule_hints())
+                    else:
+                        logger.info(f"Hints already scheduled for message {db_msg.id}, skipping duplicate")
 
     return msg
 

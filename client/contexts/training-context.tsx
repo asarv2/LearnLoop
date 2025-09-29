@@ -41,6 +41,28 @@ interface TrainingContextType {
   isGettingHints: boolean; // ✨ Add hints loading state
   isWaitingForFeedback: boolean; // ✅ NEW: Loading state while waiting for feedback
 
+  // Grading progress state
+  gradingProgress: {
+    isGrading: boolean;
+    currentStep: string;
+    completedSteps: string[];
+    progress: {
+      rubric_name?: string;
+      standards_count?: number;
+      total_tools?: number;
+      standards_graded?: number;
+      strengths_count?: number;
+      improvements_count?: number;
+    };
+    latestUpdate?: {
+      type: string;
+      message: string;
+      standard_name?: string;
+      score?: number;
+      feedback_preview?: string;
+    };
+  };
+
   // Training actions
   sendMessage: (message: string, parentId?: string | null) => Promise<void>;
   endTraining: () => Promise<void>;
@@ -80,6 +102,30 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
   // ✅ NEW: Loading states for feedback
   const [isWaitingForFeedback, setIsWaitingForFeedback] = useState(false);
 
+  // ✅ NEW: Grading progress state
+  const [gradingProgress, setGradingProgress] = useState({
+    isGrading: false,
+    currentStep: "",
+    completedSteps: [] as string[],
+    progress: {} as {
+      rubric_name?: string;
+      standards_count?: number;
+      total_tools?: number;
+      standards_graded?: number;
+      strengths_count?: number;
+      improvements_count?: number;
+    },
+    latestUpdate: undefined as
+      | {
+          type: string;
+          message: string;
+          standard_name?: string;
+          score?: number;
+          feedback_preview?: string;
+        }
+      | undefined,
+  });
+
   // ✅ NEW: Use refs to track last processed state to prevent infinite loops
   const lastProcessedFeedbackRef = useRef<string | null>(null);
 
@@ -108,6 +154,14 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     setShowFeedback(false);
     // ✅ NEW: Clear loading states when chatId changes
     setIsWaitingForFeedback(false);
+    // ✅ NEW: Clear grading progress when chatId changes
+    setGradingProgress({
+      isGrading: false,
+      currentStep: "",
+      completedSteps: [],
+      progress: {},
+      latestUpdate: undefined,
+    });
   }, [chatId]);
 
   // ✅ NEW: Event listeners for WebSocket events
@@ -154,7 +208,91 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
           logInfo(`Grading skipped: ${message}`);
         }
         setIsWaitingForFeedback(false);
+
+        // Clear grading progress state
+        setGradingProgress({
+          isGrading: false,
+          currentStep: "",
+          completedSteps: [],
+          progress: {},
+          latestUpdate: undefined,
+        });
       }
+    };
+
+    const handleGradingProgress = (event: CustomEvent) => {
+      const data = event.detail;
+      logInfo("Grading progress update received", data);
+
+      setGradingProgress((prev) => {
+        const newProgress = { ...prev };
+
+        // Update based on progress type
+        switch (data.type) {
+          case "start":
+            newProgress.isGrading = true;
+            newProgress.currentStep = "Starting grading process";
+            newProgress.completedSteps = [];
+            newProgress.progress = {
+              rubric_name: data.rubric_name,
+              standards_count: data.standards_count,
+              total_tools: data.total_tools,
+            };
+            break;
+
+          case "standard_grade":
+            newProgress.currentStep = `Grading ${data.standard_name}`;
+            newProgress.completedSteps = [
+              ...prev.completedSteps,
+              `standard_${data.standard_name}`,
+            ];
+            newProgress.progress.standards_graded =
+              (prev.progress.standards_graded || 0) + 1;
+            newProgress.latestUpdate = {
+              type: "standard_grade",
+              message: data.message,
+              standard_name: data.standard_name,
+              score: data.score,
+              feedback_preview: data.feedback_preview,
+            };
+            break;
+
+          case "strengths":
+            newProgress.currentStep = "Identifying strengths";
+            newProgress.completedSteps = [...prev.completedSteps, "strengths"];
+            newProgress.progress.strengths_count = data.count;
+            newProgress.latestUpdate = {
+              type: "strengths",
+              message: data.message,
+            };
+            break;
+
+          case "improvements":
+            newProgress.currentStep = "Identifying improvements";
+            newProgress.completedSteps = [
+              ...prev.completedSteps,
+              "improvements",
+            ];
+            newProgress.progress.improvements_count = data.count;
+            newProgress.latestUpdate = {
+              type: "improvements",
+              message: data.message,
+            };
+            break;
+
+          case "complete":
+            newProgress.isGrading = false;
+            newProgress.currentStep = "Grading completed";
+            newProgress.completedSteps = [...prev.completedSteps, "complete"];
+            newProgress.latestUpdate = {
+              type: "complete",
+              message: data.message,
+            };
+            break;
+        }
+
+        return newProgress;
+      });
     };
 
     // Add event listeners
@@ -165,6 +303,10 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     window.addEventListener(
       "gradingCompleted",
       handleGradingCompleted as EventListener
+    );
+    window.addEventListener(
+      "gradingProgress",
+      handleGradingProgress as EventListener
     );
 
     // Cleanup event listeners
@@ -177,10 +319,14 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
         "gradingCompleted",
         handleGradingCompleted as EventListener
       );
+      window.removeEventListener(
+        "gradingProgress",
+        handleGradingProgress as EventListener
+      );
     };
   }, [chatId, chat?.attempt_id, queryClient, isWaitingForFeedback]);
 
-  // ✅ NEW: Show feedback modal by default when grading completes (only once)
+  // ✅ NEW: Show feedback modal when grading starts or when feedback is available
   useEffect(() => {
     if (!chat) return;
 
@@ -193,15 +339,20 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
       chatWithIncludes.rubric_grades &&
       chatWithIncludes.rubric_grades.length > 0;
 
-    // Show feedback if available and we haven't processed it yet
-    if (hasFeedback && !lastProcessedFeedbackRef.current) {
-      logInfo("Feedback available, showing feedback modal by default");
+    // Show feedback modal if grading is in progress or feedback is available
+    if (
+      (gradingProgress.isGrading || hasFeedback) &&
+      !lastProcessedFeedbackRef.current
+    ) {
+      logInfo(
+        "Grading in progress or feedback available, showing feedback modal"
+      );
       setShowFeedback(true);
       lastProcessedFeedbackRef.current = "feedback";
       // ✅ NEW: Clear loading state for feedback
       setIsWaitingForFeedback(false);
     }
-  }, [chat]);
+  }, [chat, gradingProgress.isGrading]);
 
   // ✅ NEW: Refetch chat data when WebSocket connection is restored
   useEffect(() => {
@@ -278,6 +429,9 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
     isEndingTraining: endTrainingMutation.isPending,
     isGettingHints: false, // Will be managed by WebSocket context
     isWaitingForFeedback, // ✅ NEW: Expose loading state for feedback
+
+    // Grading progress state
+    gradingProgress, // ✅ NEW: Expose grading progress state
 
     // Training actions
     sendMessage,
