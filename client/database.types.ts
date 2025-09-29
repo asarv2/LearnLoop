@@ -183,6 +183,30 @@ export type Database = {
           },
         ]
       }
+      email_subscriptions: {
+        Row: {
+          created_at: string | null
+          email: string
+          id: string
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email: string
+          id?: string
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string
+          id?: string
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       fields: {
         Row: {
           created_at: string | null
