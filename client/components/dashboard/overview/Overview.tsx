@@ -16,7 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useChats } from "@/lib/api/hooks/useChats";
-import { useAllRubricGrades } from "@/lib/api/hooks/useRubrics";
+import { useAllRubricGrades, useRubrics } from "@/lib/api/hooks/useRubrics";
+import { useScenarios } from "@/lib/api/hooks/useScenarios";
 import { Typography } from "antd";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -36,6 +37,8 @@ export default function Overview() {
   const { data: chats } = useChats();
   const { data: rubricGrades, isLoading: rubricGradesLoading } =
     useAllRubricGrades();
+  const { data: scenarios } = useScenarios();
+  const { data: rubrics } = useRubrics(null);
 
   const [range, setRange] = useState<"weekly" | "monthly">("weekly");
 
@@ -47,15 +50,59 @@ export default function Overview() {
     rubricGradesLoading,
   });
 
-  // Helper function to get score for a chat from its rubric grade
+  // Build maps for rubric points by training
+  const rubricPointsByTrainingId = useMemo(() => {
+    const result: Record<string, number> = {};
+    if (!scenarios || !rubrics) return result;
+
+    const rubricIdToPoints = new Map<string, number>();
+    rubrics.forEach((r) => {
+      if (r.id && typeof r.total_points === "number") {
+        rubricIdToPoints.set(r.id, r.total_points);
+      }
+    });
+
+    // scenarios come from API typed as ScenarioCreate (Insert). We only need training_id and rubric_id which are strings or null.
+    (
+      scenarios as Array<{
+        training_id: string | null;
+        rubric_id: string | null;
+      }>
+    ).forEach((s) => {
+      const trainingId = s?.training_id || undefined;
+      const rubricId = s?.rubric_id || undefined;
+      if (trainingId && rubricId && rubricIdToPoints.has(rubricId)) {
+        result[trainingId] = rubricIdToPoints.get(rubricId)!;
+      }
+    });
+    return result;
+  }, [scenarios, rubrics]);
+
+  // Helper function to get score for a chat from its rubric grade, scaled by rubric total points
   const getChatScore = useCallback(
     (chatId: string): number => {
+      const chat = (chats || []).find((c) => c.id === chatId);
       const rubricGrade = (rubricGrades || []).find(
         (rg) => rg.chat_id === chatId
       );
-      return rubricGrade?.score || 0;
+      const rawScore = rubricGrade?.score ?? 0;
+
+      // Determine rubric total points for this chat via training -> scenario -> rubric
+      const trainingId = chat?.training_id as string | undefined;
+      const totalPoints = trainingId
+        ? rubricPointsByTrainingId[trainingId]
+        : undefined;
+
+      if (typeof totalPoints === "number" && totalPoints > 0) {
+        const percentage = (rawScore / totalPoints) * 100;
+        return Math.min(100, Math.max(0, Math.round(percentage)));
+      }
+
+      // Fallback: if rubric points unknown, approximate by scaling out of 25
+      const scaled = rawScore * 4;
+      return Math.min(100, Math.max(0, Math.round(scaled)));
     },
-    [rubricGrades]
+    [rubricGrades, chats, rubricPointsByTrainingId]
   );
 
   // Get user's chats (already filtered by the API)
