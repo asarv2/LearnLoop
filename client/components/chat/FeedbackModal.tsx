@@ -238,8 +238,11 @@ export default function FeedbackModal({
     const displaySteps = gradingSteps.map((step) => ({
       ...step,
       // A step is complete if server says so OR if artificial progress has passed it
+      // BUT never artificially complete the last step (improvements)
       isComplete:
-        step.complete || artificialProgress.currentStep > step.stepIndex,
+        step.complete ||
+        (artificialProgress.currentStep > step.stepIndex &&
+          step.stepIndex < gradingSteps.length - 1),
     }));
 
     const completed = displaySteps.filter((s) => s.isComplete).length;
@@ -382,6 +385,7 @@ export default function FeedbackModal({
                             opacity: step.isComplete ? 0.8 : 1,
                             flex: 1,
                             paddingLeft: "8px",
+                            color: "#000000",
                           }}
                         >
                           {step.label}

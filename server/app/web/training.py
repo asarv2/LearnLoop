@@ -816,7 +816,7 @@ async def handle_end_training(sid: str, data: dict[str, Any]) -> None:
                     grading_session = next(get_session())
                     try:
                         rubric_grade_id = await run_grading_agent(
-                            chat_id, rubric_id, grading_session, socket_id=sid
+                            chat_id, rubric_id, grading_session
                         )
                     finally:
                         grading_session.close()
