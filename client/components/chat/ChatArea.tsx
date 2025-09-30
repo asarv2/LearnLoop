@@ -1450,12 +1450,22 @@ export default function ChatArea({
               // Only show retry once the user message is fully completed (display mode)
               const isDisplayMode = Boolean(message.completed);
 
+              // Check if this is the very first user message in the conversation
+              const isFirstUserMessage =
+                displayMessages
+                  .filter(
+                    (m) => m.role === "user" || m.persona_id === userPersona?.id
+                  )
+                  .indexOf(message) === 0;
+
               // Only allow "Retry from here" if this is a user message, it has a parent assistant,
+              // we're in display mode, and it's NOT the very first user message:
               // we're in display mode, and the session is still active:
               const showRetry =
                 isDisplayMode && // <— NEW hard gate
                 isUserMessage &&
                 Boolean(assistantParent?.id) &&
+                !isFirstUserMessage && // Don't show retry on the very first user message
                 isSessionActive && // Hide retry when session is not active
                 !isEndingSession; // Hide retry when session is ending
 
