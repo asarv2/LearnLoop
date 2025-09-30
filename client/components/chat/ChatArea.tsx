@@ -742,6 +742,15 @@ export default function ChatArea({
     };
   }, [cutWin]);
 
+  // Clear retry state when session ends to return to normal view
+  useEffect(() => {
+    if (!isSessionActive || isEndingSession) {
+      if (cutWin.isActive) {
+        cutWin.clear();
+      }
+    }
+  }, [isSessionActive, isEndingSession, cutWin]);
+
   // Event-driven cut window clearing - only clear when new user message is actually created on the retry branch
   useEffect(() => {
     if (!chat?.id) return;
@@ -1441,21 +1450,14 @@ export default function ChatArea({
               // Only show retry once the user message is fully completed (display mode)
               const isDisplayMode = Boolean(message.completed);
 
-              // Check if this is the very first user message in the conversation
-              const isFirstUserMessage =
-                displayMessages
-                  .filter(
-                    (m) => m.role === "user" || m.persona_id === userPersona?.id
-                  )
-                  .indexOf(message) === 0;
-
               // Only allow "Retry from here" if this is a user message, it has a parent assistant,
-              // we're in display mode, and it's NOT the very first user message:
+              // we're in display mode, and the session is still active:
               const showRetry =
                 isDisplayMode && // <— NEW hard gate
                 isUserMessage &&
                 Boolean(assistantParent?.id) &&
-                !isFirstUserMessage; // Don't show retry on the very first user message
+                isSessionActive && // Hide retry when session is not active
+                !isEndingSession; // Hide retry when session is ending
 
               return (
                 <React.Fragment key={message.id}>
@@ -1654,15 +1656,25 @@ export default function ChatArea({
                                 color: "var(--gray-12)",
                               }}
                             >
-                              <div className="md-reset">
-                                <Markdown>
+                              {isUserMessage ? (
+                                <div style={{ whiteSpace: "pre-wrap" }}>
                                   {renderMessageContent(message, {
                                     nowMs,
                                     transcripts,
                                     transcriptStops,
                                   })}
-                                </Markdown>
-                              </div>
+                                </div>
+                              ) : (
+                                <div className="md-reset">
+                                  <Markdown>
+                                    {renderMessageContent(message, {
+                                      nowMs,
+                                      transcripts,
+                                      transcriptStops,
+                                    })}
+                                  </Markdown>
+                                </div>
+                              )}
                             </Text>
                           </div>
                         </Card>
