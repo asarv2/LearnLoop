@@ -55,17 +55,20 @@ export function useRubricStandards(rubricId: string | null) {
 
 export interface RubricGrade {
   id: string;
-  chat_id: string;
+  chat_id: string | null;
   score: number;
   strengths: string[];
   improvements: string[];
-  created_at: string;
+  created_at: string | null;
+  name: string;
+  description: string | null;
+  updated_at: string | null;
 }
 
 export function useAllRubricGrades() {
   return useQuery({
     queryKey: ["rubric-grades"],
-    queryFn: () => api<RubricGrade[]>("/api/v1/rubric-grades"),
+    queryFn: () => api<RubricGrade[]>("/api/v1/rubrics/grades"),
     staleTime: 5 * 60_000, // 5 minutes
   });
 }

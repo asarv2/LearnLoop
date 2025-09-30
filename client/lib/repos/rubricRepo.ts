@@ -129,4 +129,32 @@ export const rubricRepo = {
     if (error) throw new HttpError(500, error.message);
     return data;
   },
+
+  async getAllGradesForUser(profileId: string): Promise<RubricGrade[]> {
+    const supabase = await getSupabase();
+
+    // Get all chats for this user
+    const { data: chats, error: chatsError } = await supabase
+      .from("chats")
+      .select("id")
+      .eq("profile_id", profileId);
+
+    if (chatsError) throw new HttpError(500, chatsError.message);
+
+    if (!chats || chats.length === 0) {
+      return [];
+    }
+
+    const chatIds = chats.map((chat) => chat.id);
+
+    // Get all rubric grades for these chats
+    const { data, error } = await supabase
+      .from("rubric_grades")
+      .select("*")
+      .in("chat_id", chatIds)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new HttpError(500, error.message);
+    return data || [];
+  },
 };
