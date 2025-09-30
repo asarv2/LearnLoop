@@ -39,6 +39,14 @@ export default function Overview() {
 
   const [range, setRange] = useState<"weekly" | "monthly">("weekly");
 
+  // Debug logging
+  console.log("Overview Debug:", {
+    userId: user?.id,
+    chatsCount: chats?.length,
+    rubricGradesCount: rubricGrades?.length,
+    rubricGradesLoading,
+  });
+
   // Helper function to get score for a chat from its rubric grade
   const getChatScore = useCallback(
     (chatId: string): number => {
@@ -50,15 +58,12 @@ export default function Overview() {
     [rubricGrades]
   );
 
-  // Get user's chats and their rubric grades
+  // Get user's chats (already filtered by the API)
   const userChats = useMemo(() => {
     if (!user?.id) return [];
 
-    return (chats || []).filter((chat) => {
-      // Filter chats that belong to the current user
-      // Assuming chats have a profile_id or user_id field that matches the user
-      return chat.profile_id === user.id;
-    });
+    // The chats API already filters by current user, so we just return them
+    return chats || [];
   }, [chats, user?.id]);
 
   // Get the 5 most recent strengths and improvements from user's rubric grades
@@ -70,25 +75,19 @@ export default function Overview() {
       };
     }
 
-    // Get all rubric grades for the current user's chats, sorted by most recent
-    const userRubricGrades = rubricGrades
-      .filter((rg) => {
-        // Find the chat that this rubric grade belongs to
-        const chat = (chats || []).find((c) => c.id === rg.chat_id);
-        return chat && chat.profile_id === user.id;
-      })
-      .sort((a, b) => {
-        // Sort by created_at in descending order (most recent first)
-        const dateA = new Date(a.created_at || 0).getTime();
-        const dateB = new Date(b.created_at || 0).getTime();
-        return dateB - dateA;
-      });
+    // Rubric grades are already filtered by the API for the current user
+    // Sort by created_at in descending order (most recent first)
+    const sortedRubricGrades = [...rubricGrades].sort((a, b) => {
+      const dateA = new Date(a.created_at || 0).getTime();
+      const dateB = new Date(b.created_at || 0).getTime();
+      return dateB - dateA;
+    });
 
     // Collect all strengths and improvements from recent rubric grades
     const allStrengths: string[] = [];
     const allAreasForImprovement: string[] = [];
 
-    userRubricGrades.forEach((rg) => {
+    sortedRubricGrades.forEach((rg) => {
       if (rg.strengths && Array.isArray(rg.strengths)) {
         allStrengths.push(...rg.strengths);
       }
@@ -102,7 +101,7 @@ export default function Overview() {
       strengths: allStrengths.slice(0, 5),
       areasForImprovement: allAreasForImprovement.slice(0, 5),
     };
-  }, [user?.id, rubricGrades, chats]);
+  }, [user?.id, rubricGrades]);
 
   const trendData = useMemo(() => {
     // Get all user's completed chats with scores
