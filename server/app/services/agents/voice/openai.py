@@ -1397,16 +1397,30 @@ class OpenAIAgent(Agent):
                 )
                 self._rid_to_msg[rid] = msg_id
             else:
-                # Finalize existing message
-                await self.publish_text_chunk(
-                    text=final_text,
-                    message_id=st["msg_id"],
-                    chunk_idx=st["chunk_idx"],
-                    is_final=True,
-                    persona_id=persona_id,
-                    voice=True,
-                    parent_id=st["parent_id"],
-                )
+                # Check if we already streamed deltas for this message
+                already_streamed = bool(st) and int(st.get("chunk_idx") or 0) > 0
+                if already_streamed:
+                    # We already persisted deltas; just finalize without adding text again
+                    await self.publish_text_chunk(
+                        text="",  # <- important: no duplicate content
+                        message_id=st["msg_id"],
+                        chunk_idx=st["chunk_idx"],
+                        is_final=True,
+                        persona_id=persona_id,
+                        voice=True,
+                        parent_id=st["parent_id"],
+                    )
+                else:
+                    # Finalize existing message with full text (no prior deltas)
+                    await self.publish_text_chunk(
+                        text=final_text,
+                        message_id=st["msg_id"],
+                        chunk_idx=st["chunk_idx"],
+                        is_final=True,
+                        persona_id=persona_id,
+                        voice=True,
+                        parent_id=st["parent_id"],
+                    )
                 self._rid_to_msg[rid] = str(st["msg_id"])
 
         # FINAL CTC alignment and broadcast

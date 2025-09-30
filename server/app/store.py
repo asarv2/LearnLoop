@@ -442,7 +442,10 @@ async def upsert_text_chunk(
         if (text or "").strip():
             PENDING_WRITES[mid].append(text)
     else:
-        PENDING_WRITES[mid].append(text or "")
+        # USER: skip first chunk (chunk_idx == 0) because we immediately upsert it
+        # Only enqueue subsequent chunks for batching
+        if chunk_idx > 0:
+            PENDING_WRITES[mid].append(text or "")
 
     # Emit events your frontend already expects
     if _emit:
