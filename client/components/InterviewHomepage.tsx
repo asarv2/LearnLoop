@@ -14,6 +14,13 @@ export default function InterviewHomepage() {
   useEffect(() => {
     // Redirect to new dashboard
     router.push("/dashboard/trainings");
+
+    // Fallback timeout in case redirect doesn't work
+    const timeoutId = setTimeout(() => {
+      router.push("/dashboard/trainings");
+    }, 5000); // 5 seconds timeout
+
+    return () => clearTimeout(timeoutId);
   }, [router]);
 
   return (

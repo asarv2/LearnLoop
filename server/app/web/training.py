@@ -552,12 +552,14 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
                 room=sid,
             )
 
-            # Create scenario entry with the specified group_id
+            # Create scenario entry with the specified group_id and rubric_id
             group_id = uuid.UUID("8b6ed9ac-bfb7-4f31-992b-73935f6560bf")
+            rubric_id = uuid.UUID("a121c3fe-7559-41cf-bbcd-499a2f515af6")  # General rubric
             scenario = Scenarios(
                 title=name,
                 description=description,
                 training_id=training.id,
+                rubric_id=rubric_id,
                 group_ids=[group_id],
                 objectives=[],
                 parameter_ids=[],
@@ -571,7 +573,7 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
             db_session.commit()
             db_session.refresh(scenario)
 
-            logger.info(f"Created scenario {scenario.id} with group_id {group_id}")
+            logger.info(f"Created scenario {scenario.id} with group_id {group_id} and rubric_id {rubric_id}")
 
             # Emit progress update: generating document
             await sio.emit(

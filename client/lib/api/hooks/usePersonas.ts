@@ -102,7 +102,9 @@ export function useUpdatePersona(id: string) {
         body: JSON.stringify(patch),
       }),
     onSuccess() {
+      // Invalidate both detail and all list queries to ensure UI updates
       qc.invalidateQueries({ queryKey: personaKeys.detail(id) });
+      qc.invalidateQueries({ queryKey: personaKeys.all });
     },
   });
 }
