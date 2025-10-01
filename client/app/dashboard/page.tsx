@@ -1,15 +1,6 @@
 "use client";
-
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-
+import { redirect } from "next/navigation";
+  
 export default function DashboardPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    // Redirect to trainings when accessing /dashboard directly
-    router.replace("/dashboard/trainings");
-  }, [router]);
-
-  return null;
+  return redirect("/dashboard/trainings");
 }
