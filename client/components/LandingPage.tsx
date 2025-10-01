@@ -552,8 +552,8 @@ const LandingPage = () => {
 
     {
       icon: <Clock className="w-5 h-5" />,
-      text: "50k+ minutes practiced — real conversations with measurable skill development and confidence building",
-      highlight: "50k+",
+      text: "25k+ minutes practiced — real conversations with measurable skill development and confidence building",
+      highlight: "25k+",
     },
     {
       icon: <TrendingUp className="w-5 h-5" />,

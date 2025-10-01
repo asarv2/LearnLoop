@@ -128,7 +128,7 @@ export default function AuthModal({
           <Text type="secondary">
             {mode === "login"
               ? "Sign in to continue your training"
-              : "Start your interview training journey"}
+              : "Start your training journey"}
           </Text>
         </div>
 
