@@ -3,7 +3,9 @@
 import { useAuth } from "@/components/auth/AuthProvider";
 import { usePersonas, useUpdatePersona } from "@/lib/api/hooks/usePersonas";
 import { useUpdateProfile } from "@/lib/api/hooks/useProfiles";
+import { personaKeys, profileKeys } from "@/lib/api/keys";
 import { SaveOutlined, UserOutlined } from "@ant-design/icons";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Col,
@@ -31,6 +33,7 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
   const [form] = Form.useForm();
   const [messageApi, contextHolder] = message.useMessage();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const queryClient = useQueryClient();
 
   // Hooks for profile and persona management
   const { data: personas } = usePersonas(user?.id);
@@ -71,6 +74,16 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
         position: values.position,
         level: values.level,
       });
+
+      // Wait for all invalidated queries to refetch to ensure smooth UX
+      await Promise.all([
+        queryClient.refetchQueries({
+          queryKey: profileKeys.detail(user?.id || ""),
+        }),
+        queryClient.refetchQueries({
+          queryKey: personaKeys.list({ profileId: user?.id }),
+        }),
+      ]);
 
       messageApi.success(
         "Thank you! Your profile has been set up successfully."
