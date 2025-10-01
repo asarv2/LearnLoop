@@ -704,6 +704,15 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     const handleScenarioProgress = (e: CustomEvent) => {
       const data = e.detail || {};
 
+      // SECURITY: Only process scenario progress for the current scenario
+      if (data.scenario_id && scenarioId && data.scenario_id !== scenarioId) {
+        console.log("Ignoring scenario progress for different scenario", {
+          event_scenario_id: data.scenario_id,
+          current_scenario_id: scenarioId,
+        });
+        return;
+      }
+
       setGenerateProgress((prev) => {
         const newProgress = { ...prev };
 
@@ -775,7 +784,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
         handleScenarioProgress as EventListener
       );
     };
-  }, [training?.show_documents, generateDocuments]);
+  }, [training?.show_documents, generateDocuments, scenarioId]);
 
   // Listen for scenario generated events
   useEffect(() => {

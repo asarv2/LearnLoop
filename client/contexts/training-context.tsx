@@ -222,6 +222,16 @@ export function TrainingProvider({ children, chatId }: TrainingProviderProps) {
 
     const handleGradingProgress = (event: CustomEvent) => {
       const data = event.detail;
+
+      // SECURITY: Only process grading progress for the current chat
+      if (data.chat_id && chatId && data.chat_id !== chatId) {
+        logInfo("Ignoring grading progress for different chat", {
+          event_chat_id: data.chat_id,
+          current_chat_id: chatId,
+        });
+        return;
+      }
+
       logInfo("Grading progress update received", data);
 
       setGradingProgress((prev) => {
