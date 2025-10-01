@@ -818,7 +818,7 @@ async def handle_end_training(sid: str, data: dict[str, Any]) -> None:
                     grading_session = next(get_session())
                     try:
                         rubric_grade_id = await run_grading_agent(
-                            chat_id, rubric_id, grading_session
+                            chat_id, rubric_id, grading_session, socket_id=sid
                         )
                     finally:
                         grading_session.close()
@@ -1634,6 +1634,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     additional_context=additional_prompt,
                     create_child=True,
                     session=db_session,
+                    socket_id=sid,
                     generate_documents=generate_documents,
                 )
 

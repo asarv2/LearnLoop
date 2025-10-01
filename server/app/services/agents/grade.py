@@ -60,12 +60,13 @@ def _emit_progress_fire_and_forget(
         if target:
             asyncio.create_task(sio.emit(event, data, to=target))
         else:
-            asyncio.create_task(sio.emit(event, data))
+            # SECURITY FIX: Don't broadcast globally - log warning instead
+            logger.warning(f"No socket target found for {event}, skipping broadcast to prevent data leakage")
     except Exception as e:
         logger.warning(f"Failed to emit {event}: {e}")
 
 
-def create_grading_function(standard: Standards) -> Any:
+def create_grading_function(standard: Standards, chat_id: str | None = None) -> Any:
     """Create a function tool for a specific standard."""
     safe_name = create_safe_field_name(standard.name)
 
@@ -104,6 +105,7 @@ def create_grading_function(standard: Standards) -> Any:
                 "standard_name": standard.name,
                 "score": score,
                 "feedback_preview": feedback[:100] + "..." if len(feedback) > 100 else feedback,
+                "chat_id": chat_id,  # Add chat_id for client validation
             },
         )
 
@@ -117,7 +119,7 @@ def create_grading_function(standard: Standards) -> Any:
     return function_tool(grade_standard)
 
 
-def create_strengths_function() -> Any:
+def create_strengths_function(chat_id: uuid.UUID) -> Any:
     """Create a function tool for identifying strengths."""
 
     async def identify_strengths(
@@ -145,6 +147,7 @@ def create_strengths_function() -> Any:
                 "message": f"Identified {len(strengths)} strengths",
                 "count": len(strengths),
                 "strengths_preview": [s[:50] + "..." if len(s) > 50 else s for s in strengths[:3]],
+                "chat_id": str(chat_id),  # Add chat_id for client validation
             },
         )
 
@@ -156,7 +159,7 @@ def create_strengths_function() -> Any:
     return function_tool(identify_strengths)
 
 
-def create_improvements_function() -> Any:
+def create_improvements_function(chat_id: uuid.UUID) -> Any:
     """Create a function tool for identifying areas for improvement."""
 
     async def identify_improvements(
@@ -184,6 +187,7 @@ def create_improvements_function() -> Any:
                 "message": f"Identified {len(improvements)} areas for improvement",
                 "count": len(improvements),
                 "improvements_preview": [i[:50] + "..." if len(i) > 50 else i for i in improvements[:3]],
+                "chat_id": str(chat_id),  # Add chat_id for client validation
             },
         )
 
@@ -197,13 +201,13 @@ def create_improvements_function() -> Any:
 
 
 
-def create_grading_tools(standards: list[Standards]) -> list[Any]:
+def create_grading_tools(standards: list[Standards], chat_id: uuid.UUID) -> list[Any]:
     """Create all grading function tools for the standards plus strengths/improvements/summary."""
     tools = []
 
     # Create tools for each standard
     for standard in standards:
-        tool = create_grading_function(standard)
+        tool = create_grading_function(standard, str(chat_id))
         tools.append(tool)
         standard_desc = standard.description or "No description"
         logger.info(
@@ -211,8 +215,8 @@ def create_grading_tools(standards: list[Standards]) -> list[Any]:
         )
 
     # Add strengths and improvements tools
-    tools.append(create_strengths_function())
-    tools.append(create_improvements_function())
+    tools.append(create_strengths_function(chat_id))
+    tools.append(create_improvements_function(chat_id))
     logger.info("Created strengths and improvements tools")
 
     logger.info(f"Total tools created: {len(tools)}")
@@ -342,6 +346,7 @@ async def run_grading_agent(
                 "rubric_name": rubric.name,
                 "standards_count": len(standards),
                 "total_tools": len(standards) + 2,  # standards + strengths + improvements
+                "chat_id": str(chat_id),  # Add chat_id for client validation
             },
         )
 
@@ -349,7 +354,7 @@ async def run_grading_agent(
         rubric_input = get_dynamic_rubric(rubric, list(standards))
 
         # Create grading tools
-        grading_tools = create_grading_tools(list(standards))
+        grading_tools = create_grading_tools(list(standards), chat_id)
         logger.info(f"Created {len(grading_tools)} grading tools")
 
         # Create tool use behavior to wait for all tools to be called
@@ -571,6 +576,7 @@ async def run_grading_agent(
                 "standards_graded": standard_grade_count,
                 "strengths_count": len(strengths_list),
                 "improvements_count": len(improvements_list),
+                "chat_id": str(chat_id),  # Add chat_id for client validation
             },
         )
 

@@ -8,19 +8,16 @@ from typing import Any, cast
 import httpx
 import PyPDF2
 from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
-from dotenv import load_dotenv
-from fastapi import Depends
-from pydantic import BaseModel, Field
-from sqlmodel import Session, select
-
 from app.db import get_session
 from app.extensions import load_prompt
 from app.models import Documents
 from app.services.agents.generic import GenericAgent
-from app.utils.tools_args_model import (
-    build_args_model_from_spec,
-    make_flat_tool_from_args_model,
-)
+from app.utils.tools_args_model import (build_args_model_from_spec,
+                                        make_flat_tool_from_args_model)
+from dotenv import load_dotenv
+from fastapi import Depends
+from pydantic import BaseModel, Field
+from sqlmodel import Session, select
 
 load_dotenv()
 
@@ -75,7 +72,8 @@ def _emit_progress_fire_and_forget(
         if target:
             asyncio.create_task(sio.emit(event, data, to=target))
         else:
-            asyncio.create_task(sio.emit(event, data))
+            # SECURITY FIX: Don't broadcast globally - log warning instead
+            logger.warning(f"No socket target found for {event}, skipping broadcast to prevent data leakage")
     except Exception as e:
         logger.warning(f"Failed to emit {event}: {e}")
 
@@ -136,7 +134,7 @@ async def upload_pdf_to_supabase_storage(pdf_bytes: bytes, doc_id: str) -> None:
         raise
 
 
-def create_scenario_tool() -> Any:
+def create_scenario_tool(scenario_id: uuid.UUID) -> Any:
     """Create a function tool for generating scenario title and problem statement."""
 
     async def generate_scenario(
@@ -167,6 +165,7 @@ def create_scenario_tool() -> Any:
                 "type": "scenario",
                 "completed": True,
                 "message": f"Generated scenario: {title}",
+                "scenario_id": str(scenario_id),  # Add scenario_id for client validation
             },
         )
 
@@ -176,7 +175,7 @@ def create_scenario_tool() -> Any:
     return function_tool(generate_scenario)
 
 
-def create_objectives_tool() -> Any:
+def create_objectives_tool(scenario_id: uuid.UUID) -> Any:
     """Create a function tool for generating scenario objectives."""
 
     async def generate_objectives(
@@ -203,6 +202,7 @@ def create_objectives_tool() -> Any:
                 "completed": True,
                 "message": f"Generated {len(objectives)} objectives",
                 "count": len(objectives),
+                "scenario_id": str(scenario_id),  # Add scenario_id for client validation
             },
         )
 
@@ -558,8 +558,8 @@ async def create_scenario_tools(
     tools: list[Any] = []
 
     # Add core scenario tools
-    tools.append(create_scenario_tool())
-    tools.append(create_objectives_tool())
+    tools.append(create_scenario_tool(scenario_id))
+    tools.append(create_objectives_tool(scenario_id))
 
     # Add persona prompt tools for each persona with aliases
     persona_aliases = calculate_persona_aliases(persona_ids, session)
