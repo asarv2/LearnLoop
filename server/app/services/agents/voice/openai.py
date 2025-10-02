@@ -1222,6 +1222,13 @@ class OpenAIAgent(Agent):
                             full_text=reference_text,
                         )
                     
+                    # Store last word end time for final CTC truncation
+                    if words_p:
+                        last_word_end_ms = max(word.get("end_ms", 0) for word in words_p)
+                        last_word_end_samples = int((last_word_end_ms / 1000.0) * PCM_SR)
+                        st2["partial_last_word_end_samples"] = last_word_end_samples
+                        st2["partial_last_word_end_ms"] = last_word_end_ms
+                    
                     # Add returned audio to bus if available
                     if returned_audio_p is not None and returned_audio_p.size > 0:
                         # Chunk into 20ms pieces for streaming
@@ -1526,13 +1533,39 @@ class OpenAIAgent(Agent):
                     
                     # Add returned audio to bus if available
                     if returned_audio is not None and returned_audio.size > 0:
-                        # Chunk into 20ms pieces for streaming
-                        chunk_size = SAMPLES_PER_CHUNK  # 960 samples = 20ms
-                        for i in range(0, len(returned_audio), chunk_size):
-                            chunk = returned_audio[i:i + chunk_size]
-                            if len(chunk) > 0:
-                                await self.publish_audio(chunk)
-                                await asyncio.sleep(chunk_size / PCM_SR)  # 20ms pacing
+                        # Check if we need to truncate based on partial word timing
+                        partial_last_word_samples = st.get("partial_last_word_end_samples", 0) if st else 0
+                        
+                        if partial_last_word_samples > 0 and len(returned_audio) > partial_last_word_samples:
+                            # Find the first word in final CTC that starts after partial ended
+                            truncation_samples = len(returned_audio)  # Default: no truncation
+                            
+                            for word in words:
+                                word_start_ms = word.get("start_ms", 0)
+                                word_start_samples = int((word_start_ms / 1000.0) * PCM_SR)
+                                
+                                # If this word starts after partial ended (with 200ms buffer), truncate here
+                                if word_start_samples > (partial_last_word_samples - int(200 * PCM_SR / 1000)):
+                                    truncation_samples = word_start_samples
+                                    break
+                            
+                            # Truncate final audio to start from the next word
+                            if truncation_samples < len(returned_audio):
+                                truncated_audio = returned_audio[truncation_samples:]
+                            else:
+                                truncated_audio = returned_audio
+                        else:
+                            # No partial data or audio is shorter than partial, use full audio
+                            truncated_audio = returned_audio
+                        
+                        # Publish truncated audio with chunking
+                        if len(truncated_audio) > 0:
+                            chunk_size = SAMPLES_PER_CHUNK  # 960 samples = 20ms
+                            for i in range(0, len(truncated_audio), chunk_size):
+                                chunk = truncated_audio[i:i + chunk_size]
+                                if len(chunk) > 0:
+                                    await self.publish_audio(chunk)
+                                    await asyncio.sleep(chunk_size / PCM_SR)  # 20ms pacing
         except Exception:
             pass
 
