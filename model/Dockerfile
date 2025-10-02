@@ -29,6 +29,8 @@ EXPOSE 8000
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV PORT=8000
+ENV CTRANSLATE2_RANK=0
+ENV CTRANSLATE2_CACHE_DIR=/app/model_cache/ctranslate2
 
 # Run the application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
