@@ -28,6 +28,8 @@ export type Message = Tables<'messages'>;
 export type Parameter = Tables<'parameters'>;
 // --- PERSONAS ---
 export type Persona = Tables<'personas'>;
+// --- POLICIES ---
+export type Policy = Tables<'policies'>;
 // --- PROFILES ---
 export type Profile = Tables<'profiles'>;
 // --- RUBRIC_GRADES ---
@@ -65,7 +67,7 @@ export type UserRole = "employee" | "admin" | "superadmin";
 // =============================================
 
 // Union type of all table names
-export type TableName = 'attempts' | 'chats' | 'documents' | 'email_subscriptions' | 'fields' | 'groups' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'profiles' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings' | 'user_feedback' | 'user_insights';
+export type TableName = 'attempts' | 'chats' | 'documents' | 'email_subscriptions' | 'fields' | 'groups' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'policies' | 'profiles' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings' | 'user_feedback' | 'user_insights';
 
 // Union type of all entity types
-export type Entity = Attempt | Chat | Document | EmailSubscription | Field | Group | Hint | Log | Message | Parameter | Persona | Profile | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training | UserFeedback | UserInsight;
+export type Entity = Attempt | Chat | Document | EmailSubscription | Field | Group | Hint | Log | Message | Parameter | Persona | Policy | Profile | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training | UserFeedback | UserInsight;

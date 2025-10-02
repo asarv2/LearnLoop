@@ -104,29 +104,14 @@ class OpenAIAgent(Agent):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-
-        self.model_name = "gpt-4o-mini-realtime-preview"
-        self.voice_name = "alloy"
         
         # Hold reference to the RealtimeContext for updates
         self._rtctx: RealtimeContext | None = None
 
-        td_type = "semantic_vad"
-        self.turn_detection = {
-            "type": td_type,
-            # Let the server decide when to answer & allow barge-in
-            "create_response": True,
-            "interrupt_response": True,
-            # give sane defaults; the server may ignore extras it doesn't use
-            "eagerness": "auto",
-        }
-
         # Audio formats the model expects/emits (pcm16 everywhere)
-        self.input_sr = int(
-            os.getenv("OPENAI_INPUT_SR", "24000")
-        )  # set to 48000 to skip resample
-        self.output_sr = 24000  # ← back to 24k (fixes chipmunk/high pitch)
-        self._logged_audio_format = False  # optional: one-time debug print
+        self.input_sr = 24000
+        self.output_sr = 24000
+        self._logged_audio_format = False
 
         self._session: RealtimeSession | None = None
         self._tasks: list[asyncio.Task] = []
@@ -704,7 +689,7 @@ class OpenAIAgent(Agent):
             "shimmer",
             "verse",
         ]
-        if realtime_voice not in valid_voices:
+        if realtime_voice is not None and realtime_voice not in valid_voices:
             realtime_voice = "alloy"
 
         # Example function for dynamic instructions
@@ -852,7 +837,6 @@ class OpenAIAgent(Agent):
 
         model_settings: RealtimeSessionModelSettings = {
             "model_name": "gpt-realtime",
-            "modalities": ["text"],
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
             "turn_detection": {
@@ -861,9 +845,13 @@ class OpenAIAgent(Agent):
                 "interrupt_response": True,
                 "eagerness": "auto",
             },
-            "voice": realtime_voice,
             "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
         }
+        if realtime_voice is not None:
+            model_settings["modalities"] = ["audio"]
+            model_settings["voice"] = realtime_voice
+        else:
+            model_settings["modalities"] = ["text"]
 
         run_cfg = RealtimeRunConfig(model_settings=model_settings)
 
