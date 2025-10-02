@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from . import extensions  # type: ignore
-from .transcripts import align_audio  # type: ignore
+from .transcripts import align_audio, align_ctc  # type: ignore
 
 logger = logging.getLogger("model_service")
 
@@ -62,6 +62,18 @@ class AlignCTCRequest(BaseModel):
     language: str | None = None
 
 
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "alloy"
+    sample_rate: int = 48000
+
+
+class TTSResponse(BaseModel):
+    audio_b64: str
+    sample_rate: int
+    duration_ms: int
+
+
 class HealthResponse(BaseModel):
     status: str
     models_loaded: dict[str, bool]
@@ -74,6 +86,7 @@ async def health_check() -> HealthResponse:
         # Check if models are loaded
         wav2vec2_processor, wav2vec2_model = extensions.get_wav2vec2_ctc()
         whisper_model = extensions.get_whisper_tiny("auto")
+        kokoro_model = extensions.get_kokoro_pipeline("a")
 
         return HealthResponse(
             status="healthy",
@@ -81,6 +94,7 @@ async def health_check() -> HealthResponse:
                 "wav2vec2": wav2vec2_processor is not None
                 and wav2vec2_model is not None,
                 "whisper": whisper_model is not None,
+                "kokoro": kokoro_model is not None,
             },
         )
     except Exception as e:
@@ -189,6 +203,7 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
     - num_chunks: when stage=="partial", number of chunks to include
     - chunk_ms: chunk duration in milliseconds (default 20ms)
     """
+    logger.info(f"[align_ctc] request: stage={req.stage} sr={req.sr} ref_text_len={len(req.reference_text or '')} ref_text='{req.reference_text[:100] if req.reference_text else None}...' audio_b64_len={len(req.audio_b64)}")
     import base64
 
     import numpy as np  # type: ignore
@@ -218,20 +233,39 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
             if x.size > limit:
                 x = x[:limit]
 
-        # Align (optional reference_text: if empty/None, Whisper will be used)
-        tr = align_audio(x, sr, reference_text=req.reference_text, language=req.language)
+        # Only return audio if we didn't receive valid audio frames
+        audio_b64 = None
+        if x.size == 0 and req.reference_text:
+            # No valid audio received - generate audio using Kokoro TTS FIRST
+            try:
+                audio_data, sample_rate = extensions.synthesize_kokoro(
+                    text=req.reference_text,
+                    voice="alloy",
+                    sr=48000
+                )
+                if audio_data.size > 0:
+                    # NOW align using the generated audio (skip Whisper since we have reference text)
+                    tr = align_ctc(audio_data, sample_rate, req.reference_text)
+                    
+                    # Encode generated audio for return
+                    audio_bytes = audio_data.astype(np.float32).tobytes()
+                    audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+                else:
+                    # Generated audio is empty, fallback to original behavior
+                    tr = align_audio(x, sr, reference_text=req.reference_text, language=req.language)
+            except Exception as e:
+                logger.warning(f"Failed to generate TTS audio: {e}")
+                # Fallback to original behavior
+                tr = align_audio(x, sr, reference_text=req.reference_text, language=req.language)
+        else:
+            # Normal case: align with provided audio
+            tr = align_audio(x, sr, reference_text=req.reference_text, language=req.language)
+
         words_data: list[dict[str, int | str]] = [
             {"start_ms": int(w.start_ms), "end_ms": int(w.end_ms), "text": str(w.text)}
             for w in tr.words
         ]
         # print(f"words_data: {words_data}")
-        # Only return audio if we didn't receive valid audio frames
-        # (e.g., when we generate audio via TTS synthesis)
-        audio_b64 = None
-        if x.size == 0:
-            # No valid audio received - could generate audio here in the future
-            # For now, return None since we don't generate audio
-            pass
         return TranscriptResponse(text=tr.text, words=words_data, audio_b64=audio_b64)
     except HTTPException:
         raise
