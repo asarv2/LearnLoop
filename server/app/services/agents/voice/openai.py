@@ -1164,7 +1164,7 @@ class OpenAIAgent(Agent):
             st2 = self._resp_streams.get(target_rid) or {}
             # Run partial when we've received enough audio OR text chunks
             audio_chunks_target = int(os.getenv("CTC_PARTIAL_AUDIO_CHUNKS", "6"))
-            text_chunks_target = int(os.getenv("CTC_PARTIAL_TEXT_CHUNKS", "2"))
+            text_chunks_target = int(os.getenv("CTC_PARTIAL_TEXT_CHUNKS", "6"))
             
             # Count text chunks for text-based triggering
             text_chunk_count = len(st2.get("buffer", []))
