@@ -1413,15 +1413,6 @@ class OpenAIAgent(Agent):
                 )
                 self.room.set_last_assistant(msg_id)
                 self.room.set_next_user_parent(msg_id)
-                await self.publish_text_chunk(
-                    text=final_text,
-                    message_id=msg_id,
-                    chunk_idx=0,
-                    is_final=True,
-                    persona_id=persona_id,
-                    voice=True,
-                    parent_id=parent_snap,
-                )
                 self._rid_to_msg[rid] = msg_id
             else:
                 # Check if we already streamed deltas for this message
@@ -1520,10 +1511,18 @@ class OpenAIAgent(Agent):
                     # Persist to DB
                     await self._persist_word_timestamps(msg_id_final, words)
                     
-                    # Update message content with Whisper transcription if it's different
-                    if tr_text and tr_text != effective_text and msg_id_final:
-                        from app.store import update_message_content
-                        await update_message_content(msg_id_final, tr_text)
+                    # Finalize message with Whisper transcription content
+                    if tr_text and msg_id_final:
+                        # Finalize the message with Whisper transcription
+                        await self.publish_text_chunk(
+                            text=tr_text,
+                            message_id=msg_id_final,
+                            chunk_idx=0,
+                            is_final=True,
+                            persona_id=await self._get_assistant_persona_id(),
+                            voice=True,
+                            parent_id=st["parent_id"] if st else None,
+                        )
                     
                     # Add returned audio to bus if available
                     if returned_audio is not None and returned_audio.size > 0:
