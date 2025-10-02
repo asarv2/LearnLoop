@@ -53,10 +53,11 @@ class TranscriptResponse(BaseModel):
 class AlignCTCRequest(BaseModel):
     audio_b64: str
     sr: int
-    reference_text: str
+    reference_text: str | None = None
     stage: str = "final"  # "partial" | "final"
     num_chunks: int | None = None  # used when stage=="partial"
     chunk_ms: int = 20  # default 20ms per chunk
+    language: str | None = None
 
 
 class HealthResponse(BaseModel):
@@ -128,7 +129,7 @@ async def transcribe_audio(
                 )
 
                 # Transcribe and align
-                transcript = align_audio(audio_data, sample_rate, reference_text)
+                transcript = align_audio(audio_data, sample_rate, reference_text, language=None)
 
                 # Convert to response format
                 words_data: list[dict[str, int | str]] = [
@@ -183,22 +184,19 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
 
     import numpy as np  # type: ignore
 
-    try:
-        if not (req.reference_text or "").strip():
-            raise HTTPException(
-                status_code=400, detail="reference_text cannot be empty"
-            )
+    def _try_decode(raw: bytes) -> "np.ndarray":
+        # Try float32 in [-1,1]
+        if len(raw) % 4 == 0:
+            x_f32 = np.frombuffer(raw, dtype=np.float32)
+            if np.isfinite(x_f32).all() and (np.abs(x_f32) <= 1.001).all():
+                return x_f32.astype(np.float32)
+        # Fallback int16 → float32[-1,1]
+        return (np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0)
 
+    try:
         # Decode audio
         raw = base64.b64decode(req.audio_b64)
-        # Try float32 first, else int16
-        if len(raw) % 4 == 0:
-            x = np.frombuffer(raw, dtype=np.float32)
-            if not np.isfinite(x).all():
-                # fallback to s16
-                x = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-        else:
-            x = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        x = _try_decode(raw)
 
         x = x.astype(np.float32)
         sr = int(req.sr)
@@ -211,8 +209,8 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
             if x.size > limit:
                 x = x[:limit]
 
-        # Align
-        tr = align_audio(x, sr, reference_text=req.reference_text)
+        # Align (optional reference_text: if empty/None, Whisper will be used)
+        tr = align_audio(x, sr, reference_text=req.reference_text, language=req.language)
         words_data: list[dict[str, int | str]] = [
             {"start_ms": int(w.start_ms), "end_ms": int(w.end_ms), "text": str(w.text)}
             for w in tr.words
