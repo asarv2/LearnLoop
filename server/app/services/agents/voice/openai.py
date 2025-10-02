@@ -851,7 +851,7 @@ class OpenAIAgent(Agent):
 
         model_settings: RealtimeSessionModelSettings = {
             "model_name": "gpt-realtime",
-            "modalities": ["audio"],
+            "modalities": ["text"],
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
             "turn_detection": {
@@ -1161,14 +1161,29 @@ class OpenAIAgent(Agent):
                 return
 
             st2 = self._resp_streams.get(target_rid) or {}
-            # Run partial only when we've received exactly the configured number of model audio chunks
-            n_chunks_target = int(os.getenv("CTC_PARTIAL_NUM_CHUNKS", "6"))
+            # Run partial when we've received enough audio OR text chunks
+            audio_chunks_target = int(os.getenv("CTC_PARTIAL_AUDIO_CHUNKS", "6"))
+            text_chunks_target = int(os.getenv("CTC_PARTIAL_TEXT_CHUNKS", "2"))
             
-            if (
+            # Count text chunks for text-based triggering
+            text_chunk_count = len(st2.get("buffer", []))
+            audio_chunk_count = int(self._resp_audio_chunk_count.get(target_rid, 0))
+
+            # Trigger partial CTC when EITHER condition is met
+            audio_trigger = (
                 st2.get("has_received_audio")
-                and not st2.get("partial_ctc_done", False)
-                and n_chunks_target > 0
-                and int(self._resp_audio_chunk_count.get(target_rid, 0)) == n_chunks_target
+                and audio_chunk_count == audio_chunks_target
+            )
+
+            text_trigger = (
+                text_chunk_count >= text_chunks_target
+                and "".join(st2.get("buffer", [])).strip()  # Has actual text content
+            )
+
+            if (
+                not st2.get("partial_ctc_done", False)
+                and (audio_chunks_target > 0 or text_chunks_target > 0)
+                and (audio_trigger or text_trigger)
             ):
                 buffered_text_now = "".join(st2.get("buffer", []))
                 # Combine pre-audio (flushed) + post-audio (buffer) for best reference
@@ -1183,7 +1198,7 @@ class OpenAIAgent(Agent):
                 
                 if audio_arr.size > 0:
                     logger.debug(
-                        f"[ctc][partial] rid={target_rid} samples={audio_arr.size} chunks={n_chunks_target} text_len={len(reference_text)}"
+                        f"[ctc][partial] rid={target_rid} samples={audio_arr.size} audio_chunks={audio_chunk_count}/{audio_chunks_target} text_chunks={text_chunk_count}/{text_chunks_target} text_len={len(reference_text)}"
                     )
                     _, words_p, _ = await self._align_ctc(
                         audio_f32=audio_arr,
@@ -1249,6 +1264,8 @@ class OpenAIAgent(Agent):
         if timestamps_enabled:
             # Buffer only; final transcript will be emitted after alignment
             st["buffer"].append(delta)
+            # Try partial CTC in text-only mode (when no audio has been received yet)
+            await self._try_partial_ctc(rid)
         else:
             # If we've already received audio, publish immediately; otherwise buffer
             if st.get("has_received_audio"):
