@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 import tempfile
 from collections.abc import AsyncIterator
@@ -48,6 +49,7 @@ app.add_middleware(
 class TranscriptResponse(BaseModel):
     text: str
     words: list[dict[str, int | str]]
+    audio_b64: str | None = None
 
 
 class AlignCTCRequest(BaseModel):
@@ -141,7 +143,14 @@ async def transcribe_audio(
                     for word in transcript.words
                 ]
 
-                return TranscriptResponse(text=transcript.text, words=words_data)
+                # Only return audio if we didn't receive valid audio frames
+                # (e.g., when we generate audio via TTS synthesis)
+                audio_b64 = None
+                if len(audio_data) == 0:
+                    # No valid audio received - could generate audio here in the future
+                    # For now, return None since we don't generate audio
+                    pass
+                return TranscriptResponse(text=transcript.text, words=words_data, audio_b64=audio_b64)
 
             finally:
                 # Clean up temp file
@@ -216,7 +225,14 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
             for w in tr.words
         ]
         # print(f"words_data: {words_data}")
-        return TranscriptResponse(text=tr.text, words=words_data)
+        # Only return audio if we didn't receive valid audio frames
+        # (e.g., when we generate audio via TTS synthesis)
+        audio_b64 = None
+        if x.size == 0:
+            # No valid audio received - could generate audio here in the future
+            # For now, return None since we don't generate audio
+            pass
+        return TranscriptResponse(text=tr.text, words=words_data, audio_b64=audio_b64)
     except HTTPException:
         raise
     except Exception as e:

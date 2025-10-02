@@ -482,12 +482,12 @@ class OpenAIAgent(Agent):
         stage: str = "final",
         num_chunks: int | None = None,
         chunk_ms: int = 20,
-    ) -> tuple[str, list[dict[str, Any]]]:
-        """Call external model service /align_ctc; returns (text, words[])."""
+    ) -> tuple[str, list[dict[str, Any]], np.ndarray | None]:
+        """Call external model service /align_ctc; returns (text, words[], audio)."""
         try:
             base = os.getenv("MODEL_SERVICE_URL") or "http://localhost:8001"
             if not base:
-                return reference_text, []
+                return reference_text, [], None
 
             b = audio_f32.astype(np.float32).tobytes()
             payload: dict[str, Any] = {
@@ -521,9 +521,20 @@ class OpenAIAgent(Agent):
                         )
                     except Exception:
                         pass
-            return text, words
+            
+            # Extract and decode audio if provided
+            returned_audio = None
+            audio_b64 = data.get("audio_b64")
+            if audio_b64:
+                try:
+                    audio_bytes = base64.b64decode(audio_b64)
+                    returned_audio = np.frombuffer(audio_bytes, dtype=np.float32)
+                except Exception:
+                    pass
+            
+            return text, words, returned_audio
         except Exception:
-            return reference_text, []
+            return reference_text, [], None
 
     def _wire_user_text_stream(self, session: RealtimeSession) -> None:
         """
@@ -1174,7 +1185,7 @@ class OpenAIAgent(Agent):
                     logger.debug(
                         f"[ctc][partial] rid={target_rid} samples={audio_arr.size} chunks={n_chunks_target} text_len={len(reference_text)}"
                     )
-                    _, words_p = await self._align_ctc(
+                    _, words_p, _ = await self._align_ctc(
                         audio_f32=audio_arr,
                         sr=PCM_SR,
                         reference_text=reference_text,
@@ -1462,7 +1473,7 @@ class OpenAIAgent(Agent):
             start_ts = self._resp_audio_start_ts_ms.get(rid, int(time.time() * 1000))
             
             if audio_arr is not None:
-                tr_text, words = await self._align_ctc(
+                tr_text, words, returned_audio = await self._align_ctc(
                     audio_f32=audio_arr, sr=PCM_SR, reference_text=effective_text, stage="final"
                 )
                 msg_id_final = self._rid_to_msg.get(rid)
@@ -1496,6 +1507,12 @@ class OpenAIAgent(Agent):
                     if tr_text and tr_text != effective_text and msg_id_final:
                         from app.store import update_message_content
                         await update_message_content(msg_id_final, tr_text)
+                    
+                    # Add returned audio to bus if available
+                    if returned_audio is not None and returned_audio.size > 0:
+                        # Resample to bus rate if needed (same as existing audio processing)
+                        if len(returned_audio) > 0:
+                            await self.publish_audio(returned_audio)
         except Exception:
             pass
 
