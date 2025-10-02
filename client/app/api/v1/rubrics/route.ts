@@ -94,7 +94,7 @@ export async function POST(request: Request) {
         name,
         description: description || null,
         company: company || null,
-        total_points: 100, // Default total points
+        total_points: 25, // Default total points (5 standards × 5 max score)
         standard_length: standards?.length || 0,
       })
       .select()
