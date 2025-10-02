@@ -839,9 +839,8 @@ class OpenAIAgent(Agent):
         )
 
         model_settings: RealtimeSessionModelSettings = {
-            "model_name": "gpt-4o-mini-realtime-preview",
-            "modalities": ["text", "audio"],
-            # ✅ Force 48k both directions
+            "model_name": "gpt-realtime",
+            "modalities": ["audio"],
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
             "turn_detection": {
@@ -1171,7 +1170,7 @@ class OpenAIAgent(Agent):
                 audio_arr = self._resp_audio.get(target_rid, np.zeros(0, dtype=np.float32))
                 start_ts = self._resp_audio_start_ts_ms.get(target_rid, int(time.time() * 1000))
                 
-                if audio_arr.size > 0 and reference_text:
+                if audio_arr.size > 0:
                     logger.debug(
                         f"[ctc][partial] rid={target_rid} samples={audio_arr.size} chunks={n_chunks_target} text_len={len(reference_text)}"
                     )
@@ -1370,7 +1369,7 @@ class OpenAIAgent(Agent):
             if len(buffered_all.strip()) > len(final_text):
                 final_text = buffered_all.strip()
 
-        if final_text:
+        if final_text or (st and st.get("has_received_audio")):
             persona_id = await self._get_assistant_persona_id()
             if not st or st["msg_id"] is None:
                 # One-shot finalization
@@ -1462,7 +1461,7 @@ class OpenAIAgent(Agent):
             )
             start_ts = self._resp_audio_start_ts_ms.get(rid, int(time.time() * 1000))
             
-            if (effective_text or "").strip() and audio_arr is not None:
+            if audio_arr is not None:
                 tr_text, words = await self._align_ctc(
                     audio_f32=audio_arr, sr=PCM_SR, reference_text=effective_text, stage="final"
                 )

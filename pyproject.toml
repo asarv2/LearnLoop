@@ -20,7 +20,7 @@ dependencies = [
     "uvloop>=0.20.0,<0.21.0",
 
     # Key application logic
-    "openai-agents[litellm,realtime]>=0.2.10,<0.3.0",
+    "openai-agents[litellm,realtime]>=0.3.0,<0.4.0",
     "openai>=1.99.6,<2.0.0",
 
     # WebRTC and Media

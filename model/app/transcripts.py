@@ -68,10 +68,7 @@ def align_ctc(audio_f32: np.ndarray, sr: int, reference_text: str) -> Transcript
     try:
         import torch  # type: ignore
         from ctc_segmentation import (  # type: ignore
-            CtcSegmentationParameters,
-            ctc_segmentation,
-            prepare_text,
-        )
+            CtcSegmentationParameters, ctc_segmentation, prepare_text)
 
         # Normalize text roughly to wav2vec2's charset
         def _norm_en(s: str) -> str:
@@ -145,7 +142,7 @@ def align_ctc(audio_f32: np.ndarray, sr: int, reference_text: str) -> Transcript
         return align_words_uniform(audio_f32, sr, reference_text)
 
 
-def transcribe_and_align_whisper(audio_f32: np.ndarray, sr: int) -> Transcript:
+def transcribe_and_align_whisper(audio_f32: np.ndarray, sr: int, language: str | None = None) -> Transcript:
     import logging
 
     log = logging.getLogger("model_service")
@@ -178,7 +175,10 @@ def transcribe_and_align_whisper(audio_f32: np.ndarray, sr: int) -> Transcript:
                 return Transcript(words=[], text="")
 
             seg_gen, info = model.transcribe(
-                f.name, vad_filter=True, vad_parameters={"min_silence_duration_ms": 200}
+                f.name,
+                language=language,
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 200},
             )
             raw_segments = [
                 {"start": s.start, "end": s.end, "text": (s.text or "").strip()}
@@ -206,8 +206,8 @@ def transcribe_and_align_whisper(audio_f32: np.ndarray, sr: int) -> Transcript:
 
 
 def align_audio(
-    audio_f32: np.ndarray, sr: int, reference_text: str | None = None
+    audio_f32: np.ndarray, sr: int, reference_text: str | None = None, language: str | None = None
 ) -> Transcript:
     if reference_text is not None and reference_text.strip():
         return align_ctc(audio_f32, sr, reference_text.strip())
-    return transcribe_and_align_whisper(audio_f32, sr)
+    return transcribe_and_align_whisper(audio_f32, sr, language)
