@@ -99,14 +99,42 @@ export default function AdminRubricsPage() {
     }
   };
 
-  // Filter rubrics based on search
+  // Filter rubrics based on search and type
+  // Only show: General Rubric (global) and company-specific rubrics
+  // Hide: Standard training rubrics (Interview, Termination, Idea Pitch, Constructive Feedback)
+  const standardTrainingRubricNames = [
+    "Interview Assessment Rubric",
+    "Termination Conversation Rubric",
+    "Idea Pitch Assessment Rubric",
+    "Constructive Feedback Rubric",
+  ];
+
   const filteredRubrics =
     rubrics?.filter(
       (rubric) =>
-        rubric.name.toLowerCase().includes(searchText.toLowerCase()) ||
-        (rubric.description &&
-          rubric.description.toLowerCase().includes(searchText.toLowerCase()))
+        // Include General Rubric (the main generic rubric)
+        (rubric.name === "General Rubric" && rubric.company === null) ||
+        // Include all company-specific rubrics
+        (rubric.company !== null && rubric.company !== "") ||
+        // Exclude standard training rubrics
+        (!standardTrainingRubricNames.includes(rubric.name) &&
+          rubric.company === null &&
+          (rubric.name.toLowerCase().includes(searchText.toLowerCase()) ||
+            (rubric.description &&
+              rubric.description
+                .toLowerCase()
+                .includes(searchText.toLowerCase()))))
     ) || [];
+
+  // Apply search filter
+  const searchFilteredRubrics = searchText
+    ? filteredRubrics.filter(
+        (rubric) =>
+          rubric.name.toLowerCase().includes(searchText.toLowerCase()) ||
+          (rubric.description &&
+            rubric.description.toLowerCase().includes(searchText.toLowerCase()))
+      )
+    : filteredRubrics;
 
   // Show loading state while profile is loading
   if (profileLoading) {
@@ -320,7 +348,7 @@ export default function AdminRubricsPage() {
         </Col>
 
         {/* Rubric Cards */}
-        {filteredRubrics.map((rubric) => rubric.id === "a121c3fe-7559-41cf-bbcd-499a2f515af6" && (
+        {searchFilteredRubrics.map((rubric) => (
           <Col key={rubric.id} xs={24} sm={12} md={8} lg={6}>
             <Card
               hoverable
@@ -398,7 +426,7 @@ export default function AdminRubricsPage() {
       </Row>
 
       {/* Empty State */}
-      {!rubricsLoading && filteredRubrics.length === 0 && (
+      {!rubricsLoading && searchFilteredRubrics.length === 0 && (
         <div style={{ marginTop: "50px" }}>
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -426,7 +454,7 @@ export default function AdminRubricsPage() {
         width="95vw"
         style={{ top: 20 }}
         styles={{
-          body: { maxHeight: "85vh", overflow: "hidden" },
+          body: { maxHeight: "85vh", overflowY: "auto" },
         }}
       >
         {detailsLoading ? (
@@ -451,6 +479,7 @@ export default function AdminRubricsPage() {
               style={{
                 fontSize: "12px",
                 width: "100%",
+                overflowX: "auto",
               }}
             />
           </div>

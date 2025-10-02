@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useProfile } from "@/lib/api/hooks/useProfiles";
-import { DeleteOutlined, PlusOutlined, SaveOutlined } from "@ant-design/icons";
+import { SaveOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import {
   Button,
   Card,
@@ -69,6 +69,8 @@ export default function CreateRubricPage() {
       items: ["", "", "", "", ""],
     },
   ]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isGenerated, setIsGenerated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   // Show loading state while profile is loading
@@ -89,35 +91,21 @@ export default function CreateRubricPage() {
     );
   }
 
-  const addStandard = () => {
-    const newId = (standards.length + 1).toString();
-    setStandards([
-      ...standards,
-      {
-        id: newId,
-        name: "",
-        description: "",
-        items: standards[0]?.items.map(() => "") || ["", "", "", "", ""],
-      },
-    ]);
-  };
-
-  const deleteStandard = (standardId: string) => {
-    if (standards.length <= 1) {
-      message.warning("At least one standard is required");
-      return;
-    }
-    setStandards(standards.filter((s) => s.id !== standardId));
-  };
+  // Standards are now fixed at 5 (cannot add or remove)
+  // Any attempt to modify the array length will be blocked
 
   const updateStandard = (
     standardId: string,
     field: keyof Standard,
     value: string | string[]
   ) => {
-    setStandards(
-      standards.map((s) => (s.id === standardId ? { ...s, [field]: value } : s))
+    const updatedStandards = standards.map((s) =>
+      s.id === standardId ? { ...s, [field]: value } : s
     );
+    // Ensure we always have exactly 5 standards
+    if (updatedStandards.length === 5) {
+      setStandards(updatedStandards);
+    }
   };
 
   const updateStandardItem = (
@@ -137,26 +125,97 @@ export default function CreateRubricPage() {
     );
   };
 
-  const addScoreColumn = () => {
-    setStandards(
-      standards.map((s) => ({
-        ...s,
-        items: [...s.items, ""],
-      }))
-    );
-  };
+  // Score columns are now fixed at 5 (1-5 scale)
+  // Removed addScoreColumn and deleteScoreColumn functions
 
-  const deleteScoreColumn = (columnIndex: number) => {
-    if (standards[0]?.items.length <= 1) {
-      message.warning("At least one score column is required");
+  const handleGenerate = async () => {
+    console.log("=== GENERATE RUBRIC START ===");
+
+    if (!rubricName.trim()) {
+      message.error("Please enter a rubric name");
       return;
     }
-    setStandards(
-      standards.map((s) => ({
-        ...s,
-        items: s.items.filter((_, index) => index !== columnIndex),
-      }))
-    );
+
+    if (standards.length !== 5) {
+      message.error("Rubric must have exactly 5 standards");
+      return;
+    }
+
+    if (standards.some((s) => !s.name.trim())) {
+      message.error("All standards must have a name");
+      return;
+    }
+
+    console.log("Validation passed, starting AI generation...");
+    setIsGenerating(true);
+
+    try {
+      // Call the AI generation endpoint
+      const generateResponse = await fetch("/api/v1/rubrics/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: rubricName,
+          description: rubricDescription,
+          standards: standards.map((s) => ({
+            name: s.name,
+            description: s.description,
+          })),
+        }),
+      });
+
+      console.log(
+        "Generate response received:",
+        generateResponse.status,
+        generateResponse.ok
+      );
+
+      if (!generateResponse.ok) {
+        const errorData = await generateResponse.json();
+        console.log("Error response:", errorData);
+        throw new Error(errorData.error || "Failed to generate rubric");
+      }
+
+      const generatedData = await generateResponse.json();
+      console.log("Generated data:", generatedData);
+
+      if (!generatedData.success || !generatedData.standards) {
+        throw new Error("Invalid response from generation endpoint");
+      }
+
+      // Update the standards with the generated items
+      const updatedStandards = standards.map((s) => {
+        const generatedStandard = generatedData.standards.find(
+          (gs: { name: string; items: string[] }) => gs.name === s.name
+        );
+        if (generatedStandard && generatedStandard.items) {
+          return {
+            ...s,
+            items: generatedStandard.items,
+          };
+        }
+        return s;
+      });
+
+      setStandards(updatedStandards);
+      setIsGenerated(true);
+      message.success(
+        "Rubric criteria generated successfully! Review the table below and click Save when ready."
+      );
+    } catch (error) {
+      console.error("Error in handleGenerate:", error);
+      message.error(
+        `Failed to generate rubric: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    } finally {
+      console.log("Setting isGenerating to false");
+      setIsGenerating(false);
+      console.log("=== GENERATE RUBRIC END ===");
+    }
   };
 
   const handleSave = async () => {
@@ -164,6 +223,11 @@ export default function CreateRubricPage() {
 
     if (!rubricName.trim()) {
       message.error("Please enter a rubric name");
+      return;
+    }
+
+    if (standards.length !== 5) {
+      message.error("Rubric must have exactly 5 standards");
       return;
     }
 
@@ -176,7 +240,7 @@ export default function CreateRubricPage() {
     setIsSaving(true);
 
     try {
-      const response = await fetch("/api/v1/rubrics", {
+      const saveResponse = await fetch("/api/v1/rubrics", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -188,17 +252,21 @@ export default function CreateRubricPage() {
           standards: standards.map((s) => ({
             name: s.name,
             description: s.description,
-            items: s.items.filter((item) => item.trim() !== ""),
+            items: s.items.filter((item: string) => item.trim() !== ""),
           })),
         }),
       });
 
-      console.log("Response received:", response.status, response.ok);
+      console.log(
+        "Save response received:",
+        saveResponse.status,
+        saveResponse.ok
+      );
 
-      if (!response.ok) {
-        const errorData = await response.json();
+      if (!saveResponse.ok) {
+        const errorData = await saveResponse.json();
         console.log("Error response:", errorData);
-        throw new Error(errorData.error || "Failed to create rubric");
+        throw new Error(errorData.error || "Failed to save rubric");
       }
 
       console.log("Success! About to show message and navigate...");
@@ -210,7 +278,7 @@ export default function CreateRubricPage() {
     } catch (error) {
       console.error("Error in handleSave:", error);
       message.error(
-        `Failed to create rubric: ${
+        `Failed to save rubric: ${
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
@@ -224,32 +292,24 @@ export default function CreateRubricPage() {
   const createColumns = () => {
     const scoreColumns = standards[0]?.items.map((_, index) => ({
       title: (
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Input
-            value={index + 1}
-            onChange={(e) => {
-              const newValue = parseInt(e.target.value);
-              if (!isNaN(newValue) && newValue > 0) {
-                // Handle reordering columns if needed
-                // For now, just keep the display value
-              }
-            }}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            justifyContent: "center",
+          }}
+        >
+          <div
             style={{
               width: "40px",
               textAlign: "center",
               fontWeight: "bold",
+              fontSize: "14px",
             }}
-            size="small"
-          />
-          {index === standards[0]?.items.length - 1 && (
-            <Button
-              type="text"
-              size="small"
-              icon={<DeleteOutlined />}
-              onClick={() => deleteScoreColumn(index)}
-              style={{ color: "#ff4d4f" }}
-            />
-          )}
+          >
+            {index + 1}
+          </div>
         </div>
       ),
       key: `score_${index}`,
@@ -274,21 +334,14 @@ export default function CreateRubricPage() {
       {
         title: (
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span>Standards</span>
-            <Button
-              type="text"
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={addStandard}
-              style={{ color: "#1890ff" }}
-            />
+            <span>Standards (5 Required)</span>
           </div>
         ),
         dataIndex: "name",
         key: "name",
         width: "25%",
         fixed: "left" as const,
-        render: (text: string, record: Standard, index: number) => (
+        render: (text: string, record: Standard) => (
           <div>
             <TextArea
               value={record.name}
@@ -303,19 +356,6 @@ export default function CreateRubricPage() {
                 marginBottom: "8px",
               }}
             />
-            {index === standards.length - 1 && (
-              <div style={{ marginTop: "8px" }}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  onClick={() => deleteStandard(record.id)}
-                  style={{ color: "#ff4d4f" }}
-                >
-                  Delete
-                </Button>
-              </div>
-            )}
           </div>
         ),
       },
@@ -362,17 +402,13 @@ export default function CreateRubricPage() {
           style={{
             marginBottom: "16px",
             display: "flex",
-            justifyContent: "flex-end",
+            justifyContent: "space-between",
             alignItems: "center",
           }}
         >
-          <Button
-            type="dashed"
-            icon={<PlusOutlined />}
-            onClick={addScoreColumn}
-          >
-            Add Score Column
-          </Button>
+          <Text type="secondary" style={{ fontSize: "12px" }}>
+            Rubric requires exactly 5 standards with a fixed 1-5 scoring scale
+          </Text>
         </div>
 
         <Table
@@ -392,14 +428,25 @@ export default function CreateRubricPage() {
       <div style={{ marginTop: "24px", textAlign: "right" }}>
         <Space>
           <Button onClick={() => router.push("/admin/rubrics")}>Cancel</Button>
-          <Button
-            type="primary"
-            icon={<SaveOutlined />}
-            onClick={handleSave}
-            loading={isSaving}
-          >
-            Save Rubric
-          </Button>
+          {!isGenerated ? (
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              onClick={handleGenerate}
+              loading={isGenerating}
+            >
+              {isGenerating ? "Generating with AI..." : "Generate Rubric"}
+            </Button>
+          ) : (
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              onClick={handleSave}
+              loading={isSaving}
+            >
+              {isSaving ? "Saving..." : "Save Rubric"}
+            </Button>
+          )}
         </Space>
       </div>
     </div>
