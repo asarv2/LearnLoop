@@ -159,8 +159,9 @@ export default function AdminAnalyticsPage() {
       const averageScore =
         relevantData.length > 0
           ? Math.round(
-              relevantData.reduce((sum, item) => sum + item.score, 0) /
-                relevantData.length
+              (relevantData.reduce((sum, item) => sum + item.score, 0) /
+                relevantData.length) *
+                4
             )
           : 0;
 
@@ -223,7 +224,7 @@ export default function AdminAnalyticsPage() {
     };
 
     filteredData.forEach((item) => {
-      const score = item.score;
+      const score = item.score * 4; // Scale from 25-point to 100-point scale
       if (score >= 0 && score < 20) buckets["0-20%"]++;
       else if (score >= 20 && score < 40) buckets["20-40%"]++;
       else if (score >= 40 && score < 60) buckets["40-60%"]++;
@@ -307,7 +308,8 @@ export default function AdminAnalyticsPage() {
         const avgScore =
           data.scores.length > 0
             ? Math.round(
-                data.scores.reduce((a, b) => a + b, 0) / data.scores.length
+                (data.scores.reduce((a, b) => a + b, 0) / data.scores.length) *
+                  4
               )
             : 0;
 
@@ -498,7 +500,7 @@ export default function AdminAnalyticsPage() {
           <Card>
             <Statistic
               title="Avg Performance Score"
-              value={analytics?.avgPerformanceScore || 0}
+              value={(analytics?.avgPerformanceScore || 0) * 4}
               suffix="/100"
               prefix={<TrophyOutlined />}
               valueStyle={{ color: "#52c41a" }}
