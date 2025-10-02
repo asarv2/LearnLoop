@@ -56,7 +56,7 @@ const adminMenuItems = [
   {
     key: "/admin/documents",
     icon: <FileTextOutlined />,
-    label: <Link href="/admin/documents">Documents</Link>,
+    label: <Link href="/admin/documents">Policies</Link>,
   },
   {
     key: "/admin/employees",
