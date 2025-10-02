@@ -373,6 +373,35 @@ async def _flush_pending_writes(
     return await asyncio.to_thread(_persist_once)
 
 
+async def update_message_content(message_id: str, content: str) -> None:
+    """Update message content in database (for Whisper transcription updates)."""
+    def _update_once() -> None:
+        db = next(get_session())
+        try:
+            _upsert_db_message(
+                db,
+                chat_id=MESSAGE_TO_ROOM.get(message_id, ""),
+                role="assistant",  # Assume agent messages
+                msg_id=message_id,
+                text=content,
+                is_final=True,  # This is a final update
+                voice=True,  # Assume voice messages
+            )
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    await asyncio.to_thread(_update_once)
+
+
 # ---- main function used by Room.append_text_chunk ----------------------------
 
 
@@ -439,7 +468,7 @@ async def upsert_text_chunk(
     # Add to pending writes for batched DB persistence
     # Avoid polluting batched writes with empty assistant placeholders
     if role != "user":
-        if (text or "").strip():
+        if (text or "").strip() or (is_final and voice):
             PENDING_WRITES[mid].append(text)
     else:
         # USER: skip first chunk (chunk_idx == 0) because we immediately upsert it
@@ -648,15 +677,8 @@ async def upsert_text_chunk(
 
                         async def _schedule_hints() -> None:
                             try:
-
-                                def _sync(msg_uuid: uuid.UUID) -> dict[str, Any]:
-                                    import asyncio as _asyncio
-
-                                    return _asyncio.run(run_hint_agent(msg_uuid))
-
-                                result = await asyncio.to_thread(
-                                    _sync, uuid.UUID(str(db_msg.id))
-                                )
+                                # Call run_hint_agent directly since we're already in an async context
+                                result = await run_hint_agent(uuid.UUID(str(db_msg.id)))
                                 await _emit(
                                     room_id,
                                     "hints_generated",

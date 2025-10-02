@@ -1491,6 +1491,11 @@ class OpenAIAgent(Agent):
                     
                     # Persist to DB
                     await self._persist_word_timestamps(msg_id_final, words)
+                    
+                    # Update message content with Whisper transcription if it's different
+                    if tr_text and tr_text != effective_text and msg_id_final:
+                        from app.store import update_message_content
+                        await update_message_content(msg_id_final, tr_text)
         except Exception:
             pass
 
