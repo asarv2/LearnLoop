@@ -174,6 +174,7 @@ class Profiles(_Base, table=True):
     attempts: List['Attempts'] = Relationship(back_populates='profile')
     documents: List['Documents'] = Relationship(back_populates='profile')
     personas: List['Personas'] = Relationship(back_populates='profile')
+    policies: List['Policies'] = Relationship(back_populates='profile')
     user_feedback: List['UserFeedback'] = Relationship(back_populates='user')
     user_insights: List['UserInsights'] = Relationship(back_populates='user')
     chats: List['Chats'] = Relationship(back_populates='profile')
@@ -304,6 +305,24 @@ class Personas(_Base, table=True):
 
     profile: Optional['Profiles'] = Relationship(back_populates='personas')
     messages: List['Messages'] = Relationship(back_populates='persona')
+
+
+class Policies(_Base, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['profile_id'], ['profiles.id'], ondelete='SET NULL', name='policies_profile_id_fkey'),
+        PrimaryKeyConstraint('id', name='policies_pkey')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    title: str = Field(sa_column=Column('title', Text))
+    company: str = Field(sa_column=Column('company', Text))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
+    file_key: Optional[str] = Field(default=None, sa_column=Column('file_key', Text))
+    profile_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('profile_id', Uuid(as_uuid=True)))
+
+    profile: Optional['Profiles'] = Relationship(back_populates='policies')
 
 
 class Scenarios(_Base, table=True):
