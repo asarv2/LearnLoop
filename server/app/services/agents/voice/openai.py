@@ -1797,8 +1797,7 @@ class OpenAIAgent(Agent):
                         await self._handle_text_delta(session, payload, evt_type)
 
                     # Response completion
-                    elif evt_type in ("response.output_text.done", "response.text.done",
-                                       "response.audio_transcript.done"):
+                    elif evt_type in ("response.audio_transcript.done", "response.completed", "response.done"):
                         await self._handle_response_done(session, payload)
 
                     # User transcript deltas
