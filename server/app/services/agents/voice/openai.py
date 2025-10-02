@@ -1527,9 +1527,13 @@ class OpenAIAgent(Agent):
                     
                     # Add returned audio to bus if available
                     if returned_audio is not None and returned_audio.size > 0:
-                        # Resample to bus rate if needed (same as existing audio processing)
-                        if len(returned_audio) > 0:
-                            await self.publish_audio(returned_audio)
+                        # Chunk into 20ms pieces for streaming
+                        chunk_size = SAMPLES_PER_CHUNK  # 960 samples = 20ms
+                        for i in range(0, len(returned_audio), chunk_size):
+                            chunk = returned_audio[i:i + chunk_size]
+                            if len(chunk) > 0:
+                                await self.publish_audio(chunk)
+                                await asyncio.sleep(chunk_size / PCM_SR)  # 20ms pacing
         except Exception:
             pass
 
