@@ -510,6 +510,47 @@ export type Database = {
           },
         ]
       }
+      policies: {
+        Row: {
+          company: string
+          created_at: string | null
+          description: string | null
+          file_key: string | null
+          id: string
+          profile_id: string | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          company: string
+          created_at?: string | null
+          description?: string | null
+          file_key?: string | null
+          id?: string
+          profile_id?: string | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          company?: string
+          created_at?: string | null
+          description?: string | null
+          file_key?: string | null
+          id?: string
+          profile_id?: string | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "policies_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           active: boolean | null
