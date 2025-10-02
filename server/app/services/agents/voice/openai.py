@@ -1201,7 +1201,7 @@ class OpenAIAgent(Agent):
                     logger.info(
                         f"[ctc][partial] rid={target_rid} samples={audio_arr.size} audio_chunks={audio_chunk_count}/{audio_chunks_target} text_chunks={text_chunk_count}/{text_chunks_target} text_len={len(reference_text)}"
                     )
-                    _, words_p, _ = await self._align_ctc(
+                    _, words_p, returned_audio_p = await self._align_ctc(
                         audio_f32=audio_arr,
                         sr=PCM_SR,
                         reference_text=reference_text,
@@ -1221,6 +1221,17 @@ class OpenAIAgent(Agent):
                             words=words_p,
                             full_text=reference_text,
                         )
+                    
+                    # Add returned audio to bus if available
+                    if returned_audio_p is not None and returned_audio_p.size > 0:
+                        # Chunk into 20ms pieces for streaming
+                        chunk_size = SAMPLES_PER_CHUNK  # 960 samples = 20ms
+                        for i in range(0, len(returned_audio_p), chunk_size):
+                            chunk = returned_audio_p[i:i + chunk_size]
+                            if len(chunk) > 0:
+                                await self.publish_audio(chunk)
+                                await asyncio.sleep(chunk_size / PCM_SR)  # 20ms pacing
+                
                 st2["partial_ctc_done"] = True
         except Exception:
             pass
@@ -1512,18 +1523,6 @@ class OpenAIAgent(Agent):
                     # Persist to DB
                     await self._persist_word_timestamps(msg_id_final, words)
                     
-                    # Finalize message with Whisper transcription content
-                    if tr_text and msg_id_final:
-                        # Finalize the message with Whisper transcription
-                        await self.publish_text_chunk(
-                            text=tr_text,
-                            message_id=msg_id_final,
-                            chunk_idx=0,
-                            is_final=True,
-                            persona_id=await self._get_assistant_persona_id(),
-                            voice=True,
-                            parent_id=st["parent_id"] if st else None,
-                        )
                     
                     # Add returned audio to bus if available
                     if returned_audio is not None and returned_audio.size > 0:
