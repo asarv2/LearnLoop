@@ -199,6 +199,18 @@ def transcribe_and_align_whisper(audio_f32: np.ndarray, sr: int, language: str |
             )
             log.info("Whisper segments: %d segments. sample: %s", len(words), sample)
             full_text = " ".join(s["text"] for s in raw_segments)
+            
+            # Run CTC alignment on Whisper text for word-level precision
+            if full_text.strip():
+                try:
+                    ctc_result = align_ctc(audio_f32, sr, full_text)
+                    if ctc_result.words:  # Only use CTC if it produces words
+                        log.info("CTC post-processing: %d words from %d segments", 
+                                len(ctc_result.words), len(words))
+                        return ctc_result
+                except Exception as e:
+                    log.warning("CTC post-processing failed, using Whisper segments: %s", e)
+            
             return Transcript(words=words, text=full_text)
     except Exception as e:
         logging.getLogger("model_service").warning(f"Whisper pipeline failed: {e}")
