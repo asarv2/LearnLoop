@@ -35,6 +35,7 @@ from app.models import Chats, Documents, Messages, Personas, Scenarios
 from app.services.agents.voice.base import Agent
 from app.store import list_messages
 from app.utils.chat import get_formatted_conversation_history_with_personas
+from sqlalchemy.util import ellipses_string
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
@@ -1196,8 +1197,8 @@ class OpenAIAgent(Agent):
                 audio_arr = self._resp_audio.get(target_rid, np.zeros(0, dtype=np.float32))
                 start_ts = self._resp_audio_start_ts_ms.get(target_rid, int(time.time() * 1000))
                 
-                if audio_arr.size > 0:
-                    logger.debug(
+                if audio_arr is not None:
+                    logger.info(
                         f"[ctc][partial] rid={target_rid} samples={audio_arr.size} audio_chunks={audio_chunk_count}/{audio_chunks_target} text_chunks={text_chunk_count}/{text_chunks_target} text_len={len(reference_text)}"
                     )
                     _, words_p, _ = await self._align_ctc(
@@ -1797,7 +1798,7 @@ class OpenAIAgent(Agent):
 
                     # Response completion
                     elif evt_type in ("response.output_text.done", "response.text.done",
-                                       "response.audio_transcript.done", "response.completed", "response.done"):
+                                       "response.audio_transcript.done"):
                         await self._handle_response_done(session, payload)
 
                     # User transcript deltas
