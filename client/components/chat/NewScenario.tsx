@@ -30,6 +30,7 @@ import { createPortal } from "react-dom";
 
 // Hooks
 import { useWebSocket } from "@/contexts/websocket-context";
+import { uploadAudio } from "@/lib/api/hooks/useAudio";
 import {
   uploadDocument,
   useCreateDocument,
@@ -111,6 +112,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [customAssistantPersonaId, setCustomAssistantPersonaId] = useState<
     string | null
   >(null);
+
+  // Custom voice upload state
+  const [customVoiceFile, setCustomVoiceFile] = useState<File | null>(null);
+  const [customVoiceUrl, setCustomVoiceUrl] = useState<string | null>(null);
 
   // Generate documents switch state - initialize based on training setting
   const [generateDocuments, setGenerateDocuments] = useState<boolean>(false);
@@ -1076,7 +1081,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     if (field.field_type === "persona") {
       if (fieldValue.value === "Custom") {
         const nameOk = (customPersonaName || "").trim().length > 0;
-        const voiceOk = (customVoiceType || "").trim().length > 0;
+        const voiceOk =
+          (customVoiceType || "").trim().length > 0 || customVoiceFile !== null;
         return nameOk && voiceOk;
       }
       return fieldValue.value.trim() !== "" && fieldValue.parameterId;
@@ -1361,6 +1367,21 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 voice: voicePersona?.voice || null,
                 active: false, // so it does not show up in the persona dropdown
               });
+
+              // Upload custom voice file if one was selected
+              if (customVoiceFile && newPersona.id) {
+                try {
+                  const formData = new FormData();
+                  formData.append("file", customVoiceFile);
+                  await uploadAudio(newPersona.id, formData);
+                } catch (uploadError) {
+                  console.error(
+                    "Failed to upload custom voice file:",
+                    uploadError
+                  );
+                  // Continue with persona creation even if voice upload fails
+                }
+              }
 
               nextAssistantPersonaId = newPersona.id || null;
 
@@ -1877,6 +1898,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                                       }
                                       customVoiceType={customVoiceType}
                                       setCustomVoiceType={setCustomVoiceType}
+                                      customVoiceFile={customVoiceFile}
+                                      setCustomVoiceFile={setCustomVoiceFile}
+                                      customVoiceUrl={customVoiceUrl}
+                                      setCustomVoiceUrl={setCustomVoiceUrl}
                                       hideBorder={true}
                                       hideDivider={true}
                                       customFieldName={customFieldName}
@@ -1934,6 +1959,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 setCustomPersonaName={setCustomPersonaName}
                 customVoiceType={customVoiceType}
                 setCustomVoiceType={setCustomVoiceType}
+                customVoiceFile={customVoiceFile}
+                setCustomVoiceFile={setCustomVoiceFile}
+                customVoiceUrl={customVoiceUrl}
+                setCustomVoiceUrl={setCustomVoiceUrl}
               />
             ))}
 
