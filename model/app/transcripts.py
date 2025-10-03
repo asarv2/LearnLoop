@@ -8,6 +8,9 @@ import numpy as np
 # Lazy imports via functions to avoid optional deps breaking import time
 from . import extensions as ext  # type: ignore
 
+# Cache char_list once at module scope
+_CHAR_LIST = None
+
 
 @dataclass
 class Word:
@@ -89,23 +92,29 @@ def align_ctc(audio_f32: np.ndarray, sr: int, reference_text: str) -> Transcript
         if processor is None or model is None:
             return align_words_uniform(audio_f32, sr, reference_text)
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        try:
-            model.to(device)
-        except Exception:
-            pass
+        # Cache char_list once
+        global _CHAR_LIST
+        if _CHAR_LIST is None:
+            vocab = processor.tokenizer.get_vocab()
+            cl = [""] * len(vocab)
+            for k, v in vocab.items():
+                cl[v] = k.replace("|", " ")
+            _CHAR_LIST = cl
+        char_list = _CHAR_LIST
 
-        with torch.no_grad():
+        import torch
+        device = next(model.parameters()).device
+        with torch.inference_mode():
             inputs = processor(
                 wav16, sampling_rate=16000, return_tensors="pt", padding="longest"
             )
-            inp = inputs.input_values.to(device)
-            logits = model(inp).logits.squeeze(0).float().cpu().numpy()
-
-        vocab = processor.tokenizer.get_vocab()
-        char_list = [""] * len(vocab)
-        for k, v in vocab.items():
-            char_list[v] = k.replace("|", " ")
+            inp = inputs.input_values.to(device, non_blocking=True)
+            if device.type == "cuda":
+                with torch.autocast("cuda", dtype=torch.float16):
+                    logits = model(inp).logits
+            else:
+                logits = model(inp).logits
+            logits = logits.squeeze(0).float().cpu().numpy()
 
         params = CtcSegmentationParameters(char_list=char_list)
         ground = prepare_text(params, words)  # per-word alignment
@@ -157,61 +166,42 @@ def transcribe_and_align_whisper(audio_f32: np.ndarray, sr: int, language: str |
         return Transcript(words=[], text="")
 
     try:
-        import tempfile
-
-        import soundfile as sf  # type: ignore
-
         x16, sro = _to_mono_16k(audio_f32, sr)
         dur_s = float(len(x16)) / sro
         log.info("Whisper input duration: %.3fs @ %d Hz", dur_s, sro)
 
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as f:
-            sf.write(f.name, x16.astype(np.float32), sro)
+        get_ws = getattr(ext, "get_whisper_tiny", None)
+        model = get_ws("auto") if callable(get_ws) else None
+        if model is None:
+            log.warning("Whisper model unavailable; returning empty transcript")
+            return Transcript(words=[], text="")
 
-            get_ws = getattr(ext, "get_whisper_tiny", None)
-            model = get_ws("auto") if callable(get_ws) else None
-            if model is None:
-                log.warning("Whisper model unavailable; returning empty transcript")
-                return Transcript(words=[], text="")
-
-            seg_gen, info = model.transcribe(
-                f.name,
-                language=language,
-                vad_filter=True,
-                vad_parameters={"min_silence_duration_ms": 200},
-            )
-            raw_segments = [
-                {"start": s.start, "end": s.end, "text": (s.text or "").strip()}
-                for s in seg_gen
-            ]
-
-            # Fallback: segment-level
-            words = [
-                Word(
-                    start_ms=int(round(s["start"] * 1000)),
-                    end_ms=int(round(s["end"] * 1000)),
-                    text=s["text"],
-                )
-                for s in raw_segments
-            ]
-            sample = ", ".join(
-                f"{w.text}({w.start_ms}-{w.end_ms}ms)" for w in words[:3]
-            )
-            log.info("Whisper segments: %d segments. sample: %s", len(words), sample)
-            full_text = " ".join(s["text"] for s in raw_segments)
-            
-            # Run CTC alignment on Whisper text for word-level precision
-            if full_text.strip():
-                try:
-                    ctc_result = align_ctc(audio_f32, sr, full_text)
-                    if ctc_result.words:  # Only use CTC if it produces words
-                        log.info("CTC post-processing: %d words from %d segments", 
-                                len(ctc_result.words), len(words))
-                        return ctc_result
-                except Exception as e:
-                    log.warning("CTC post-processing failed, using Whisper segments: %s", e)
-            
-            return Transcript(words=words, text=full_text)
+        # Direct array (no temp WAV). Fast decode knobs:
+        seg_gen, info = model.transcribe(
+            x16, language=language,
+            vad_filter=True,                    # set False if your audio already trimmed
+            vad_parameters={"min_silence_duration_ms": 250},
+            word_timestamps=False,              # big saver on CPU
+            beam_size=1, best_of=1,             # greedy
+            temperature=[0.0],                  # no sampling
+            condition_on_previous_text=False,
+        )
+        
+        # Extract full transcript text only
+        full_text = " ".join((s.text or "").strip() for s in seg_gen)
+        log.info("Whisper transcript: '%s'", full_text[:100] + "..." if len(full_text) > 100 else full_text)
+        
+        # Always use CTC alignment for word-level precision
+        if full_text.strip():
+            try:
+                ctc_result = align_ctc(audio_f32, sr, full_text)
+                log.info("CTC alignment: %d words from transcript", len(ctc_result.words))
+                return ctc_result
+            except Exception as e:
+                log.warning("CTC alignment failed: %s", e)
+        
+        # Fallback: return transcript without words if CTC fails
+        return Transcript(words=[], text=full_text)
     except Exception as e:
         logging.getLogger("model_service").warning(f"Whisper pipeline failed: {e}")
         return Transcript(words=[], text="")
