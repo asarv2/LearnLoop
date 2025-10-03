@@ -30,6 +30,7 @@ import { createPortal } from "react-dom";
 
 // Hooks
 import { useWebSocket } from "@/contexts/websocket-context";
+import { uploadAudio } from "@/lib/api/hooks/useAudio";
 import {
   uploadDocument,
   useCreateDocument,
@@ -111,6 +112,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
   const [customAssistantPersonaId, setCustomAssistantPersonaId] = useState<
     string | null
   >(null);
+
+  // Custom voice upload state
+  const [customVoiceFile, setCustomVoiceFile] = useState<File | null>(null);
+  const [customVoiceUrl, setCustomVoiceUrl] = useState<string | null>(null);
 
   // Generate documents switch state - initialize based on training setting
   const [generateDocuments, setGenerateDocuments] = useState<boolean>(false);
@@ -312,7 +317,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
               // Use parent persona's name, voice, and description
               const personaName = parentPersona.name;
-              const personaVoice = parentPersona.voice || "alloy";
+              const personaVoice = parentPersona.voice; // Allow null voices
               const personaDescription = parentPersona.description || "";
 
               // Check if a similar persona already exists to avoid duplicates
@@ -1076,7 +1081,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     if (field.field_type === "persona") {
       if (fieldValue.value === "Custom") {
         const nameOk = (customPersonaName || "").trim().length > 0;
-        const voiceOk = (customVoiceType || "").trim().length > 0;
+        const voiceOk =
+          (customVoiceType || "").trim().length > 0 || customVoiceFile !== null;
         return nameOk && voiceOk;
       }
       return fieldValue.value.trim() !== "" && fieldValue.parameterId;
@@ -1353,14 +1359,28 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               // Create a simple custom persona with just name and voice
               const newPersona = await createPersona.mutateAsync({
                 name: customPersonaName,
-                description: `Custom persona: ${customPersonaName}`,
+                description:
+                  voicePersona?.description,
                 profile_id: null,
-                // system_prompt: `You are ${customPersonaName}, a professional employee.`, // REMOVED
-                // realtime_prompt: `You are ${customPersonaName}. Respond naturally and professionally.`, // REMOVED
-                temperature: 0.7, // Default temperature
-                voice: voicePersona?.voice || null,
+                temperature: 0.0, // Default temperature
+                voice: voicePersona?.voice,
                 active: false, // so it does not show up in the persona dropdown
               });
+
+              // Upload custom voice file if one was selected
+              if (customVoiceFile && newPersona.id) {
+                try {
+                  const formData = new FormData();
+                  formData.append("file", customVoiceFile);
+                  await uploadAudio(newPersona.id, formData);
+                } catch (uploadError) {
+                  console.error(
+                    "Failed to upload custom voice file:",
+                    uploadError
+                  );
+                  // Continue with persona creation even if voice upload fails
+                }
+              }
 
               nextAssistantPersonaId = newPersona.id || null;
 
@@ -1549,6 +1569,15 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           groupFields
         );
 
+      // Add the newly created custom persona ID to the personaIds array
+      const finalPersonaIds = [...personaIds];
+      if (
+        nextAssistantPersonaId &&
+        !finalPersonaIds.includes(nextAssistantPersonaId)
+      ) {
+        finalPersonaIds.push(nextAssistantPersonaId);
+      }
+
       // Final safety: no filenames in payload
       assertAllDocValuesAreUUIDs(
         payloadFieldValues.map(({ fieldId, value }) => ({ fieldId, value }))
@@ -1560,14 +1589,14 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
         field_values: payloadFieldValues,
-        persona_ids: personaIds,
+        persona_ids: finalPersonaIds,
       });
 
       // 6) Trigger generation
       emitGenerateScenario({
         scenario_id: scenarioToUse,
         field_values: payloadFieldValues,
-        persona_ids: personaIds,
+        persona_ids: finalPersonaIds,
         additional_prompt: opts?.additionalPrompt || undefined,
         current_draft_objectives: draftObjectives || [],
         generate_documents:
@@ -1617,10 +1646,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           resolvedGroup
         );
 
+      // Add the custom assistant persona ID if it exists
+      const finalPersonaIds = [...personaIds];
+      if (
+        customAssistantPersonaId &&
+        !finalPersonaIds.includes(customAssistantPersonaId)
+      ) {
+        finalPersonaIds.push(customAssistantPersonaId);
+      }
+
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
         field_values: updateFieldValues,
-        persona_ids: personaIds,
+        persona_ids: finalPersonaIds,
       });
 
       // Start training with only scenario_id
@@ -1877,6 +1915,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                                       }
                                       customVoiceType={customVoiceType}
                                       setCustomVoiceType={setCustomVoiceType}
+                                      customVoiceFile={customVoiceFile}
+                                      setCustomVoiceFile={setCustomVoiceFile}
+                                      customVoiceUrl={customVoiceUrl}
+                                      setCustomVoiceUrl={setCustomVoiceUrl}
                                       hideBorder={true}
                                       hideDivider={true}
                                       customFieldName={customFieldName}
@@ -1934,6 +1976,10 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 setCustomPersonaName={setCustomPersonaName}
                 customVoiceType={customVoiceType}
                 setCustomVoiceType={setCustomVoiceType}
+                customVoiceFile={customVoiceFile}
+                setCustomVoiceFile={setCustomVoiceFile}
+                customVoiceUrl={customVoiceUrl}
+                setCustomVoiceUrl={setCustomVoiceUrl}
               />
             ))}
 

@@ -11,3 +11,4 @@ htmlcov/
 .venv
 dump.rdb
 __pycache__/
+*.pyc

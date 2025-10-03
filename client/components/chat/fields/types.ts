@@ -33,6 +33,10 @@ export type PersonaFieldProps = {
   setCustomPersonaName: (value: string) => void;
   customVoiceType: string;
   setCustomVoiceType: (value: string) => void;
+  customVoiceFile: File | null;
+  setCustomVoiceFile: (file: File | null) => void;
+  customVoiceUrl: string | null;
+  setCustomVoiceUrl: (url: string | null) => void;
 };
 
 export type FieldCardProps = {
@@ -47,6 +51,10 @@ export type FieldCardProps = {
   setCustomPersonaName: (value: string) => void;
   customVoiceType: string;
   setCustomVoiceType: (value: string) => void;
+  customVoiceFile: File | null;
+  setCustomVoiceFile: (file: File | null) => void;
+  customVoiceUrl: string | null;
+  setCustomVoiceUrl: (url: string | null) => void;
   hideBorder?: boolean;
   hideDivider?: boolean;
   customFieldName?: string;

@@ -23,6 +23,10 @@ export default function FieldCard({
   setCustomPersonaName,
   customVoiceType,
   setCustomVoiceType,
+  customVoiceFile,
+  setCustomVoiceFile,
+  customVoiceUrl,
+  setCustomVoiceUrl,
   hideBorder = false,
   hideDivider = false,
   customFieldName,
@@ -114,6 +118,10 @@ export default function FieldCard({
             setCustomPersonaName={setCustomPersonaName}
             customVoiceType={customVoiceType}
             setCustomVoiceType={setCustomVoiceType}
+            customVoiceFile={customVoiceFile}
+            setCustomVoiceFile={setCustomVoiceFile}
+            customVoiceUrl={customVoiceUrl}
+            setCustomVoiceUrl={setCustomVoiceUrl}
           />
         );
       default:

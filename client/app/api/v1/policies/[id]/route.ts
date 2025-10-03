@@ -6,9 +6,11 @@ import { NextResponse } from "next/server";
 
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
+
     // Get current user and their profile
     const supabase = await supabaseServer(cookies());
     const {
@@ -35,7 +37,7 @@ export async function DELETE(
     }
 
     // First, check if the policy exists and belongs to the user's company
-    const policy = await policyRepo.find(params.id);
+    const policy = await policyRepo.find(id);
 
     if (policy.company !== profile.company) {
       return NextResponse.json(
@@ -45,11 +47,12 @@ export async function DELETE(
     }
 
     // Delete the policy
-    await policyRepo.remove(params.id);
+    await policyRepo.remove(id);
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    await logError("Failed to delete policy", err, { id: params.id });
+    const { id } = await params;
+    await logError("Failed to delete policy", err, { id });
     return NextResponse.json(
       { error: "Failed to delete policy" },
       { status: 500 }

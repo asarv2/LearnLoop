@@ -51,6 +51,7 @@ engine = create_engine(
         "keepalives_idle": int(os.getenv("PG_KEEPALIVES_IDLE", "30")),
         "keepalives_interval": int(os.getenv("PG_KEEPALIVES_INTERVAL", "10")),
         "keepalives_count": int(os.getenv("PG_KEEPALIVES_COUNT", "5")),
+        "prepare_threshold": None,
         # NOTE: sslmode is provided via the URL. Add more libpq args here if needed.
     },
 )

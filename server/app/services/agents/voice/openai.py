@@ -35,7 +35,11 @@ from app.models import Chats, Documents, Messages, Personas, Scenarios
 from app.services.agents.voice.base import Agent
 from app.store import list_messages
 from app.utils.chat import get_formatted_conversation_history_with_personas
+from dotenv import load_dotenv
+from sqlalchemy.util import ellipses_string
 from sqlmodel import select
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +78,49 @@ def _resample_linear(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
     return np.interp(idx, xi, x).astype(np.float32)
 
 
+def _count_sentences(text: str) -> int:
+    """Count complete sentences in text based on punctuation."""
+    if not text.strip():
+        return 0
+    
+    # Simple sentence counting based on sentence-ending punctuation
+    # Look for patterns: . ! ? followed by whitespace or end of string
+    sentence_endings = re.findall(r'[.!?]+(?:\s|$)', text.strip())
+    return len(sentence_endings)
+
+
+def _adjust_word_timestamps(words: list[dict], start_offset_ms: int) -> list[dict]:
+    """Adjust word timestamps to start from the given offset."""
+    if not words:
+        return []
+    
+    # Find the time span of the original words
+    first_start = min(w.get("start_ms", 0) for w in words)
+    
+    # Adjust each word's timestamps
+    adjusted = []
+    for word in words:
+        original_start = word.get("start_ms", 0)
+        original_end = word.get("end_ms", 0)
+        
+        # Calculate relative position within the original span
+        relative_start = original_start - first_start
+        relative_end = original_end - first_start
+        
+        # Apply to new start position
+        new_start = start_offset_ms + relative_start
+        new_end = start_offset_ms + relative_end
+        
+        adjusted_word = word.copy()
+        adjusted_word["start_ms"] = new_start
+        adjusted_word["end_ms"] = new_end
+        adjusted.append(adjusted_word)
+    
+    return adjusted
+
+
+
+
 # ---------- Realtime OpenAI bridge agent (NO local VAD) ----------
 
 
@@ -103,29 +150,14 @@ class OpenAIAgent(Agent):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-
-        self.model_name = "gpt-4o-mini-realtime-preview"
-        self.voice_name = "alloy"
         
         # Hold reference to the RealtimeContext for updates
         self._rtctx: RealtimeContext | None = None
 
-        td_type = "semantic_vad"
-        self.turn_detection = {
-            "type": td_type,
-            # Let the server decide when to answer & allow barge-in
-            "create_response": True,
-            "interrupt_response": True,
-            # give sane defaults; the server may ignore extras it doesn't use
-            "eagerness": "auto",
-        }
-
         # Audio formats the model expects/emits (pcm16 everywhere)
-        self.input_sr = int(
-            os.getenv("OPENAI_INPUT_SR", "24000")
-        )  # set to 48000 to skip resample
-        self.output_sr = 24000  # ← back to 24k (fixes chipmunk/high pitch)
-        self._logged_audio_format = False  # optional: one-time debug print
+        self.input_sr = 24000
+        self.output_sr = 24000
+        self._logged_audio_format = False
 
         self._session: RealtimeSession | None = None
         self._tasks: list[asyncio.Task] = []
@@ -170,6 +202,8 @@ class OpenAIAgent(Agent):
         self._processed_done: set[str] = set()
         # Track model audio chunking to drive partial CTC timing
         self._resp_audio_chunk_count: dict[str, int] = {}
+        # Persistent storage for partial CTC data that survives stream cleanup
+        self._partial_ctc_data: dict[str, dict[str, Any]] = {}
 
         # --- Uplink queue for decoupling audio capture from network I/O ---
         # Increased from 256 to 512 to reduce audio drops under load
@@ -183,6 +217,9 @@ class OpenAIAgent(Agent):
 
         # --- HTTP client pooling for CTC alignment calls ---
         self._http_client: Any = None  # httpx.AsyncClient, lazily initialized
+        
+        # --- Reference audio for CTC alignment when voice is null ---
+        self._reference_audio_b64: str | None = None
 
         async def _audio_gate(chunk: AudioChunk) -> AudioChunk:
             # If blocked, turn any frame we publish into silence instantly.
@@ -473,6 +510,40 @@ class OpenAIAgent(Agent):
             self._http_client = httpx.AsyncClient(timeout=10.0)
         return self._http_client
 
+    async def _download_persona_audio(self, persona_id: str) -> bytes | None:
+        """Download persona audio from Supabase storage if voice is null."""
+        try:
+            supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+            service_role_key = os.getenv("SERVICE_ROLE_KEY")
+            bucket_name = "audio"  # Audio bucket
+            
+            if not all([supabase_url, service_role_key]):
+                logger.warning("Missing Supabase configuration for audio download")
+                return None
+                
+            file_key = f"{persona_id}.wav"
+            storage_url = f"{supabase_url}/storage/v1/object/{bucket_name}/{file_key}"
+            
+            headers = {
+                "Authorization": f"Bearer {service_role_key}",
+            }
+            
+            client = await self._get_http_client()
+            response = await client.get(storage_url, headers=headers)
+            
+            if response.status_code == 404:
+                logger.info(f"No audio file found for persona {persona_id}")
+                return None
+                
+            response.raise_for_status()
+            content: bytes = response.content
+            logger.info(f"Downloaded audio file for persona {persona_id}: {len(content)} bytes")
+            return content
+            
+        except Exception as e:
+            logger.warning(f"Failed to download audio for persona {persona_id}: {e}")
+            return None
+
     async def _align_ctc(
         self,
         *,
@@ -482,6 +553,7 @@ class OpenAIAgent(Agent):
         stage: str = "final",
         num_chunks: int | None = None,
         chunk_ms: int = 20,
+        reference_audio_b64: str | None = None,
     ) -> tuple[str, list[dict[str, Any]], np.ndarray | None]:
         """Call external model service /align_ctc; returns (text, words[], audio)."""
         try:
@@ -497,6 +569,11 @@ class OpenAIAgent(Agent):
                 "stage": stage,
                 "chunk_ms": int(chunk_ms),
             }
+            
+            # NEW: Add reference audio if available
+            if reference_audio_b64:
+                payload["reference_audio_b64"] = reference_audio_b64
+                
             if num_chunks is not None:
                 payload["num_chunks"] = int(num_chunks)
             url = base.rstrip("/") + "/align_ctc"
@@ -703,7 +780,15 @@ class OpenAIAgent(Agent):
             "shimmer",
             "verse",
         ]
-        if realtime_voice not in valid_voices:
+        
+        # NEW: Check if we need to download reference audio
+        if realtime_voice is None:
+            # Download persona audio from Supabase storage
+            audio_bytes = await self._download_persona_audio(str(persona_id))
+            if audio_bytes:
+                self._reference_audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                logger.info(f"Downloaded reference audio for persona {persona_id}")
+        elif realtime_voice not in valid_voices:
             realtime_voice = "alloy"
 
         # Example function for dynamic instructions
@@ -851,7 +936,6 @@ class OpenAIAgent(Agent):
 
         model_settings: RealtimeSessionModelSettings = {
             "model_name": "gpt-realtime",
-            "modalities": ["audio"],
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
             "turn_detection": {
@@ -860,9 +944,13 @@ class OpenAIAgent(Agent):
                 "interrupt_response": True,
                 "eagerness": "auto",
             },
-            "voice": realtime_voice,
             "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
         }
+        if realtime_voice is not None:
+            model_settings["modalities"] = ["audio"]
+            model_settings["voice"] = realtime_voice
+        else:
+            model_settings["modalities"] = ["text"]
 
         run_cfg = RealtimeRunConfig(model_settings=model_settings)
 
@@ -1161,14 +1249,30 @@ class OpenAIAgent(Agent):
                 return
 
             st2 = self._resp_streams.get(target_rid) or {}
-            # Run partial only when we've received exactly the configured number of model audio chunks
-            n_chunks_target = int(os.getenv("CTC_PARTIAL_NUM_CHUNKS", "6"))
+            # Run partial when we've received enough audio OR sentences
+            audio_chunks_target = int(os.getenv("CTC_PARTIAL_AUDIO_CHUNKS", "6"))
+            sentences_target = int(os.getenv("CTC_PARTIAL_SENTENCES", "1"))
             
-            if (
+            # Count sentences for text-based triggering
+            buffered_text = "".join(st2.get("buffer", []))
+            sentence_count = _count_sentences(buffered_text)
+            audio_chunk_count = int(self._resp_audio_chunk_count.get(target_rid, 0))
+
+            # Trigger partial CTC when EITHER condition is met
+            audio_trigger = (
                 st2.get("has_received_audio")
-                and not st2.get("partial_ctc_done", False)
-                and n_chunks_target > 0
-                and int(self._resp_audio_chunk_count.get(target_rid, 0)) == n_chunks_target
+                and audio_chunk_count == audio_chunks_target
+            )
+
+            text_trigger = (
+                sentence_count >= sentences_target
+                and buffered_text.strip()  # Has actual text content
+            )
+
+            if (
+                not st2.get("partial_ctc_done", False)
+                and (audio_chunks_target > 0 or sentences_target > 0)
+                and (audio_trigger or text_trigger)
             ):
                 buffered_text_now = "".join(st2.get("buffer", []))
                 # Combine pre-audio (flushed) + post-audio (buffer) for best reference
@@ -1181,15 +1285,16 @@ class OpenAIAgent(Agent):
                 audio_arr = self._resp_audio.get(target_rid, np.zeros(0, dtype=np.float32))
                 start_ts = self._resp_audio_start_ts_ms.get(target_rid, int(time.time() * 1000))
                 
-                if audio_arr.size > 0:
-                    logger.debug(
-                        f"[ctc][partial] rid={target_rid} samples={audio_arr.size} chunks={n_chunks_target} text_len={len(reference_text)}"
+                if audio_arr is not None:
+                    logger.info(
+                        f"[ctc][partial] rid={target_rid} samples={audio_arr.size} audio_chunks={audio_chunk_count}/{audio_chunks_target} sentences={sentence_count}/{sentences_target} text_len={len(reference_text)}"
                     )
-                    _, words_p, _ = await self._align_ctc(
+                    _, words_p, returned_audio_p = await self._align_ctc(
                         audio_f32=audio_arr,
                         sr=PCM_SR,
                         reference_text=reference_text,
                         stage="partial",
+                        reference_audio_b64=self._reference_audio_b64,
                     )
                     logger.debug(f"[ctc][partial] words={len(words_p)}")
                     if words_p:
@@ -1205,6 +1310,47 @@ class OpenAIAgent(Agent):
                             words=words_p,
                             full_text=reference_text,
                         )
+                    
+                    # Store partial words **with timestamps** for final stitching
+                    if words_p:
+                        # Keep the full dicts so we have timestamps later
+                        partial_words_full = [
+                            {
+                                "start_ms": int(w.get("start_ms", 0)),
+                                "end_ms": int(w.get("end_ms", 0)),
+                                "text": str(w.get("text", "")),
+                            }
+                            for w in words_p
+                        ]
+                        st2["partial_words"] = partial_words_full
+
+                        # Persist across stream cleanup
+                        end_times = []
+                        for w in partial_words_full:
+                            try:
+                                end_times.append(int(w["end_ms"]))  # type: ignore
+                            except (ValueError, TypeError):
+                                end_times.append(0)
+                        self._partial_ctc_data[target_rid] = {
+                            "partial_ctc_text": reference_text,
+                            "partial_words": partial_words_full,
+                            "partial_last_word_end_ms": max(end_times) if end_times else 0,  # type: ignore
+                        }
+                        
+                        # Also store last word end time for fallback
+                        last_word_end_ms = max(word.get("end_ms", 0) for word in words_p)
+                        st2["partial_last_word_end_ms"] = last_word_end_ms
+                    
+                    # Add returned audio to bus if available
+                    if returned_audio_p is not None and returned_audio_p.size > 0:
+                        # Chunk into 20ms pieces for streaming
+                        chunk_size = SAMPLES_PER_CHUNK  # 960 samples = 20ms
+                        for i in range(0, len(returned_audio_p), chunk_size):
+                            chunk = returned_audio_p[i:i + chunk_size]
+                            if len(chunk) > 0:
+                                await self.publish_audio(chunk)
+                                await asyncio.sleep(chunk_size / PCM_SR)  # 20ms pacing
+                
                 st2["partial_ctc_done"] = True
         except Exception:
             pass
@@ -1249,6 +1395,8 @@ class OpenAIAgent(Agent):
         if timestamps_enabled:
             # Buffer only; final transcript will be emitted after alignment
             st["buffer"].append(delta)
+            # Try partial CTC in text-only mode (when no audio has been received yet)
+            await self._try_partial_ctc(rid)
         else:
             # If we've already received audio, publish immediately; otherwise buffer
             if st.get("has_received_audio"):
@@ -1347,7 +1495,7 @@ class OpenAIAgent(Agent):
             or (payload.get("response") or {}).get("id")
             or "_default"
         )
-        st = self._resp_streams.pop(rid, {})
+        st = self._resp_streams.get(rid, {})  # keep until after CTC
 
         # Extract final text from payload
         final_text = None
@@ -1380,39 +1528,28 @@ class OpenAIAgent(Agent):
             if len(buffered_all.strip()) > len(final_text):
                 final_text = buffered_all.strip()
 
-        if final_text or (st and st.get("has_received_audio")):
+        if final_text:
             persona_id = await self._get_assistant_persona_id()
             if not st or st["msg_id"] is None:
-                # One-shot finalization
+                # One-shot finalization (text present)
                 parent_snap = self._resolve_parent_id(st if st else None)
                 msg_id = await self.publish_text_chunk(
-                    text="",
-                    message_id=None,
-                    chunk_idx=0,
-                    is_final=False,
-                    persona_id=persona_id,
-                    voice=True,
-                    parent_id=parent_snap,
-                )
-                self.room.set_last_assistant(msg_id)
-                self.room.set_next_user_parent(msg_id)
-                await self.publish_text_chunk(
                     text=final_text,
-                    message_id=msg_id,
+                    message_id=None,
                     chunk_idx=0,
                     is_final=True,
                     persona_id=persona_id,
                     voice=True,
                     parent_id=parent_snap,
                 )
+                self.room.set_last_assistant(msg_id)
+                self.room.set_next_user_parent(msg_id)
                 self._rid_to_msg[rid] = msg_id
             else:
-                # Check if we already streamed deltas for this message
                 already_streamed = bool(st) and int(st.get("chunk_idx") or 0) > 0
                 if already_streamed:
-                    # We already persisted deltas; just finalize without adding text again
                     await self.publish_text_chunk(
-                        text="",  # <- important: no duplicate content
+                        text="",
                         message_id=st["msg_id"],
                         chunk_idx=st["chunk_idx"],
                         is_final=True,
@@ -1421,7 +1558,6 @@ class OpenAIAgent(Agent):
                         parent_id=st["parent_id"],
                     )
                 else:
-                    # Finalize existing message with full text (no prior deltas)
                     await self.publish_text_chunk(
                         text=final_text,
                         message_id=st["msg_id"],
@@ -1432,8 +1568,14 @@ class OpenAIAgent(Agent):
                         parent_id=st["parent_id"],
                     )
                 self._rid_to_msg[rid] = str(st["msg_id"])
+        elif st and st.get("has_received_audio"):
+            # Audio-only: ensure a message exists now but DO NOT finalize here.
+            persona_id = await self._get_assistant_persona_id()
+            if st.get("msg_id") is None:
+                await self._ensure_assistant_message_exists(st, persona_id)
+            self._rid_to_msg[rid] = str(st["msg_id"])
 
-        # FINAL CTC alignment and broadcast
+        # FINAL CTC alignment and (for audio-only) finalization with text
         await self._run_final_ctc(rid, st, final_text)
 
         # Send queued user messages if any
@@ -1444,11 +1586,14 @@ class OpenAIAgent(Agent):
             except Exception:
                 pass
 
+        # Now safe to drop the stream state
+        self._resp_streams.pop(rid, None)
         # Cleanup accumulators
         self._resp_audio.pop(rid, None)
         self._resp_text.pop(rid, None)
         self._resp_audio_start_ts_ms.pop(rid, None)
         self._resp_audio_chunk_count.pop(rid, None)
+        self._partial_ctc_data.pop(rid, None)
 
     async def _run_final_ctc(
         self, rid: str, st: dict[str, Any] | None, final_text: str
@@ -1473,8 +1618,60 @@ class OpenAIAgent(Agent):
             start_ts = self._resp_audio_start_ts_ms.get(rid, int(time.time() * 1000))
             
             if audio_arr is not None:
+                # Get partial CTC data from persistent storage
+                partial_data = self._partial_ctc_data.get(rid, {})
+                partial_ctc_text = partial_data.get("partial_ctc_text", "")
+                
+                # If we have a partial prefix, only align the unused suffix.
+                # If no unused suffix, we still need to re-emit the full (partial) words as FINAL.
+                had_partial_prefix = False
+                if partial_ctc_text and effective_text.startswith(partial_ctc_text):
+                    had_partial_prefix = True
+                    unused_text = effective_text[len(partial_ctc_text):].strip()
+                    if unused_text:
+                        effective_text = unused_text
+                    else:
+                        # No new text to align — just finalize with the partial words we saved
+                        msg_id_final = self._rid_to_msg.get(rid)
+                        if not msg_id_final:
+                            st_final = self._resp_streams.get(rid, {})
+                            if st_final and st_final.get("msg_id") is None:
+                                persona_id = await self._get_assistant_persona_id()
+                                await self._ensure_assistant_message_exists(st_final, persona_id)
+                                msg_id_final = str(st_final["msg_id"])
+                                self._rid_to_msg[rid] = msg_id_final
+                        if msg_id_final and partial_data.get("partial_words"):
+                            await self.room.broadcast_transcript(
+                                agent_id=self.id,
+                                message_id=msg_id_final,
+                                start_ts_ms=start_ts,
+                                words=partial_data["partial_words"],
+                                full_text=partial_ctc_text,
+                            )
+                            await self._persist_word_timestamps(msg_id_final, partial_data["partial_words"])
+                        # If this was an audio-only path, also finalize the message text now.
+                        try:
+                            needs_finalize = not (st and int(st.get("chunk_idx") or 0) > 0) and not (final_text and final_text.strip())
+                            if needs_finalize and msg_id_final:
+                                persona_id = await self._get_assistant_persona_id()
+                                await self.publish_text_chunk(
+                                    text=partial_ctc_text,
+                                    message_id=msg_id_final,
+                                    chunk_idx=int(st.get("chunk_idx") or 0) if st else 0,
+                                    is_final=True,
+                                    persona_id=persona_id,
+                                    voice=True,
+                                    parent_id=(st.get("parent_id") if st else self._resolve_parent_id(st)),
+                                )
+                                if st:
+                                    self.room.set_next_user_parent(st["msg_id"])
+                        except Exception:
+                            pass
+                        return
+                
                 tr_text, words, returned_audio = await self._align_ctc(
-                    audio_f32=audio_arr, sr=PCM_SR, reference_text=effective_text, stage="final"
+                    audio_f32=audio_arr, sr=PCM_SR, reference_text=effective_text, stage="final",
+                    reference_audio_b64=self._reference_audio_b64,
                 )
                 msg_id_final = self._rid_to_msg.get(rid)
                 
@@ -1488,6 +1685,18 @@ class OpenAIAgent(Agent):
                             msg_id_final = str(st_final["msg_id"])
                             self._rid_to_msg[rid] = msg_id_final
                     
+                    # Stitch partial (with timestamps) + adjusted final (continued timestamps)
+                    if had_partial_prefix and partial_data.get("partial_words"):
+                        partial_words_with_timestamps = partial_data.get("partial_words", [])
+                        if partial_words_with_timestamps:
+                            last_partial_end = int(partial_data.get("partial_last_word_end_ms", 0))
+                            adjusted_final_words = _adjust_word_timestamps(words, last_partial_end)
+                            # Join arrays for a single full payload
+                            words = partial_words_with_timestamps + adjusted_final_words
+                            # Build a single full-text string (avoid double spaces)
+                            stitched_text = (partial_ctc_text + " " + (tr_text or effective_text)).strip()
+                            effective_text = stitched_text
+                    
                     await self.room.broadcast_transcript(
                         agent_id=self.id,
                         message_id=msg_id_final,
@@ -1496,23 +1705,41 @@ class OpenAIAgent(Agent):
                         full_text=tr_text or effective_text,
                     )
                     
-                    # Thread next user turn
-                    if st:
-                        self.room.set_next_user_parent(st["msg_id"])
-                    
                     # Persist to DB
                     await self._persist_word_timestamps(msg_id_final, words)
+
+                    # If this was the audio-only path (no text finalized yet),
+                    # backfill the message content and finalize now.
+                    try:
+                        # Consider it audio-only if the message has not streamed chunks
+                        needs_finalize = not (st and int(st.get("chunk_idx") or 0) > 0) and not (final_text and final_text.strip())
+                        if needs_finalize:
+                            persona_id = await self._get_assistant_persona_id()
+                            await self.publish_text_chunk(
+                                text=(tr_text or effective_text or ""),
+                                message_id=msg_id_final,
+                                chunk_idx=int(st.get("chunk_idx") or 0) if st else 0,
+                                is_final=True,
+                                persona_id=persona_id,
+                                voice=True,
+                                parent_id=(st.get("parent_id") if st else self._resolve_parent_id(st)),
+                            )
+                            # Thread next user turn
+                            if st:
+                                self.room.set_next_user_parent(st["msg_id"])
+                    except Exception:
+                        pass
                     
-                    # Update message content with Whisper transcription if it's different
-                    if tr_text and tr_text != effective_text and msg_id_final:
-                        from app.store import update_message_content
-                        await update_message_content(msg_id_final, tr_text)
                     
                     # Add returned audio to bus if available
                     if returned_audio is not None and returned_audio.size > 0:
-                        # Resample to bus rate if needed (same as existing audio processing)
-                        if len(returned_audio) > 0:
-                            await self.publish_audio(returned_audio)
+                        # Publish all returned audio (audio path unchanged)
+                        chunk_size = SAMPLES_PER_CHUNK  # 960 samples = 20ms
+                        for i in range(0, len(returned_audio), chunk_size):
+                            chunk = returned_audio[i:i + chunk_size]
+                            if len(chunk) > 0:
+                                await self.publish_audio(chunk)
+                                await asyncio.sleep(chunk_size / PCM_SR)  # 20ms pacing
         except Exception:
             pass
 
@@ -1780,8 +2007,7 @@ class OpenAIAgent(Agent):
                         await self._handle_text_delta(session, payload, evt_type)
 
                     # Response completion
-                    elif evt_type in ("response.output_text.done", "response.text.done",
-                                       "response.audio_transcript.done", "response.completed", "response.done"):
+                    elif evt_type in ("response.audio_transcript.done", "response.completed", "response.done"):
                         await self._handle_response_done(session, payload)
 
                     # User transcript deltas
