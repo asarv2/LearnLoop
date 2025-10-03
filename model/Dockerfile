@@ -30,9 +30,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && apt-get purge -y --auto-remove build-essential g++ gcc python3-dev cython3 \
   && rm -rf /var/lib/apt/lists/*
 
-# FlashAttention (Torch 2.6 + CUDA 12, CPython 3.11)
-RUN pip install --no-cache-dir \
-  https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.6cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+# FlashAttention removed to avoid ABI compatibility issues
+# Transformers will fall back to PyTorch's built-in attention kernels
+ENV USE_FLASH_ATTENTION=0
 
 # Make cuDNN's pip-installed libs visible to the dynamic linker
 RUN python - <<'PY'
