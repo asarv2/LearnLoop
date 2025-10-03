@@ -62,6 +62,39 @@ export function useTrainingsByTypeAndCompany(
   });
 }
 
+export function useStandardAndRequiredTrainingsForCompany(
+  company: string | null
+) {
+  return useQuery({
+    queryKey: [...trainingKeys.list(), "standard-required", "company", company],
+    queryFn: async () => {
+      logInfo(
+        `Fetching active standard and required trainings for company ${company}`
+      );
+
+      // Fetch both standard and required trainings
+      const [standardTrainings, requiredTrainings] = await Promise.all([
+        api<TrainingCreate[]>(
+          `/api/v1/trainings?type=standard&company=${encodeURIComponent(
+            company || ""
+          )}`
+        ),
+        api<TrainingCreate[]>(
+          `/api/v1/trainings?type=required&company=${encodeURIComponent(
+            company || ""
+          )}`
+        ),
+      ]);
+
+      // Combine both types and filter for active trainings only
+      const allTrainings = [...standardTrainings, ...requiredTrainings];
+      return allTrainings.filter((training) => training.active === true);
+    },
+    enabled: !!company,
+    staleTime: 5 * 60_000, // 5 minutes
+  });
+}
+
 export function useCustomTrainingsForUser(userId: string | undefined) {
   return useQuery({
     queryKey: [...trainingKeys.list(), "custom", "user", userId],
