@@ -34,6 +34,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Transformers will fall back to PyTorch's built-in attention kernels
 ENV USE_FLASH_ATTENTION=0
 
+# Pre-download spaCy model to avoid runtime downloads
+RUN python -m pip install --no-cache-dir spacy && \
+    python -m spacy download en_core_web_sm
+
 # Make cuDNN's pip-installed libs visible to the dynamic linker
 RUN python - <<'PY'
 import pathlib, nvidia.cudnn as cudnn
