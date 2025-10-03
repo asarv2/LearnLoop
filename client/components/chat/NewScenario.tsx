@@ -1570,6 +1570,15 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           groupFields
         );
 
+      // Add the newly created custom persona ID to the personaIds array
+      const finalPersonaIds = [...personaIds];
+      if (
+        nextAssistantPersonaId &&
+        !finalPersonaIds.includes(nextAssistantPersonaId)
+      ) {
+        finalPersonaIds.push(nextAssistantPersonaId);
+      }
+
       // Final safety: no filenames in payload
       assertAllDocValuesAreUUIDs(
         payloadFieldValues.map(({ fieldId, value }) => ({ fieldId, value }))
@@ -1581,14 +1590,14 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
         field_values: payloadFieldValues,
-        persona_ids: personaIds,
+        persona_ids: finalPersonaIds,
       });
 
       // 6) Trigger generation
       emitGenerateScenario({
         scenario_id: scenarioToUse,
         field_values: payloadFieldValues,
-        persona_ids: personaIds,
+        persona_ids: finalPersonaIds,
         additional_prompt: opts?.additionalPrompt || undefined,
         current_draft_objectives: draftObjectives || [],
         generate_documents:
@@ -1638,10 +1647,19 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
           resolvedGroup
         );
 
+      // Add the custom assistant persona ID if it exists
+      const finalPersonaIds = [...personaIds];
+      if (
+        customAssistantPersonaId &&
+        !finalPersonaIds.includes(customAssistantPersonaId)
+      ) {
+        finalPersonaIds.push(customAssistantPersonaId);
+      }
+
       emitUpdateScenarioParameters({
         scenario_id: scenarioToUse,
         field_values: updateFieldValues,
-        persona_ids: personaIds,
+        persona_ids: finalPersonaIds,
       });
 
       // Start training with only scenario_id
