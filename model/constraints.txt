@@ -6,7 +6,3 @@ transformers==4.46.3
 tokenizers==0.20.3
 huggingface-hub==0.35.3
 onnxruntime==1.23.0
-
-# tame the audio stack churn (works with numpy 1.26.x)
-librosa==0.10.2.post1
-soundfile==0.12.1
