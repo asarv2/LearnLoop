@@ -50,6 +50,8 @@ export default function AdminCreatePage() {
   });
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loadingPolicies, setLoadingPolicies] = useState(false);
+  const [rubrics, setRubrics] = useState<any[]>([]);
+  const [loadingRubrics, setLoadingRubrics] = useState(false);
 
   const { user } = useAuth();
   const { data: currentProfile } = useProfile(user?.id || "", !!user);
@@ -57,7 +59,7 @@ export default function AdminCreatePage() {
   const queryClient = useQueryClient();
   const [messageApi, contextHolder] = message.useMessage();
 
-  // Fetch policies on component mount
+  // Fetch policies and rubrics on component mount
   useEffect(() => {
     const fetchPolicies = async () => {
       setLoadingPolicies(true);
@@ -75,7 +77,24 @@ export default function AdminCreatePage() {
       }
     };
 
+    const fetchRubrics = async () => {
+      setLoadingRubrics(true);
+      try {
+        const res = await fetch("/api/v1/rubrics", { cache: "no-store" });
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setRubrics(data);
+        }
+      } catch (error) {
+        console.error("Error fetching rubrics:", error);
+        messageApi.error("Failed to load rubrics");
+      } finally {
+        setLoadingRubrics(false);
+      }
+    };
+
     fetchPolicies();
+    fetchRubrics();
   }, [messageApi]);
 
   // Listen for training creation progress events
@@ -148,6 +167,8 @@ export default function AdminCreatePage() {
     description: string;
     dueDate?: dayjs.Dayjs;
     policyId?: string;
+    moods?: string[];
+    rubricId?: string;
   }) => {
     if (!currentProfile?.company) {
       messageApi.error(
@@ -165,11 +186,13 @@ export default function AdminCreatePage() {
     });
 
     try {
-      // Create the training using WebSocket with policy reference
+      // Create the training using WebSocket with policy reference, moods, and rubric
       emitCreateTraining({
         name: values.title,
         description: values.description,
         policy_id: values.policyId,
+        moods: values.moods || [],
+        rubric_id: values.rubricId,
         profile_id: user?.id,
         // Additional data for admin-created required trainings
         training_type: "required",
@@ -198,7 +221,7 @@ export default function AdminCreatePage() {
       </Title>
 
       <Row gutter={[24, 24]}>
-        <Col xs={24} lg={16}>
+        <Col xs={24}>
           <Card
             title="Required Training Creation"
             style={{ marginBottom: "24px" }}
@@ -317,6 +340,120 @@ export default function AdminCreatePage() {
                       </div>
                     </Select.Option>
                   ))}
+                </Select>
+              </Form.Item>
+
+              <Form.Item
+                name="moods"
+                label="Moods (Select 4)"
+                tooltip="Choose 4 moods that will be randomly assigned to different personas in the training scenarios"
+                rules={[
+                  {
+                    validator: (_, value) => {
+                      if (!value || value.length === 0) {
+                        return Promise.resolve();
+                      }
+                      if (value.length !== 4) {
+                        return Promise.reject(
+                          new Error("Please select exactly 4 moods")
+                        );
+                      }
+                      return Promise.resolve();
+                    },
+                  },
+                ]}
+              >
+                <Select
+                  mode="multiple"
+                  placeholder="Select 4 moods..."
+                  maxCount={4}
+                  size="large"
+                  style={{ width: "100%" }}
+                  options={[
+                    { value: "happy", label: "Happy" },
+                    { value: "frustrated", label: "Frustrated" },
+                    { value: "neutral", label: "Neutral" },
+                    { value: "excited", label: "Excited" },
+                    { value: "calm", label: "Calm" },
+                    { value: "stressed", label: "Stressed" },
+                    { value: "confident", label: "Confident" },
+                    { value: "nervous", label: "Nervous" },
+                    { value: "angry", label: "Angry" },
+                    { value: "sad", label: "Sad" },
+                    { value: "impatient", label: "Impatient" },
+                    { value: "enthusiastic", label: "Enthusiastic" },
+                  ]}
+                />
+              </Form.Item>
+
+              <Form.Item
+                name="rubricId"
+                label="Rubric"
+                tooltip="Select a rubric to evaluate training performance"
+                rules={[{ required: true, message: "Please select a rubric" }]}
+              >
+                <Select
+                  placeholder="Select a rubric..."
+                  loading={loadingRubrics}
+                  size="large"
+                  style={{ width: "100%" }}
+                  notFoundContent={
+                    rubrics.length === 0 ? (
+                      <div style={{ textAlign: "center", padding: "20px" }}>
+                        <div style={{ color: "#8c8c8c" }}>
+                          No rubrics available
+                        </div>
+                      </div>
+                    ) : (
+                      "No rubrics found"
+                    )
+                  }
+                >
+                  {/* General rubric (generic) */}
+                  {rubrics
+                    .filter(
+                      (rubric) =>
+                        !rubric.company &&
+                        rubric.name.toLowerCase() === "general"
+                    )
+                    .map((rubric) => (
+                      <Select.Option key={rubric.id} value={rubric.id}>
+                        <div>
+                          <div style={{ fontWeight: 500 }}>{rubric.name}</div>
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              color: "#8c8c8c",
+                              marginTop: "2px",
+                            }}
+                          >
+                            Generic Rubric
+                          </div>
+                        </div>
+                      </Select.Option>
+                    ))}
+
+                  {/* Company-specific rubrics */}
+                  {rubrics
+                    .filter(
+                      (rubric) => rubric.company === currentProfile?.company
+                    )
+                    .map((rubric) => (
+                      <Select.Option key={rubric.id} value={rubric.id}>
+                        <div>
+                          <div style={{ fontWeight: 500 }}>{rubric.name}</div>
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              color: "#8c8c8c",
+                              marginTop: "2px",
+                            }}
+                          >
+                            Company Rubric
+                          </div>
+                        </div>
+                      </Select.Option>
+                    ))}
                 </Select>
               </Form.Item>
 
