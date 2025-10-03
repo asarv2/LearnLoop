@@ -46,4 +46,28 @@ export const supabaseAdapter = {
     if (error) throw new Error(error.message);
     return key;
   },
+
+  async uploadFileAudio(file: File, key: string) {
+    const supabase = await supabaseServer(cookies());
+    // Try audio bucket first, fall back to documents bucket
+    const { error } = await supabase.storage.from("audio").upload(key, file, {
+      cacheControl: "3600",
+      upsert: false,
+    });
+
+    if (error) {
+      // Fall back to documents bucket if audio bucket doesn't exist
+      const documentsResult = await supabase.storage
+        .from("documents")
+        .upload(key, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (documentsResult.error) throw new Error(documentsResult.error.message);
+      return key;
+    }
+
+    return key;
+  },
 };

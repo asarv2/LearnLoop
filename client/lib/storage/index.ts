@@ -5,6 +5,8 @@ export interface StorageAdapter {
   getSignedUrlAudio(key: string, expiresIn: number): Promise<string>;
   /** Upload a file to storage and return the key */
   uploadFile(file: File, key: string): Promise<string>;
+  /** Upload an audio file to storage and return the key */
+  uploadFileAudio(file: File, key: string): Promise<string>;
 }
 
 /* Resolve at runtime based on ENV  */
