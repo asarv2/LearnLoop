@@ -60,6 +60,7 @@ class AlignCTCRequest(BaseModel):
     num_chunks: int | None = None  # used when stage=="partial"
     chunk_ms: int = 20  # default 20ms per chunk
     language: str | None = None
+    reference_audio_b64: str | None = None  # NEW: Reference audio for better alignment
 
 
 class TTSRequest(BaseModel):
@@ -203,7 +204,7 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
     - num_chunks: when stage=="partial", number of chunks to include
     - chunk_ms: chunk duration in milliseconds (default 20ms)
     """
-    logger.info(f"[align_ctc] request: stage={req.stage} sr={req.sr} ref_text_len={len(req.reference_text or '')} ref_text='{req.reference_text[:100] if req.reference_text else None}...' audio_b64_len={len(req.audio_b64)}")
+    logger.info(f"[align_ctc] request: stage={req.stage} sr={req.sr} ref_text_len={len(req.reference_text or '')} ref_text='{req.reference_text[:100] if req.reference_text else None}...' audio_b64_len={len(req.audio_b64)} ref_audio_b64_len={len(req.reference_audio_b64) if req.reference_audio_b64 else 0}")
     import base64
 
     import numpy as np  # type: ignore
@@ -225,6 +226,19 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
         x = x.astype(np.float32)
         sr = int(req.sr)
 
+        # NEW: Handle reference audio if provided
+        ref_audio = None
+        if req.reference_audio_b64:
+            try:
+                ref_raw = base64.b64decode(req.reference_audio_b64)
+                ref_audio = _try_decode(ref_raw).astype(np.float32)
+                # Use reference audio for better alignment
+                # This could involve cross-correlation or other alignment techniques
+                logger.info(f"Using reference audio for alignment: {len(ref_audio)} samples")
+            except Exception as e:
+                logger.warning(f"Failed to decode reference audio: {e}")
+                ref_audio = None
+
         # If partial, truncate to num_chunks * chunk_ms
         if (req.stage or "final").lower() == "partial" and int(req.num_chunks or 0) > 0:
             chunk_ms = int(req.chunk_ms or 20)
@@ -240,10 +254,10 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
             try:
                 audio_data, sample_rate = extensions.synthesize_tts(
                     text=req.reference_text,
-                    voice="alloy",
                     sr=48000,
                     language=req.language,          # will be used if Chatterbox multilingual is active
-                    prefer_multilingual=False       # flip to True if you want multilingual first
+                    prefer_multilingual=False,       # flip to True if you want multilingual first
+                    reference_audio=ref_audio if req.reference_audio_b64 else None  # Pass reference audio
                 )
                 if audio_data.size > 0:
                     # NOW align using the generated audio (skip Whisper since we have reference text)

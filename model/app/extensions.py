@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import soundfile as sf  # type: ignore
 
 # ---------- logging & warnings ----------
 logger = logging.getLogger("model_service")
@@ -209,39 +211,55 @@ def synthesize_kokoro(text: str, voice: str = "alloy", sr: int = 48000) -> tuple
 def synthesize_tts(
     text: str,
     *,
-    voice: str = "alloy",
     sr: int = 48000,
     language: str | None = None,
     prefer_multilingual: bool = False,
+    reference_audio: np.ndarray | None = None,
 ) -> tuple[np.ndarray, int]:
     """
-    Prefer Chatterbox on CUDA; otherwise fall back to Kokoro.
-    Returns (float32 mono PCM, sample_rate).
+    Prefer Chatterbox on CUDA; if a reference clip is provided, do zero-shot voice cloning.
+    Fallback to Kokoro on CPU. Returns (float32 mono PCM, sample_rate).
     """
     try:
         import torch
         if torch.cuda.is_available():
-            # Try preferred Chatterbox flavor first
-            model = get_chatterbox_multilingual() if prefer_multilingual else get_chatterbox_tts()
-            if model is None:
-                # Try the other flavor as a fallback on CUDA
-                model = get_chatterbox_tts() if prefer_multilingual else get_chatterbox_multilingual()
+            # 1) Pick model (EN or multilingual)
+            mdl = get_chatterbox_multilingual() if prefer_multilingual else get_chatterbox_tts()
+            if mdl is None:
+                mdl = get_chatterbox_tts() if prefer_multilingual else get_chatterbox_multilingual()
+            if mdl is not None:
+                sr_native = getattr(mdl, "sr", 24000)
+                gen_kwargs = {}
+                
+                # multilingual API uses language_id (per README)
+                if language and mdl.__class__.__name__.lower().startswith("chatterboxmultilingual"):
+                    gen_kwargs["language_id"] = language  # e.g., "en", "fr", "ja"
 
-            if model is not None:
-                kwargs = {}
-                if language:
-                    kwargs["lang"] = language  # Chatterbox multilingual supports this
-                wav = model.generate(text, **kwargs)  # Tensor [T] or [1, T], float32
-                sr_native = getattr(model, "sr", 24000)
+                # 2) If we have a reference clip, write it to a temp wav and pass audio_prompt_path
+                audio_prompt_path = None
+                if reference_audio is not None and reference_audio.size > 0:
+                    with tempfile.TemporaryDirectory() as td:
+                        # If your ref clip isn't already at sr_native, resample before saving
+                        ref = reference_audio.astype(np.float32).reshape(-1)
+                        if sr != sr_native:
+                            ref = _resample_linear(ref, sr_in=sr, sr_out=sr_native)
+                        audio_prompt_path = os.path.join(td, "ref.wav")
+                        sf.write(audio_prompt_path, ref, sr_native, subtype="PCM_16")
+                        gen_kwargs["audio_prompt_path"] = audio_prompt_path  # <- cloning!
+
+                        wav = mdl.generate(text, **gen_kwargs)
+                else:
+                    wav = mdl.generate(text, **gen_kwargs)
+
                 y = wav.squeeze().detach().cpu().numpy().astype(np.float32)
                 if sr != sr_native:
                     y = _resample_linear(y, sr_native, sr)
                 return y, sr
     except Exception as e:
-        logger.warning(f"synthesize_tts: Chatterbox path failed, using Kokoro. err={e}")
+        logger.warning(f"synthesize_tts: Chatterbox path failed (clone or base). Falling back. err={e}")
 
-    # CPU or last-resort fallback
-    return synthesize_kokoro(text=text, voice=voice, sr=sr)
+    # 3) CPU fallback
+    return synthesize_kokoro(text=text, voice="alloy", sr=sr)
 
 
 def warm_all_models() -> None:
