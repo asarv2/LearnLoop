@@ -4,6 +4,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { useProfile } from "@/lib/api/hooks/useProfiles";
 import { trainingKeys } from "@/lib/api/keys";
+import type { Rubric } from "@/types";
 import {
   CalendarOutlined,
   FileTextOutlined,
@@ -50,7 +51,7 @@ export default function AdminCreatePage() {
   });
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loadingPolicies, setLoadingPolicies] = useState(false);
-  const [rubrics, setRubrics] = useState<any[]>([]);
+  const [rubrics, setRubrics] = useState<Rubric[]>([]);
   const [loadingRubrics, setLoadingRubrics] = useState(false);
 
   const { user } = useAuth();
@@ -190,9 +191,9 @@ export default function AdminCreatePage() {
       emitCreateTraining({
         name: values.title,
         description: values.description,
-        policy_id: values.policyId,
-        moods: values.moods || [],
-        rubric_id: values.rubricId,
+        // policy_id: values.policyId,
+        // moods: values.moods || [],
+        //rubric_id: values.rubricId,
         profile_id: user?.id,
         // Additional data for admin-created required trainings
         training_type: "required",
