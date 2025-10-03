@@ -1,8 +1,0 @@
-# keep PyTorch 2.8 CUDA 12.8 stack intact
-triton==3.4.0
-
-# stop resolver thrash on these hubs
-transformers==4.46.3
-tokenizers==0.20.3
-huggingface-hub==0.35.3
-onnxruntime==1.23.0
