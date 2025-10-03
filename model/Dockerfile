@@ -1,18 +1,25 @@
-FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+FROM nvidia/cuda:12.4.1-cudnn9-runtime-ubuntu22.04
 
 # Set working directory
 WORKDIR /app
 
-# Runtime-only OS deps (no compilers)
+# Install Python 3.11 and system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsndfile1 \
-    ffmpeg \
- && rm -rf /var/lib/apt/lists/*
+      python3.11 python3.11-venv python3.11-dev python3-pip \
+      build-essential ffmpeg libsndfile1 \
+  && ln -s /usr/bin/python3.11 /usr/bin/python \
+  && python -m pip install --upgrade pip \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install pip PyTorch + FlashAttention that match CUDA 12.4 and Python 3.11
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu124 \
+      torch==2.6.0+cu124 torchaudio==2.6.0+cu124 && \
+    pip install --no-cache-dir \
+      https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.6cxx11abiTRUE-cp311-cp311-linux_x86_64.whl
 
 # Build ctc-segmentation from source, then remove build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential python3-dev \
-  && pip install --no-cache-dir --upgrade pip \
   && pip install --no-cache-dir numpy==1.26.0 \
   && pip install --no-cache-dir "ctc-segmentation==1.7.4" \
   && apt-get purge -y --auto-remove build-essential python3-dev \
@@ -30,10 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && apt-get purge -y --auto-remove build-essential g++ gcc python3-dev cython3 \
   && rm -rf /var/lib/apt/lists/*
 
-# FlashAttention (Torch 2.6 + CUDA 12, CPython 3.11) — ABI TRUE
-RUN pip uninstall -y flash-attn || true && \
-    pip install --no-cache-dir \
-      https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.6cxx11abiTRUE-cp311-cp311-linux_x86_64.whl
+# FlashAttention already installed above with PyTorch
 
 # Make cuDNN's pip-installed libs visible to the dynamic linker
 RUN python - <<'PY'
