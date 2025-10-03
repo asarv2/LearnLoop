@@ -147,52 +147,98 @@ VOICE_MAP = {
 
 # ---------- TTS (Chatterbox) ----------
 
-@lru_cache(maxsize=1)
-def get_chatterbox_tts() -> Any:
-    """Load English Chatterbox TTS on CUDA (no CPU fallback)."""
+# ---------- helpers ----------
+def _maybe_eval(model: object) -> object:
+    try:
+        import torch.nn as nn  # type: ignore
+        if isinstance(model, nn.Module):
+            model.eval()
+    except Exception:
+        pass
+    return model
+
+def _maybe_half(model: object) -> None:
     try:
         import torch
+        import torch.nn as nn  # type: ignore
+        if isinstance(model, nn.Module):
+            try:
+                model.half()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def _maybe_to_cuda(model: object) -> object:
+    """Try to put model on CUDA if it supports .to() and CUDA is available."""
+    try:
+        import torch  # type: ignore
+        if torch.cuda.is_available() and hasattr(model, "to"):
+            model = model.to("cuda")  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    return model
+
+@lru_cache(maxsize=1)
+def get_chatterbox_tts() -> Any:
+    """Load English Chatterbox TTS on CUDA when possible; tolerate API variants."""
+    try:
+        import torch  # type: ignore
         if not torch.cuda.is_available():
             logger.info("ChatterboxTTS skipped: CUDA not available")
             return None
-        from chatterbox.tts import ChatterboxTTS  # type: ignore
 
-        torch.backends.cudnn.benchmark = True
-        torch.set_float32_matmul_precision("high")  # favor tensor cores
-
-        mdl = ChatterboxTTS.from_pretrained(device="cuda").eval()
+        # Import path can differ across releases
         try:
-            mdl.half()  # FP16 weights if supported
+            from chatterbox.tts import ChatterboxTTS  # type: ignore
         except Exception:
-            pass
-        logger.info("Initialized ChatterboxTTS on CUDA (fp16-ready)")
+            from chatterbox import ChatterboxTTS  # type: ignore
+
+        # Some versions accept device=..., some don't
+        try:
+            mdl = ChatterboxTTS.from_pretrained(device="cuda")
+        except TypeError:
+            mdl = ChatterboxTTS.from_pretrained()
+            mdl = _maybe_to_cuda(mdl)
+
+        _maybe_eval(mdl)
+        _maybe_half(mdl)
+
+        logger.info("Initialized ChatterboxTTS (CUDA-ready)")
         return mdl
     except Exception as e:
-        logger.warning(f"ChatterboxTTS load failed: {e}")
+        logger.warning(f"ChatterboxTTS load failed (tolerated): {e}")
         return None
 
 @lru_cache(maxsize=1)
 def get_chatterbox_multilingual() -> Any:
-    """Load Multilingual Chatterbox TTS on CUDA (no CPU fallback)."""
+    """Load Multilingual Chatterbox; tolerate import / API differences."""
     try:
-        import torch
+        import torch  # type: ignore
         if not torch.cuda.is_available():
             logger.info("ChatterboxMultilingual skipped: CUDA not available")
             return None
-        from chatterbox import ChatterboxMultilingualTTS  # type: ignore
 
-        torch.backends.cudnn.benchmark = True
-        torch.set_float32_matmul_precision("high")  # favor tensor cores
-
-        mdl = ChatterboxMultilingualTTS.from_pretrained(device="cuda").eval()
+        # Import path can differ
         try:
-            mdl.half()  # FP16 weights if supported
+            from chatterbox.multilingual import \
+                ChatterboxMultilingualTTS  # type: ignore
         except Exception:
-            pass
-        logger.info("Initialized Chatterbox Multilingual TTS on CUDA (fp16-ready)")
+            from chatterbox import ChatterboxMultilingualTTS  # type: ignore
+
+        try:
+            mdl = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
+        except TypeError:
+            mdl = ChatterboxMultilingualTTS.from_pretrained()
+            mdl = _maybe_to_cuda(mdl)
+
+        _maybe_eval(mdl)
+        _maybe_half(mdl)
+
+        logger.info("Initialized ChatterboxMultilingualTTS (CUDA-ready)")
         return mdl
     except Exception as e:
-        logger.warning(f"Chatterbox Multilingual load failed: {e}")
+        logger.warning(f"Chatterbox Multilingual load failed (tolerated): {e}")
         return None
 
 @lru_cache(maxsize=1)
@@ -349,7 +395,11 @@ def synthesize_tts(
                     else:
                         wav = mdl.generate(text, **gen_kwargs)
 
-                y = wav.squeeze().detach().cpu().numpy().astype(np.float32)
+                # Handle both torch tensors and numpy arrays from model.generate()
+                if hasattr(wav, "detach"):  # torch tensor path
+                    y = wav.squeeze().detach().cpu().numpy().astype(np.float32)
+                else:                        # numpy / list path
+                    y = np.asarray(wav, dtype=np.float32).reshape(-1)
                 if sr != sr_native:
                     y = _resample_fast(y, sr_native, sr)
                 return y, sr
