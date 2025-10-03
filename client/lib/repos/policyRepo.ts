@@ -58,7 +58,7 @@ export const policyRepo = {
       .eq("id", id)
       .single();
     if (error) {
-      if ((error as any).code === "PGRST116") {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Policy with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
@@ -75,7 +75,7 @@ export const policyRepo = {
       .select()
       .single();
     if (error) {
-      if ((error as any).code === "PGRST116") {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Policy with id ${id} not found`);
       }
       throw new HttpError(500, error.message);
@@ -87,7 +87,7 @@ export const policyRepo = {
     const supabase = await getSupabase();
     const { error } = await supabase.from("policies").delete().eq("id", id);
     if (error) {
-      if ((error as any).code === "PGRST116") {
+      if (error.code === "PGRST116") {
         throw HttpError.notFound(`Policy with id ${id} not found`);
       }
       throw new HttpError(500, error.message);

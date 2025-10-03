@@ -33,10 +33,12 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         rubric_name: name,
         rubric_description: description || "",
-        standards: standards.map((s: any) => ({
-          name: s.name,
-          description: s.description || "",
-        })),
+        standards: standards.map(
+          (s: { name: string; description?: string }) => ({
+            name: s.name,
+            description: s.description || "",
+          })
+        ),
         num_levels: standards[0]?.items?.length || 5,
       }),
     });

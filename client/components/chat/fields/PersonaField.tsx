@@ -2,7 +2,12 @@
 
 import { useParametersByField } from "@/lib/api/hooks/useParameters";
 import { usePersonas } from "@/lib/api/hooks/usePersonas";
-import { CheckIcon, SpeakerLoudIcon } from "@radix-ui/react-icons";
+import {
+  CheckIcon,
+  Cross2Icon,
+  SpeakerLoudIcon,
+  UploadIcon,
+} from "@radix-ui/react-icons";
 import { Box, Button, Card, Flex, Spinner, Text } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import type { PersonaFieldProps } from "./types";
@@ -15,6 +20,10 @@ export default function PersonaField({
   setCustomPersonaName,
   customVoiceType,
   setCustomVoiceType,
+  customVoiceFile,
+  setCustomVoiceFile,
+  customVoiceUrl,
+  setCustomVoiceUrl,
 }: PersonaFieldProps) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
   const { data: personas } = usePersonas();
@@ -33,6 +42,10 @@ export default function PersonaField({
   // Custom persona state
   const [isCustomPersonaSelected, setIsCustomPersonaSelected] = useState(false);
 
+  // Custom voice upload state
+  const [isPlayingCustomVoice, setIsPlayingCustomVoice] = useState(false);
+  const customAudioRef = useRef<HTMLAudioElement | null>(null);
+
   // Sync internal state with parent when selectedParameterId changes
   useEffect(() => {
     if (selectedParameterId && selectedParameterId !== selectedPersonaId) {
@@ -41,6 +54,61 @@ export default function PersonaField({
       setIsCustomPersonaSelected(false);
     }
   }, [selectedParameterId, selectedPersonaId]);
+
+  // Handle voice file upload
+  const handleVoiceFileUpload = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (
+        !file.type.startsWith("audio/") &&
+        !file.name.toLowerCase().endsWith(".wav")
+      ) {
+        alert("Please select a valid audio file (.wav)");
+        return;
+      }
+
+      setCustomVoiceFile(file);
+      setCustomVoiceType(""); // Clear voice type selection
+
+      // Create local URL for preview
+      const url = URL.createObjectURL(file);
+      setCustomVoiceUrl(url);
+    }
+  };
+
+  // Handle remove custom voice
+  const handleRemoveCustomVoice = () => {
+    setCustomVoiceFile(null);
+    setCustomVoiceUrl(null);
+    if (customVoiceUrl) {
+      URL.revokeObjectURL(customVoiceUrl);
+    }
+  };
+
+  // Handle custom voice playback
+  const handlePlayCustomVoice = () => {
+    if (customAudioRef.current) {
+      if (isPlayingCustomVoice) {
+        customAudioRef.current.pause();
+        setIsPlayingCustomVoice(false);
+      } else {
+        customAudioRef.current.play();
+        setIsPlayingCustomVoice(true);
+      }
+    }
+  };
+
+  // Cleanup audio URL on unmount
+  useEffect(() => {
+    return () => {
+      if (customVoiceUrl) {
+        URL.revokeObjectURL(customVoiceUrl);
+      }
+    };
+  }, [customVoiceUrl]);
 
   const colors = [
     "var(--green-2)",
@@ -430,37 +498,136 @@ export default function PersonaField({
                   </Box>
                   {/* Voice selector - 40% width */}
                   <Box style={{ flex: "0 0 40%" }}>
-                    <select
-                      value={customVoiceType}
-                      onChange={(e) => setCustomVoiceType(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "12px 16px",
-                        borderRadius: "8px",
-                        border: `1px solid ${
-                          customVoiceType ? "var(--green-7)" : "var(--gray-6)"
-                        }`,
-                        fontSize: "16px",
-                        outline: "none",
-                        background: "white",
-                      }}
-                    >
-                      <option value="">Select voice...</option>
-                      {displayedParameters?.map((param) => {
-                        const persona = personas?.find(
-                          (p) => p.id === param.value
-                        );
-                        const firstName = persona?.name?.split(" ")[0];
-                        return (
-                          <option key={param.id} value={String(param.value)}>
-                            {firstName ||
-                              param.name?.replace(/\s+Employee$/i, "") ||
-                              "Unknown"}
-                            &apos;s Voice
-                          </option>
-                        );
-                      })}
-                    </select>
+                    {customVoiceFile ? (
+                      // Show audio player when custom voice is uploaded
+                      <Flex align="center" gap="2">
+                        <Button
+                          size="2"
+                          variant="soft"
+                          onClick={handlePlayCustomVoice}
+                          style={{
+                            background: isPlayingCustomVoice
+                              ? "var(--green-3)"
+                              : "var(--gray-3)",
+                            color: isPlayingCustomVoice
+                              ? "var(--green-11)"
+                              : "var(--gray-11)",
+                            border: "1px solid var(--gray-6)",
+                            borderRadius: "6px",
+                            padding: "8px 12px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                          }}
+                        >
+                          <SpeakerLoudIcon width="14" height="14" />
+                          <Text size="2">
+                            {isPlayingCustomVoice ? "Playing..." : "Play Voice"}
+                          </Text>
+                        </Button>
+                        <Button
+                          size="2"
+                          variant="ghost"
+                          onClick={handleRemoveCustomVoice}
+                          style={{
+                            color: "var(--red-9)",
+                            padding: "8px",
+                            minWidth: "auto",
+                            width: "32px",
+                            height: "32px",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Cross2Icon width="14" height="14" />
+                        </Button>
+                        <audio
+                          ref={customAudioRef}
+                          src={customVoiceUrl || undefined}
+                          onEnded={() => setIsPlayingCustomVoice(false)}
+                          onError={() => {
+                            setIsPlayingCustomVoice(false);
+                            alert("Error playing audio file");
+                          }}
+                        />
+                      </Flex>
+                    ) : (
+                      // Show voice selector and upload button
+                      <Flex align="center" gap="2">
+                        <select
+                          value={customVoiceType}
+                          onChange={(e) => setCustomVoiceType(e.target.value)}
+                          style={{
+                            flex: 1,
+                            padding: "12px 16px",
+                            borderRadius: "8px",
+                            border: `1px solid ${
+                              customVoiceType
+                                ? "var(--green-7)"
+                                : "var(--gray-6)"
+                            }`,
+                            fontSize: "16px",
+                            outline: "none",
+                            background: "white",
+                          }}
+                        >
+                          <option value="">Select voice...</option>
+                          {displayedParameters?.map((param) => {
+                            const persona = personas?.find(
+                              (p) => p.id === param.value
+                            );
+                            const firstName = persona?.name?.split(" ")[0];
+                            return (
+                              <option
+                                key={param.id}
+                                value={String(param.value)}
+                              >
+                                {firstName ||
+                                  param.name?.replace(/\s+Employee$/i, "") ||
+                                  "Unknown"}
+                                &apos;s Voice
+                              </option>
+                            );
+                          })}
+                        </select>
+                        <input
+                          type="file"
+                          accept=".wav,audio/*"
+                          onChange={handleVoiceFileUpload}
+                          style={{ display: "none" }}
+                          id={`voice-upload-${field.id}`}
+                        />
+                        <Button
+                          size="2"
+                          variant="soft"
+                          onClick={() =>
+                            document
+                              .getElementById(`voice-upload-${field.id}`)
+                              ?.click()
+                          }
+                          style={{
+                            background: "var(--violet-3)",
+                            color: "var(--violet-11)",
+                            border: "1px solid var(--violet-6)",
+                            borderRadius: "6px",
+                            padding: "8px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minWidth: "auto",
+                            width: "32px",
+                            height: "32px",
+                          }}
+                        >
+                          <UploadIcon width="14" height="14" />
+                        </Button>
+                      </Flex>
+                    )}
                   </Box>
                 </Flex>
               </Box>
