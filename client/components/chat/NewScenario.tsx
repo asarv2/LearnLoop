@@ -1359,12 +1359,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               // Create a simple custom persona with just name and voice
               const newPersona = await createPersona.mutateAsync({
                 name: customPersonaName,
-                description: `Custom persona: ${customPersonaName}`,
+                description:
+                  voicePersona?.description,
                 profile_id: null,
-                // system_prompt: `You are ${customPersonaName}, a professional employee.`, // REMOVED
-                // realtime_prompt: `You are ${customPersonaName}. Respond naturally and professionally.`, // REMOVED
-                temperature: 0.7, // Default temperature
-                voice: voicePersona?.voice || null,
+                temperature: 0.0, // Default temperature
+                voice: voicePersona?.voice,
                 active: false, // so it does not show up in the persona dropdown
               });
 
