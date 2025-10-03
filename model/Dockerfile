@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential python3-dev \
   && pip install --no-cache-dir --upgrade pip \
-  && pip install --no-cache-dir numpy==1.26.4 \
+  && pip install --no-cache-dir numpy==1.26.0 \
   && pip install --no-cache-dir "ctc-segmentation==1.7.4" \
   && apt-get purge -y --auto-remove build-essential python3-dev \
   && rm -rf /var/lib/apt/lists/*
