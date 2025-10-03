@@ -24,8 +24,20 @@ COPY requirements.txt ./
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Point the dynamic loader at cuDNN wheel's libs (Conda-based PyTorch image path)
-ENV LD_LIBRARY_PATH=/opt/conda/lib/python3.10/site-packages/nvidia/cudnn/lib:${LD_LIBRARY_PATH}
+# Dynamically locate cuDNN wheel's lib dir and register it
+RUN python - <<'PY'
+import pathlib, nvidia.cudnn as cudnn
+p = (pathlib.Path(cudnn.__file__).parent / "lib").resolve()
+print("cuDNN lib dir:", p)
+assert p.exists()
+open("/etc/ld.so.conf.d/zz-cudnn.conf", "w").write(str(p) + "\n")
+PY
+RUN ldconfig
+
+# Validation: Verify cuDNN libraries are properly loaded
+# Uncomment the following lines for debugging if needed:
+# RUN ldconfig -p | grep libcudnn_cnn || echo "cuDNN CNN libs not found in ldconfig"
+# RUN ls -l /opt/conda/lib/python*/site-packages/nvidia/cudnn/lib/libcudnn_cnn.so* || echo "cuDNN CNN libs not found in filesystem"
 
 # Copy application code
 COPY app/ ./app/
