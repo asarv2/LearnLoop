@@ -12,7 +12,7 @@ librosa>=0.10.1,<1.0.0
 transformers>=4.40.0,<5.0.0
 faster-whisper==1.0.3
 ctranslate2>=4.5
-nvidia-cudnn-cu12>=9.1
+# rely on base image cuDNN (Torch 2.8 CUDA 12.8)
 kokoro>=0.9.4,<1.0.0
 chatterbox-tts>=0.1
 
