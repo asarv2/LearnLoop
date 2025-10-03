@@ -1311,16 +1311,30 @@ class OpenAIAgent(Agent):
                             full_text=reference_text,
                         )
                     
-                    # Store partial words for final CTC matching
+                    # Store partial words **with timestamps** for final stitching
                     if words_p:
-                        partial_words = [word.get("text", "").strip() for word in words_p]
-                        st2["partial_words"] = partial_words
-                        
-                        # Store in persistent location that survives stream cleanup
+                        # Keep the full dicts so we have timestamps later
+                        partial_words_full = [
+                            {
+                                "start_ms": int(w.get("start_ms", 0)),
+                                "end_ms": int(w.get("end_ms", 0)),
+                                "text": str(w.get("text", "")),
+                            }
+                            for w in words_p
+                        ]
+                        st2["partial_words"] = partial_words_full
+
+                        # Persist across stream cleanup
+                        end_times = []
+                        for w in partial_words_full:
+                            try:
+                                end_times.append(int(w["end_ms"]))  # type: ignore
+                            except (ValueError, TypeError):
+                                end_times.append(0)
                         self._partial_ctc_data[target_rid] = {
                             "partial_ctc_text": reference_text,
-                            "partial_words": partial_words,
-                            "partial_last_word_end_ms": max(word.get("end_ms", 0) for word in words_p)
+                            "partial_words": partial_words_full,
+                            "partial_last_word_end_ms": max(end_times) if end_times else 0,  # type: ignore
                         }
                         
                         # Also store last word end time for fallback
@@ -1608,15 +1622,51 @@ class OpenAIAgent(Agent):
                 partial_data = self._partial_ctc_data.get(rid, {})
                 partial_ctc_text = partial_data.get("partial_ctc_text", "")
                 
-                # If we have partial text, only process the unused portion
-                if partial_ctc_text and partial_ctc_text in effective_text:
-                    # Find where partial text ends in the full text
+                # If we have a partial prefix, only align the unused suffix.
+                # If no unused suffix, we still need to re-emit the full (partial) words as FINAL.
+                had_partial_prefix = False
+                if partial_ctc_text and effective_text.startswith(partial_ctc_text):
+                    had_partial_prefix = True
                     unused_text = effective_text[len(partial_ctc_text):].strip()
                     if unused_text:
-                        # Use only unused text for final CTC
                         effective_text = unused_text
                     else:
-                        # No unused text, skip final CTC
+                        # No new text to align — just finalize with the partial words we saved
+                        msg_id_final = self._rid_to_msg.get(rid)
+                        if not msg_id_final:
+                            st_final = self._resp_streams.get(rid, {})
+                            if st_final and st_final.get("msg_id") is None:
+                                persona_id = await self._get_assistant_persona_id()
+                                await self._ensure_assistant_message_exists(st_final, persona_id)
+                                msg_id_final = str(st_final["msg_id"])
+                                self._rid_to_msg[rid] = msg_id_final
+                        if msg_id_final and partial_data.get("partial_words"):
+                            await self.room.broadcast_transcript(
+                                agent_id=self.id,
+                                message_id=msg_id_final,
+                                start_ts_ms=start_ts,
+                                words=partial_data["partial_words"],
+                                full_text=partial_ctc_text,
+                            )
+                            await self._persist_word_timestamps(msg_id_final, partial_data["partial_words"])
+                        # If this was an audio-only path, also finalize the message text now.
+                        try:
+                            needs_finalize = not (st and int(st.get("chunk_idx") or 0) > 0) and not (final_text and final_text.strip())
+                            if needs_finalize and msg_id_final:
+                                persona_id = await self._get_assistant_persona_id()
+                                await self.publish_text_chunk(
+                                    text=partial_ctc_text,
+                                    message_id=msg_id_final,
+                                    chunk_idx=int(st.get("chunk_idx") or 0) if st else 0,
+                                    is_final=True,
+                                    persona_id=persona_id,
+                                    voice=True,
+                                    parent_id=(st.get("parent_id") if st else self._resolve_parent_id(st)),
+                                )
+                                if st:
+                                    self.room.set_next_user_parent(st["msg_id"])
+                        except Exception:
+                            pass
                         return
                 
                 tr_text, words, returned_audio = await self._align_ctc(
@@ -1635,22 +1685,16 @@ class OpenAIAgent(Agent):
                             msg_id_final = str(st_final["msg_id"])
                             self._rid_to_msg[rid] = msg_id_final
                     
-                    # Stitch word timestamps for text-only path
-                    if partial_data.get("partial_words"):
-                        # Get partial words with timestamps
+                    # Stitch partial (with timestamps) + adjusted final (continued timestamps)
+                    if had_partial_prefix and partial_data.get("partial_words"):
                         partial_words_with_timestamps = partial_data.get("partial_words", [])
-                        
-                        # Adjust final words timestamps to continue from partial end
                         if partial_words_with_timestamps:
-                            last_partial_end = partial_data.get("partial_last_word_end_ms", 0)
+                            last_partial_end = int(partial_data.get("partial_last_word_end_ms", 0))
                             adjusted_final_words = _adjust_word_timestamps(words, last_partial_end)
-                            
-                            # Stitch together: partial + adjusted final
-                            stitched_words = partial_words_with_timestamps + adjusted_final_words
-                            stitched_text = partial_ctc_text + " " + (tr_text or effective_text)
-                            
-                            # Use stitched results
-                            words = stitched_words
+                            # Join arrays for a single full payload
+                            words = partial_words_with_timestamps + adjusted_final_words
+                            # Build a single full-text string (avoid double spaces)
+                            stitched_text = (partial_ctc_text + " " + (tr_text or effective_text)).strip()
                             effective_text = stitched_text
                     
                     await self.room.broadcast_transcript(
