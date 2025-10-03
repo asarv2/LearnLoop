@@ -78,6 +78,7 @@ class TTSResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     models_loaded: dict[str, bool]
+    device: str | None = None
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -88,19 +89,37 @@ async def health_check() -> HealthResponse:
         wav2vec2_processor, wav2vec2_model = extensions.get_wav2vec2_ctc()
         whisper_model = extensions.get_whisper_tiny("auto")
         kokoro_model = extensions.get_kokoro_pipeline("a")
+        cb_en = extensions.get_chatterbox_tts()
+        cb_ml = extensions.get_chatterbox_multilingual()
+        
+        try:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else \
+                     ("mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available() else "cpu")
+        except Exception:
+            device = None
 
         return HealthResponse(
             status="healthy",
             models_loaded={
-                "wav2vec2": wav2vec2_processor is not None
-                and wav2vec2_model is not None,
+                "wav2vec2": bool(wav2vec2_processor and wav2vec2_model),
                 "whisper": whisper_model is not None,
                 "kokoro": kokoro_model is not None,
+                "chatterbox_en": cb_en is not None,
+                "chatterbox_multi": cb_ml is not None,
             },
+            device=device,
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+
+
+@app.get("/ready")
+async def ready() -> dict[str, bool]:
+    """Lightweight readiness probe for containers/compose."""
+    ok = extensions.get_whisper_tiny("auto") is not None and extensions.get_kokoro_pipeline("a") is not None
+    return {"ready": ok}
 
 
 @app.post("/transcribe", response_model=TranscriptResponse)
@@ -123,53 +142,41 @@ async def transcribe_audio(
         ):
             raise HTTPException(status_code=400, detail="File must be an audio file")
 
-        # Read audio file
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
-            content = await audio_file.read()
-            temp_file.write(content)
-            temp_file.flush()
+        # Read audio file directly from memory
+        import io
+        content = await audio_file.read()
+        with io.BytesIO(content) as bio:
+            audio_data, sample_rate = sf.read(bio, dtype="float32", always_2d=False)
 
-            try:
-                # Load audio with soundfile
-                audio_data, sample_rate = sf.read(temp_file.name)
+        # Handle stereo audio by converting to mono
+        if audio_data.ndim > 1:
+            audio_data = audio_data.mean(axis=1)
 
-                # Convert to float32 if needed
-                if audio_data.dtype != np.float32:
-                    audio_data = audio_data.astype(np.float32)
+        logger.info(
+            f"Loaded audio: {len(audio_data)} samples at {sample_rate} Hz"
+        )
 
-                # Handle stereo audio by converting to mono
-                if audio_data.ndim > 1:
-                    audio_data = np.mean(audio_data, axis=1)
+        # Transcribe and align
+        transcript = align_audio(audio_data, sample_rate, reference_text, language=None)
 
-                logger.info(
-                    f"Loaded audio: {len(audio_data)} samples at {sample_rate} Hz"
-                )
+        # Convert to response format
+        words_data: list[dict[str, int | str]] = [
+            {
+                "start_ms": int(word.start_ms),
+                "end_ms": int(word.end_ms),
+                "text": str(word.text),
+            }
+            for word in transcript.words
+        ]
 
-                # Transcribe and align
-                transcript = align_audio(audio_data, sample_rate, reference_text, language=None)
-
-                # Convert to response format
-                words_data: list[dict[str, int | str]] = [
-                    {
-                        "start_ms": int(word.start_ms),
-                        "end_ms": int(word.end_ms),
-                        "text": str(word.text),
-                    }
-                    for word in transcript.words
-                ]
-
-                # Only return audio if we didn't receive valid audio frames
-                # (e.g., when we generate audio via TTS synthesis)
-                audio_b64 = None
-                if len(audio_data) == 0:
-                    # No valid audio received - could generate audio here in the future
-                    # For now, return None since we don't generate audio
-                    pass
-                return TranscriptResponse(text=transcript.text, words=words_data, audio_b64=audio_b64)
-
-            finally:
-                # Clean up temp file
-                Path(temp_file.name).unlink(missing_ok=True)
+        # Only return audio if we didn't receive valid audio frames
+        # (e.g., when we generate audio via TTS synthesis)
+        audio_b64 = None
+        if len(audio_data) == 0:
+            # No valid audio received - could generate audio here in the future
+            # For now, return None since we don't generate audio
+            pass
+        return TranscriptResponse(text=transcript.text, words=words_data, audio_b64=audio_b64)
 
     except Exception as e:
         logger.error(f"Transcription failed: {e}")
@@ -213,8 +220,11 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
         # Try float32 in [-1,1]
         if len(raw) % 4 == 0:
             x_f32 = np.frombuffer(raw, dtype=np.float32)
-            if np.isfinite(x_f32).all() and (np.abs(x_f32) <= 1.001).all():
-                return x_f32.astype(np.float32)
+            # Consider it float32 only if it "looks like" audio
+            if np.isfinite(x_f32).all():
+                mx = float(np.max(np.abs(x_f32))) if x_f32.size else 0.0
+                if 0.0 < mx <= 1.001:
+                    return x_f32.astype(np.float32, copy=False)
         # Fallback int16 → float32[-1,1]
         return (np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0)
 
@@ -298,6 +308,7 @@ async def root() -> dict[str, str | dict[str, str]]:
         "version": "0.1.0",
         "endpoints": {
             "health": "/health",
+            "ready": "/ready",
             "transcribe": "/transcribe",
             "align": "/align",
             "docs": "/docs",

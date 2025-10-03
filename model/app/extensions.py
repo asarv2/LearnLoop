@@ -7,6 +7,17 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+
+# --- set threads early ---
+def _pin_cpu_threads(n: int | None = None) -> None:
+    """Pin CPU threads for optimal performance."""
+    n = n or (os.cpu_count() or 4)
+    for k in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        os.environ.setdefault(k, str(n))
+
+_pin_cpu_threads()
+
+# now import numpy/torch/etc.
 import numpy as np
 import soundfile as sf  # type: ignore
 
@@ -28,10 +39,19 @@ except Exception:
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
     )
 
+import re
 # Suppress benign CTC warning from transformers
 import warnings
 
 warnings.filterwarnings("ignore", message=".*masked_spec_embed.*")
+warnings.filterwarnings(
+    "ignore",
+    message=r"dropout .* num_layers greater than 1"
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"torch\.nn\.utils\.weight_norm is deprecated"
+)
 
 # Suppress transformers verbosity for cleaner logs
 try:
@@ -45,6 +65,16 @@ BASE = Path(__file__).resolve().parents[1]
 MODEL_CACHE_DIR = BASE / "model_cache"
 
 MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _pick_torch_device() -> str:
+    """Pick the best available PyTorch device."""
+    import torch
+    if torch.cuda.is_available():
+        return "cuda"
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 
 # ---------- model warmers / singletons ----------
@@ -62,8 +92,7 @@ def get_wav2vec2_ctc() -> tuple[Any, Any]:
         proc = Wav2Vec2Processor.from_pretrained(model_name, cache_dir=cache_dir)
         mdl = Wav2Vec2ForCTC.from_pretrained(model_name, cache_dir=cache_dir).eval()
         
-        import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = _pick_torch_device()
         try:
             mdl.to(device)
         except Exception:
@@ -331,19 +360,14 @@ def synthesize_tts(
     return synthesize_kokoro(text=text, voice="alloy", sr=sr)
 
 
-def _pin_cpu_threads(n: int | None = None) -> None:
-    """Pin CPU threads for optimal performance."""
-    import torch
-    n = n or (os.cpu_count() or 4)
-    torch.set_num_threads(n)
-    for k in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
-        os.environ[k] = str(n)
-
-
 def warm_all_models() -> None:
     """Warm up all models for faster first inference."""
-    # Pin CPU threads once at startup
-    _pin_cpu_threads()
+    # Set torch threads (env vars already set at module level)
+    try:
+        import torch
+        torch.set_num_threads(os.cpu_count() or 4)
+    except Exception:
+        pass
     
     # Fire and forget warmups; ignore failures
     try:
