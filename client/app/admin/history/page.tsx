@@ -5,6 +5,7 @@ import TrainingDetailsModal from "@/components/dashboard/history/TrainingDetails
 import { api } from "@/lib/api/fetcher";
 import { useProfile } from "@/lib/api/hooks/useProfiles";
 import { useRubricGradesByChat } from "@/lib/api/hooks/useRubricGrades";
+import { useStandardAndRequiredTrainingsForCompany } from "@/lib/api/hooks/useTrainings";
 import { EyeOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -252,11 +253,16 @@ export default function AdminHistoryPage() {
     staleTime: 2 * 60_000, // 2 minutes
   });
 
+  // Fetch available trainings for the filter
+  const { data: availableTrainings, isLoading: trainingsLoading } =
+    useStandardAndRequiredTrainingsForCompany(currentProfile?.company || null);
+
   console.log("Admin History Debug:", {
     user: user?.id,
     currentProfile: currentProfile,
     company: currentProfile?.company,
     attempts: attempts?.length,
+    availableTrainings: availableTrainings?.length,
     isLoading,
     error,
     enabled: !!currentProfile?.company,
@@ -389,13 +395,14 @@ export default function AdminHistoryPage() {
               placeholder="Training"
               value={trainingFilter}
               onChange={setTrainingFilter}
+              loading={trainingsLoading}
             >
               <Select.Option value="all">All Trainings</Select.Option>
-              <Select.Option value="Interview">Interview</Select.Option>
-              <Select.Option value="Critical Conversations">
-                Critical Conversations
-              </Select.Option>
-              <Select.Option value="Leadership">Leadership</Select.Option>
+              {availableTrainings?.map((training) => (
+                <Select.Option key={training.id} value={training.title}>
+                  {training.title}
+                </Select.Option>
+              ))}
             </Select>
           </Col>
           <Col xs={24} md={11}>

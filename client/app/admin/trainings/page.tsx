@@ -9,25 +9,27 @@ import {
   CalendarOutlined,
   CheckCircleOutlined,
   DeleteOutlined,
-  EyeOutlined,
+  EditOutlined,
   FilterOutlined,
   PlayCircleOutlined,
   SearchOutlined,
   TeamOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Card,
   Col,
   DatePicker,
+  Form,
   Input,
   Modal,
   Row,
   Select,
   Space,
   Statistic,
+  Switch,
   Table,
   Tooltip,
   Typography,
@@ -108,75 +110,115 @@ async function fetchEmployeeDetails(
   }
 }
 
-// Training Details Modal
-function TrainingDetailsModal({
+// Edit Training Modal (mini version of create)
+function EditTrainingModal({
   visible,
   onClose,
   training,
+  onSaved,
 }: {
   visible: boolean;
   onClose: () => void;
+  onSaved: () => void;
   training: Partial<Training> | null;
 }) {
+  const [form] = Form.useForm();
+
+  useEffect(() => {
+    if (visible && training) {
+      form.setFieldsValue({
+        title: training.title || "",
+        description: training.description || "",
+        active: training.active ?? true,
+        training_type: training.training_type || "required",
+        due_date: training.due_date ? dayjs(training.due_date) : null,
+      });
+    } else if (!visible) {
+      form.resetFields();
+    }
+  }, [visible, training, form]);
+
+  const handleSubmit = async (values: {
+    title: string;
+    description?: string;
+    active: boolean;
+    training_type?: string;
+    due_date?: dayjs.Dayjs | null;
+  }) => {
+    if (!training?.id) return;
+    try {
+      await api(`/api/v1/trainings/${training.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          title: values.title,
+          description: values.description || null,
+          active: values.active,
+          training_type: values.training_type,
+          due_date: values.due_date ? values.due_date.toISOString() : null,
+        }),
+      });
+      message.success("Training updated successfully");
+      onSaved();
+      onClose();
+    } catch {
+      message.error("Failed to update training");
+    }
+  };
+
   return (
     <Modal
-      title="Training Details"
+      title="Edit Training"
       open={visible}
       onCancel={onClose}
-      footer={[
-        <Button key="close" onClick={onClose}>
-          Close
-        </Button>,
-      ]}
-      width={600}
+      footer={null}
+      width={640}
+      destroyOnClose
     >
-      {training && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div>
-            <Text strong>Training Name:</Text>
-            <div style={{ marginTop: "4px" }}>
-              <Text>{training.title}</Text>
-            </div>
-          </div>
+      <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Form.Item
+          name="title"
+          label="Training Name"
+          rules={[{ required: true, message: "Please enter a title" }]}
+        >
+          <Input placeholder="Enter training name" />
+        </Form.Item>
 
-          <div>
-            <Text strong>Description:</Text>
-            <div style={{ marginTop: "4px" }}>
-              <Text>{training.description || "No description provided"}</Text>
-            </div>
-          </div>
+        <Form.Item name="description" label="Description">
+          <Input.TextArea rows={4} placeholder="Enter description" />
+        </Form.Item>
 
-          {training.due_date && (
-            <div>
-              <Text strong>Due Date:</Text>
-              <div style={{ marginTop: "4px" }}>
-                <CalendarOutlined
-                  style={{ marginRight: "8px", color: "#fa8c16" }}
-                />
-                <Text>{dayjs(training.due_date).format("MMMM DD, YYYY")}</Text>
-              </div>
-            </div>
-          )}
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item name="training_type" label="Type">
+              <Select
+                options={[
+                  { label: "Standard", value: "standard" },
+                  { label: "Required", value: "required" },
+                  { label: "Custom", value: "custom" },
+                ]}
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item name="due_date" label="Due Date">
+              <DatePicker style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+        </Row>
 
-          <div>
-            <Text strong>Created:</Text>
-            <div style={{ marginTop: "4px" }}>
-              <Text>
-                {dayjs(training.created_at).format("MMMM DD, YYYY [at] h:mm A")}
-              </Text>
-            </div>
-          </div>
+        <Form.Item name="active" label="Active" valuePropName="checked">
+          <Switch />
+        </Form.Item>
 
-          <div>
-            <Text strong>Last Updated:</Text>
-            <div style={{ marginTop: "4px" }}>
-              <Text>
-                {dayjs(training.updated_at).format("MMMM DD, YYYY [at] h:mm A")}
-              </Text>
-            </div>
-          </div>
+        <div style={{ textAlign: "right" }}>
+          <Space>
+            <Button onClick={onClose}>Cancel</Button>
+            <Button type="primary" htmlType="submit">
+              Save Changes
+            </Button>
+          </Space>
         </div>
-      )}
+      </Form>
     </Modal>
   );
 }
@@ -315,6 +357,31 @@ export default function AdminTrainingsPage() {
   const { user } = useAuth();
   const { data: currentProfile } = useProfile(user?.id || "", !!user);
   const [messageApi, contextHolder] = message.useMessage();
+  const queryClient = useQueryClient();
+
+  // Function to toggle training active status
+  const toggleTrainingStatus = async (
+    trainingId: string,
+    currentStatus: boolean
+  ) => {
+    try {
+      await api(`/api/v1/trainings/${trainingId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active: !currentStatus }),
+      });
+
+      // Invalidate queries to refresh the data
+      queryClient.invalidateQueries({ queryKey: ["trainings"] });
+      queryClient.invalidateQueries({ queryKey: ["training-completion"] });
+
+      messageApi.success(
+        `Training ${!currentStatus ? "activated" : "deactivated"} successfully`
+      );
+    } catch (error) {
+      console.error("Failed to toggle training status:", error);
+      messageApi.error("Failed to update training status. Please try again.");
+    }
+  };
 
   // State for filters and search
   const [searchText, setSearchText] = useState("");
@@ -326,7 +393,7 @@ export default function AdminTrainingsPage() {
   const [selectedTraining, setSelectedTraining] =
     useState<Partial<Training> | null>(null);
   const [employeeModalVisible, setEmployeeModalVisible] = useState(false);
-  const [trainingDetailsVisible, setTrainingDetailsVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
 
   // Fetch only required trainings data
   const { data: requiredTrainings, isLoading } = useTrainingsByTypeAndCompany(
@@ -467,6 +534,23 @@ export default function AdminTrainingsPage() {
       ),
     },
     {
+      title: "Status",
+      key: "status",
+      width: 100,
+      render: (_, record: Partial<Training>) => (
+        <div>
+          <div
+            style={{
+              color: record.active ? "#52c41a" : "#ff4d4f",
+              fontWeight: "bold",
+            }}
+          >
+            {record.active ? "Active" : "Inactive"}
+          </div>
+        </div>
+      ),
+    },
+    {
       title: "Completion Rate",
       key: "completion_rate",
       width: 150,
@@ -513,14 +597,14 @@ export default function AdminTrainingsPage() {
       width: 200,
       render: (_, record: Partial<Training>) => (
         <Space size="small">
-          <Tooltip title="View Training Details">
+          <Tooltip title="Edit Training">
             <Button
               type="text"
-              icon={<EyeOutlined />}
+              icon={<EditOutlined />}
               size="small"
               onClick={() => {
                 setSelectedTraining(record);
-                setTrainingDetailsVisible(true);
+                setEditModalVisible(true);
               }}
             />
           </Tooltip>
@@ -541,9 +625,9 @@ export default function AdminTrainingsPage() {
               size="small"
               style={{ color: record.active ? "#fa8c16" : "#52c41a" }}
               onClick={() => {
-                messageApi.info(
-                  `Training ${record.active ? "deactivated" : "activated"}`
-                );
+                if (record.id) {
+                  toggleTrainingStatus(record.id, record.active || false);
+                }
               }}
             >
               {record.active ? "Deactivate" : "Activate"}
@@ -722,12 +806,16 @@ export default function AdminTrainingsPage() {
         />
       </Card>
 
-      {/* Training Details Modal */}
-      <TrainingDetailsModal
-        visible={trainingDetailsVisible}
+      {/* Edit Training Modal */}
+      <EditTrainingModal
+        visible={editModalVisible}
         onClose={() => {
-          setTrainingDetailsVisible(false);
+          setEditModalVisible(false);
           setSelectedTraining(null);
+        }}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ["trainings"] });
+          queryClient.invalidateQueries({ queryKey: ["training-completion"] });
         }}
         training={selectedTraining}
       />
