@@ -1481,7 +1481,7 @@ class OpenAIAgent(Agent):
             or (payload.get("response") or {}).get("id")
             or "_default"
         )
-        st = self._resp_streams.pop(rid, {})
+        st = self._resp_streams.get(rid, {})  # keep until after CTC
 
         # Extract final text from payload
         final_text = None
@@ -1514,16 +1514,16 @@ class OpenAIAgent(Agent):
             if len(buffered_all.strip()) > len(final_text):
                 final_text = buffered_all.strip()
 
-        if final_text or (st and st.get("has_received_audio")):
+        if final_text:
             persona_id = await self._get_assistant_persona_id()
             if not st or st["msg_id"] is None:
-                # One-shot finalization
+                # One-shot finalization (text present)
                 parent_snap = self._resolve_parent_id(st if st else None)
                 msg_id = await self.publish_text_chunk(
-                    text="",
+                    text=final_text,
                     message_id=None,
                     chunk_idx=0,
-                    is_final=False,
+                    is_final=True,
                     persona_id=persona_id,
                     voice=True,
                     parent_id=parent_snap,
@@ -1532,12 +1532,10 @@ class OpenAIAgent(Agent):
                 self.room.set_next_user_parent(msg_id)
                 self._rid_to_msg[rid] = msg_id
             else:
-                # Check if we already streamed deltas for this message
                 already_streamed = bool(st) and int(st.get("chunk_idx") or 0) > 0
                 if already_streamed:
-                    # We already persisted deltas; just finalize without adding text again
                     await self.publish_text_chunk(
-                        text="",  # <- important: no duplicate content
+                        text="",
                         message_id=st["msg_id"],
                         chunk_idx=st["chunk_idx"],
                         is_final=True,
@@ -1546,7 +1544,6 @@ class OpenAIAgent(Agent):
                         parent_id=st["parent_id"],
                     )
                 else:
-                    # Finalize existing message with full text (no prior deltas)
                     await self.publish_text_chunk(
                         text=final_text,
                         message_id=st["msg_id"],
@@ -1557,8 +1554,14 @@ class OpenAIAgent(Agent):
                         parent_id=st["parent_id"],
                     )
                 self._rid_to_msg[rid] = str(st["msg_id"])
+        elif st and st.get("has_received_audio"):
+            # Audio-only: ensure a message exists now but DO NOT finalize here.
+            persona_id = await self._get_assistant_persona_id()
+            if st.get("msg_id") is None:
+                await self._ensure_assistant_message_exists(st, persona_id)
+            self._rid_to_msg[rid] = str(st["msg_id"])
 
-        # FINAL CTC alignment and broadcast
+        # FINAL CTC alignment and (for audio-only) finalization with text
         await self._run_final_ctc(rid, st, final_text)
 
         # Send queued user messages if any
@@ -1569,6 +1572,8 @@ class OpenAIAgent(Agent):
             except Exception:
                 pass
 
+        # Now safe to drop the stream state
+        self._resp_streams.pop(rid, None)
         # Cleanup accumulators
         self._resp_audio.pop(rid, None)
         self._resp_text.pop(rid, None)
@@ -1656,12 +1661,30 @@ class OpenAIAgent(Agent):
                         full_text=tr_text or effective_text,
                     )
                     
-                    # Thread next user turn
-                    if st:
-                        self.room.set_next_user_parent(st["msg_id"])
-                    
                     # Persist to DB
                     await self._persist_word_timestamps(msg_id_final, words)
+
+                    # If this was the audio-only path (no text finalized yet),
+                    # backfill the message content and finalize now.
+                    try:
+                        # Consider it audio-only if the message has not streamed chunks
+                        needs_finalize = not (st and int(st.get("chunk_idx") or 0) > 0) and not (final_text and final_text.strip())
+                        if needs_finalize:
+                            persona_id = await self._get_assistant_persona_id()
+                            await self.publish_text_chunk(
+                                text=(tr_text or effective_text or ""),
+                                message_id=msg_id_final,
+                                chunk_idx=int(st.get("chunk_idx") or 0) if st else 0,
+                                is_final=True,
+                                persona_id=persona_id,
+                                voice=True,
+                                parent_id=(st.get("parent_id") if st else self._resolve_parent_id(st)),
+                            )
+                            # Thread next user turn
+                            if st:
+                                self.room.set_next_user_parent(st["msg_id"])
+                    except Exception:
+                        pass
                     
                     
                     # Add returned audio to bus if available
