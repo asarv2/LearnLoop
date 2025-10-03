@@ -18,20 +18,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && apt-get purge -y --auto-remove build-essential python3-dev \
   && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt ./
+# Copy requirements and constraints first for better caching
+COPY requirements.txt constraints.txt ./
 
 # Install Python dependencies with build tools for compilation
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential g++ gcc python3-dev cython3 \
   && pip install --no-cache-dir --upgrade pip \
-  && pip install --no-cache-dir -r requirements.txt \
+  && pip install --no-cache-dir -r requirements.txt -c constraints.txt \
   && apt-get purge -y --auto-remove build-essential g++ gcc python3-dev cython3 \
   && rm -rf /var/lib/apt/lists/*
 
 # FlashAttention (Torch 2.8 + CUDA 12, CPython 3.11)
 RUN pip install --no-cache-dir \
   https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+
+# Sanity check: Verify Torch, Triton, and CUDA versions
+RUN python - <<'PY'
+import torch, sys
+print("Torch:", torch.__version__)
+import triton
+print("Triton:", triton.__version__)
+print("CUDA available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("CUDA version:", torch.version.cuda)
+    print("GPU count:", torch.cuda.device_count())
+PY
 
 # Dynamically locate cuDNN wheel's lib dir and register it with the loader
 RUN python - <<'PY'
