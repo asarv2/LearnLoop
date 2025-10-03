@@ -312,7 +312,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
               // Use parent persona's name, voice, and description
               const personaName = parentPersona.name;
-              const personaVoice = parentPersona.voice || "alloy";
+              const personaVoice = parentPersona.voice; // Allow null voices
               const personaDescription = parentPersona.description || "";
 
               // Check if a similar persona already exists to avoid duplicates

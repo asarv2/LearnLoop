@@ -75,6 +75,57 @@ def _resample_linear(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
     return np.interp(idx, xi, x).astype(np.float32)
 
 
+def _count_sentences(text: str) -> int:
+    """Count complete sentences in text based on punctuation."""
+    if not text.strip():
+        return 0
+    
+    # Simple sentence counting based on sentence-ending punctuation
+    # Look for patterns: . ! ? followed by whitespace or end of string
+    import re
+    sentence_endings = re.findall(r'[.!?]+(?:\s|$)', text.strip())
+    return len(sentence_endings)
+
+
+def _find_next_word_after_partial(
+    partial_words: list[str], 
+    final_words: list[dict]
+) -> int:
+    """
+    Find next word after partial by matching progressively shorter suffixes.
+    Returns start timestamp of the next word.
+    """
+    
+    if not partial_words or not final_words:
+        return 0
+    
+    # Convert final words to text list for easier matching
+    final_texts = [w.get("text", "").strip() for w in final_words]
+    
+    # Try matching progressively shorter suffixes until we get a unique match
+    for suffix_length in range(len(partial_words), 0, -1):
+        partial_suffix = partial_words[-suffix_length:]
+        
+        # Find all occurrences of this suffix in final words
+        matches = []
+        for i in range(len(final_texts) - suffix_length + 1):
+            if final_texts[i:i + suffix_length] == partial_suffix:
+                matches.append(i + suffix_length)  # Index of next word after match
+        
+        # If we found exactly one match, use it
+        if len(matches) == 1:
+            next_word_idx = matches[0]
+            if next_word_idx < len(final_words):
+                # Get timestamp of the next word
+                return int((final_words[next_word_idx].get("start_ms", 0) / 1000.0) * PCM_SR)
+        
+        # If multiple matches, continue with shorter suffix
+        # If no matches, continue with shorter suffix
+    
+    # No match found, don't truncate
+    return 0
+
+
 # ---------- Realtime OpenAI bridge agent (NO local VAD) ----------
 
 
@@ -1150,12 +1201,13 @@ class OpenAIAgent(Agent):
                 return
 
             st2 = self._resp_streams.get(target_rid) or {}
-            # Run partial when we've received enough audio OR text chunks
+            # Run partial when we've received enough audio OR sentences
             audio_chunks_target = int(os.getenv("CTC_PARTIAL_AUDIO_CHUNKS", "6"))
-            text_chunks_target = int(os.getenv("CTC_PARTIAL_TEXT_CHUNKS", "6"))
+            sentences_target = int(os.getenv("CTC_PARTIAL_SENTENCES", "1"))
             
-            # Count text chunks for text-based triggering
-            text_chunk_count = len(st2.get("buffer", []))
+            # Count sentences for text-based triggering
+            buffered_text = "".join(st2.get("buffer", []))
+            sentence_count = _count_sentences(buffered_text)
             audio_chunk_count = int(self._resp_audio_chunk_count.get(target_rid, 0))
 
             # Trigger partial CTC when EITHER condition is met
@@ -1165,13 +1217,13 @@ class OpenAIAgent(Agent):
             )
 
             text_trigger = (
-                text_chunk_count >= text_chunks_target
-                and "".join(st2.get("buffer", [])).strip()  # Has actual text content
+                sentence_count >= sentences_target
+                and buffered_text.strip()  # Has actual text content
             )
 
             if (
                 not st2.get("partial_ctc_done", False)
-                and (audio_chunks_target > 0 or text_chunks_target > 0)
+                and (audio_chunks_target > 0 or sentences_target > 0)
                 and (audio_trigger or text_trigger)
             ):
                 buffered_text_now = "".join(st2.get("buffer", []))
@@ -1187,7 +1239,7 @@ class OpenAIAgent(Agent):
                 
                 if audio_arr is not None:
                     logger.info(
-                        f"[ctc][partial] rid={target_rid} samples={audio_arr.size} audio_chunks={audio_chunk_count}/{audio_chunks_target} text_chunks={text_chunk_count}/{text_chunks_target} text_len={len(reference_text)}"
+                        f"[ctc][partial] rid={target_rid} samples={audio_arr.size} audio_chunks={audio_chunk_count}/{audio_chunks_target} sentences={sentence_count}/{sentences_target} text_len={len(reference_text)}"
                     )
                     _, words_p, returned_audio_p = await self._align_ctc(
                         audio_f32=audio_arr,
@@ -1210,8 +1262,12 @@ class OpenAIAgent(Agent):
                             full_text=reference_text,
                         )
                     
-                    # Store last word end time for final CTC truncation
+                    # Store partial words for final CTC matching
                     if words_p:
+                        partial_words = [word.get("text", "").strip() for word in words_p]
+                        st2["partial_words"] = partial_words
+                        
+                        # Also store last word end time for fallback
                         last_word_end_ms = max(word.get("end_ms", 0) for word in words_p)
                         last_word_end_samples = int((last_word_end_ms / 1000.0) * PCM_SR)
                         st2["partial_last_word_end_samples"] = last_word_end_samples
@@ -1521,29 +1577,17 @@ class OpenAIAgent(Agent):
                     
                     # Add returned audio to bus if available
                     if returned_audio is not None and returned_audio.size > 0:
-                        # Check if we need to truncate based on partial word timing
-                        partial_last_word_samples = st.get("partial_last_word_end_samples", 0) if st else 0
+                        # Use text-based matching to find next word after partial
+                        partial_words = st.get("partial_words", []) if st else []
                         
-                        if partial_last_word_samples > 0 and len(returned_audio) > partial_last_word_samples:
-                            # Find the first word in final CTC that starts after partial ended
-                            truncation_samples = len(returned_audio)  # Default: no truncation
-                            
-                            for word in words:
-                                word_start_ms = word.get("start_ms", 0)
-                                word_start_samples = int((word_start_ms / 1000.0) * PCM_SR)
-                                
-                                # If this word starts after partial ended (with 200ms buffer), truncate here
-                                if word_start_samples > (partial_last_word_samples - int(200 * PCM_SR / 1000)):
-                                    truncation_samples = word_start_samples
-                                    break
-                            
-                            # Truncate final audio to start from the next word
-                            if truncation_samples < len(returned_audio):
+                        if partial_words:
+                            truncation_samples = _find_next_word_after_partial(partial_words, words)
+                            if truncation_samples > 0 and truncation_samples < len(returned_audio):
                                 truncated_audio = returned_audio[truncation_samples:]
                             else:
                                 truncated_audio = returned_audio
                         else:
-                            # No partial data or audio is shorter than partial, use full audio
+                            # No partial words available, use full audio
                             truncated_audio = returned_audio
                         
                         # Publish truncated audio with chunking
