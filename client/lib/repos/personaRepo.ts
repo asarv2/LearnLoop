@@ -10,11 +10,11 @@ export type PersonaUpdate = Database["public"]["Tables"]["personas"]["Update"];
 
 // Runtime validators for API requests
 export const PersonaCreateSchema = z.object({
-  profile_id: z.string().min(1, "Profile ID is required").nullable().optional(),
+  profile_id: z.string().min(1).optional().or(z.null()),
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
   temperature: z.number().optional(),
-  voice: z.string().optional(),
+  voice: z.string().optional().or(z.null()),
   metadata: z.any().optional(), // Json type
   active: z.boolean().optional(),
   parent_id: z.string().nullable().optional(),
@@ -23,11 +23,11 @@ export const PersonaCreateSchema = z.object({
 });
 
 export const PersonaUpdateSchema = z.object({
-  profile_id: z.string().min(1, "Profile ID is required").nullable().optional(),
+  profile_id: z.string().min(1).optional().or(z.null()),
   name: z.string().min(1, "Name is required").optional(),
   description: z.string().optional(),
   temperature: z.number().optional(),
-  voice: z.string().optional(),
+  voice: z.string().optional().or(z.null()),
   metadata: z.any().optional(), // Json type
   active: z.boolean().optional(),
   parent_id: z.string().nullable().optional(),

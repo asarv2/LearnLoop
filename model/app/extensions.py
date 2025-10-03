@@ -109,6 +109,42 @@ VOICE_MAP = {
     "alloy": "af_heart",
 }
 
+# ---------- TTS (Chatterbox) ----------
+
+@lru_cache(maxsize=1)
+def get_chatterbox_tts() -> Any:
+    """Load English Chatterbox TTS on CUDA (no CPU fallback)."""
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            logger.info("ChatterboxTTS skipped: CUDA not available")
+            return None
+        from chatterbox.tts import ChatterboxTTS  # type: ignore
+
+        # If flash-attn is installed, Chatterbox will use it automatically.
+        model = ChatterboxTTS.from_pretrained(device="cuda")
+        logger.info("Initialized ChatterboxTTS on CUDA")
+        return model
+    except Exception as e:
+        logger.warning(f"ChatterboxTTS load failed: {e}")
+        return None
+
+@lru_cache(maxsize=1)
+def get_chatterbox_multilingual() -> Any:
+    """Load Multilingual Chatterbox TTS on CUDA (no CPU fallback)."""
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            logger.info("ChatterboxMultilingual skipped: CUDA not available")
+            return None
+        from chatterbox import ChatterboxMultilingualTTS  # type: ignore
+        model = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
+        logger.info("Initialized Chatterbox Multilingual TTS on CUDA")
+        return model
+    except Exception as e:
+        logger.warning(f"Chatterbox Multilingual load failed: {e}")
+        return None
+
 @lru_cache(maxsize=1)
 def get_kokoro_pipeline(lang_code: str = "a") -> Any:
     """Get Kokoro TTS pipeline for text-to-speech synthesis."""
@@ -170,6 +206,44 @@ def synthesize_kokoro(text: str, voice: str = "alloy", sr: int = 48000) -> tuple
         return y, sr
 
 
+def synthesize_tts(
+    text: str,
+    *,
+    voice: str = "alloy",
+    sr: int = 48000,
+    language: str | None = None,
+    prefer_multilingual: bool = False,
+) -> tuple[np.ndarray, int]:
+    """
+    Prefer Chatterbox on CUDA; otherwise fall back to Kokoro.
+    Returns (float32 mono PCM, sample_rate).
+    """
+    try:
+        import torch
+        if torch.cuda.is_available():
+            # Try preferred Chatterbox flavor first
+            model = get_chatterbox_multilingual() if prefer_multilingual else get_chatterbox_tts()
+            if model is None:
+                # Try the other flavor as a fallback on CUDA
+                model = get_chatterbox_tts() if prefer_multilingual else get_chatterbox_multilingual()
+
+            if model is not None:
+                kwargs = {}
+                if language:
+                    kwargs["lang"] = language  # Chatterbox multilingual supports this
+                wav = model.generate(text, **kwargs)  # Tensor [T] or [1, T], float32
+                sr_native = getattr(model, "sr", 24000)
+                y = wav.squeeze().detach().cpu().numpy().astype(np.float32)
+                if sr != sr_native:
+                    y = _resample_linear(y, sr_native, sr)
+                return y, sr
+    except Exception as e:
+        logger.warning(f"synthesize_tts: Chatterbox path failed, using Kokoro. err={e}")
+
+    # CPU or last-resort fallback
+    return synthesize_kokoro(text=text, voice=voice, sr=sr)
+
+
 def warm_all_models() -> None:
     """Warm up all models for faster first inference."""
     # Fire and forget warmups; ignore failures
@@ -183,5 +257,13 @@ def warm_all_models() -> None:
         pass
     try:
         get_kokoro_pipeline("a")
+    except Exception:
+        pass
+    try:
+        get_chatterbox_tts()
+    except Exception:
+        pass
+    try:
+        get_chatterbox_multilingual()
     except Exception:
         pass

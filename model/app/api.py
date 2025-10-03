@@ -236,12 +236,14 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
         # Only return audio if we didn't receive valid audio frames
         audio_b64 = None
         if x.size == 0 and req.reference_text:
-            # No valid audio received - generate audio using Kokoro TTS FIRST
+            # No valid audio received - generate audio using unified TTS FIRST
             try:
-                audio_data, sample_rate = extensions.synthesize_kokoro(
+                audio_data, sample_rate = extensions.synthesize_tts(
                     text=req.reference_text,
                     voice="alloy",
-                    sr=48000
+                    sr=48000,
+                    language=req.language,          # will be used if Chatterbox multilingual is active
+                    prefer_multilingual=False       # flip to True if you want multilingual first
                 )
                 if audio_data.size > 0:
                     # NOW align using the generated audio (skip Whisper since we have reference text)
