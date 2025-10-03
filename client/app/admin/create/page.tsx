@@ -1,20 +1,13 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import FilePreviewModal from "@/components/chat/FilePreviewModal";
 import { useWebSocket } from "@/contexts/websocket-context";
-import {
-  uploadDocument,
-  useCreateDocument,
-} from "@/lib/api/hooks/useDocuments";
 import { useProfile } from "@/lib/api/hooks/useProfiles";
 import { trainingKeys } from "@/lib/api/keys";
 import {
   CalendarOutlined,
-  DeleteOutlined,
-  EyeOutlined,
+  FileTextOutlined,
   PlusOutlined,
-  UploadOutlined,
 } from "@ant-design/icons";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -26,15 +19,24 @@ import {
   Input,
   message,
   Row,
+  Select,
   Space,
   Typography,
-  Upload,
 } from "antd";
 import dayjs from "dayjs";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
+
+type Policy = {
+  id: string;
+  title: string;
+  description: string | null;
+  file_key: string | null;
+  created_at: string | null;
+  company: string;
+};
 
 export default function AdminCreatePage() {
   const [form] = Form.useForm();
@@ -46,18 +48,35 @@ export default function AdminCreatePage() {
     message: "",
     progress: 0,
   });
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [documentPreviewVisible, setDocumentPreviewVisible] = useState(false);
-  const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(
-    null
-  );
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [loadingPolicies, setLoadingPolicies] = useState(false);
 
   const { user } = useAuth();
   const { data: currentProfile } = useProfile(user?.id || "", !!user);
   const { emitCreateTraining } = useWebSocket();
-  const createDocument = useCreateDocument();
   const queryClient = useQueryClient();
   const [messageApi, contextHolder] = message.useMessage();
+
+  // Fetch policies on component mount
+  useEffect(() => {
+    const fetchPolicies = async () => {
+      setLoadingPolicies(true);
+      try {
+        const res = await fetch("/api/v1/policies", { cache: "no-store" });
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setPolicies(data as Policy[]);
+        }
+      } catch (error) {
+        console.error("Error fetching policies:", error);
+        messageApi.error("Failed to load policies");
+      } finally {
+        setLoadingPolicies(false);
+      }
+    };
+
+    fetchPolicies();
+  }, [messageApi]);
 
   // Listen for training creation progress events
   React.useEffect(() => {
@@ -82,8 +101,6 @@ export default function AdminCreatePage() {
         });
         setIsCreating(false);
         form.resetFields();
-        setUploadedFile(null);
-        setUploadedDocumentId(null);
 
         // Invalidate queries to refresh the training list
         queryClient.invalidateQueries({ queryKey: trainingKeys.all });
@@ -130,6 +147,7 @@ export default function AdminCreatePage() {
     title: string;
     description: string;
     dueDate?: dayjs.Dayjs;
+    policyId?: string;
   }) => {
     if (!currentProfile?.company) {
       messageApi.error(
@@ -147,56 +165,11 @@ export default function AdminCreatePage() {
     });
 
     try {
-      let documentId: string | undefined;
-
-      // Upload document if one was selected
-      if (uploadedFile) {
-        try {
-          setProgress({
-            visible: true,
-            type: "generating_training",
-            message: "Uploading document...",
-            progress: 10,
-          });
-
-          const document = await createDocument.mutateAsync({
-            content: "",
-            profile_id: user?.id || null,
-            title: uploadedFile.name,
-          });
-
-          const formData = new FormData();
-          formData.append("file", uploadedFile);
-          await uploadDocument(document.id!, formData);
-
-          documentId = document.id!;
-          setUploadedDocumentId(document.id!);
-
-          setProgress({
-            visible: true,
-            type: "generating_training",
-            message: "Document uploaded, creating training...",
-            progress: 30,
-          });
-        } catch (error) {
-          console.error("Error uploading document:", error);
-          messageApi.error("Failed to upload document. Please try again.");
-          setIsCreating(false);
-          setProgress({
-            visible: false,
-            type: "",
-            message: "",
-            progress: 0,
-          });
-          return;
-        }
-      }
-
-      // Create the training using WebSocket with additional metadata for admin creation
+      // Create the training using WebSocket with policy reference
       emitCreateTraining({
         name: values.title,
         description: values.description,
-        document_id: documentId,
+        policy_id: values.policyId,
         profile_id: user?.id,
         // Additional data for admin-created required trainings
         training_type: "required",
@@ -285,84 +258,66 @@ export default function AdminCreatePage() {
                 />
               </Form.Item>
 
-              <Form.Item name="document" label="Supporting Document (Optional)">
-                <div>
-                  <Upload.Dragger
-                    beforeUpload={(file) => {
-                      // Validate file type
-                      if (file.type !== "application/pdf") {
-                        messageApi.error("Only PDF files are supported");
-                        return false;
-                      }
-                      setUploadedFile(file);
-                      return false; // Prevent auto upload
-                    }}
-                    onRemove={() => {
-                      setUploadedFile(null);
-                      setUploadedDocumentId(null);
-                    }}
-                    fileList={
-                      uploadedFile
-                        ? [
-                            {
-                              uid: "1",
-                              name: uploadedFile.name,
-                              status: "done",
-                            },
-                          ]
-                        : []
-                    }
-                    maxCount={1}
-                    accept=".pdf"
-                    itemRender={(originNode, file) => {
-                      return (
+              <Form.Item
+                name="policyId"
+                label="Supporting Policy (Optional)"
+                tooltip="Select a company policy to include with this training"
+              >
+                <Select
+                  placeholder="Select a policy..."
+                  allowClear
+                  loading={loadingPolicies}
+                  size="large"
+                  suffixIcon={<FileTextOutlined />}
+                  notFoundContent={
+                    policies.length === 0 ? (
+                      <div style={{ textAlign: "center", padding: "20px" }}>
+                        <FileTextOutlined
+                          style={{
+                            fontSize: "24px",
+                            color: "#d9d9d9",
+                            marginBottom: "8px",
+                          }}
+                        />
+                        <div style={{ color: "#8c8c8c" }}>
+                          No policies uploaded yet
+                        </div>
                         <div
                           style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            marginTop: "12px",
-                            padding: "8px 12px",
-                            backgroundColor: "#fafafa",
-                            borderRadius: "6px",
-                            border: "1px solid #d9d9d9",
+                            color: "#bfbfbf",
+                            fontSize: "12px",
+                            marginTop: "4px",
                           }}
                         >
-                          <span style={{ flex: 1 }}>{file.name}</span>
-                          <Button
-                            type="text"
-                            size="small"
-                            icon={<EyeOutlined />}
-                            onClick={() => setDocumentPreviewVisible(true)}
-                            style={{ color: "#1890ff", padding: "4px" }}
-                            title="Preview Document"
-                          />
-                          <Button
-                            type="text"
-                            size="small"
-                            icon={<DeleteOutlined />}
-                            onClick={() => {
-                              setUploadedFile(null);
-                              setUploadedDocumentId(null);
-                            }}
-                            style={{ color: "#ff4d4f", padding: "4px" }}
-                            title="Remove Document"
-                          />
+                          Upload policies in the Documents section first
                         </div>
-                      );
-                    }}
-                  >
-                    <p className="ant-upload-drag-icon">
-                      <UploadOutlined />
-                    </p>
-                    <p className="ant-upload-text">
-                      Click or drag PDF file to this area to upload
-                    </p>
-                    <p className="ant-upload-hint">
-                      Optional: Add a supporting document for this training
-                    </p>
-                  </Upload.Dragger>
-                </div>
+                      </div>
+                    ) : (
+                      "No policies found"
+                    )
+                  }
+                >
+                  {policies.map((policy) => (
+                    <Select.Option key={policy.id} value={policy.id}>
+                      <div>
+                        <div style={{ fontWeight: 500 }}>{policy.title}</div>
+                        {policy.description && (
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              color: "#8c8c8c",
+                              marginTop: "2px",
+                            }}
+                          >
+                            {policy.description.length > 60
+                              ? `${policy.description.substring(0, 60)}...`
+                              : policy.description}
+                          </div>
+                        )}
+                      </div>
+                    </Select.Option>
+                  ))}
+                </Select>
               </Form.Item>
 
               {/* Progress Display */}
@@ -459,7 +414,7 @@ export default function AdminCreatePage() {
                 </li>
                 <li>
                   <Text type="secondary">
-                    Include supporting materials when needed
+                    Include supporting policies when needed
                   </Text>
                 </li>
               </ul>
@@ -467,14 +422,6 @@ export default function AdminCreatePage() {
           </Card>
         </Col>
       </Row>
-
-      {/* Document Preview Modal */}
-      <FilePreviewModal
-        isOpen={documentPreviewVisible}
-        onClose={() => setDocumentPreviewVisible(false)}
-        file={uploadedFile || undefined}
-        documentId={uploadedDocumentId || undefined}
-      />
     </div>
   );
 }
