@@ -128,10 +128,16 @@ def get_chatterbox_tts() -> Any:
             return None
         from chatterbox.tts import ChatterboxTTS  # type: ignore
 
-        # If flash-attn is installed, Chatterbox will use it automatically.
-        model = ChatterboxTTS.from_pretrained(device="cuda")
-        logger.info("Initialized ChatterboxTTS on CUDA")
-        return model
+        torch.backends.cudnn.benchmark = True
+        torch.set_float32_matmul_precision("high")  # favor tensor cores
+
+        mdl = ChatterboxTTS.from_pretrained(device="cuda").eval()
+        try:
+            mdl.half()  # FP16 weights if supported
+        except Exception:
+            pass
+        logger.info("Initialized ChatterboxTTS on CUDA (fp16-ready)")
+        return mdl
     except Exception as e:
         logger.warning(f"ChatterboxTTS load failed: {e}")
         return None
@@ -145,9 +151,17 @@ def get_chatterbox_multilingual() -> Any:
             logger.info("ChatterboxMultilingual skipped: CUDA not available")
             return None
         from chatterbox import ChatterboxMultilingualTTS  # type: ignore
-        model = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
-        logger.info("Initialized Chatterbox Multilingual TTS on CUDA")
-        return model
+
+        torch.backends.cudnn.benchmark = True
+        torch.set_float32_matmul_precision("high")  # favor tensor cores
+
+        mdl = ChatterboxMultilingualTTS.from_pretrained(device="cuda").eval()
+        try:
+            mdl.half()  # FP16 weights if supported
+        except Exception:
+            pass
+        logger.info("Initialized Chatterbox Multilingual TTS on CUDA (fp16-ready)")
+        return mdl
     except Exception as e:
         logger.warning(f"Chatterbox Multilingual load failed: {e}")
         return None
@@ -165,20 +179,37 @@ def get_kokoro_pipeline(lang_code: str = "a") -> Any:
         return None
 
 
-def _resample_linear(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
-    """Linear resampling of audio data."""
+def _resample_fast(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
+    """Fast, high-quality resampling with multiple fallback options."""
     if sr_in == sr_out or x.size == 0:
         return x.astype(np.float32, copy=False)
-    ratio = sr_out / float(sr_in)
-    n_out = max(1, int(round(x.size * ratio)))
-    xi = np.arange(x.size, dtype=np.float32)
-    idx = np.linspace(0, x.size - 1, num=n_out, dtype=np.float32)
-    return np.interp(idx, xi, x).astype(np.float32)
+    try:
+        # Fast + great quality if torchaudio is available (uses soxr)
+        import torch
+        import torchaudio  # type: ignore
+        t = torch.from_numpy(x.astype(np.float32)).unsqueeze(0)
+        y = torchaudio.functional.resample(t, sr_in, sr_out, rolloff=0.99, lowpass_filter_width=16)
+        return y.squeeze(0).contiguous().numpy().astype(np.float32)  # type: ignore
+    except Exception:
+        try:
+            # Very fast polyphase resampler
+            from scipy.signal import resample_poly  # type: ignore
+            g = np.gcd(sr_in, sr_out)
+            up, down = sr_out // g, sr_in // g
+            return resample_poly(x.astype(np.float32), up, down).astype(np.float32)  # type: ignore
+        except Exception:
+            # Last resort
+            ratio = sr_out / float(sr_in)
+            n_out = max(1, int(round(x.size * ratio)))
+            xi = np.arange(x.size, dtype=np.float32)
+            idx = np.linspace(0, x.size - 1, num=n_out, dtype=np.float32)
+            return np.interp(idx, xi, x).astype(np.float32)
 
 
 def synthesize_kokoro(text: str, voice: str = "alloy", sr: int = 48000) -> tuple[np.ndarray, int]:
     """
     Generate speech with Kokoro at 24 kHz, then resample to target sample rate.
+    Uses parallel synthesis for long text.
     
     Args:
         text: Text to synthesize
@@ -189,19 +220,40 @@ def synthesize_kokoro(text: str, voice: str = "alloy", sr: int = 48000) -> tuple
         Tuple of (audio_data, sample_rate)
     """
     try:
+        from concurrent.futures import ThreadPoolExecutor
+        
         pipeline = get_kokoro_pipeline(lang_code="a")
         if pipeline is None:
             raise RuntimeError("Kokoro pipeline not available")
-            
+
         kokoro_voice = VOICE_MAP.get(voice, voice)
-        gen = pipeline(text, voice=kokoro_voice, speed=1.0, split_pattern=r"\n+")  # type: ignore
-        chunks = []
-        for _, _, audio24 in gen:
-            chunks.append(np.asarray(audio24, dtype=np.float32))
+        
+        # Split text into sentences for parallel processing
+        import re
+        seqs = re.split(r'[.!?]\s+', text)
+        seqs = [s.strip() for s in seqs if s.strip()]
+        
+        if not seqs:
+            # fallback to original generator path
+            gen = pipeline(text, voice=kokoro_voice, speed=1.0, split_pattern=r"\n+")  # type: ignore
+            chunks = [np.asarray(a, np.float32) for _,_,a in gen]
+        else:
+            def _do(s: str) -> np.ndarray:
+                g = pipeline(s, voice=kokoro_voice, speed=1.0, split_pattern=r"\n+")  # type: ignore
+                buf = []
+                for *_, a in g:
+                    buf.append(np.asarray(a, np.float32))
+                return np.concatenate(buf) if buf else np.zeros(0, np.float32)
+
+            # Small pool — more doesn't always help on CPU
+            with ThreadPoolExecutor(max_workers=min(4, (os.cpu_count() or 4))) as ex:
+                chunks = list(ex.map(_do, seqs))
+
         if not chunks:
             return np.zeros(0, dtype=np.float32), sr
+
         y24 = np.concatenate(chunks, axis=0).astype(np.float32)
-        y = _resample_linear(y24, 24000, sr)
+        y = _resample_fast(y24, 24000, sr)
         return y, sr
     except Exception as e:
         logger.warning(f"Kokoro synthesis failed: {e}")
@@ -247,18 +299,30 @@ def synthesize_tts(
                         # If your ref clip isn't already at sr_native, resample before saving
                         ref = reference_audio.astype(np.float32).reshape(-1)
                         if sr != sr_native:
-                            ref = _resample_linear(ref, sr_in=sr, sr_out=sr_native)
+                            ref = _resample_fast(ref, sr_in=sr, sr_out=sr_native)
                         audio_prompt_path = os.path.join(td, "ref.wav")
                         sf.write(audio_prompt_path, ref, sr_native, subtype="PCM_16")
                         gen_kwargs["audio_prompt_path"] = audio_prompt_path  # <- cloning!
 
-                        wav = mdl.generate(text, **gen_kwargs)
+                        if torch.cuda.is_available():
+                            stream = torch.cuda.current_stream()
+                            with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+                                wav = mdl.generate(text, **gen_kwargs)
+                            torch.cuda.synchronize()  # ensure completion before returning
+                        else:
+                            wav = mdl.generate(text, **gen_kwargs)
                 else:
-                    wav = mdl.generate(text, **gen_kwargs)
+                    if torch.cuda.is_available():
+                        stream = torch.cuda.current_stream()
+                        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+                            wav = mdl.generate(text, **gen_kwargs)
+                        torch.cuda.synchronize()  # ensure completion before returning
+                    else:
+                        wav = mdl.generate(text, **gen_kwargs)
 
                 y = wav.squeeze().detach().cpu().numpy().astype(np.float32)
                 if sr != sr_native:
-                    y = _resample_linear(y, sr_native, sr)
+                    y = _resample_fast(y, sr_native, sr)
                 return y, sr
     except Exception as e:
         logger.warning(f"synthesize_tts: Chatterbox path failed (clone or base). Falling back. err={e}")
@@ -267,8 +331,20 @@ def synthesize_tts(
     return synthesize_kokoro(text=text, voice="alloy", sr=sr)
 
 
+def _pin_cpu_threads(n: int | None = None) -> None:
+    """Pin CPU threads for optimal performance."""
+    import torch
+    n = n or (os.cpu_count() or 4)
+    torch.set_num_threads(n)
+    for k in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        os.environ[k] = str(n)
+
+
 def warm_all_models() -> None:
     """Warm up all models for faster first inference."""
+    # Pin CPU threads once at startup
+    _pin_cpu_threads()
+    
     # Fire and forget warmups; ignore failures
     try:
         get_wav2vec2_ctc()
