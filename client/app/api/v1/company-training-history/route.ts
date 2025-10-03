@@ -60,7 +60,7 @@ export async function GET(request: Request) {
 
     const profileIds = companyProfiles.map((p) => p.id);
 
-    // Get all attempts for employees in the company
+    // Get all attempts for employees in the company, but only for Standard and Required trainings
     const { data: attempts, error: attemptsError } = await supabase
       .from("attempts")
       .select(
@@ -75,14 +75,16 @@ export async function GET(request: Request) {
           name,
           company
         ),
-        trainings(
+        trainings!inner(
           id,
           title,
-          description
+          description,
+          training_type
         )
       `
       )
       .in("profile_id", profileIds)
+      .in("trainings.training_type", ["standard", "required"])
       .order("created_at", { ascending: false });
 
     if (attemptsError) throw attemptsError;
