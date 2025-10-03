@@ -24,20 +24,32 @@ COPY requirements.txt ./
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Dynamically locate cuDNN wheel's lib dir and register it
+# Dynamically locate cuDNN wheel's lib dir and register it with the loader
 RUN python - <<'PY'
-import pathlib, nvidia.cudnn as cudnn
-p = (pathlib.Path(cudnn.__file__).parent / "lib").resolve()
-print("cuDNN lib dir:", p)
-assert p.exists()
-open("/etc/ld.so.conf.d/zz-cudnn.conf", "w").write(str(p) + "\n")
+import pathlib, sys, os
+import nvidia.cudnn as cudnn  # from nvidia-cudnn-cu12 wheel
+# For namespace packages, __path__ is a list of directories containing the package
+pkg_dir = pathlib.Path(next(iter(getattr(cudnn, "__path__"))))
+lib_dir = (pkg_dir / "lib").resolve()
+print("cuDNN lib dir:", lib_dir)
+if not lib_dir.exists():
+    raise SystemExit(f"cuDNN lib dir not found: {lib_dir}")
+open("/etc/ld.so.conf.d/zz-cudnn.conf", "w").write(str(lib_dir) + "\n")
 PY
 RUN ldconfig
 
 # Validation: Verify cuDNN libraries are properly loaded
 # Uncomment the following lines for debugging if needed:
-# RUN ldconfig -p | grep libcudnn_cnn || echo "cuDNN CNN libs not found in ldconfig"
-# RUN ls -l /opt/conda/lib/python*/site-packages/nvidia/cudnn/lib/libcudnn_cnn.so* || echo "cuDNN CNN libs not found in filesystem"
+# RUN ldconfig -p | grep libcudnn_cnn || true
+# RUN python - <<'PY'
+# import ctranslate2 as ct, torch
+# print("ct2 CUDA devices:", getattr(ct, "get_cuda_device_count", lambda:0)())
+# print("torch CUDA available:", torch.cuda.is_available())
+# PY
+# RUN python - <<'PY'
+# import ctypes; ctypes.CDLL("libcudnn_cnn.so.9")
+# print("Loaded libcudnn_cnn.so.9 OK")
+# PY
 
 # Copy application code
 COPY app/ ./app/
