@@ -21,8 +21,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements first for better caching
 COPY requirements.txt ./
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with build tools for compilation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential g++ gcc python3-dev cython3 \
+  && pip install --no-cache-dir --upgrade pip \
+  && pip install --no-cache-dir -r requirements.txt \
+  && apt-get purge -y --auto-remove build-essential g++ gcc python3-dev cython3 \
+  && rm -rf /var/lib/apt/lists/*
 
 # FlashAttention (Torch 2.8 + CUDA 12, CPython 3.11)
 RUN pip install --no-cache-dir \

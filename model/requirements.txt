@@ -16,6 +16,9 @@ nvidia-cudnn-cu12>=9.1
 kokoro>=0.9.4,<1.0.0
 chatterbox-tts>=0.1
 
+# Build tools (for pkuseg and other compiled packages)
+cython>=0.29.37,<1.0
+
 # Utilities
 python-dotenv>=1.0.1,<1.1.0
 httpx>=0.27.0,<0.28.0
