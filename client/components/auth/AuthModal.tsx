@@ -1,11 +1,11 @@
 "use client";
 
+import { toast } from "@/lib/toast";
 import useSupabaseBrowser from "@/utils/supabase/supabase-browser";
 import { LockOutlined, MailOutlined, UserOutlined } from "@ant-design/icons";
 import { Alert, Button, Form, Input, Modal, Typography } from "antd";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { toast } from "@/lib/toast";
 
 const { Title, Text, Link } = Typography;
 
