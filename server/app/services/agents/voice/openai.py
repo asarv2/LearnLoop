@@ -85,48 +85,40 @@ def _count_sentences(text: str) -> int:
     
     # Simple sentence counting based on sentence-ending punctuation
     # Look for patterns: . ! ? followed by whitespace or end of string
-    import re
     sentence_endings = re.findall(r'[.!?]+(?:\s|$)', text.strip())
     return len(sentence_endings)
 
 
-def _find_next_word_after_partial(
-    partial_words: list[str], 
-    final_words: list[dict]
-) -> int:
-    """
-    Find next word after partial by matching progressively shorter suffixes.
-    Returns start timestamp of the next word.
-    """
+def _adjust_word_timestamps(words: list[dict], start_offset_ms: int) -> list[dict]:
+    """Adjust word timestamps to start from the given offset."""
+    if not words:
+        return []
     
-    if not partial_words or not final_words:
-        return 0
+    # Find the time span of the original words
+    first_start = min(w.get("start_ms", 0) for w in words)
     
-    # Convert final words to text list for easier matching
-    final_texts = [w.get("text", "").strip() for w in final_words]
-    
-    # Try matching progressively shorter suffixes until we get a unique match
-    for suffix_length in range(len(partial_words), 0, -1):
-        partial_suffix = partial_words[-suffix_length:]
+    # Adjust each word's timestamps
+    adjusted = []
+    for word in words:
+        original_start = word.get("start_ms", 0)
+        original_end = word.get("end_ms", 0)
         
-        # Find all occurrences of this suffix in final words
-        matches = []
-        for i in range(len(final_texts) - suffix_length + 1):
-            if final_texts[i:i + suffix_length] == partial_suffix:
-                matches.append(i + suffix_length)  # Index of next word after match
+        # Calculate relative position within the original span
+        relative_start = original_start - first_start
+        relative_end = original_end - first_start
         
-        # If we found exactly one match, use it
-        if len(matches) == 1:
-            next_word_idx = matches[0]
-            if next_word_idx < len(final_words):
-                # Get timestamp of the next word
-                return int((final_words[next_word_idx].get("start_ms", 0) / 1000.0) * PCM_SR)
+        # Apply to new start position
+        new_start = start_offset_ms + relative_start
+        new_end = start_offset_ms + relative_end
         
-        # If multiple matches, continue with shorter suffix
-        # If no matches, continue with shorter suffix
+        adjusted_word = word.copy()
+        adjusted_word["start_ms"] = new_start
+        adjusted_word["end_ms"] = new_end
+        adjusted.append(adjusted_word)
     
-    # No match found, don't truncate
-    return 0
+    return adjusted
+
+
 
 
 # ---------- Realtime OpenAI bridge agent (NO local VAD) ----------
@@ -210,6 +202,8 @@ class OpenAIAgent(Agent):
         self._processed_done: set[str] = set()
         # Track model audio chunking to drive partial CTC timing
         self._resp_audio_chunk_count: dict[str, int] = {}
+        # Persistent storage for partial CTC data that survives stream cleanup
+        self._partial_ctc_data: dict[str, dict[str, Any]] = {}
 
         # --- Uplink queue for decoupling audio capture from network I/O ---
         # Increased from 256 to 512 to reduce audio drops under load
@@ -1322,10 +1316,15 @@ class OpenAIAgent(Agent):
                         partial_words = [word.get("text", "").strip() for word in words_p]
                         st2["partial_words"] = partial_words
                         
+                        # Store in persistent location that survives stream cleanup
+                        self._partial_ctc_data[target_rid] = {
+                            "partial_ctc_text": reference_text,
+                            "partial_words": partial_words,
+                            "partial_last_word_end_ms": max(word.get("end_ms", 0) for word in words_p)
+                        }
+                        
                         # Also store last word end time for fallback
                         last_word_end_ms = max(word.get("end_ms", 0) for word in words_p)
-                        last_word_end_samples = int((last_word_end_ms / 1000.0) * PCM_SR)
-                        st2["partial_last_word_end_samples"] = last_word_end_samples
                         st2["partial_last_word_end_ms"] = last_word_end_ms
                     
                     # Add returned audio to bus if available
@@ -1575,6 +1574,7 @@ class OpenAIAgent(Agent):
         self._resp_text.pop(rid, None)
         self._resp_audio_start_ts_ms.pop(rid, None)
         self._resp_audio_chunk_count.pop(rid, None)
+        self._partial_ctc_data.pop(rid, None)
 
     async def _run_final_ctc(
         self, rid: str, st: dict[str, Any] | None, final_text: str
@@ -1599,6 +1599,21 @@ class OpenAIAgent(Agent):
             start_ts = self._resp_audio_start_ts_ms.get(rid, int(time.time() * 1000))
             
             if audio_arr is not None:
+                # Get partial CTC data from persistent storage
+                partial_data = self._partial_ctc_data.get(rid, {})
+                partial_ctc_text = partial_data.get("partial_ctc_text", "")
+                
+                # If we have partial text, only process the unused portion
+                if partial_ctc_text and partial_ctc_text in effective_text:
+                    # Find where partial text ends in the full text
+                    unused_text = effective_text[len(partial_ctc_text):].strip()
+                    if unused_text:
+                        # Use only unused text for final CTC
+                        effective_text = unused_text
+                    else:
+                        # No unused text, skip final CTC
+                        return
+                
                 tr_text, words, returned_audio = await self._align_ctc(
                     audio_f32=audio_arr, sr=PCM_SR, reference_text=effective_text, stage="final",
                     reference_audio_b64=self._reference_audio_b64,
@@ -1614,6 +1629,24 @@ class OpenAIAgent(Agent):
                             await self._ensure_assistant_message_exists(st_final, persona_id)
                             msg_id_final = str(st_final["msg_id"])
                             self._rid_to_msg[rid] = msg_id_final
+                    
+                    # Stitch word timestamps for text-only path
+                    if partial_data.get("partial_words"):
+                        # Get partial words with timestamps
+                        partial_words_with_timestamps = partial_data.get("partial_words", [])
+                        
+                        # Adjust final words timestamps to continue from partial end
+                        if partial_words_with_timestamps:
+                            last_partial_end = partial_data.get("partial_last_word_end_ms", 0)
+                            adjusted_final_words = _adjust_word_timestamps(words, last_partial_end)
+                            
+                            # Stitch together: partial + adjusted final
+                            stitched_words = partial_words_with_timestamps + adjusted_final_words
+                            stitched_text = partial_ctc_text + " " + (tr_text or effective_text)
+                            
+                            # Use stitched results
+                            words = stitched_words
+                            effective_text = stitched_text
                     
                     await self.room.broadcast_transcript(
                         agent_id=self.id,
@@ -1633,27 +1666,13 @@ class OpenAIAgent(Agent):
                     
                     # Add returned audio to bus if available
                     if returned_audio is not None and returned_audio.size > 0:
-                        # Use text-based matching to find next word after partial
-                        partial_words = st.get("partial_words", []) if st else []
-                        
-                        if partial_words:
-                            truncation_samples = _find_next_word_after_partial(partial_words, words)
-                            if truncation_samples > 0 and truncation_samples < len(returned_audio):
-                                truncated_audio = returned_audio[truncation_samples:]
-                            else:
-                                truncated_audio = returned_audio
-                        else:
-                            # No partial words available, use full audio
-                            truncated_audio = returned_audio
-                        
-                        # Publish truncated audio with chunking
-                        if len(truncated_audio) > 0:
-                            chunk_size = SAMPLES_PER_CHUNK  # 960 samples = 20ms
-                            for i in range(0, len(truncated_audio), chunk_size):
-                                chunk = truncated_audio[i:i + chunk_size]
-                                if len(chunk) > 0:
-                                    await self.publish_audio(chunk)
-                                    await asyncio.sleep(chunk_size / PCM_SR)  # 20ms pacing
+                        # Publish all returned audio (audio path unchanged)
+                        chunk_size = SAMPLES_PER_CHUNK  # 960 samples = 20ms
+                        for i in range(0, len(returned_audio), chunk_size):
+                            chunk = returned_audio[i:i + chunk_size]
+                            if len(chunk) > 0:
+                                await self.publish_audio(chunk)
+                                await asyncio.sleep(chunk_size / PCM_SR)  # 20ms pacing
         except Exception:
             pass
 
