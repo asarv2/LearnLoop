@@ -14,8 +14,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install pip PyTorch + FlashAttention that match CUDA 12.4 and Python 3.11
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu124 \
       torch==2.6.0+cu124 torchaudio==2.6.0+cu124 && \
+    pip uninstall -y flash-attn || true && \
     pip install --no-cache-dir \
-      https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.6cxx11abiTRUE-cp311-cp311-linux_x86_64.whl
+      https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.6cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+
+# Sanity check: Verify ABI compatibility
+RUN python - <<'PY'
+import torch, importlib, pkgutil
+print("Torch:", torch.__version__, "CUDA:", torch.version.cuda)
+print("GLIBCXX_USE_CXX11_ABI:", getattr(torch._C, "_GLIBCXX_USE_CXX11_ABI", "n/a"))
+print("flash_attn present:", pkgutil.find_loader("flash_attn_2_cuda") is not None)
+import flash_attn_2_cuda
+print("FlashAttention CUDA loaded from:", flash_attn_2_cuda.__file__)
+PY
 
 # Build ctc-segmentation from source, then remove build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
