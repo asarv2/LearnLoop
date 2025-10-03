@@ -3,10 +3,6 @@ fastapi==0.111.1
 uvicorn[standard]==0.29.0
 gunicorn==22.0.0
 
-# PyTorch stack (match base)
-torch==2.6.0
-torchaudio==2.6.0
-
 # Audio
 numpy==1.26.0
 librosa==0.11.0
