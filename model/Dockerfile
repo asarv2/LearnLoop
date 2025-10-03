@@ -25,7 +25,8 @@ COPY requirements.txt constraints.txt ./
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential g++ gcc python3-dev cython3 \
   && pip install --no-cache-dir --upgrade pip \
-  && pip install --no-cache-dir -r requirements.txt -c constraints.txt \
+  && pip install --no-cache-dir --upgrade-strategy only-if-needed \
+       -r requirements.txt -c constraints.txt \
   && apt-get purge -y --auto-remove build-essential g++ gcc python3-dev cython3 \
   && rm -rf /var/lib/apt/lists/*
 
@@ -45,19 +46,6 @@ if torch.cuda.is_available():
     print("GPU count:", torch.cuda.device_count())
 PY
 
-# Dynamically locate cuDNN wheel's lib dir and register it with the loader
-RUN python - <<'PY'
-import pathlib, sys, os
-import nvidia.cudnn as cudnn  # from nvidia-cudnn-cu12 wheel
-# For namespace packages, __path__ is a list of directories containing the package
-pkg_dir = pathlib.Path(next(iter(getattr(cudnn, "__path__"))))
-lib_dir = (pkg_dir / "lib").resolve()
-print("cuDNN lib dir:", lib_dir)
-if not lib_dir.exists():
-    raise SystemExit(f"cuDNN lib dir not found: {lib_dir}")
-open("/etc/ld.so.conf.d/zz-cudnn.conf", "w").write(str(lib_dir) + "\n")
-PY
-RUN ldconfig
 
 # Validation: Verify cuDNN libraries are properly loaded
 # Uncomment the following lines for debugging if needed:
