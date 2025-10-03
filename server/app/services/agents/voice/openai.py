@@ -35,8 +35,11 @@ from app.models import Chats, Documents, Messages, Personas, Scenarios
 from app.services.agents.voice.base import Agent
 from app.store import list_messages
 from app.utils.chat import get_formatted_conversation_history_with_personas
+from dotenv import load_dotenv
 from sqlalchemy.util import ellipses_string
 from sqlmodel import select
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +223,9 @@ class OpenAIAgent(Agent):
 
         # --- HTTP client pooling for CTC alignment calls ---
         self._http_client: Any = None  # httpx.AsyncClient, lazily initialized
+        
+        # --- Reference audio for CTC alignment when voice is null ---
+        self._reference_audio_b64: str | None = None
 
         async def _audio_gate(chunk: AudioChunk) -> AudioChunk:
             # If blocked, turn any frame we publish into silence instantly.
@@ -510,6 +516,40 @@ class OpenAIAgent(Agent):
             self._http_client = httpx.AsyncClient(timeout=10.0)
         return self._http_client
 
+    async def _download_persona_audio(self, persona_id: str) -> bytes | None:
+        """Download persona audio from Supabase storage if voice is null."""
+        try:
+            supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+            service_role_key = os.getenv("SERVICE_ROLE_KEY")
+            bucket_name = "audio"  # Audio bucket
+            
+            if not all([supabase_url, service_role_key]):
+                logger.warning("Missing Supabase configuration for audio download")
+                return None
+                
+            file_key = f"{persona_id}.wav"
+            storage_url = f"{supabase_url}/storage/v1/object/{bucket_name}/{file_key}"
+            
+            headers = {
+                "Authorization": f"Bearer {service_role_key}",
+            }
+            
+            client = await self._get_http_client()
+            response = await client.get(storage_url, headers=headers)
+            
+            if response.status_code == 404:
+                logger.info(f"No audio file found for persona {persona_id}")
+                return None
+                
+            response.raise_for_status()
+            content: bytes = response.content
+            logger.info(f"Downloaded audio file for persona {persona_id}: {len(content)} bytes")
+            return content
+            
+        except Exception as e:
+            logger.warning(f"Failed to download audio for persona {persona_id}: {e}")
+            return None
+
     async def _align_ctc(
         self,
         *,
@@ -519,6 +559,7 @@ class OpenAIAgent(Agent):
         stage: str = "final",
         num_chunks: int | None = None,
         chunk_ms: int = 20,
+        reference_audio_b64: str | None = None,
     ) -> tuple[str, list[dict[str, Any]], np.ndarray | None]:
         """Call external model service /align_ctc; returns (text, words[], audio)."""
         try:
@@ -534,6 +575,11 @@ class OpenAIAgent(Agent):
                 "stage": stage,
                 "chunk_ms": int(chunk_ms),
             }
+            
+            # NEW: Add reference audio if available
+            if reference_audio_b64:
+                payload["reference_audio_b64"] = reference_audio_b64
+                
             if num_chunks is not None:
                 payload["num_chunks"] = int(num_chunks)
             url = base.rstrip("/") + "/align_ctc"
@@ -740,7 +786,17 @@ class OpenAIAgent(Agent):
             "shimmer",
             "verse",
         ]
-        if realtime_voice is not None and realtime_voice not in valid_voices:
+        
+        # NEW: Check if we need to download reference audio
+        if realtime_voice is None:
+            # Download persona audio from Supabase storage
+            audio_bytes = await self._download_persona_audio(str(persona_id))
+            if audio_bytes:
+                self._reference_audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                logger.info(f"Downloaded reference audio for persona {persona_id}")
+            # Set a default voice for the model
+            realtime_voice = "alloy"
+        elif realtime_voice not in valid_voices:
             realtime_voice = "alloy"
 
         # Example function for dynamic instructions
@@ -1246,6 +1302,7 @@ class OpenAIAgent(Agent):
                         sr=PCM_SR,
                         reference_text=reference_text,
                         stage="partial",
+                        reference_audio_b64=self._reference_audio_b64,
                     )
                     logger.debug(f"[ctc][partial] words={len(words_p)}")
                     if words_p:
@@ -1545,7 +1602,8 @@ class OpenAIAgent(Agent):
             
             if audio_arr is not None:
                 tr_text, words, returned_audio = await self._align_ctc(
-                    audio_f32=audio_arr, sr=PCM_SR, reference_text=effective_text, stage="final"
+                    audio_f32=audio_arr, sr=PCM_SR, reference_text=effective_text, stage="final",
+                    reference_audio_b64=self._reference_audio_b64,
                 )
                 msg_id_final = self._rid_to_msg.get(rid)
                 
