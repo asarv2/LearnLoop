@@ -61,8 +61,16 @@ def get_wav2vec2_ctc() -> tuple[Any, Any]:
 
         proc = Wav2Vec2Processor.from_pretrained(model_name, cache_dir=cache_dir)
         mdl = Wav2Vec2ForCTC.from_pretrained(model_name, cache_dir=cache_dir).eval()
+        
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        try:
+            mdl.to(device)
+        except Exception:
+            pass
+        
         logger.info(
-            f"Initialized Wav2Vec2ForCTC and Wav2Vec2Processor ({model_name}) - cached in {cache_dir}"
+            f"Initialized Wav2Vec2ForCTC and Wav2Vec2Processor ({model_name}) on {device} - cached in {cache_dir}"
         )
         return proc, mdl
     except Exception as e:
@@ -73,31 +81,28 @@ def get_wav2vec2_ctc() -> tuple[Any, Any]:
 @lru_cache(maxsize=1)
 def get_whisper_tiny(device_hint: str = "auto") -> Any:
     try:
+        import os
+
         import ctranslate2  # type: ignore
         from faster_whisper import WhisperModel  # type: ignore
 
-        # Check for environment override first
         env_device = os.getenv("WHISPER_DEVICE")
         if env_device in ("cpu", "cuda"):
             device_hint = env_device
 
-        # Use CTranslate2 device detection instead of torch.cuda
         has_cuda = getattr(ctranslate2, "get_cuda_device_count", lambda: 0)() > 0
-        if device_hint == "cuda":
-            device = "cuda" if has_cuda else "cpu"
-        elif device_hint == "cpu":
-            device = "cpu"
-        else:
-            device = "cuda" if has_cuda else "cpu"
+        device = "cuda" if (device_hint != "cpu" and has_cuda) else "cpu"
 
+        # CPU = int8, many threads; GPU = float16
         compute_type = "float16" if device == "cuda" else "int8"
+        cpu_threads = os.cpu_count() or 4
+
         cache_dir = str(MODEL_CACHE_DIR / "whisper")
         model = WhisperModel(
-            "tiny", device=device, compute_type=compute_type, download_root=cache_dir
+            "tiny", device=device, compute_type=compute_type,
+            download_root=cache_dir, cpu_threads=cpu_threads
         )
-        logger.info(
-            f"Initialized WhisperModel (tiny) on device={device} with compute_type={compute_type} - cached in {cache_dir} (CTranslate2 CUDA devices: {getattr(ctranslate2, 'get_cuda_device_count', lambda: 0)()})"
-        )
+        logger.info(f"Whisper init device={device} compute={compute_type} cpu_threads={cpu_threads}")
         return model
     except Exception as e:
         logger.warning(f"Whisper warm load failed: {e}")
