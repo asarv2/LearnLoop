@@ -794,8 +794,6 @@ class OpenAIAgent(Agent):
             if audio_bytes:
                 self._reference_audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
                 logger.info(f"Downloaded reference audio for persona {persona_id}")
-            # Set a default voice for the model
-            realtime_voice = "alloy"
         elif realtime_voice not in valid_voices:
             realtime_voice = "alloy"
 
