@@ -30,9 +30,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && apt-get purge -y --auto-remove build-essential g++ gcc python3-dev cython3 \
   && rm -rf /var/lib/apt/lists/*
 
-# FlashAttention (Torch 2.6 + CUDA 12, CPython 3.11)
-RUN pip install --no-cache-dir \
-  https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.6cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+# FlashAttention (Torch 2.6 + CUDA 12, CPython 3.11) — ABI TRUE
+RUN pip uninstall -y flash-attn || true && \
+    pip install --no-cache-dir \
+      https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.6cxx11abiTRUE-cp311-cp311-linux_x86_64.whl
 
 # Make cuDNN's pip-installed libs visible to the dynamic linker
 RUN python - <<'PY'
@@ -51,6 +52,16 @@ lib_dir = (pathlib.Path(next(iter(cudnn.__path__))) / "lib").resolve()
 ctypes.CDLL(str(lib_dir / "libcudnn_cnn.so.9"))
 ctypes.CDLL(str(lib_dir / "libcudnn_ops.so.9"))
 print("Loaded cuDNN CNN/OPS successfully")
+PY
+
+# Sanity check: Verify FlashAttention loads correctly
+RUN python - <<'PY'
+import torch
+print("Torch:", torch.__version__)
+import importlib, pkgutil
+print("flash_attn present:", pkgutil.find_loader("flash_attn_2_cuda") is not None)
+import flash_attn_2_cuda  # should succeed now
+print("FlashAttention CUDA loaded OK")
 PY
 
 # Sanity check: Verify Torch, Triton, and CUDA versions
