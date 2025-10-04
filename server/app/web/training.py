@@ -562,7 +562,7 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
 
             # Create new persona field with same name and description
             new_persona_field = Fields(
-                name=f"{original_persona_field.name} - {name}",
+                name=f"{original_persona_field.name}",
                 description=original_persona_field.description,
                 field_type=original_persona_field.field_type,
                 hidden=original_persona_field.hidden
@@ -573,7 +573,7 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
 
             # Create new mood field with same name and description
             new_mood_field = Fields(
-                name=f"{original_mood_field.name} - {name}",
+                name=f"{original_mood_field.name}",
                 description=original_mood_field.description,
                 field_type=original_mood_field.field_type,
                 hidden=original_mood_field.hidden

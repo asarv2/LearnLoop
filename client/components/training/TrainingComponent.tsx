@@ -680,6 +680,7 @@ export default function TrainingComponent({
             loading={loadingRubrics}
             size="large"
             style={{ width: "100%" }}
+            optionLabelProp="label"
             notFoundContent={
               rubrics.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "20px" }}>
@@ -697,7 +698,11 @@ export default function TrainingComponent({
                   !rubric.company && rubric.name.toLowerCase() === "general"
               )
               .map((rubric) => (
-                <Select.Option key={rubric.id} value={rubric.id}>
+                <Select.Option
+                  key={rubric.id}
+                  value={rubric.id}
+                  label={rubric.name}
+                >
                   <div>
                     <div style={{ fontWeight: 500 }}>{rubric.name}</div>
                     <div
@@ -717,7 +722,11 @@ export default function TrainingComponent({
             {rubrics
               .filter((rubric) => rubric.company === effectiveProfile?.company)
               .map((rubric) => (
-                <Select.Option key={rubric.id} value={rubric.id}>
+                <Select.Option
+                  key={rubric.id}
+                  value={rubric.id}
+                  label={rubric.name}
+                >
                   <div>
                     <div style={{ fontWeight: 500 }}>{rubric.name}</div>
                     <div
