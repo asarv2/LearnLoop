@@ -211,6 +211,8 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
     - num_chunks: when stage=="partial", number of chunks to include
     - chunk_ms: chunk duration in milliseconds (default 20ms)
     """
+    import time
+    start_time = time.time()
     logger.info(f"[align_ctc] request: stage={req.stage} sr={req.sr} ref_text_len={len(req.reference_text or '')} ref_text='{req.reference_text[:100] if req.reference_text else None}...' audio_b64_len={len(req.audio_b64)} ref_audio_b64_len={len(req.reference_audio_b64) if req.reference_audio_b64 else 0}")
     import base64
 
@@ -312,6 +314,11 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
             for w in tr.words
         ]
         # print(f"words_data: {words_data}")
+        
+        # Log total align_ctc timing
+        elapsed = time.time() - start_time
+        logger.info(f"[ALIGN-TIMING] Total: {elapsed:.3f}s (stage={req.stage}, audio_len={x.size})")
+        
         return TranscriptResponse(
             text=tr.text, 
             words=words_data, 

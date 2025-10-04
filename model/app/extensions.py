@@ -338,9 +338,13 @@ try:
     _old_inf = t3mod.T3.inference
     
     def _inference_cap(self, *args, **kw):  # type: ignore
-        m = kw.get("max_new_tokens", None)
-        # Clamp even if explicitly provided by caller
-        kw["max_new_tokens"] = 80 if m is None else min(int(m), 80)
+        # Guard against CFG batch duplication and cap max tokens
+        kw.setdefault("cfg_weight", 0.0)
+        if kw["cfg_weight"] <= 0:
+            # Signal to downstream code that CFG is off, prevent batch doubling
+            kw["cfg_weight"] = 0.0
+            m = kw.get("max_new_tokens", None)
+            kw["max_new_tokens"] = 80 if m is None else min(int(m), 80)
         return _old_inf(self, *args, **kw)
     
     t3mod.T3.inference = _inference_cap
@@ -444,9 +448,9 @@ class _FastCBProxy:
 
         import torch
 
-        # Remove autocast to prevent cuFFT fp16/STFT crash on non-power-of-two window sizes
-        # T3 model is still in fp16, but STFT operations stay in fp32
-        with torch.inference_mode():
+        # Use BF16 autocast to fix cuFFT STFT crash while maintaining performance
+        # BF16 supports non-power-of-two FFT sizes that cuFFT FP16 doesn't
+        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
             return self._m.generate(
                 text=text,
                 audio_prompt_path=None,          # we already prepared/cached
@@ -616,6 +620,8 @@ def synthesize_tts(
     Uses English Chatterbox; fallback to Kokoro on CPU.
     Returns (float32 mono PCM, sample_rate).
     """
+    import time
+    start_time = time.time()
     try:
         import torch
         if torch.cuda.is_available():
@@ -700,11 +706,17 @@ def synthesize_tts(
                 # 5) Keep native SR until final resample
                 if sr != sr_native:
                     y = _resample_fast(y, sr_native, sr)
+                
+                # Log successful Chatterbox generation time
+                elapsed = time.time() - start_time
+                logger.info(f"[TTS-TIMING] Chatterbox: {elapsed:.3f}s (text_len={len(text)})")
                 return y, sr
     except Exception as e:
         logger.warning(f"synthesize_tts: Chatterbox path failed (clone or base). Falling back. err={e}")
 
     # 6) CPU fallback
+    elapsed = time.time() - start_time
+    logger.warning(f"[TTS-TIMING] Kokoro fallback: {elapsed:.3f}s (text_len={len(text)})")
     return synthesize_kokoro(text=text, voice="alloy", sr=sr)
 
 
