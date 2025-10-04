@@ -85,7 +85,7 @@ const getUserMenuItems = (
       items.push({
         key: "return-to-admin",
         icon: <SwapOutlined />,
-        label: "Return to Admin View",
+        label: "Switch to Admin View",
         onClick: async () => {
           await stopEmulation();
         },
@@ -113,17 +113,7 @@ const getUserMenuItems = (
     });
   }
 
-  // If currently emulating, show stop emulation option
-  if (isEmulating) {
-    items.push({
-      key: "stop-emulation",
-      icon: <SwapOutlined />,
-      label: "Stop Emulation",
-      onClick: async () => {
-        await stopEmulation();
-      },
-    });
-  }
+  // Stop emulation option removed - users can switch back to their actual role instead
 
   // Add profile option
   items.push({

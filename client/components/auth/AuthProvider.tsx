@@ -93,27 +93,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return userProfile as Profile;
   }, [userProfile, isEmulating, user?.user_metadata?.emulationMode]);
 
-  // Redirect to dashboard when emulating employee view
+  // Centralized redirect logic based on user's effective profile
   useEffect(() => {
     if (
       !loading &&
       !isProfileLoading &&
       !isEffLoading &&
       effectiveProfile &&
-      isEmulating &&
-      effectiveProfile.role === "employee" &&
-      pathname.startsWith("/admin")
+      user
     ) {
-      router.push("/dashboard/trainings");
+      const effectiveRole = effectiveProfile.role;
+
+      // 1. Redirect from home page based on role
+      if (pathname === "/") {
+        if (effectiveRole === "admin" || effectiveRole === "superadmin") {
+          router.push("/admin/analytics");
+        } else if (effectiveRole === "employee") {
+          router.push("/dashboard/trainings");
+        }
+      }
+
+      // 2. Redirect from dashboard page to trainings
+      if (pathname === "/dashboard") {
+        router.push("/dashboard/trainings");
+      }
+
+      // 3. Redirect admin users from dashboard if not emulating employee view
+      if (
+        pathname.startsWith("/dashboard") &&
+        (activeProfile?.role === "admin" ||
+          activeProfile?.role === "superadmin") &&
+        !isEmulating
+      ) {
+        router.push("/admin/analytics");
+      }
+
+      // 4. Redirect to dashboard when emulating employee view from admin routes
+      if (
+        pathname.startsWith("/admin") &&
+        isEmulating &&
+        effectiveRole === "employee"
+      ) {
+        router.push("/dashboard/trainings");
+      }
     }
   }, [
     effectiveProfile,
+    activeProfile,
     isEmulating,
     loading,
     isProfileLoading,
     isEffLoading,
     pathname,
     router,
+    user,
   ]);
 
   // View mode emulation control methods

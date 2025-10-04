@@ -1,6 +1,6 @@
 "use client";
-import { redirect } from "next/navigation";
 
 export default function DashboardPage() {
-  return redirect("/dashboard/trainings");
+  // Redirect logic is now handled centrally in AuthProvider
+  return null;
 }

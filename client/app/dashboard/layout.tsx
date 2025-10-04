@@ -17,7 +17,7 @@ import type { MenuProps } from "antd";
 import { Avatar, Button, Dropdown, Layout, Space, Typography } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 
 const { Content } = Layout;
 const { Text } = Typography;
@@ -81,17 +81,7 @@ const getUserMenuItems = (
     });
   }
 
-  // If currently emulating, show stop emulation option
-  if (isEmulating) {
-    items.push({
-      key: "stop-emulation",
-      icon: <SwapOutlined />,
-      label: "Stop Emulation",
-      onClick: async () => {
-        await stopEmulation();
-      },
-    });
-  }
+  // Stop emulation option removed - users can switch back to their actual role instead
 
   // Add profile option
   items.push({
@@ -142,17 +132,7 @@ export default function DashboardLayout({
   } = useAuth();
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
 
-  // Redirect admin users to admin interface if they're not emulating employee view
-  useEffect(() => {
-    if (
-      !loading &&
-      !isProfileLoading &&
-      (activeProfile?.role === "admin" ||
-        (activeProfile?.role === "superadmin" && !isEmulating))
-    ) {
-      router.push("/admin/analytics");
-    }
-  }, [activeProfile?.role, loading, isProfileLoading, isEmulating, router]);
+  // Redirect logic is now handled centrally in AuthProvider
 
   if (loading || isProfileLoading) {
     return (
