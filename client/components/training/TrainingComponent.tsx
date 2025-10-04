@@ -3,6 +3,10 @@
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { api } from "@/lib/api/fetcher";
+import {
+  uploadDocument,
+  useCreateDocument,
+} from "@/lib/api/hooks/useDocuments";
 import { useGroup } from "@/lib/api/hooks/useGroups";
 import { useParametersByField } from "@/lib/api/hooks/useParameters";
 import { trainingKeys } from "@/lib/api/keys";
@@ -119,6 +123,7 @@ export default function TrainingComponent({
   const { emitCreateTraining } = useWebSocket();
   const queryClient = useQueryClient();
   const [messageApi, contextHolder] = message.useMessage();
+  const createDocument = useCreateDocument();
 
   // Determine if we're in edit mode
   const isEditMode = !!(training_id || editingTraining?.id);
@@ -305,27 +310,19 @@ export default function TrainingComponent({
   // Handle document upload for custom mode
   const handleDocumentUpload = async (file: File) => {
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("title", file.name);
-      formData.append(
-        "description",
-        `Document for training: ${
-          form.getFieldValue(custom ? "scenario" : "title") || "Untitled"
-        }`
-      );
-
-      const response = await fetch("/api/v1/documents", {
-        method: "POST",
-        body: formData,
+      // 1) First create the document record using the hook
+      const document = await createDocument.mutateAsync({
+        title: file.name,
+        content: null, // Will be populated when file is uploaded
+        profile_id: effectiveProfile?.id || null,
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to upload document");
-      }
+      // 2) Then upload the file using the uploadDocument function
+      const formData = new FormData();
+      formData.append("file", file);
+      await uploadDocument(document.id!, formData);
 
-      const result = await response.json();
-      setUploadedDocumentId(result.id);
+      setUploadedDocumentId(document.id!);
       setUploadedFile(file);
       messageApi.success("Document uploaded successfully");
       return false; // Prevent default upload behavior
@@ -596,8 +593,15 @@ export default function TrainingComponent({
               </div>
             ) : (
               <Upload.Dragger
-                beforeUpload={handleDocumentUpload}
-                accept=".pdf,.doc,.docx,.txt"
+                beforeUpload={(file) => {
+                  const isPDF = file.type === "application/pdf";
+                  if (!isPDF) {
+                    messageApi.error("Only PDF files are supported!");
+                    return false;
+                  }
+                  return handleDocumentUpload(file);
+                }}
+                accept=".pdf"
                 multiple={false}
                 showUploadList={false}
                 style={{
@@ -610,10 +614,10 @@ export default function TrainingComponent({
                     style={{ fontSize: "24px", color: "#1890ff" }}
                   />
                 </p>
-                <p className="ant-upload-text">Click or drag file to upload</p>
-                <p className="ant-upload-hint">
-                  Support for PDF, DOC, DOCX, TXT files
+                <p className="ant-upload-text">
+                  Click or drag PDF file to upload
                 </p>
+                <p className="ant-upload-hint">Only PDF files are supported</p>
               </Upload.Dragger>
             )}
           </div>
