@@ -94,32 +94,7 @@ export default function AdminRubricsPage() {
     }
   };
 
-  // Filter rubrics based on search and type
-  // Only show: General Rubric (global) and company-specific rubrics
-  // Hide: Standard training rubrics (Interview, Termination, Idea Pitch, Constructive Feedback)
-  const standardTrainingRubricNames = [
-    "Interview Assessment Rubric",
-    "Termination Conversation Rubric",
-    "Idea Pitch Assessment Rubric",
-    "Constructive Feedback Rubric",
-  ];
-
-  const filteredRubrics =
-    rubrics?.filter(
-      (rubric) =>
-        // Include General Rubric (the main generic rubric)
-        (rubric.name === "General Rubric" && rubric.company === null) ||
-        // Include all company-specific rubrics
-        (rubric.company !== null && rubric.company !== "") ||
-        // Exclude standard training rubrics
-        (!standardTrainingRubricNames.includes(rubric.name) &&
-          rubric.company === null &&
-          (rubric.name.toLowerCase().includes(searchText.toLowerCase()) ||
-            (rubric.description &&
-              rubric.description
-                .toLowerCase()
-                .includes(searchText.toLowerCase()))))
-    ) || [];
+  const filteredRubrics = rubrics || [];
 
   // Apply search filter
   const searchFilteredRubrics = searchText

@@ -5,6 +5,7 @@ from typing import Any
 from agents import Runner, ToolsToFinalOutputResult, function_tool, trace
 from app.extensions import load_prompt
 from app.services.agents.generic import GenericAgent
+from openai.types.responses import EasyInputMessageParam
 from pydantic import Field
 
 logger = logging.getLogger(__name__)
@@ -255,13 +256,11 @@ Each criterion should clearly describe what performance looks like at that level
 Remember to call ALL completion tools - one for each standard!
 """
 
-        input_items = [{"role": "user", "content": rubric_context}]
-
         # Run the rubric generation agent
         logger.info("Running rubric generation agent...")
         with trace(f"Rubric Generation: {rubric_name}"):
             # Use streamed runner for better progress visibility
-            streamed_result = Runner.run_streamed(agent_instance, input=input_items)
+            streamed_result = Runner.run_streamed(agent_instance, input=str(rubric_context))
 
             # Process streaming events
             async for event in streamed_result.stream_events():

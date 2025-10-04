@@ -108,6 +108,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
 
   // Custom persona state for global access
   const [customPersonaName, setCustomPersonaName] = useState<string>("");
+  const [customPersonaDescription, setCustomPersonaDescription] =
+    useState<string>("");
   const [customVoiceType, setCustomVoiceType] = useState<string>("");
   const [customAssistantPersonaId, setCustomAssistantPersonaId] = useState<
     string | null
@@ -996,6 +998,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     // If auto-fill set a concrete persona, clear any "Custom" selection flags
     // by resetting the custom persona-related global state.
     setCustomPersonaName("");
+    setCustomPersonaDescription("");
     setCustomVoiceType("");
   };
 
@@ -1083,9 +1086,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     if (field.field_type === "persona") {
       if (fieldValue.value === "Custom") {
         const nameOk = (customPersonaName || "").trim().length > 0;
+        const descriptionOk =
+          (customPersonaDescription || "").trim().length > 0;
         const voiceOk =
           (customVoiceType || "").trim().length > 0 || customVoiceFile !== null;
-        return nameOk && voiceOk;
+        return nameOk && descriptionOk && voiceOk;
       }
       return fieldValue.value.trim() !== "" && fieldValue.parameterId;
     }
@@ -1361,7 +1366,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               // Create a simple custom persona with just name and voice
               const newPersona = await createPersona.mutateAsync({
                 name: customPersonaName,
-                description: voicePersona?.description,
+                description: customPersonaDescription,
                 profile_id: null,
                 temperature: 0.0, // Default temperature
                 voice: voicePersona?.voice,
@@ -1390,7 +1395,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 const createdParam = await createParameterGlobal.mutateAsync({
                   field_id: field.id,
                   name: customPersonaName,
-                  description: `Custom ${field.name || "Persona"}`,
+                  description: customPersonaDescription,
                   value: newPersona.id,
                 });
                 if (createdParam?.id) {
@@ -1914,6 +1919,12 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                                       setCustomPersonaName={
                                         setCustomPersonaName
                                       }
+                                      customPersonaDescription={
+                                        customPersonaDescription
+                                      }
+                                      setCustomPersonaDescription={
+                                        setCustomPersonaDescription
+                                      }
                                       customVoiceType={customVoiceType}
                                       setCustomVoiceType={setCustomVoiceType}
                                       customVoiceFile={customVoiceFile}
@@ -1975,6 +1986,8 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
                 selectedParameterId={fieldValue.parameterId}
                 customPersonaName={customPersonaName}
                 setCustomPersonaName={setCustomPersonaName}
+                customPersonaDescription={customPersonaDescription}
+                setCustomPersonaDescription={setCustomPersonaDescription}
                 customVoiceType={customVoiceType}
                 setCustomVoiceType={setCustomVoiceType}
                 customVoiceFile={customVoiceFile}
