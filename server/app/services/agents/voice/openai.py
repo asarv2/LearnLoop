@@ -507,7 +507,7 @@ class OpenAIAgent(Agent):
         """Get or create pooled HTTP client for CTC alignment calls."""
         if self._http_client is None:
             import httpx  # type: ignore
-            self._http_client = httpx.AsyncClient(timeout=10.0)
+            self._http_client = httpx.AsyncClient(timeout=30.0)
         return self._http_client
 
     async def _download_persona_audio(self, persona_id: str) -> bytes | None:
