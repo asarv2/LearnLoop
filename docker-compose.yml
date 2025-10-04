@@ -117,7 +117,7 @@ services:
           devices:
             - driver: nvidia
               capabilities: [gpu]
-              device_ids: ["1"]
+              device_ids: ["0"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
