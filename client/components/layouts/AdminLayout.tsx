@@ -101,17 +101,8 @@ const getUserMenuItems = (
         },
       });
     }
-  } else if (activeProfile?.role === "admin" && !isEmulating) {
-    // Admin can switch to employee view
-    items.push({
-      key: "switch-to-employee",
-      icon: <SwapOutlined />,
-      label: "Switch to Employee View",
-      onClick: async () => {
-        await startEmulation("employee");
-      },
-    });
   }
+  // Admins can only see admin view - no emulation options
 
   // Stop emulation option removed - users can switch back to their actual role instead
 

@@ -36,16 +36,11 @@ async function canEmulateViewMode(
     return { allowed: true };
   }
 
-  // Regular admins can only emulate employee view mode
-  if (requesterRole === "admin" && targetViewMode === "employee") {
-    return { allowed: true };
-  }
-
-  // Admin trying to emulate admin or superadmin (not allowed)
-  if (requesterRole === "admin" && targetViewMode !== "employee") {
+  // Regular admins cannot emulate any view mode - they can only see admin view
+  if (requesterRole === "admin") {
     return {
       allowed: false,
-      reason: "Admins can only emulate employee view mode",
+      reason: "Admins can only see admin view - no emulation allowed",
     };
   }
 
