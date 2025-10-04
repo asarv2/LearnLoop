@@ -24,6 +24,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Lifespan event handler for model warmup."""
     logger.info("Starting up model service...")
     extensions.warm_all_models()
+
+    # --- ADD THESE TWO LINES ---
+    extensions.warm_chatterbox_once()     # one-shot tiny TTS to JIT/cold-start
+    extensions.spawn_tts_heartbeat()      # keep CUDA context & model warm
+
     logger.info("Model service startup complete")
     yield
 
@@ -81,6 +86,7 @@ class HealthResponse(BaseModel):
     status: str
     models_loaded: dict[str, bool]
     device: str | None = None
+    last_tts_warm_ts: float | None = None
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -111,6 +117,7 @@ async def health_check() -> HealthResponse:
                 "chatterbox_multi": cb_ml is not None,
             },
             device=device,
+            last_tts_warm_ts=extensions.last_tts_warm_timestamp(),
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")

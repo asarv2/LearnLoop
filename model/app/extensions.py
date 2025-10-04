@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib  # For reference audio caching
 import logging
 import os
 import tempfile
+import time
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 # --- set threads early ---
@@ -577,6 +579,71 @@ def synthesize_tts(
     # 6) CPU fallback
     return synthesize_kokoro(text=text, voice="alloy", sr=sr)
 
+
+# ---------- TTS Warmup and Heartbeat ----------
+
+_last_tts_warm_ts: float | None = None
+
+def warm_chatterbox_once() -> None:
+    """Single tiny forward to populate weights/caches & compile fast paths."""
+    try:
+        import torch
+        mdl = get_chatterbox_tts() or get_chatterbox_multilingual()
+        if mdl is None or not torch.cuda.is_available():
+            return
+        # shortest possible text; avoids ref-audio, attention build-up
+        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+            _ = mdl.generate(" ")
+        torch.cuda.synchronize()
+        global _last_tts_warm_ts
+        _last_tts_warm_ts = time.time()
+        logger.info("Chatterbox TTS warmup complete.")
+    except Exception as e:
+        logger.info(f"Chatterbox warmup skipped: {e}")
+
+async def _tts_heartbeat_loop(interval_s: int) -> None:
+    """Periodically tick the model so the CUDA context and clocks stay hot."""
+    try:
+        import torch
+    except Exception:
+        torch = None  # type: ignore
+
+    while True:
+        try:
+            mdl = get_chatterbox_tts() or get_chatterbox_multilingual()
+            if mdl is not None and (torch is not None) and torch.cuda.is_available():
+                # absolutely minimal work; single token'ish path
+                with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+                    _ = mdl.generate(" ")  # DO NOT pass reference audio here
+                if torch is not None:
+                    torch.cuda.synchronize()
+                global _last_tts_warm_ts
+                _last_tts_warm_ts = time.time()
+        except Exception as e:
+            logger.debug(f"TTS heartbeat tick failed: {e}")
+        await asyncio.sleep(max(30, interval_s))
+
+def spawn_tts_heartbeat() -> None:
+    """
+    Fire-and-forget background heartbeat if enabled.
+    Configure with:
+      ENABLE_TTS_HEARTBEAT=1
+      TTS_HEARTBEAT_SECS=180   (default 180s)
+    """
+    try:
+        enable = os.getenv("ENABLE_TTS_HEARTBEAT", "1") not in ("0", "false", "False")
+        if not enable:
+            return
+        interval = int(os.getenv("TTS_HEARTBEAT_SECS", "180"))
+        loop = asyncio.get_running_loop()
+        loop.create_task(_tts_heartbeat_loop(interval))
+        logger.info(f"Spawned TTS heartbeat every {interval}s.")
+    except RuntimeError:
+        # no running loop yet (e.g., called from sync context) — ignore
+        pass
+
+def last_tts_warm_timestamp() -> Optional[float]:
+    return _last_tts_warm_ts
 
 def warm_all_models() -> None:
     """Warm up all models for faster first inference."""
