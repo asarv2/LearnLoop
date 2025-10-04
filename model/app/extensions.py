@@ -406,16 +406,15 @@ class _FastCBProxy:
         self._cond_cache: dict[tuple[str, float], Any] = {}      # key: (path, round(exag,2)) -> Conditionals
         self._lock = threading.Lock()
         
-        # Promote to fp16 for better performance
+        # Promote to fp16 for better performance (safe mode - no S3Gen to avoid cuFFT issues)
         try:
             if hasattr(mdl, 't3'):
                 mdl.t3.half()
-            if hasattr(mdl, 's3gen'):
-                mdl.s3gen.half()
             if hasattr(mdl, 'speech_emb'):
                 mdl.speech_emb = mdl.speech_emb.half()
             if hasattr(mdl, 'text_emb'):
                 mdl.text_emb = mdl.text_emb.half()
+            # Note: S3Gen stays fp32 to avoid cuFFT STFT issues with non-power-of-two windows
         except Exception:
             pass
 
@@ -444,8 +443,10 @@ class _FastCBProxy:
         self._prepare_conds_cached(audio_prompt_path, exaggeration)
 
         import torch
-        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-            # Call the vendor generate but force cfg=0.0 and optimized settings
+
+        # Remove autocast to prevent cuFFT fp16/STFT crash on non-power-of-two window sizes
+        # T3 model is still in fp16, but STFT operations stay in fp32
+        with torch.inference_mode():
             return self._m.generate(
                 text=text,
                 audio_prompt_path=None,          # we already prepared/cached
