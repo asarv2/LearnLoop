@@ -22,6 +22,12 @@ _pin_cpu_threads()
 import numpy as np
 import soundfile as sf  # type: ignore
 
+# Import torch for type checking
+try:
+    import torch  # type: ignore
+except ImportError:
+    torch = None  # type: ignore
+
 # ---------- logging & warnings ----------
 logger = logging.getLogger("model_service")
 # Ensure the 'model_service' logger is visible even under Uvicorn's logging config
@@ -172,6 +178,45 @@ def _cache_ref_wav(reference_audio: np.ndarray, src_sr: int, native_sr: int) -> 
         sf.write(outp, x, native_sr, subtype="PCM_16")
     _REF_CACHE[key] = outp
     return outp
+
+
+# ---------- Audio format normalization ----------
+def _to_pcm_f32(arr: "np.ndarray | list | torch.Tensor") -> np.ndarray:
+    """Normalize any audio array to float32 in [-1, 1] range."""
+    import numpy as np
+    try:
+        import torch  # type: ignore
+        if hasattr(arr, "detach"):  # torch.Tensor
+            arr = arr.detach().cpu().numpy()
+    except Exception:
+        pass
+
+    x = np.asarray(arr)
+    # If it's integer, normalize to [-1, 1]
+    if np.issubdtype(x.dtype, np.integer):
+        # int16 is most common; if not sure, divide by the max possible magnitude
+        max_mag = np.iinfo(x.dtype).max
+        x = x.astype(np.float32) / float(max_mag)
+    else:
+        x = x.astype(np.float32)
+
+    # If someone handed us float32 but in int16-scale, detect and fix
+    mx = float(np.max(np.abs(x))) if x.size else 0.0
+    if mx > 1.5:  # clearly not normalized
+        x = (x / (32768.0 if mx < 40000.0 else mx)).astype(np.float32)
+
+    # Safety clamp
+    return np.clip(x, -1.0, 1.0).astype(np.float32)
+
+
+def _dbg_once(name: str, x: np.ndarray) -> None:
+    """One-shot debug logging for audio format verification."""
+    if getattr(_dbg_once, name, False):
+        return
+    setattr(_dbg_once, name, True)
+    import numpy as np
+    mx = float(np.max(np.abs(x))) if x.size else 0.0
+    logger.info(f"[audio-check] {name}: dtype={x.dtype} max|x|={mx:.3f} len={x.size}")
 
 
 # ---------- Declick guard ----------
@@ -379,6 +424,8 @@ def synthesize_kokoro(text: str, voice: str = "alloy", sr: int = 48000) -> tuple
             return np.zeros(0, dtype=np.float32), sr
 
         y24 = np.concatenate(chunks, axis=0).astype(np.float32)
+        y24 = _to_pcm_f32(y24)  # normalize to [-1, 1]
+        _dbg_once("kokoro_out", y24)  # debug logging
         y = _resample_fast(y24, 24000, sr)
         return y, sr
     except Exception as e:
@@ -453,12 +500,9 @@ def synthesize_tts(
                             wav = mdl.generate(text)
 
                 # Handle both torch tensors and numpy arrays from model.generate()
-                if hasattr(wav, "detach"):  # torch tensor path
-                    y = wav.squeeze().detach().cpu().numpy().astype(np.float32)
-                else:                        # numpy / list path
-                    y = np.asarray(wav, dtype=np.float32).reshape(-1)
-                
-                # 4) Declick guard (remove static/pops) before resampling
+                y_raw = wav  # could be tensor, np array, or list
+                y = _to_pcm_f32(y_raw)  # << normalize here
+                _dbg_once("tts_out", y)  # debug logging
                 y = _declick_guard(y, sr_native)
                 
                 # 5) Keep native SR until final resample
