@@ -29,6 +29,9 @@ export default function PersonaField({
 }: PersonaFieldProps) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
   const { data: personas } = usePersonas();
+
+  // Feature flag for custom voice upload
+  const isCustomVoiceEnabled = process.env.NEXT_PUBLIC_CUSTOM_VOICE === "true";
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -609,38 +612,42 @@ export default function PersonaField({
                             );
                           })}
                         </select>
-                        <input
-                          type="file"
-                          accept=".wav,audio/*"
-                          onChange={handleVoiceFileUpload}
-                          style={{ display: "none" }}
-                          id={`voice-upload-${field.id}`}
-                        />
-                        <Button
-                          size="2"
-                          variant="soft"
-                          onClick={() =>
-                            document
-                              .getElementById(`voice-upload-${field.id}`)
-                              ?.click()
-                          }
-                          style={{
-                            background: "var(--violet-3)",
-                            color: "var(--violet-11)",
-                            border: "1px solid var(--violet-6)",
-                            borderRadius: "8px",
-                            padding: "10px 14px",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            minWidth: "auto",
-                            width: "44px",
-                            height: "44px",
-                          }}
-                        >
-                          <UploadIcon width="18" height="18" />
-                        </Button>
+                        {isCustomVoiceEnabled && (
+                          <>
+                            <input
+                              type="file"
+                              accept=".wav,audio/*"
+                              onChange={handleVoiceFileUpload}
+                              style={{ display: "none" }}
+                              id={`voice-upload-${field.id}`}
+                            />
+                            <Button
+                              size="2"
+                              variant="soft"
+                              onClick={() =>
+                                document
+                                  .getElementById(`voice-upload-${field.id}`)
+                                  ?.click()
+                              }
+                              style={{
+                                background: "var(--violet-3)",
+                                color: "var(--violet-11)",
+                                border: "1px solid var(--violet-6)",
+                                borderRadius: "8px",
+                                padding: "10px 14px",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                minWidth: "auto",
+                                width: "44px",
+                                height: "44px",
+                              }}
+                            >
+                              <UploadIcon width="18" height="18" />
+                            </Button>
+                          </>
+                        )}
                       </Flex>
                     )}
                   </Box>
