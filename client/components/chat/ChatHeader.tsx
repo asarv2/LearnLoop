@@ -140,7 +140,7 @@ export default function ChatHeader({
         style={{
           background: "transparent",
           borderBottom: "1px solid var(--gray-6)",
-          padding: "16px 24px",
+          padding: "8px 20px",
           width: "100%",
         }}
       >

@@ -16,15 +16,7 @@ import {
   PersonIcon,
 } from "@radix-ui/react-icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import {
-  Box,
-  Button,
-  Card,
-  Flex,
-  Heading,
-  Switch,
-  Text,
-} from "@radix-ui/themes";
+import { Box, Button, Card, Flex, Switch, Text } from "@radix-ui/themes";
 // Removed mic icons in favor of a consistent "Voice Mode" label
 import React, {
   startTransition,
@@ -1300,8 +1292,13 @@ export default function ChatArea({
           ref={listRef}
           style={{
             flex: 1,
-            padding: "24px",
-            overflow: "auto",
+            padding: "12px",
+            overflow:
+              visibleMessages.length === 0 &&
+              isSessionActive &&
+              !cutWin.isActive
+                ? "hidden"
+                : "auto",
             background: "white",
             display: "flex",
             flexDirection: "column",
@@ -1322,30 +1319,28 @@ export default function ChatArea({
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
-                    justifyContent: "center",
+                    justifyContent: "flex-start",
                     flex: 1,
-                    padding: "40px 20px",
+                    padding: "0px 20px 40px 20px",
+                    minHeight: "100%",
                   }}
                 >
-                  <Box mb="4">
-                    <Heading
+                  <Flex
+                    direction="column"
+                    gap="3"
+                    style={{ maxWidth: "480px", width: "100%" }}
+                  >
+                    <Text
                       size="4"
                       weight="medium"
                       style={{
                         textAlign: "center",
                         color: "var(--gray-11)",
-                        marginBottom: "16px",
+                        marginBottom: "8px",
                       }}
                     >
                       Select a prompt or type your own
-                    </Heading>
-                  </Box>
-
-                  <Flex
-                    direction="column"
-                    gap="2"
-                    style={{ maxWidth: "480px", width: "100%" }}
-                  >
+                    </Text>
                     {INTRO_MESSAGES.map((message, index) => (
                       <Button
                         key={index}
@@ -1718,7 +1713,7 @@ export default function ChatArea({
         {isSessionActive && (
           <Box
             style={{
-              padding: "24px",
+              padding: "12px",
               background: "transparent",
               flexShrink: 0,
             }}
@@ -2114,7 +2109,7 @@ export default function ChatArea({
         {isEndingSession && (
           <Box
             style={{
-              padding: "24px",
+              padding: "12px",
               background: "var(--gray-1)",
               flexShrink: 0,
             }}

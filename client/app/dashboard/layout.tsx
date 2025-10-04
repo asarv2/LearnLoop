@@ -159,7 +159,14 @@ export default function DashboardLayout({
   };
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
+    <Layout
+      style={{
+        // make the whole page a flex column that fills the viewport
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       {/* Horizontal Navigation Header */}
       <div
         style={{
@@ -170,6 +177,8 @@ export default function DashboardLayout({
           position: "sticky",
           top: 0,
           zIndex: 1000,
+          // do NOT let this grow/shrink
+          flex: "none",
         }}
       >
         <div
@@ -322,12 +331,18 @@ export default function DashboardLayout({
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* Main Content becomes the ONLY scroll container */}
       <Content
         style={{
+          // let Content fill the remaining height
+          flex: 1,
+          // this is critical for scrollable flex children
+          minHeight: 0,
+          // the scroll bar now lives here
+          overflowY: "auto",
+
           padding: "32px 24px",
           background: "#fafafa",
-          minHeight: "calc(100vh - 64px)",
         }}
       >
         <div
@@ -336,7 +351,7 @@ export default function DashboardLayout({
             borderRadius: "12px",
             boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
             padding: "32px",
-            minHeight: "calc(100vh - 128px)",
+            // let the card size to content; avoid forcing viewport math
           }}
         >
           {children}
