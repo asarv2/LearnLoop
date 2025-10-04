@@ -50,6 +50,8 @@ class TranscriptResponse(BaseModel):
     text: str
     words: list[dict[str, int | str]]
     audio_b64: str | None = None
+    sample_rate: int | None = None
+    encoding: str | None = None  # "f32le" or "s16le"
 
 
 class AlignCTCRequest(BaseModel):
@@ -258,7 +260,9 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
                 x = x[:limit]
 
         # Only return audio if we didn't receive valid audio frames
-        audio_b64 = None
+        audio_b64: str | None = None
+        sample_rate: int | None = None
+        encoding: str | None = None
         if x.size == 0 and req.reference_text:
             # No valid audio received - generate audio using unified TTS FIRST
             try:
@@ -276,6 +280,8 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
                     # Encode generated audio for return
                     audio_bytes = audio_data.astype(np.float32).tobytes()
                     audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+                    sample_rate = 48000
+                    encoding = "f32le"
                 else:
                     # Generated audio is empty, fallback to original behavior
                     tr = align_audio(x, sr, reference_text=req.reference_text, language=req.language)
@@ -292,7 +298,13 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
             for w in tr.words
         ]
         # print(f"words_data: {words_data}")
-        return TranscriptResponse(text=tr.text, words=words_data, audio_b64=audio_b64)
+        return TranscriptResponse(
+            text=tr.text, 
+            words=words_data, 
+            audio_b64=audio_b64,
+            sample_rate=sample_rate,
+            encoding=encoding
+        )
     except HTTPException:
         raise
     except Exception as e:
