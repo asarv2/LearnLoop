@@ -1,7 +1,6 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import FilePreviewModal from "@/components/chat/FilePreviewModal";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { api } from "@/lib/api/fetcher";
 import {
@@ -115,7 +114,6 @@ export default function TrainingComponent({
 
   // Document upload state for custom mode
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [documentPreviewVisible, setDocumentPreviewVisible] = useState(false);
   const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(
     null
   );
@@ -575,7 +573,21 @@ export default function TrainingComponent({
                     <Button
                       type="text"
                       icon={<EyeOutlined />}
-                      onClick={() => setDocumentPreviewVisible(true)}
+                      onClick={() => {
+                        if (uploadedDocumentId) {
+                          // Open the uploaded document in a new tab
+                          window.open(
+                            `/api/v1/documents/${uploadedDocumentId}/file`,
+                            "_blank"
+                          );
+                        } else if (uploadedFile) {
+                          // For local files, create a blob URL and open in new tab
+                          const url = URL.createObjectURL(uploadedFile);
+                          window.open(url, "_blank");
+                          // Clean up the URL after a delay
+                          setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        }
+                      }}
                       size="small"
                     >
                       Preview
@@ -991,14 +1003,6 @@ export default function TrainingComponent({
           </Col>
         )}
       </Row>
-
-      {/* Document Preview Modal */}
-      <FilePreviewModal
-        isOpen={documentPreviewVisible}
-        onClose={() => setDocumentPreviewVisible(false)}
-        file={uploadedFile || undefined}
-        documentId={uploadedDocumentId || undefined}
-      />
     </div>
   );
 }
