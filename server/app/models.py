@@ -341,6 +341,7 @@ class Scenarios(_Base, table=True):
     prompt_mapping: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompt_mapping', JSONB))
     group_ids: List[uuid.UUID] = Field(sa_column=Column('group_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
     persona_ids: List[uuid.UUID] = Field(sa_column=Column('persona_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
+    policy_ids: List[uuid.UUID] = Field(sa_column=Column('policy_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))

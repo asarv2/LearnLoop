@@ -116,14 +116,17 @@ interface WebSocketContextType {
   emitEndTraining: (data: { chat_id: string }) => void;
   emitGetHints: (data: { chat_id: string; message_id: string }) => void;
   emitCreateTraining: (data: {
-    name: string;
-    description: string;
-    document_id?: string;
-    profile_id?: string;
-    training_type?: string;
-    company?: string;
-    due_date?: string;
-    admin_created?: boolean;
+      name: string;
+      description: string;
+      document_id?: string;
+      policy_id?: string;
+      mood_parameters?: string[];
+      rubric_id?: string;
+      profile_id?: string;
+      training_type?: string;
+      company?: string;
+      due_date?: string;
+      admin_created?: boolean;
   }) => void;
 
   // Local mic stream access for UI visualizations (read-only)

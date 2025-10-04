@@ -613,6 +613,7 @@ async def create_child_scenario(
     prompts: dict[str, str],
     prompt_mapping: dict[str, str],
     document_ids: list[str],
+    policy_ids: list[str],
     parameter_ids: list[str],
     persona_ids: list[uuid.UUID],
     session: Session,
@@ -631,6 +632,7 @@ async def create_child_scenario(
         objectives=objectives,
         parent_id=parent_scenario.id,
         parameter_ids=parameter_ids,
+        policy_ids=policy_ids,
         prompts=prompts,
         prompt_mapping=prompt_mapping,
         document_ids=document_ids,
@@ -879,6 +881,7 @@ async def run_scenario_agent(
         prompts = scenario_results.get("prompts", {})
         prompt_mapping = scenario_results.get("prompt_mapping", {})
         document_ids = scenario_results.get("document_ids", [])
+        policy_ids = scenario_results.get("policy_ids", [])
 
         title = scenario_data.get("title", "")
         problem_statement = scenario_data.get("problem_statement", "")
@@ -968,6 +971,7 @@ async def run_scenario_agent(
                 prompts=prompts,
                 prompt_mapping=prompt_mapping,
                 document_ids=final_document_ids,
+                policy_ids=policy_ids,
                 parameter_ids=parameter_ids,
                 persona_ids=persona_ids,
                 session=session,
@@ -984,9 +988,9 @@ async def run_scenario_agent(
             "prompt_mapping": prompt_mapping,
             "document_ids": final_document_ids,
             "field_document_ids": field_document_ids,  # Document IDs from field_values
-            "generated_document_ids": document_ids
-            if generate_documents
+            "generated_document_ids": document_ids if generate_documents
             else [],  # Document IDs from generation
+            "policy_ids": policy_ids,
             "child_scenario_id": str(child_scenario.id) if child_scenario else None,
         }
 

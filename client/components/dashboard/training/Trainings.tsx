@@ -7,22 +7,14 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import FilePreviewModal from "@/components/chat/FilePreviewModal";
-import { useWebSocket } from "@/contexts/websocket-context";
+import CustomTrainingModal from "@/components/training/CustomTrainingModal";
 import { api } from "@/lib/api/fetcher";
-import {
-  uploadDocument,
-  useCreateDocument,
-  useDocument,
-} from "@/lib/api/hooks/useDocuments";
 import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import {
   useCustomTrainingsForUser,
   useDeleteTraining,
   useTrainingsByTypeAndCompany,
-  useUpdateTraining,
 } from "@/lib/api/hooks/useTrainings";
-import { trainingKeys } from "@/lib/api/keys";
 import type { ChatCreate } from "@/lib/repos/chatRepo";
 import {
   BulbOutlined,
@@ -31,7 +23,6 @@ import {
   DeleteOutlined,
   EditOutlined,
   ExclamationCircleOutlined,
-  EyeOutlined,
   FilterOutlined,
   HeartOutlined,
   PlayCircleOutlined,
@@ -41,36 +32,31 @@ import {
   SearchOutlined,
   TeamOutlined,
   TrophyOutlined,
-  UploadOutlined,
   UserDeleteOutlined,
 } from "@ant-design/icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Button,
   Card,
   Col,
   DatePicker,
-  Form,
   Input,
   message,
   Modal,
   Row,
   Select,
-  Space,
   Spin,
   Tabs,
   Typography,
-  Upload,
 } from "antd";
 import dayjs from "dayjs";
 import Link from "next/link";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 const { Text } = Typography;
 
 const { Title, Paragraph } = Typography;
-const { TextArea } = Input;
 
 // Array of colors and icons for training modules
 const trainingColors = [
@@ -423,455 +409,6 @@ function TrainingCard({
   );
 }
 
-// Custom Training Creation/Edit Modal
-function CreateCustomTrainingModal({
-  visible,
-  onCancel,
-  onSuccess,
-  editingTraining,
-  messageApi,
-}: {
-  visible: boolean;
-  onCancel: () => void;
-  onSuccess: () => void;
-  editingTraining?: {
-    id: string;
-    title: string;
-    description?: string | null;
-  } | null;
-  messageApi: {
-    success: (message: string) => void;
-    error: (message: string) => void;
-  };
-}) {
-  const [form] = Form.useForm();
-  const updateTraining = useUpdateTraining(editingTraining?.id || "");
-  const createDocument = useCreateDocument();
-  const [loading, setLoading] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-  const [progress, setProgress] = useState({
-    visible: false,
-    type: "",
-    message: "",
-    progress: 0,
-  });
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [documentPreviewVisible, setDocumentPreviewVisible] = useState(false);
-  const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(
-    null
-  );
-  const { effectiveProfile } = useAuth();
-  const { emitCreateTraining } = useWebSocket();
-  const queryClient = useQueryClient();
-
-  // Get scenarios for the training being edited to find document info
-  const { data: editScenarios } = useScenariosByTrainingId(
-    editingTraining?.id || "",
-    !!(editingTraining && visible)
-  );
-
-  // Get document info for the document being edited
-  const { data: editDocument } = useDocument(
-    uploadedDocumentId || "",
-    !!(uploadedDocumentId && editingTraining && visible)
-  );
-
-  // Listen for training creation progress events
-  React.useEffect(() => {
-    const handleProgress = (e: CustomEvent) => {
-      const data = e.detail || {};
-      setProgress({
-        visible: true,
-        type: data.type || "",
-        message: data.message || "",
-        progress: data.progress || 0,
-      });
-    };
-
-    const handleCompleted = (e: CustomEvent) => {
-      const data = e.detail || {};
-      if (data.success) {
-        setProgress({
-          visible: false,
-          type: "",
-          message: "",
-          progress: 0,
-        });
-        setIsCreating(false);
-        form.resetFields();
-
-        // Invalidate queries to refresh the training list
-        queryClient.invalidateQueries({ queryKey: trainingKeys.all });
-
-        // Call onSuccess without routing
-        onSuccess();
-      } else {
-        setIsCreating(false);
-        setProgress({
-          visible: false,
-          type: "",
-          message: "",
-          progress: 0,
-        });
-      }
-    };
-
-    window.addEventListener(
-      "trainingCreationProgress",
-      handleProgress as EventListener
-    );
-    window.addEventListener(
-      "trainingCreationCompleted",
-      handleCompleted as EventListener
-    );
-
-    return () => {
-      window.removeEventListener(
-        "trainingCreationProgress",
-        handleProgress as EventListener
-      );
-      window.removeEventListener(
-        "trainingCreationCompleted",
-        handleCompleted as EventListener
-      );
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form, onSuccess]);
-
-  const handleSubmit = async (values: {
-    scenario: string;
-    description: string;
-  }) => {
-    if (editingTraining) {
-      // Use the old API for editing
-      setLoading(true);
-      try {
-        await updateTraining.mutateAsync({
-          title: values.scenario,
-          description: values.description,
-        });
-        messageApi.success("Custom training updated successfully!");
-        form.resetFields();
-        onSuccess();
-      } catch {
-        messageApi.error("Failed to update custom training");
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      // Use WebSocket for creating new training
-      setIsCreating(true);
-      setProgress({
-        visible: true,
-        type: "generating_training",
-        message: "Creating training...",
-        progress: 0,
-      });
-
-      try {
-        let documentId: string | undefined;
-
-        // Upload document if one was selected
-        if (uploadedFile) {
-          try {
-            setProgress({
-              visible: true,
-              type: "generating_training",
-              message: "Uploading document...",
-              progress: 10,
-            });
-
-            const document = await createDocument.mutateAsync({
-              content: "",
-              profile_id: effectiveProfile?.id || null,
-              title: uploadedFile.name,
-            });
-
-            const formData = new FormData();
-            formData.append("file", uploadedFile);
-            await uploadDocument(document.id!, formData);
-
-            documentId = document.id!;
-            setUploadedDocumentId(document.id!);
-
-            setProgress({
-              visible: true,
-              type: "generating_training",
-              message: "Document uploaded, creating training...",
-              progress: 30,
-            });
-          } catch (error) {
-            console.error("Error uploading document:", error);
-            messageApi.error("Failed to upload document. Please try again.");
-            setIsCreating(false);
-            setProgress({
-              visible: false,
-              type: "",
-              message: "",
-              progress: 0,
-            });
-            return;
-          }
-        }
-
-        emitCreateTraining({
-          name: values.scenario,
-          description: values.description,
-          document_id: documentId,
-          profile_id: effectiveProfile?.id,
-          company: effectiveProfile?.company || undefined,
-        });
-      } catch (error) {
-        console.error("Error in training creation:", error);
-        messageApi.error("Failed to create training. Please try again.");
-        setIsCreating(false);
-        setProgress({
-          visible: false,
-          type: "",
-          message: "",
-          progress: 0,
-        });
-      }
-    }
-  };
-
-  // Set form values when editing
-  React.useEffect(() => {
-    if (editingTraining && visible) {
-      form.setFieldsValue({
-        scenario: editingTraining.title,
-        description: editingTraining.description || "",
-      });
-    } else if (!editingTraining && visible) {
-      form.resetFields();
-    }
-  }, [editingTraining, visible, form]);
-
-  // Set up document info when editing
-  React.useEffect(() => {
-    if (editingTraining && visible && editScenarios) {
-      // Find the root scenario (parent_id = null)
-      const rootScenario = editScenarios.find(
-        (scenario) => scenario.parent_id === null
-      );
-
-      if (
-        rootScenario &&
-        rootScenario.document_ids &&
-        rootScenario.document_ids.length > 0
-      ) {
-        // Take the first document_id
-        const documentId = rootScenario.document_ids[0];
-        setUploadedDocumentId(documentId);
-      }
-    } else if (!editingTraining) {
-      // Reset document state when not editing
-      setUploadedFile(null);
-      setUploadedDocumentId(null);
-    }
-  }, [editingTraining, visible, editScenarios]);
-
-  // Create mock file with actual document title when document data is available
-  React.useEffect(() => {
-    if (editingTraining && visible && editDocument) {
-      const mockFile = new File([], editDocument.title || "Document", {
-        type: "application/pdf",
-      });
-      setUploadedFile(mockFile);
-    }
-  }, [editingTraining, visible, editDocument]);
-
-  // Reset file state when modal is closed
-  React.useEffect(() => {
-    if (!visible) {
-      setUploadedFile(null);
-      setUploadedDocumentId(null);
-      setDocumentPreviewVisible(false);
-      setProgress({
-        visible: false,
-        type: "",
-        message: "",
-        progress: 0,
-      });
-      setIsCreating(false);
-    }
-  }, [visible]);
-
-  return (
-    <Modal
-      title={
-        editingTraining ? "Edit Custom Training" : "Create Custom Training"
-      }
-      open={visible}
-      onCancel={onCancel}
-      footer={null}
-      width={600}
-      destroyOnHidden
-    >
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleSubmit}
-        scrollToFirstError
-      >
-        <Form.Item
-          name="scenario"
-          label="Training Scenario"
-          rules={[
-            { required: true, message: "Please enter the training scenario" },
-            { min: 10, message: "Please provide at least 10 characters" },
-          ]}
-        >
-          <Input
-            placeholder="e.g., Performance Review Discussion, Client Negotiation, Team Conflict Resolution"
-            size="large"
-          />
-        </Form.Item>
-
-        <Form.Item
-          name="description"
-          label="Description"
-          rules={[
-            { required: true, message: "Please enter a description" },
-            { min: 20, message: "Please provide at least 20 characters" },
-          ]}
-        >
-          <TextArea
-            rows={4}
-            placeholder="Describe what this training will help participants learn and practice..."
-          />
-        </Form.Item>
-
-        <Form.Item name="document" label="Supporting Document (Optional)">
-          <div>
-            <Upload.Dragger
-              beforeUpload={(file) => {
-                // Validate file type
-                if (file.type !== "application/pdf") {
-                  messageApi.error("Only PDF files are supported");
-                  return false;
-                }
-                setUploadedFile(file);
-                return false; // Prevent auto upload
-              }}
-              onRemove={() => {
-                setUploadedFile(null);
-                setUploadedDocumentId(null);
-              }}
-              fileList={
-                uploadedFile
-                  ? [{ uid: "1", name: uploadedFile.name, status: "done" }]
-                  : []
-              }
-              maxCount={1}
-              accept=".pdf"
-              itemRender={(originNode, file) => {
-                return (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      marginTop: "12px",
-                      padding: "8px 12px",
-                      backgroundColor: "#fafafa",
-                      borderRadius: "6px",
-                      border: "1px solid #d9d9d9",
-                    }}
-                  >
-                    <span style={{ flex: 1 }}>{file.name}</span>
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<EyeOutlined />}
-                      onClick={() => setDocumentPreviewVisible(true)}
-                      style={{ color: "#1890ff", padding: "4px" }}
-                      title="Preview Document"
-                    />
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<DeleteOutlined />}
-                      onClick={() => {
-                        setUploadedFile(null);
-                        setUploadedDocumentId(null);
-                      }}
-                      style={{ color: "#ff4d4f", padding: "4px" }}
-                      title="Remove Document"
-                    />
-                  </div>
-                );
-              }}
-            >
-              <p className="ant-upload-drag-icon">
-                <UploadOutlined />
-              </p>
-              <p className="ant-upload-text">
-                Click or drag PDF file to this area to upload
-              </p>
-              <p className="ant-upload-hint">Only PDF files are supported</p>
-            </Upload.Dragger>
-          </div>
-        </Form.Item>
-
-        {/* Progress Display */}
-        {progress.visible && (
-          <div style={{ marginTop: "16px", marginBottom: "16px" }}>
-            <div style={{ marginBottom: "8px" }}>
-              <Text strong>{progress.message}</Text>
-            </div>
-            <div
-              style={{
-                width: "100%",
-                height: "8px",
-                backgroundColor: "#f0f0f0",
-                borderRadius: "4px",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${progress.progress}%`,
-                  height: "100%",
-                  backgroundColor: "#1890ff",
-                  transition: "width 0.3s ease",
-                }}
-              />
-            </div>
-            <div style={{ textAlign: "right", marginTop: "4px" }}>
-              <Text type="secondary">{progress.progress}%</Text>
-            </div>
-          </div>
-        )}
-
-        <div style={{ textAlign: "right", marginTop: "24px" }}>
-          <Space>
-            <Button onClick={onCancel} disabled={isCreating}>
-              Cancel
-            </Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={loading || isCreating}
-              icon={<PlusOutlined />}
-            >
-              {editingTraining ? "Update Training" : "Create Training"}
-            </Button>
-          </Space>
-        </div>
-      </Form>
-
-      {/* Document Preview Modal */}
-      <FilePreviewModal
-        isOpen={documentPreviewVisible}
-        onClose={() => setDocumentPreviewVisible(false)}
-        file={uploadedFile || undefined}
-        documentId={uploadedDocumentId || undefined}
-      />
-    </Modal>
-  );
-}
-
 // Tab content component for each training type
 function TrainingTabContent({
   type,
@@ -907,7 +444,9 @@ function TrainingTabContent({
     isLoading,
     error,
   } = useTrainingsByTypeAndCompany(type, effectiveProfile?.company || null);
-  const { data: customTrainings } = useCustomTrainingsForUser(effectiveProfile?.id);
+  const { data: customTrainings } = useCustomTrainingsForUser(
+    effectiveProfile?.id
+  );
 
   // Fetch user's chats to determine completed trainings
   const { data: chats } = useQuery({
@@ -920,7 +459,11 @@ function TrainingTabContent({
   const completedTrainingIds = useMemo(() => {
     const ids = new Set<string>();
     (chats || []).forEach((c) => {
-      if (c.completed && c.training_id && c.profile_id === effectiveProfile?.id) {
+      if (
+        c.completed &&
+        c.training_id &&
+        c.profile_id === effectiveProfile?.id
+      ) {
         ids.add(c.training_id);
       }
     });
@@ -1295,7 +838,7 @@ export default function Trainings() {
       />
 
       {/* Create Custom Training Modal */}
-      <CreateCustomTrainingModal
+      <CustomTrainingModal
         visible={createModalVisible}
         onCancel={() => {
           setCreateModalVisible(false);
@@ -1303,7 +846,6 @@ export default function Trainings() {
         }}
         onSuccess={handleCreateSuccess}
         editingTraining={editingTraining}
-        messageApi={messageApi}
       />
 
       {/* Delete Confirmation Modal */}

@@ -22,14 +22,12 @@ import {
   Card,
   Col,
   DatePicker,
-  Form,
   Input,
   Modal,
   Row,
   Select,
   Space,
   Statistic,
-  Switch,
   Table,
   Tooltip,
   Typography,
@@ -111,7 +109,10 @@ async function fetchEmployeeDetails(
   }
 }
 
-// Edit Training Modal (mini version of create)
+// Import the new unified TrainingComponent
+import TrainingComponent from "@/components/training/TrainingComponent";
+
+// Edit Training Modal using the new unified component
 function EditTrainingModal({
   visible,
   onClose,
@@ -123,104 +124,34 @@ function EditTrainingModal({
   onSaved: () => void;
   training: Partial<Training> | null;
 }) {
-  const [form] = Form.useForm();
-
-  useEffect(() => {
-    if (visible && training) {
-      form.setFieldsValue({
-        title: training.title || "",
-        description: training.description || "",
-        active: training.active ?? true,
-        training_type: training.training_type || "required",
-        due_date: training.due_date ? dayjs(training.due_date) : null,
-      });
-    } else if (!visible) {
-      form.resetFields();
-    }
-  }, [visible, training, form]);
-
-  const handleSubmit = async (values: {
-    title: string;
-    description?: string;
-    active: boolean;
-    training_type?: string;
-    due_date?: dayjs.Dayjs | null;
-  }) => {
-    if (!training?.id) return;
-    try {
-      await api(`/api/v1/trainings/${training.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          title: values.title,
-          description: values.description || null,
-          active: values.active,
-          training_type: values.training_type,
-          due_date: values.due_date ? values.due_date.toISOString() : null,
-        }),
-      });
-      message.success("Training updated successfully");
-      onSaved();
-      onClose();
-    } catch {
-      message.error("Failed to update training");
-    }
+  const handleSuccess = () => {
+    onSaved();
+    onClose();
   };
 
   return (
-    <Modal
-      title="Edit Training"
-      open={visible}
+    <TrainingComponent
+      training_id={training?.id}
+      editingTraining={
+        training?.id
+          ? {
+              id: training.id,
+              title: training.title || "",
+              description: training.description,
+              training_type: training.training_type,
+              active: training.active,
+              due_date: training.due_date,
+            }
+          : null
+      }
+      custom={training?.training_type === "custom"}
+      asModal={true}
+      visible={visible}
       onCancel={onClose}
-      footer={null}
-      width={640}
-      destroyOnClose
-    >
-      <Form form={form} layout="vertical" onFinish={handleSubmit}>
-        <Form.Item
-          name="title"
-          label="Training Name"
-          rules={[{ required: true, message: "Please enter a title" }]}
-        >
-          <Input placeholder="Enter training name" />
-        </Form.Item>
-
-        <Form.Item name="description" label="Description">
-          <Input.TextArea rows={4} placeholder="Enter description" />
-        </Form.Item>
-
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="training_type" label="Type">
-              <Select
-                options={[
-                  { label: "Standard", value: "standard" },
-                  { label: "Required", value: "required" },
-                  { label: "Custom", value: "custom" },
-                ]}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="due_date" label="Due Date">
-              <DatePicker style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Form.Item name="active" label="Active" valuePropName="checked">
-          <Switch />
-        </Form.Item>
-
-        <div style={{ textAlign: "right" }}>
-          <Space>
-            <Button onClick={onClose}>Cancel</Button>
-            <Button type="primary" htmlType="submit">
-              Save Changes
-            </Button>
-          </Space>
-        </div>
-      </Form>
-    </Modal>
+      onSuccess={handleSuccess}
+      title="Edit Training"
+      showGuidelines={false}
+    />
   );
 }
 

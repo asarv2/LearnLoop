@@ -533,7 +533,7 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
                 due_date=due_date,
                 active=True,
                 practice=False,
-                show_documents=True,
+                show_documents=False,
             )
             db_session.add(training)
             db_session.commit()
@@ -646,11 +646,11 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
             mood_params_with_values = [p for p in original_mood_params if p.value is not None]
             custom_mood_param = next((p for p in original_mood_params if p.value is None), None)
             
-            # Filter mood parameters based on what was sent from client
+            # Filter mood parameters based on parameter IDs sent from client
             selected_mood_params = []
             if mood_parameters:
-                for mood_value in mood_parameters:
-                    matching_param = next((p for p in mood_params_with_values if p.value == mood_value), None)
+                for mood_param_id in mood_parameters:
+                    matching_param = next((p for p in original_mood_params if str(p.id) == mood_param_id), None)
                     if matching_param:
                         selected_mood_params.append(matching_param)
 
