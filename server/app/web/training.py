@@ -453,7 +453,9 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
         training_type = data.get("training_type", "custom")  # Default to custom
         company = data.get("company")  # Company assignment
         due_date_str = data.get("due_date")  # Due date for required trainings
-        admin_created = data.get("admin_created", False)  # Flag for admin creation
+        policy_id = data.get("policy_id")
+        mood_parameters = data.get("mood_parameters")
+        rubric_id = data.get("rubric_id")
 
         # Parse due_date if provided
         due_date = None
@@ -552,17 +554,26 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
                 room=sid,
             )
 
+            # create new group, with differnt mood_id and persona_id
+            group = Groups(
+                mood_id=uuid.UUID(mood_parameters[0]) if mood_parameters else None,
+                persona_id=uuid.UUID(persona_parameters[0]) if persona_parameters else None,
+            )
+            db_session.add(group)
+            db_session.commit()
+            db_session.refresh(group)
+
             # Create scenario entry with the specified group_id and rubric_id
             group_id = uuid.UUID("8b6ed9ac-bfb7-4f31-992b-73935f6560bf")
-            rubric_id = uuid.UUID("a121c3fe-7559-41cf-bbcd-499a2f515af6")  # General rubric
             scenario = Scenarios(
                 title=name,
                 description=description,
                 training_id=training.id,
-                rubric_id=rubric_id,
+                rubric_id=uuid.UUID(rubric_id) if rubric_id else None,
                 group_ids=[group_id],
                 objectives=[],
                 parameter_ids=[],
+                policy_ids=[uuid.UUID(policy_id) if policy_id else None],
                 document_ids=[uuid.UUID(document_id)] if document_id else [],
                 prompts={},
                 prompt_mapping={},

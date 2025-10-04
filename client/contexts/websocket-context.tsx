@@ -1307,6 +1307,9 @@ export function WebSocketProvider({
       name: string;
       description: string;
       document_id?: string;
+      policy_id?: string;
+      mood_parameters?: string[];
+      rubric_id?: string;
       profile_id?: string;
       training_type?: string;
       company?: string;

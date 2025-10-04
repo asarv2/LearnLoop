@@ -2,6 +2,8 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
+import { useGroup } from "@/lib/api/hooks/useGroups";
+import { useParametersByField } from "@/lib/api/hooks/useParameters";
 import { trainingKeys } from "@/lib/api/keys";
 import type { Rubric } from "@/types";
 import {
@@ -58,6 +60,17 @@ export default function AdminCreatePage() {
   const queryClient = useQueryClient();
   const [messageApi, contextHolder] = message.useMessage();
 
+  // Fetch the general group to get mood_field_id
+  const generalGroupId = "8b6ed9ac-bfb7-4f31-992b-73935f6560bf";
+  const { data: generalGroup, isLoading: loadingGroup } =
+    useGroup(generalGroupId);
+
+  // Fetch mood parameters using the mood_field_id from the group
+  const { data: moodParameters, isLoading: loadingMoodParameters } =
+    useParametersByField(
+      generalGroup?.mood_field_id || "",
+      !!generalGroup?.mood_field_id
+    );
   // Fetch policies and rubrics on component mount
   useEffect(() => {
     const fetchPolicies = async () => {
@@ -368,20 +381,15 @@ export default function AdminCreatePage() {
                   maxCount={4}
                   size="large"
                   style={{ width: "100%" }}
-                  options={[
-                    { value: "happy", label: "Happy" },
-                    { value: "frustrated", label: "Frustrated" },
-                    { value: "neutral", label: "Neutral" },
-                    { value: "excited", label: "Excited" },
-                    { value: "calm", label: "Calm" },
-                    { value: "stressed", label: "Stressed" },
-                    { value: "confident", label: "Confident" },
-                    { value: "nervous", label: "Nervous" },
-                    { value: "angry", label: "Angry" },
-                    { value: "sad", label: "Sad" },
-                    { value: "impatient", label: "Impatient" },
-                    { value: "enthusiastic", label: "Enthusiastic" },
-                  ]}
+                  loading={loadingGroup || loadingMoodParameters}
+                  options={
+                    moodParameters
+                      ?.filter((param) => param.value !== null) // Filter out custom option
+                      ?.map((param) => ({
+                        value: param.value!,
+                        label: param.name,
+                      })) || []
+                  }
                 />
               </Form.Item>
 
