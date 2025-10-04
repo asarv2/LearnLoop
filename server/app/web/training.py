@@ -717,7 +717,7 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
             logger.info(f"Created scenario {scenario.id} with group_id {group.id} and rubric_id {rubric_id}")
 
             # Only generate document template if document_id is provided
-            if document_id:
+            if document_id and training_type != "custom":
                 # Emit progress update: generating document
                 await sio.emit(
                     "training_creation_progress",
