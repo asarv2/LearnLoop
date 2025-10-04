@@ -164,12 +164,24 @@ def get_whisper_tiny(device_hint: str = "auto") -> Any:
 # ---------- Reference audio caching ----------
 _REF_CACHE: dict[str, str] = {}  # key: sha1 of raw ref audio bytes -> path to tmp wav
 
-def _cache_ref_wav(reference_audio: np.ndarray, src_sr: int, native_sr: int) -> str:
-    """Cache reference audio to avoid re-deriving embeddings."""
+def _cache_ref_wav(
+    reference_audio: np.ndarray,
+    src_sr: int | None,
+    native_sr: int,
+) -> str:
+    """Cache reference audio to avoid re-deriving embeddings.
+
+    Args:
+        reference_audio: PCM float32 mono samples.
+        src_sr: Original sample rate of ``reference_audio``.  If ``None`` we
+            assume it's already at ``native_sr``.
+        native_sr: Sample rate required by the downstream model.
+    """
     key = hashlib.sha1(reference_audio.tobytes()).hexdigest()
     if key in _REF_CACHE:
         return _REF_CACHE[key]
     x = reference_audio.astype(np.float32).reshape(-1)
+    src_sr = int(src_sr) if src_sr else native_sr
     if src_sr != native_sr:
         x = _resample_fast(x, src_sr, native_sr)
     td = tempfile.gettempdir()
@@ -464,6 +476,7 @@ def synthesize_tts(
     language: str | None = None,
     prefer_multilingual: bool = False,
     reference_audio: np.ndarray | None = None,
+    reference_audio_sr: int | None = None,
 ) -> tuple[np.ndarray, int]:
     """
     Optimized TTS with fast Chatterbox mode, reference caching, and declick guard.
@@ -487,7 +500,11 @@ def synthesize_tts(
                 
                 # 2) Reference audio caching (avoid re-deriving embeddings)
                 if reference_audio is not None and reference_audio.size > 0:
-                    audio_prompt_path = _cache_ref_wav(reference_audio, sr, sr_native)
+                    audio_prompt_path = _cache_ref_wav(
+                        reference_audio,
+                        reference_audio_sr if reference_audio_sr else sr,
+                        sr_native,
+                    )
                     # Note: Chatterbox may not support audio_prompt_path parameter
                     # We'll try it but fall back to text-only if it fails
                     try:

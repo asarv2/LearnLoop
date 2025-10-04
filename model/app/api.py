@@ -218,38 +218,54 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
 
     import numpy as np  # type: ignore
 
-    def _try_decode(raw: bytes) -> "np.ndarray":
-        # Try float32 in [-1,1]
+    def _decode_audio(raw: bytes) -> tuple["np.ndarray", int | None]:
+        """Decode base64 payload into mono float32 samples and detect sample rate."""
+        import io
+
+        try:
+            with io.BytesIO(raw) as bio:
+                audio, sr_detected = sf.read(bio, dtype="float32")
+            if audio.ndim > 1:
+                audio = np.mean(audio, axis=1)
+            return audio.astype(np.float32, copy=False), int(sr_detected)
+        except Exception:
+            pass
+
         if len(raw) % 4 == 0:
             x_f32 = np.frombuffer(raw, dtype=np.float32)
-            # Consider it float32 only if it "looks like" audio
             if np.isfinite(x_f32).all():
                 mx = float(np.max(np.abs(x_f32))) if x_f32.size else 0.0
                 if 0.0 < mx <= 1.001:
-                    return x_f32.astype(np.float32, copy=False)
-        # Fallback int16 → float32[-1,1]
-        return (np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0)
+                    return x_f32.astype(np.float32, copy=False), None
+
+        x_i16 = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        return x_i16, None
 
     try:
         # Decode audio
         raw = base64.b64decode(req.audio_b64)
-        x = _try_decode(raw)
+        x, _ = _decode_audio(raw)
 
         x = x.astype(np.float32)
         sr = int(req.sr)
 
         # NEW: Handle reference audio if provided
         ref_audio = None
+        ref_audio_sr: int | None = None
         if req.reference_audio_b64:
             try:
                 ref_raw = base64.b64decode(req.reference_audio_b64)
-                ref_audio = _try_decode(ref_raw).astype(np.float32)
+                ref_audio, ref_audio_sr = _decode_audio(ref_raw)
+                ref_audio = ref_audio.astype(np.float32)
                 # Use reference audio for better alignment
                 # This could involve cross-correlation or other alignment techniques
-                logger.info(f"Using reference audio for alignment: {len(ref_audio)} samples")
+                logger.info(
+                    f"Using reference audio for alignment: {len(ref_audio)} samples sr={ref_audio_sr or 'unknown'}"
+                )
             except Exception as e:
                 logger.warning(f"Failed to decode reference audio: {e}")
                 ref_audio = None
+                ref_audio_sr = None
 
         # If partial, truncate to num_chunks * chunk_ms
         if (req.stage or "final").lower() == "partial" and int(req.num_chunks or 0) > 0:
@@ -271,7 +287,8 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
                     sr=48000,
                     language=req.language,          # will be used if Chatterbox multilingual is active
                     prefer_multilingual=False,       # flip to True if you want multilingual first
-                    reference_audio=ref_audio if req.reference_audio_b64 else None  # Pass reference audio
+                    reference_audio=(ref_audio if req.reference_audio_b64 else None),
+                    reference_audio_sr=ref_audio_sr,
                 )
                 if audio_data.size > 0:
                     # NOW align using the generated audio (skip Whisper since we have reference text)
