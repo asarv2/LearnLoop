@@ -12,10 +12,16 @@ from app.db import get_session
 from app.extensions import load_prompt
 from app.models import Documents
 from app.services.agents.generic import GenericAgent
+from app.utils.document import (convert_pdf_to_images,
+                                get_document_base64_and_content)
 from app.utils.tools_args_model import (build_args_model_from_spec,
                                         make_flat_tool_from_args_model)
 from dotenv import load_dotenv
 from fastapi import Depends
+from openai.types.responses import (EasyInputMessageParam,
+                                    ResponseInputImageParam,
+                                    ResponseInputMessageContentListParam,
+                                    ResponseInputTextParam)
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -613,7 +619,7 @@ async def create_child_scenario(
     prompts: dict[str, str],
     prompt_mapping: dict[str, str],
     document_ids: list[str],
-    policy_ids: list[str],
+    policy_ids: list[uuid.UUID],
     parameter_ids: list[str],
     persona_ids: list[uuid.UUID],
     session: Session,
@@ -649,6 +655,7 @@ async def create_child_scenario(
 async def run_scenario_agent(
     scenario_id: uuid.UUID,
     field_values: list[dict],
+    policy_ids: list[uuid.UUID],
     persona_ids: list[uuid.UUID],
     additional_context: str | None = None,
     create_child: bool = True,
@@ -705,6 +712,72 @@ async def run_scenario_agent(
             field_values, session, scenario_id, persona_ids, persona_aliases
         )
 
+        # Get policy content for each policy_id with full image/text processing
+        policy_content_items: ResponseInputMessageContentListParam = []
+        
+        for policy_id in policy_ids:
+            try:
+                # Get policy as base64 and extract content
+                policy_data = await get_document_base64_and_content(
+                    str(policy_id), session
+                )
+                policy_base64 = policy_data["base64"]
+                policy_content = policy_data["content"]
+                
+                # Prepare content with proper typing
+                content: ResponseInputMessageContentListParam = []
+                
+                # Add content - either images OR text, but not both
+                if policy_base64:
+                    try:
+                        # Convert PDF to images
+                        logger.info(f"Converting policy PDF to images for {policy_id}")
+                        image_base64_list = convert_pdf_to_images(policy_base64)
+                        
+                        if image_base64_list:
+                            # Add all pages as images
+                            for i, image_base64 in enumerate(image_base64_list):
+                                image_item: ResponseInputImageParam = {
+                                    "type": "input_image",
+                                    "image_url": f"data:image/png;base64,{image_base64}",
+                                    "detail": "auto",
+                                }
+                                content.append(image_item)
+                                logger.info(f"Added policy PDF page {i+1} as image for {policy_id}")
+                            
+                            logger.info(f"Added {len(image_base64_list)} policy PDF pages as images for {policy_id}")
+                        else:
+                            logger.warning(f"Failed to convert policy PDF to images for {policy_id}, falling back to text content")
+                            # Fall back to text content if image conversion fails
+                            if policy_content:
+                                fallback_text_item: ResponseInputTextParam = {
+                                    "type": "input_text",
+                                    "text": f"Here is the extracted text content from the policy:\n\n{policy_content}",
+                                }
+                                content.append(fallback_text_item)
+                                logger.info(f"Added policy text content as fallback for {policy_id}")
+                    except Exception as e:
+                        logger.warning(f"Error processing policy PDF for {policy_id}: {e}, falling back to text content")
+                        # Fall back to text content if image processing fails
+                        if policy_content:
+                            fallback_text_item_2: ResponseInputTextParam = {
+                                "type": "input_text",
+                                "text": f"Here is the extracted text content from the policy:\n\n{policy_content}",
+                            }
+                            content.append(fallback_text_item_2)
+                            logger.info(f"Added policy text content as fallback for {policy_id}")
+                elif policy_content:
+                    # No PDF available, use text content
+                    no_pdf_text_item: ResponseInputTextParam = {
+                        "type": "input_text",
+                        "text": f"Here is the extracted text content from the policy:\n\n{policy_content}",
+                    }
+                    content.append(no_pdf_text_item)
+                    logger.info(f"Added policy text content (no PDF available) for {policy_id}")
+                
+            except Exception as e:
+                logger.warning(f"Failed to retrieve policy content for {policy_id}: {e}")
+
         # Build context from persona_ids and additional_context
         from agents.items import TResponseInputItem
 
@@ -722,8 +795,6 @@ async def run_scenario_agent(
                 }
             )
 
-        # Combine all context
-        history = context_items + parameter_history
 
         # Get the scenario prompt from the markdown file
         system_prompt = await get_scenario_prompt()
@@ -770,7 +841,11 @@ async def run_scenario_agent(
             context_items.append({"role": "developer", "content": tools_info_content})
 
         # Update history with tools information
-        history = parameter_history + context_items
+        policy_content_message: EasyInputMessageParam = {
+            "role": "developer",
+            "content": policy_content_items,
+        }
+        history = parameter_history + context_items + [policy_content_message]
 
         # Build persona existence map from the personas we already fetched for context
         persona_exists_map = {}
