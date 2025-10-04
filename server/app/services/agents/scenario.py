@@ -655,13 +655,14 @@ async def create_child_scenario(
 async def run_scenario_agent(
     scenario_id: uuid.UUID,
     field_values: list[dict],
+    original_document_ids: list[str],
     policy_ids: list[uuid.UUID],
     persona_ids: list[uuid.UUID],
     additional_context: str | None = None,
     create_child: bool = True,
     session: Session = Depends(get_session),
     socket_id: str | None = None,
-    generate_documents: bool = True,
+    generate_documents: bool = True
 ) -> dict[str, Any]:
     """
     This function is used to run the scenario agent.
@@ -676,7 +677,7 @@ async def run_scenario_agent(
         session: Database session
         socket_id: Optional socket ID for progress events
         generate_documents: Whether to include document generation tools (default: True)
-
+        original_document_ids: List of original document IDs to use for the scenario (default: [])
     Returns:
         A dictionary containing scenario analysis and metadata.
     """
@@ -778,6 +779,71 @@ async def run_scenario_agent(
             except Exception as e:
                 logger.warning(f"Failed to retrieve policy content for {policy_id}: {e}")
 
+        original_document_content_items: ResponseInputMessageContentListParam = []
+        for original_document_id in original_document_ids:
+            try:
+                # Get original document as base64 and extract content
+                original_document_data = await get_document_base64_and_content(
+                    original_document_id, session
+                )
+                original_document_base64 = original_document_data["base64"]
+                original_document_content = original_document_data["content"]
+                
+                # Prepare content with proper typing
+                doc_content: ResponseInputMessageContentListParam = []
+                
+                # Add content - either images OR text, but not both
+                if original_document_base64:
+                    try:
+                        # Convert PDF to images
+                        logger.info(f"Converting original document PDF to images for {original_document_id}")
+                        image_base64_list = convert_pdf_to_images(original_document_base64)
+                        
+                        if image_base64_list:
+                            # Add all pages as images
+                            for i, image_base64 in enumerate(image_base64_list):
+                                doc_image_item: ResponseInputImageParam = {
+                                    "type": "input_image",
+                                    "image_url": f"data:image/png;base64,{image_base64}",
+                                    "detail": "auto",
+                                }
+                                doc_content.append(doc_image_item)
+                                logger.info(f"Added original document PDF page {i+1} as image for {original_document_id}")
+                            
+                            logger.info(f"Added {len(image_base64_list)} original document PDF pages as images for {original_document_id}")
+                        else:
+                            logger.warning(f"Failed to convert original document PDF to images for {original_document_id}, falling back to text content")
+                            # Fall back to text content if image conversion fails
+                            if original_document_content:
+                                doc_fallback_text_item: ResponseInputTextParam = {
+                                    "type": "input_text",
+                                    "text": f"Here is the extracted text content from the original document:\n\n{original_document_content}",
+                                }
+                                doc_content.append(doc_fallback_text_item)
+                                logger.info(f"Added original document text content as fallback for {original_document_id}")
+                    except Exception as e:
+                        logger.warning(f"Error processing original document PDF for {original_document_id}: {e}, falling back to text content")
+                        # Fall back to text content if image processing fails
+                        if original_document_content:
+                            doc_error_fallback_text: ResponseInputTextParam = {
+                                "type": "input_text",
+                                "text": f"Here is the extracted text content from the original document:\n\n{original_document_content}",
+                            }
+                            doc_content.append(doc_error_fallback_text)
+                            logger.info(f"Added original document text content as fallback for {original_document_id}")
+                elif original_document_content:
+                    # No PDF available, use text content
+                    doc_text_only_item: ResponseInputTextParam = {
+                        "type": "input_text",
+                        "text": f"Here is the extracted text content from the original document:\n\n{original_document_content}",
+                    }
+                    doc_content.append(doc_text_only_item)
+                    logger.info(f"Added original document text content (no PDF available) for {original_document_id}")
+                original_document_content_items.extend(doc_content)
+            except Exception as e:
+                logger.warning(f"Failed to retrieve original document content for {original_document_id}: {e}")
+
+        
         # Build context from persona_ids and additional_context
         from agents.items import TResponseInputItem
 
@@ -792,6 +858,15 @@ async def run_scenario_agent(
                 {
                     "role": "developer",
                     "content": f"Additional context: {additional_context}",
+                }
+            )
+        
+        # Add context about original documents if any are provided
+        if original_document_ids:
+            context_items.append(
+                {
+                    "role": "developer",
+                    "content": f"Original documents provided: {len(original_document_ids)} document(s) that should be used as reference material for generating the scenario. These documents contain important context and information that should inform the scenario generation.",
                 }
             )
 
@@ -847,6 +922,13 @@ async def run_scenario_agent(
             history.append({
                 "role": "user",
                 "content": policy_content_items,
+            })
+        
+        # Add original document content if there's actual content
+        if original_document_content_items:
+            history.append({
+                "role": "user",
+                "content": original_document_content_items,
             })
 
         # Validate that all messages have content before sending to AI model
@@ -983,7 +1065,6 @@ async def run_scenario_agent(
         prompts = scenario_results.get("prompts", {})
         prompt_mapping = scenario_results.get("prompt_mapping", {})
         document_ids = scenario_results.get("document_ids", [])
-        policy_ids = scenario_results.get("policy_ids", [])
 
         title = scenario_data.get("title", "")
         problem_statement = scenario_data.get("problem_statement", "")
@@ -1033,6 +1114,7 @@ async def run_scenario_agent(
         if generate_documents:
             all_document_ids.extend(document_ids)
         all_document_ids.extend(field_document_ids)
+        all_document_ids.extend(original_document_ids)
 
         # Remove duplicates while preserving order
         final_document_ids = list(dict.fromkeys(all_document_ids))
@@ -1088,6 +1170,7 @@ async def run_scenario_agent(
             "objectives": objectives,
             "prompts": prompts,
             "prompt_mapping": prompt_mapping,
+            "original_document_ids": original_document_ids,
             "document_ids": final_document_ids,
             "field_document_ids": field_document_ids,  # Document IDs from field_values
             "generated_document_ids": document_ids if generate_documents

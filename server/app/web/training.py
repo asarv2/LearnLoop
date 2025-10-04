@@ -1766,6 +1766,7 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 # Use the centralized scenario agent - it will handle everything including child scenario creation
                 result = await run_scenario_agent(
                     scenario_id=uuid.UUID(parent_id),
+                    original_document_ids=[str(d) for d in parent.document_ids],
                     policy_ids=parent.policy_ids,
                     field_values=field_values,
                     persona_ids=persona_ids_from_payload_uuids,
