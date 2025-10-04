@@ -513,29 +513,29 @@ def synthesize_tts(
                         # 3) Fast generation with CUDA optimizations
                         if torch.cuda.is_available():
                             with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-                                wav = mdl.generate(text, audio_prompt_path=audio_prompt_path, cfg_weight=0.0)
+                                wav = mdl.generate(text, audio_prompt_path=audio_prompt_path)
                             torch.cuda.synchronize()
                         else:
                             with torch.inference_mode():
-                                wav = mdl.generate(text, audio_prompt_path=audio_prompt_path, cfg_weight=0.0)
+                                wav = mdl.generate(text, audio_prompt_path=audio_prompt_path)
                     except TypeError:
                         # Fallback to text-only generation
                         if torch.cuda.is_available():
                             with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-                                wav = mdl.generate(text, cfg_weight=0.0)
+                                wav = mdl.generate(text)
                             torch.cuda.synchronize()
                         else:
                             with torch.inference_mode():
-                                wav = mdl.generate(text, cfg_weight=0.0)
+                                wav = mdl.generate(text)
                 else:
                     # 3) Fast generation with CUDA optimizations (text-only)
                     if torch.cuda.is_available():
                         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-                            wav = mdl.generate(text, cfg_weight=0.0)
+                            wav = mdl.generate(text)
                         torch.cuda.synchronize()
                     else:
                         with torch.inference_mode():
-                            wav = mdl.generate(text, cfg_weight=0.0)
+                            wav = mdl.generate(text)
 
                 # Handle both torch tensors and numpy arrays from model.generate()
                 y_raw = wav  # could be tensor, np array, or list
@@ -593,7 +593,7 @@ def warm_chatterbox_once() -> None:
             return
         # shortest possible text; avoids ref-audio, attention build-up
         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-            _ = mdl.generate(" ", cfg_weight=0.0)
+            _ = mdl.generate(" ")
         torch.cuda.synchronize()
         global _last_tts_warm_ts
         _last_tts_warm_ts = time.time()
@@ -614,7 +614,7 @@ async def _tts_heartbeat_loop(interval_s: int) -> None:
             if mdl is not None and (torch is not None) and torch.cuda.is_available():
                 # absolutely minimal work; single token'ish path
                 with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-                    _ = mdl.generate(" ", cfg_weight=0.0)  # DO NOT pass reference audio here
+                    _ = mdl.generate(" ")  # DO NOT pass reference audio here
                 if torch is not None:
                     torch.cuda.synchronize()
                 global _last_tts_warm_ts
