@@ -120,8 +120,9 @@ export default function DashboardLayout({
     signOut,
     loading,
     isProfileLoading,
+    showWelcomeModal,
+    setShowWelcomeModal,
   } = useAuth();
-  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
 
   // Redirect logic is now handled centrally in AuthProvider
 

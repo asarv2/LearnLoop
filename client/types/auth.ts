@@ -26,4 +26,8 @@ export interface EnhancedAuthContextType {
   // New view mode emulation methods
   startEmulation: (viewMode: ViewMode) => Promise<boolean>;
   stopEmulation: () => void;
+
+  // Welcome modal state
+  showWelcomeModal: boolean;
+  setShowWelcomeModal: (show: boolean) => void;
 }

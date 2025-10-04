@@ -24,6 +24,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const supabase = useSupabaseBrowser();
   const router = useRouter();
   const pathname = usePathname();
@@ -92,6 +93,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return userProfile as Profile;
   }, [userProfile, isEmulating, user?.user_metadata?.emulationMode]);
+
+  // Welcome modal logic - show if user hasn't viewed intro
+  useEffect(() => {
+    if (
+      !loading &&
+      !isProfileLoading &&
+      !isEffLoading &&
+      activeProfile &&
+      user &&
+      !showWelcomeModal // Don't show if already shown
+    ) {
+      // Check if user hasn't viewed the intro
+      if (activeProfile.viewed_intro === false) {
+        setShowWelcomeModal(true);
+      }
+    }
+  }, [
+    activeProfile,
+    loading,
+    isProfileLoading,
+    isEffLoading,
+    user,
+    showWelcomeModal,
+  ]);
 
   // Centralized redirect logic based on user's effective profile
   useEffect(() => {
@@ -210,6 +235,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isProfileLoading: loading || isProfileLoading || isEffLoading,
     startEmulation,
     stopEmulation,
+
+    // Welcome modal state
+    showWelcomeModal,
+    setShowWelcomeModal,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
