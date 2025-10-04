@@ -938,12 +938,6 @@ class OpenAIAgent(Agent):
             "model_name": "gpt-realtime",
             "input_audio_format": "pcm16",
             "output_audio_format": "pcm16",
-            "turn_detection": {
-                "type": "semantic_vad",
-                "create_response": True,
-                "interrupt_response": True,
-                "eagerness": "auto",
-            },
             "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"},
         }
         if realtime_voice is not None:
