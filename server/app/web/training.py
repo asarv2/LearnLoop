@@ -642,7 +642,7 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
                 db_session.refresh(custom_new_param)
                 new_persona_param_ids.append(str(custom_new_param.id))
 
-            # Use mood parameters from client data instead of random selection
+            # Use mood parameters from client data, but ensure we have exactly 4 moods
             mood_params_with_values = [p for p in original_mood_params if p.value is not None]
             custom_mood_param = next((p for p in original_mood_params if p.value is None), None)
             
@@ -653,6 +653,34 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
                     matching_param = next((p for p in original_mood_params if str(p.id) == mood_param_id), None)
                     if matching_param:
                         selected_mood_params.append(matching_param)
+            
+            # Ensure we have exactly 4 moods by randomly selecting additional ones if needed
+            import random
+            original_mood_count = len(selected_mood_params)
+            if len(selected_mood_params) < 4:
+                # Get all available mood parameters (excluding custom and already selected ones)
+                available_mood_params = [
+                    p for p in mood_params_with_values 
+                    if p not in selected_mood_params
+                ]
+                
+                # Randomly select additional moods to reach exactly 4
+                needed_count = 4 - len(selected_mood_params)
+                if len(available_mood_params) >= needed_count:
+                    additional_moods = random.sample(available_mood_params, needed_count)
+                    selected_mood_params.extend(additional_moods)
+                    logger.info(f"Autofilled {needed_count} additional moods to reach exactly 4 total moods")
+                else:
+                    # If we don't have enough available moods, use all available ones
+                    selected_mood_params.extend(available_mood_params)
+                    logger.warning(f"Only {len(selected_mood_params)} moods available, using all of them")
+            
+            # Limit to exactly 4 moods if we somehow have more
+            if len(selected_mood_params) > 4:
+                selected_mood_params = selected_mood_params[:4]
+                logger.warning("Had more than 4 moods selected, truncated to 4")
+            
+            logger.info(f"Final mood selection: {original_mood_count} user-selected, {len(selected_mood_params)} total moods")
 
             # Create new mood parameters
             new_mood_param_ids = []
