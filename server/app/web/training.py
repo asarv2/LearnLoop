@@ -716,21 +716,22 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
 
             logger.info(f"Created scenario {scenario.id} with group_id {group.id} and rubric_id {rubric_id}")
 
-            # Emit progress update: generating document
-            await sio.emit(
-                "training_creation_progress",
-                {
-                    "type": "generating_document",
-                    "message": "Generating document template...",
-                    "progress": 75,
-                },
-                room=sid,
-            )
-
-            # Get document as base64 and extract content if document_id is provided
-            document_base64 = None
-            document_content = ""
+            # Only generate document template if document_id is provided
             if document_id:
+                # Emit progress update: generating document
+                await sio.emit(
+                    "training_creation_progress",
+                    {
+                        "type": "generating_document",
+                        "message": "Generating document template...",
+                        "progress": 75,
+                    },
+                    room=sid,
+                )
+
+                # Get document as base64 and extract content
+                document_base64 = None
+                document_content = ""
                 try:
                     document_data = await get_document_base64_and_content(
                         document_id, db_session
@@ -740,109 +741,102 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
                     logger.info(f"Retrieved document {document_id} successfully")
                 except Exception as e:
                     logger.error(f"Error retrieving document {document_id}: {e}")
-                    # Continue without document
+                    await emit_error(sid, f"Failed to retrieve document: {str(e)}")
+                    return
 
-            # Call the document agent to generate template code
-            try:
-                # Prepare input for document agent with proper typing
-                content: ResponseInputMessageContentListParam = []
+                # Call the document agent to generate template code
+                try:
+                    # Prepare input for document agent with proper typing
+                    content: ResponseInputMessageContentListParam = []
 
-                # Add content - either images OR text, but not both
-                if document_base64:
-                    try:
-                        # Convert PDF to images
-                        logger.info("Converting PDF to images")
-                        image_base64_list = convert_pdf_to_images(
-                            document_base64
-                        )  # Convert all pages
+                    # Add content - either images OR text, but not both
+                    if document_base64:
+                        try:
+                            # Convert PDF to images
+                            logger.info("Converting PDF to images")
+                            image_base64_list = convert_pdf_to_images(
+                                document_base64
+                            )  # Convert all pages
 
-                        if image_base64_list:
-                            # Add all pages as images
-                            for i, image_base64 in enumerate(image_base64_list):
-                                image_item: ResponseInputImageParam = {
-                                    "type": "input_image",
-                                    "image_url": f"data:image/png;base64,{image_base64}",
-                                    "detail": "auto",
-                                }
-                                content.append(image_item)
-                                logger.info(f"Added PDF page {i+1} as image")
+                            if image_base64_list:
+                                # Add all pages as images
+                                for i, image_base64 in enumerate(image_base64_list):
+                                    image_item: ResponseInputImageParam = {
+                                        "type": "input_image",
+                                        "image_url": f"data:image/png;base64,{image_base64}",
+                                        "detail": "auto",
+                                    }
+                                    content.append(image_item)
+                                    logger.info(f"Added PDF page {i+1} as image")
 
-                            logger.info(
-                                f"Added {len(image_base64_list)} PDF pages as images"
-                            )
-                        else:
+                                logger.info(
+                                    f"Added {len(image_base64_list)} PDF pages as images"
+                                )
+                            else:
+                                logger.warning(
+                                    "Failed to convert PDF to images, falling back to text content"
+                                )
+                                # Fall back to text content if image conversion fails
+                                if document_content:
+                                    fallback_text_item_2: ResponseInputTextParam = {
+                                        "type": "input_text",
+                                        "text": f"Here is the extracted text content from the document:\n\n{document_content}",
+                                    }
+                                    content.append(fallback_text_item_2)
+                                    logger.info("Added text content as fallback")
+                        except Exception as e:
                             logger.warning(
-                                "Failed to convert PDF to images, falling back to text content"
+                                f"Error processing PDF: {e}, falling back to text content"
                             )
-                            # Fall back to text content if image conversion fails
+                            # Fall back to text content if image processing fails
                             if document_content:
-                                fallback_text_item_2: ResponseInputTextParam = {
+                                fallback_text_item: ResponseInputTextParam = {
                                     "type": "input_text",
                                     "text": f"Here is the extracted text content from the document:\n\n{document_content}",
                                 }
-                                content.append(fallback_text_item_2)
+                                content.append(fallback_text_item)
                                 logger.info("Added text content as fallback")
-                    except Exception as e:
-                        logger.warning(
-                            f"Error processing PDF: {e}, falling back to text content"
+                    elif document_content:
+                        # No PDF available, use text content
+                        no_pdf_text_item: ResponseInputTextParam = {
+                            "type": "input_text",
+                            "text": f"Here is the extracted text content from the document:\n\n{document_content}",
+                        }
+                        content.append(no_pdf_text_item)
+                        logger.info("Added text content (no PDF available)")
+
+                    # Final validation to ensure content is not empty
+                    if not content:
+                        raise ValueError(
+                            "No content available for document generation - both document_base64 and document_content are empty"
                         )
-                        # Fall back to text content if image processing fails
-                        if document_content:
-                            fallback_text_item: ResponseInputTextParam = {
-                                "type": "input_text",
-                                "text": f"Here is the extracted text content from the document:\n\n{document_content}",
-                            }
-                            content.append(fallback_text_item)
-                            logger.info("Added text content as fallback")
-                elif document_content:
-                    # No PDF available, use text content
-                    no_pdf_text_item: ResponseInputTextParam = {
-                        "type": "input_text",
-                        "text": f"Here is the extracted text content from the document:\n\n{document_content}",
-                    }
-                    content.append(no_pdf_text_item)
-                    logger.info("Added text content (no PDF available)")
 
-                # Ensure we have at least some content - if both are empty, provide fallback text
-                if not content:
-                    fallback_text: ResponseInputTextParam = {
-                        "type": "input_text",
-                        "text": f"Generate a document template for: {name}. Document structure: {description or 'No specific structure provided'}",
-                    }
-                    content.append(fallback_text)
-
-                # Final validation to ensure content is not empty
-                if not content:
-                    raise ValueError(
-                        "No content available for document generation - both document_base64 and document_content are empty"
+                    # Log content summary
+                    logger.info(
+                        f"Prepared {len(content)} content items for document generation"
                     )
 
-                # Log content summary
-                logger.info(
-                    f"Prepared {len(content)} content items for document generation"
-                )
+                    input_items: list[EasyInputMessageParam] = [
+                        {"role": "user", "content": content}
+                    ]
 
-                input_items: list[EasyInputMessageParam] = [
-                    {"role": "user", "content": content}
-                ]
-
-                result = await run_document_agent(
-                    document_type=name,
-                    document_structure=description,  # Use description as fallback
-                    context=f"Custom training template for: {name}",
-                    input_items=input_items,
-                )
-
-                args_code = result.get("args_code", "")
-                render_code = result.get("render_code", "")
-
-                if not args_code or not render_code:
-                    raise ValueError(
-                        "Document agent failed to generate complete template code"
+                    result = await run_document_agent(
+                        document_type=name,
+                        document_structure=description,  # Use description as fallback
+                        context=f"Custom training template for: {name}",
+                        input_items=input_items,
                     )
 
-                # Combine the generated code into a complete template
-                template_code = f'''"""
+                    args_code = result.get("args_code", "")
+                    render_code = result.get("render_code", "")
+
+                    if not args_code or not render_code:
+                        raise ValueError(
+                            "Document agent failed to generate complete template code"
+                        )
+
+                    # Combine the generated code into a complete template
+                    template_code = f'''"""
 {name} Template Module.
 
 Contract:
@@ -858,21 +852,23 @@ Optional:
 {render_code}
 '''
 
-                logger.info(f"Generated template code for scenario {scenario.id}")
+                    logger.info(f"Generated template code for scenario {scenario.id}")
 
-                # Upload template to Supabase Storage
-                await upload_template_to_supabase_storage(
-                    template_code, str(scenario.id)
-                )
+                    # Upload template to Supabase Storage
+                    await upload_template_to_supabase_storage(
+                        template_code, str(scenario.id)
+                    )
 
-                logger.info(
-                    f"Successfully uploaded template for scenario {scenario.id}"
-                )
+                    logger.info(
+                        f"Successfully uploaded template for scenario {scenario.id}"
+                    )
 
-            except Exception as e:
-                logger.error(f"Error generating document template: {e}")
-                await emit_error(sid, f"Failed to generate document template: {str(e)}")
-                return
+                except Exception as e:
+                    logger.error(f"Error generating document template: {e}")
+                    await emit_error(sid, f"Failed to generate document template: {str(e)}")
+                    return
+            else:
+                logger.info(f"No document_id provided, skipping document template generation for scenario {scenario.id}")
 
             # Emit completion event
             await sio.emit(
