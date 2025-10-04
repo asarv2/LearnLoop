@@ -145,8 +145,8 @@ def get_whisper_tiny(device_hint: str = "auto") -> Any:
         has_cuda = getattr(ctranslate2, "get_cuda_device_count", lambda: 0)() > 0
         device = "cuda" if (device_hint != "cpu" and has_cuda) else "cpu"
 
-        # Optimize compute type for best latency/accuracy trade on Ampere
-        compute_type = "int8_float16" if device == "cuda" else "int8"
+        # CPU = int8, many threads; GPU = float16
+        compute_type = "float16" if device == "cuda" else "int8"
         cpu_threads = os.cpu_count() or 4
 
         cache_dir = str(MODEL_CACHE_DIR / "whisper")
@@ -163,30 +163,6 @@ def get_whisper_tiny(device_hint: str = "auto") -> Any:
 
 # ---------- Reference audio caching ----------
 _REF_CACHE: dict[str, str] = {}  # key: sha1 of raw ref audio bytes -> path to tmp wav
-
-# ---------- GPU Keep-alive for performance ----------
-_LAST_GENERATION_TIME = 0.0
-
-def _gpu_keepalive() -> None:
-    """Send a tiny GEMM operation to keep GPU warm and prevent downclocking."""
-    try:
-        import time
-
-        import torch
-        global _LAST_GENERATION_TIME
-        
-        current_time = time.time()
-        # Only do keep-alive every 30 seconds
-        if current_time - _LAST_GENERATION_TIME > 30.0:
-            if torch.cuda.is_available():
-                # Tiny GEMM to wake tensor cores more reliably than zero allocate+sync
-                a = torch.randn(256, 256, device="cuda", dtype=torch.float16)
-                b = torch.randn(256, 256, device="cuda", dtype=torch.float16)
-                (a @ b).norm()  # tiny matmul; no need to sync
-                _LAST_GENERATION_TIME = current_time
-                logger.debug("GPU keep-alive GEMM sent")
-    except Exception:
-        pass
 
 def _cache_ref_wav(
     reference_audio: np.ndarray,
@@ -320,146 +296,9 @@ def _maybe_to_cuda(model: object) -> object:
         pass
     return model
 
-# ---------- Fast Chatterbox Proxy for Performance Optimization ----------
-
-import functools
-import threading
-from typing import Optional
-
-# 1) Optimize Chatterbox T3 performance with monkey-patches
-try:
-    import chatterbox.models.t3.t3 as t3mod  # type: ignore
-
-    # Fix tqdm to handle iterable correctly (Chatterbox calls tqdm(range(...), ...))
-    t3mod.tqdm = lambda iterable, **k: iterable  # just pass through the iterable
-    logger.info("Applied tqdm no-op for chatterbox T3")
-    
-    # Force max_new_tokens cap instead of using setdefault (vendor passes 1000)
-    _old_inf = t3mod.T3.inference
-    
-    def _inference_cap(self, *args, **kw):  # type: ignore
-        m = kw.get("max_new_tokens", None)
-        # Clamp even if explicitly provided by caller
-        kw["max_new_tokens"] = 80 if m is None else min(int(m), 80)
-        return _old_inf(self, *args, **kw)
-    
-    t3mod.T3.inference = _inference_cap
-    logger.info("Patched T3.inference to cap max_new_tokens at 80")
-except Exception:
-    pass
-
-# 2) Optional: Disable watermarking for performance testing
-try:
-    import perth  # type: ignore
-    perth.PerthImplicitWatermarker.apply_watermark = lambda self, wav, sample_rate: wav
-    logger.info("Watermarking disabled for performance (test mode)")
-except Exception:
-    pass
-
-# 3) Optional: Guard against UnboundLocalError in prepare_conditionals
-try:
-    import chatterbox.tts as cbtts  # type: ignore
-    _orig_prep = cbtts.ChatterboxTTS.prepare_conditionals
-
-    def _prep_guard(self, wav_fpath, exaggeration=0.5):  # type: ignore
-        try:
-            return _orig_prep(self, wav_fpath, exaggeration)
-        except NameError as e:
-            # Handle missing t3_cond_prompt_tokens when speech_cond_prompt_len is 0/None
-            logger.warning(f"prepare_conditionals edge case: {e}. Using fallback.")
-            import librosa  # type: ignore
-            import torch
-            from chatterbox.models.s3gen.s3gen import S3_SR  # type: ignore
-            from chatterbox.models.t3.t3 import Conditionals  # type: ignore
-            from chatterbox.models.t3.t3 import T3Cond  # type: ignore
-            
-            s3gen_ref_wav, _ = librosa.load(wav_fpath, sr=self.sr)
-            ref_16k_wav = librosa.resample(s3gen_ref_wav, orig_sr=self.sr, target_sr=S3_SR)
-            s3gen_ref_wav = s3gen_ref_wav[:getattr(self, 'DEC_COND_LEN', len(s3gen_ref_wav))]
-            s3gen_ref_dict = self.s3gen.embed_ref(s3gen_ref_wav, self.sr, device=self.device)
-            
-            # Create VE embed safely
-            if hasattr(self, 've') and hasattr(self.ve, 'embeds_from_wavs'):
-                ve_embed = torch.from_numpy(self.ve.embeds_from_wavs([ref_16k_wav], sample_rate=S3_SR)).mean(0, keepdim=True).to(self.device)
-            else:
-                # Fallback: create a dummy embedding
-                ve_embed = torch.zeros(1, 256, device=self.device)
-            
-            self.conds = Conditionals(T3Cond(
-                speaker_emb=ve_embed,
-                cond_prompt_speech_tokens=None,  # Explicitly None for edge case
-                emotion_adv=exaggeration * torch.ones(1,1,1, device=self.device)
-            ).to(device=self.device), s3gen_ref_dict)
-            return self.conds
-    
-    cbtts.ChatterboxTTS.prepare_conditionals = _prep_guard
-    logger.info("Patched prepare_conditionals to guard missing prompt tokens")
-except Exception:
-    pass
-
-class _FastCBProxy:
-    """Optimized wrapper around ChatterboxTTS to eliminate major performance bottlenecks."""
-    
-    def __init__(self, mdl: Any) -> None:
-        self._m = mdl
-        self.sr = getattr(mdl, "sr", 24000)
-        self._cond_cache: dict[tuple[str, float], Any] = {}      # key: (path, round(exag,2)) -> Conditionals
-        self._lock = threading.Lock()
-        
-        # Promote to fp16 for better performance
-        try:
-            if hasattr(mdl, 't3'):
-                mdl.t3.half()
-            if hasattr(mdl, 's3gen'):
-                mdl.s3gen.half()
-            if hasattr(mdl, 'speech_emb'):
-                mdl.speech_emb = mdl.speech_emb.half()
-            if hasattr(mdl, 'text_emb'):
-                mdl.text_emb = mdl.text_emb.half()
-        except Exception:
-            pass
-
-    def _prepare_conds_cached(self, audio_prompt_path: Optional[str], exaggeration: float) -> None:
-        """Cache conditionals to avoid recomputing for the same voice."""
-        if not audio_prompt_path:
-            assert self._m.conds is not None, "Call once with audio_prompt_path to seed conditionals."
-            return
-        
-        key = (audio_prompt_path, round(float(exaggeration), 2))
-        with self._lock:
-            hit = self._cond_cache.get(key)
-            if hit is None:
-                self._m.prepare_conditionals(audio_prompt_path, exaggeration=exaggeration)
-                self._cond_cache[key] = self._m.conds  # keep GPU-resident
-            else:
-                self._m.conds = hit
-
-    def generate(self, text: str, *, audio_prompt_path: Optional[str] = None,
-                 exaggeration: float = 0.6, cfg_weight: float = 0.0,
-                 temperature: float = 0.8, top_p: float = 0.95, min_p: float = 0.05,
-                 repetition_penalty: float = 1.15) -> Any:
-        """Generate speech with optimizations: no CFG, cached conditionals, FP16 autocast."""
-        # Hard-disable CFG to avoid accidental batch doubling (major speedup)
-        cfg_weight = 0.0  # hard-disable to avoid accidental batch=2
-        self._prepare_conds_cached(audio_prompt_path, exaggeration)
-
-        import torch
-        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-            # Call the vendor generate but force cfg=0.0 and optimized settings
-            return self._m.generate(
-                text=text,
-                audio_prompt_path=None,          # we already prepared/cached
-                exaggeration=exaggeration,
-                cfg_weight=cfg_weight,           # 0.0 by default (fast!)
-                temperature=temperature,
-                top_p=top_p,
-                min_p=min_p,
-                repetition_penalty=repetition_penalty,
-            )
-
 @lru_cache(maxsize=1)
 def get_chatterbox_tts() -> Any:
-    """Load English Chatterbox TTS on CUDA when possible; return optimized proxy."""
+    """Load English Chatterbox TTS on CUDA when possible; tolerate API variants."""
     try:
         import torch  # type: ignore
         if not torch.cuda.is_available():
@@ -480,16 +319,44 @@ def get_chatterbox_tts() -> Any:
             mdl = _maybe_to_cuda(mdl)
 
         _maybe_eval(mdl)
-        # Note: _maybe_half removed - proxy handles fp16 promotion explicitly
+        _maybe_half(mdl)
 
-        # Return optimized proxy instead of raw model
-        proxy = _FastCBProxy(mdl)
-        logger.info("Initialized ChatterboxTTS with Fast Proxy (CUDA-ready)")
-        return proxy
+        logger.info("Initialized ChatterboxTTS (CUDA-ready)")
+        return mdl
     except Exception as e:
         logger.warning(f"ChatterboxTTS load failed (tolerated): {e}")
         return None
 
+@lru_cache(maxsize=1)
+def get_chatterbox_multilingual() -> Any:
+    """Load Multilingual Chatterbox; tolerate import / API differences."""
+    try:
+        import torch  # type: ignore
+        if not torch.cuda.is_available():
+            logger.info("ChatterboxMultilingual skipped: CUDA not available")
+            return None
+
+        # Import path can differ
+        try:
+            from chatterbox.multilingual import \
+                ChatterboxMultilingualTTS  # type: ignore
+        except Exception:
+            from chatterbox import ChatterboxMultilingualTTS  # type: ignore
+
+        try:
+            mdl = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
+        except TypeError:
+            mdl = ChatterboxMultilingualTTS.from_pretrained()
+            mdl = _maybe_to_cuda(mdl)
+
+        _maybe_eval(mdl)
+        _maybe_half(mdl)
+
+        logger.info("Initialized ChatterboxMultilingualTTS (CUDA-ready)")
+        return mdl
+    except Exception as e:
+        logger.warning(f"Chatterbox Multilingual load failed (tolerated): {e}")
+        return None
 
 @lru_cache(maxsize=1)
 def get_kokoro_pipeline(lang_code: str = "a") -> Any:
@@ -579,16 +446,16 @@ def synthesize_kokoro(text: str, voice: str = "alloy", sr: int = 48000) -> tuple
 
         y24 = np.concatenate(chunks, axis=0).astype(np.float32)
         
-        # DEBUG: Log raw Kokoro output (moved to debug to reduce I/O jitter)
+        # DEBUG: Log raw Kokoro output
         raw_max_kokoro = float(np.max(np.abs(y24))) if y24.size else 0.0
-        logger.debug(f"[kokoro-raw] max|x|={raw_max_kokoro:.3f} len={y24.size}")
+        logger.info(f"[kokoro-raw] max|x|={raw_max_kokoro:.3f} len={y24.size}")
         
         y24 = _to_pcm_f32(y24)  # normalize to [-1, 1]
         _dbg_once("kokoro_out", y24)  # debug logging
         
-        # DEBUG: Log after normalization (moved to debug to reduce I/O jitter)
+        # DEBUG: Log after normalization
         norm_max_kokoro = float(np.max(np.abs(y24))) if y24.size else 0.0
-        logger.debug(f"[kokoro-normalized] max|x|={norm_max_kokoro:.3f} len={y24.size}")
+        logger.info(f"[kokoro-normalized] max|x|={norm_max_kokoro:.3f} len={y24.size}")
         
         y = _resample_fast(y24, 24000, sr)
         return y, sr
@@ -607,22 +474,26 @@ def synthesize_tts(
     *,
     sr: int = 48000,
     language: str | None = None,
+    prefer_multilingual: bool = False,
     reference_audio: np.ndarray | None = None,
     reference_audio_sr: int | None = None,
 ) -> tuple[np.ndarray, int]:
     """
-    Optimized TTS with Chatterbox mode, reference caching, and declick guard.
-    Uses English Chatterbox; fallback to Kokoro on CPU.
+    Optimized TTS with fast Chatterbox mode, reference caching, and declick guard.
+    Prefer English Chatterbox for English text; fallback to Kokoro on CPU.
     Returns (float32 mono PCM, sample_rate).
     """
     try:
         import torch
         if torch.cuda.is_available():
-            # Send GPU keep-alive to prevent downclocking
-            _gpu_keepalive()
-            
-            # Use English Chatterbox model
-            mdl = get_chatterbox_tts()
+            # 1) Pick model (prefer English for English text)
+            is_english = language is None or language.lower() in ('en', 'english')
+            if is_english and not prefer_multilingual:
+                mdl = get_chatterbox_tts()  # English model is faster
+            else:
+                mdl = get_chatterbox_multilingual() if prefer_multilingual else get_chatterbox_tts()
+                if mdl is None:
+                    mdl = get_chatterbox_tts() if prefer_multilingual else get_chatterbox_multilingual()
             
             if mdl is not None:
                 sr_native = getattr(mdl, "sr", 24000)
@@ -676,7 +547,7 @@ def synthesize_tts(
                         temp = np.asarray(y_raw)
                     raw_max = float(np.max(np.abs(temp))) if temp.size else 0.0
                     raw_dtype = temp.dtype
-                    logger.debug(f"[chatterbox-raw] dtype={raw_dtype} max|x|={raw_max:.3f} len={temp.size}")
+                    logger.info(f"[chatterbox-raw] dtype={raw_dtype} max|x|={raw_max:.3f} len={temp.size}")
                 except Exception:
                     pass
                 
@@ -685,14 +556,14 @@ def synthesize_tts(
                 
                 # DEBUG: Log after normalization
                 norm_max = float(np.max(np.abs(y))) if y.size else 0.0
-                logger.debug(f"[chatterbox-normalized] max|x|={norm_max:.3f} len={y.size}")
+                logger.info(f"[chatterbox-normalized] max|x|={norm_max:.3f} len={y.size}")
                 
                 # CRITICAL FIX: Chatterbox outputs at full scale (0dB), but Kokoro outputs
                 # at ~-6 to -8dB. Apply gain reduction to prevent clipping/static when
                 # audio is sent to server and potentially mixed/boosted downstream.
                 # Target: -6dB headroom (multiply by 0.5)
                 y = y * 0.5
-                logger.debug(f"[chatterbox-gain-reduced] max|x|={float(np.max(np.abs(y))):.3f} (applied -6dB)")
+                logger.info(f"[chatterbox-gain-reduced] max|x|={float(np.max(np.abs(y))):.3f} (applied -6dB)")
                 
                 y = _declick_guard(y, sr_native)
                 
@@ -710,13 +581,9 @@ def synthesize_tts(
 def warm_all_models() -> None:
     """Warm up all models for faster first inference."""
     # Set torch threads (env vars already set at module level)
-    # Cap to 6-8 threads to prevent event loop starvation
     try:
         import torch
-        cpu_count = os.cpu_count() or 4
-        optimal_threads = min(8, max(4, cpu_count // 2))  # 4-8 threads max
-        torch.set_num_threads(optimal_threads)
-        logger.info(f"Set torch threads to {optimal_threads} (CPU count: {cpu_count})")
+        torch.set_num_threads(os.cpu_count() or 4)
     except Exception:
         pass
     
@@ -735,5 +602,9 @@ def warm_all_models() -> None:
         pass
     try:
         get_chatterbox_tts()
+    except Exception:
+        pass
+    try:
+        get_chatterbox_multilingual()
     except Exception:
         pass
