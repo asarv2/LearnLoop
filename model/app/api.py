@@ -92,7 +92,6 @@ async def health_check() -> HealthResponse:
         whisper_model = extensions.get_whisper_tiny("auto")
         kokoro_model = extensions.get_kokoro_pipeline("a")
         cb_en = extensions.get_chatterbox_tts()
-        cb_ml = extensions.get_chatterbox_multilingual()
         
         try:
             import torch
@@ -108,7 +107,6 @@ async def health_check() -> HealthResponse:
                 "whisper": whisper_model is not None,
                 "kokoro": kokoro_model is not None,
                 "chatterbox_en": cb_en is not None,
-                "chatterbox_multi": cb_ml is not None,
             },
             device=device,
         )
@@ -285,8 +283,7 @@ async def align_ctc_json(req: AlignCTCRequest) -> TranscriptResponse:
                 audio_data, sample_rate = extensions.synthesize_tts(
                     text=req.reference_text,
                     sr=48000,
-                    language=req.language,          # will be used if Chatterbox multilingual is active
-                    prefer_multilingual=False,       # flip to True if you want multilingual first
+                    language=req.language,
                     reference_audio=(ref_audio if req.reference_audio_b64 else None),
                     reference_audio_sr=ref_audio_sr,
                 )
