@@ -192,6 +192,11 @@ def _to_pcm_f32(arr: "np.ndarray | list | torch.Tensor") -> np.ndarray:
         pass
 
     x = np.asarray(arr)
+    
+    # Squeeze any extra dimensions (handles [1, N] or [N, 1] cases)
+    if x.ndim > 1:
+        x = x.squeeze()
+    
     # If it's integer, normalize to [-1, 1]
     if np.issubdtype(x.dtype, np.integer):
         # int16 is most common; if not sure, divide by the max possible magnitude
@@ -203,7 +208,11 @@ def _to_pcm_f32(arr: "np.ndarray | list | torch.Tensor") -> np.ndarray:
     # If someone handed us float32 but in int16-scale, detect and fix
     mx = float(np.max(np.abs(x))) if x.size else 0.0
     if mx > 1.5:  # clearly not normalized
+        # More robust detection: if it's really large, it's likely int16-scaled
         x = (x / (32768.0 if mx < 40000.0 else mx)).astype(np.float32)
+    
+    # Check for NaN/Inf values and replace
+    x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Safety clamp
     return np.clip(x, -1.0, 1.0).astype(np.float32)
@@ -424,8 +433,18 @@ def synthesize_kokoro(text: str, voice: str = "alloy", sr: int = 48000) -> tuple
             return np.zeros(0, dtype=np.float32), sr
 
         y24 = np.concatenate(chunks, axis=0).astype(np.float32)
+        
+        # DEBUG: Log raw Kokoro output
+        raw_max_kokoro = float(np.max(np.abs(y24))) if y24.size else 0.0
+        logger.info(f"[kokoro-raw] max|x|={raw_max_kokoro:.3f} len={y24.size}")
+        
         y24 = _to_pcm_f32(y24)  # normalize to [-1, 1]
         _dbg_once("kokoro_out", y24)  # debug logging
+        
+        # DEBUG: Log after normalization
+        norm_max_kokoro = float(np.max(np.abs(y24))) if y24.size else 0.0
+        logger.info(f"[kokoro-normalized] max|x|={norm_max_kokoro:.3f} len={y24.size}")
+        
         y = _resample_fast(y24, 24000, sr)
         return y, sr
     except Exception as e:
@@ -501,8 +520,27 @@ def synthesize_tts(
 
                 # Handle both torch tensors and numpy arrays from model.generate()
                 y_raw = wav  # could be tensor, np array, or list
+                
+                # DEBUG: Log raw output before normalization
+                try:
+                    import numpy as np
+                    if hasattr(y_raw, "detach"):
+                        temp = y_raw.detach().cpu().numpy()
+                    else:
+                        temp = np.asarray(y_raw)
+                    raw_max = float(np.max(np.abs(temp))) if temp.size else 0.0
+                    raw_dtype = temp.dtype
+                    logger.info(f"[chatterbox-raw] dtype={raw_dtype} max|x|={raw_max:.3f} len={temp.size}")
+                except Exception:
+                    pass
+                
                 y = _to_pcm_f32(y_raw)  # << normalize here
                 _dbg_once("tts_out", y)  # debug logging
+                
+                # DEBUG: Log after normalization
+                norm_max = float(np.max(np.abs(y))) if y.size else 0.0
+                logger.info(f"[chatterbox-normalized] max|x|={norm_max:.3f} len={y.size}")
+                
                 y = _declick_guard(y, sr_native)
                 
                 # 5) Keep native SR until final resample
