@@ -9,6 +9,7 @@
 import { useAuth } from "@/components/auth/AuthProvider";
 import FilePreviewModal from "@/components/chat/FilePreviewModal";
 import { useWebSocket } from "@/contexts/websocket-context";
+import { api } from "@/lib/api/fetcher";
 import {
   uploadDocument,
   useCreateDocument,
@@ -23,6 +24,7 @@ import {
   useUpdateTraining,
 } from "@/lib/api/hooks/useTrainings";
 import { trainingKeys } from "@/lib/api/keys";
+import type { ChatCreate } from "@/lib/repos/chatRepo";
 import {
   BulbOutlined,
   CalendarOutlined,
@@ -31,34 +33,38 @@ import {
   EditOutlined,
   ExclamationCircleOutlined,
   EyeOutlined,
+  FilterOutlined,
   HeartOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   RocketOutlined,
   SafetyOutlined,
+  SearchOutlined,
   TeamOutlined,
   TrophyOutlined,
   UploadOutlined,
   UserDeleteOutlined,
 } from "@ant-design/icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Badge,
   Button,
   Card,
   Col,
+  DatePicker,
   Form,
   Input,
   message,
   Modal,
   Row,
+  Select,
   Space,
   Spin,
   Tabs,
   Typography,
   Upload,
 } from "antd";
+import dayjs from "dayjs";
 import Link from "next/link";
 import React, { useMemo, useState } from "react";
 
@@ -131,6 +137,7 @@ function TrainingCard({
   onEdit,
   onDelete,
   isCustom = false,
+  completedTrainingIds,
 }: {
   training: {
     id?: string;
@@ -145,6 +152,7 @@ function TrainingCard({
   onEdit?: () => void;
   onDelete?: () => void;
   isCustom?: boolean;
+  completedTrainingIds?: Set<string>;
 }) {
   const { data: scenarios } = useScenariosByTrainingId(
     training.id || "",
@@ -177,6 +185,29 @@ function TrainingCard({
       ? `/dashboard/trainings/s/${targetScenario.id}`
       : "#";
 
+  // Determine completion/overdue status for required trainings
+  const isCompleted =
+    !!training.id &&
+    !!completedTrainingIds &&
+    completedTrainingIds.has(training.id);
+  const isOverdue =
+    training.training_type === "required" &&
+    !!training.due_date &&
+    !isCompleted &&
+    new Date().getTime() > new Date(training.due_date).getTime();
+  const statusLabel = isCompleted
+    ? "Completed"
+    : isOverdue
+    ? "Overdue"
+    : training.training_type === "required"
+    ? "Incomplete"
+    : null;
+  const statusColor = isCompleted
+    ? "#52c41a"
+    : isOverdue
+    ? "#f5222d"
+    : "#fa8c16";
+
   return (
     <Col xs={24} sm={12} lg={8} key={training.id}>
       <Card
@@ -189,6 +220,30 @@ function TrainingCard({
           position: "relative",
         }}
       >
+        {/* Status banner (top-left) for required trainings */}
+        {training.training_type === "required" && statusLabel && (
+          <div
+            style={{
+              position: "absolute",
+              top: "12px",
+              left: "12px",
+              zIndex: 10,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "4px 10px",
+              borderRadius: "16px",
+              backgroundColor: statusColor,
+              color: "#fff",
+              fontSize: "12px",
+              fontWeight: 600,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+            }}
+          >
+            {statusLabel}
+          </div>
+        )}
+
         {/* Multiple Persona Icon */}
         {hasMultiplePersonas && (
           <div
@@ -284,6 +339,30 @@ function TrainingCard({
           </div>
         )}
 
+        {/* Due date (top-right small) for required trainings */}
+        {training.training_type === "required" && training.due_date && (
+          <div
+            style={{
+              position: "absolute",
+              top: "12px",
+              // Offset if multiple personas or custom action buttons present
+              right:
+                hasMultiplePersonas || (isCustom && (onEdit || onDelete))
+                  ? "96px"
+                  : "12px",
+              zIndex: 9,
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            <CalendarOutlined style={{ color: "#8c8c8c" }} />
+            <Text type="secondary" style={{ fontSize: "12px" }}>
+              Due: {new Date(training.due_date).toLocaleDateString()}
+            </Text>
+          </div>
+        )}
+
         <div style={{ textAlign: "center", marginBottom: "16px" }}>
           <div
             style={{
@@ -296,19 +375,6 @@ function TrainingCard({
           </div>
           <Title level={4} style={{ margin: 0 }}>
             {training.title}
-            {!training.active && (
-              <div style={{ marginTop: "8px" }}>
-                <Badge count="Soon" style={{ backgroundColor: "#fa8c16" }} />
-              </div>
-            )}
-            {training.training_type === "required" && (
-              <div style={{ marginTop: "8px" }}>
-                <Badge
-                  count="Required"
-                  style={{ backgroundColor: "#f5222d" }}
-                />
-              </div>
-            )}
           </Title>
         </div>
 
@@ -326,26 +392,6 @@ function TrainingCard({
           >
             {getTrainingDescription(training)}
           </Paragraph>
-
-          {/* Due date for required trainings */}
-          {training.training_type === "required" && training.due_date && (
-            <div
-              style={{
-                marginTop: "12px",
-                padding: "8px",
-                backgroundColor: "#fff1f0",
-                borderRadius: "4px",
-                border: "1px solid #ffccc7",
-              }}
-            >
-              <CalendarOutlined
-                style={{ color: "#f5222d", marginRight: "8px" }}
-              />
-              <Text type="secondary" style={{ fontSize: "12px" }}>
-                Due: {new Date(training.due_date).toLocaleDateString()}
-              </Text>
-            </div>
-          )}
         </div>
 
         <div style={{ textAlign: "center" }}>
@@ -850,6 +896,13 @@ function TrainingTabContent({
 }) {
   const { user } = useAuth();
   const { data: currentProfile } = useProfile(user?.id || "", !!user);
+  const [searchText, setSearchText] = useState("");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "overdue" | "incomplete" | "completed"
+  >("all");
+  const [dateRange, setDateRange] = useState<
+    [dayjs.Dayjs | null, dayjs.Dayjs | null] | null
+  >(null);
 
   // Use company-based filtering for standard and required trainings
   const {
@@ -858,6 +911,24 @@ function TrainingTabContent({
     error,
   } = useTrainingsByTypeAndCompany(type, currentProfile?.company || null);
   const { data: customTrainings } = useCustomTrainingsForUser(user?.id);
+
+  // Fetch user's chats to determine completed trainings
+  const { data: chats } = useQuery({
+    queryKey: ["chats"],
+    queryFn: () => api<ChatCreate[]>("/api/v1/chats"),
+    staleTime: 2 * 60_000,
+    enabled: !!user?.id,
+  });
+
+  const completedTrainingIds = useMemo(() => {
+    const ids = new Set<string>();
+    (chats || []).forEach((c) => {
+      if (c.completed && c.training_id && c.profile_id === user?.id) {
+        ids.add(c.training_id);
+      }
+    });
+    return ids;
+  }, [chats, user?.id]);
 
   if (isLoading) {
     return (
@@ -883,18 +954,131 @@ function TrainingTabContent({
   const trainingsToShow = type === "custom" ? customTrainings : trainings;
 
   const filteredTrainings =
-    trainingsToShow?.filter((training) => {
-      // Only show active trainings
-      return training.active === true;
-    }) || [];
+    trainingsToShow
+      ?.filter((training) => {
+        // Only show active trainings
+        return training.active === true;
+      })
+      .filter((training) => {
+        // Date range filter on created_at (fallback to due_date)
+        if (!dateRange || !dateRange[0] || !dateRange[1]) return true;
+        const start = dateRange[0];
+        const end = dateRange[1];
+        const createdAt = training.created_at
+          ? dayjs(training.created_at)
+          : training.due_date
+          ? dayjs(training.due_date)
+          : null;
+        if (!createdAt) return true;
+        return createdAt.isAfter(start) && createdAt.isBefore(end);
+      })
+      .filter((training) => {
+        // Search filter on title/description
+        if (!searchText) return true;
+        const hay = `${training.title} ${
+          training.description || ""
+        }`.toLowerCase();
+        return hay.includes(searchText.toLowerCase());
+      })
+      .filter((training) => {
+        // Status filter (only meaningful for required)
+        if (type !== "required" || statusFilter === "all") return true;
+        const due = training.due_date
+          ? new Date(training.due_date).getTime()
+          : null;
+        const now = Date.now();
+        const completed =
+          !!training.id && completedTrainingIds.has(training.id);
+        const overdue =
+          training.training_type === "required" &&
+          !!due &&
+          !completed &&
+          now > due;
+        const status = completed
+          ? "completed"
+          : overdue
+          ? "overdue"
+          : "incomplete";
+        return status === statusFilter;
+      }) || [];
 
   const sortedTrainings = filteredTrainings.sort((a, b) => {
-    // Sort alphabetically by title
+    // Default: Overdue (0), Incomplete (1), Completed (2), others (3)
+    function statusWeight(t: typeof a) {
+      const due = t.due_date ? new Date(t.due_date).getTime() : null;
+      const now = Date.now();
+      const completed = !!t.id && completedTrainingIds.has(t.id);
+      const overdue =
+        t.training_type === "required" && !!due && !completed && now > due;
+      if (overdue) return 0;
+      if (!completed && t.training_type === "required") return 1;
+      if (completed) return 2;
+      return 3;
+    }
+
+    const wa = statusWeight(a);
+    const wb = statusWeight(b);
+    if (wa !== wb) return wa - wb;
+    // Secondary: by title
     return a.title.localeCompare(b.title);
   });
 
   return (
     <div>
+      {/* Filters/Search - only for required trainings */}
+      {type === "required" && (
+        <Card style={{ marginBottom: "16px" }}>
+          <Row gutter={16} align="middle">
+            <Col xs={24} sm={12} md={8}>
+              <Input
+                placeholder="Search trainings..."
+                prefix={<SearchOutlined />}
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                allowClear
+              />
+            </Col>
+            <Col xs={24} sm={12} md={6}>
+              <Select
+                style={{ width: "100%" }}
+                placeholder="Status"
+                value={statusFilter}
+                onChange={setStatusFilter}
+              >
+                <Select.Option value="all">All Status</Select.Option>
+                <Select.Option value="overdue">Overdue</Select.Option>
+                <Select.Option value="incomplete">Incomplete</Select.Option>
+                <Select.Option value="completed">Completed</Select.Option>
+              </Select>
+            </Col>
+            <Col xs={24} sm={24} md={8}>
+              <DatePicker.RangePicker
+                style={{ width: "100%" }}
+                placeholder={["Start Date", "End Date"]}
+                onChange={(range) => {
+                  setDateRange(
+                    range as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null
+                  );
+                }}
+              />
+            </Col>
+            <Col xs={24} sm={24} md={2}>
+              <Button
+                icon={<FilterOutlined />}
+                onClick={() => {
+                  setSearchText("");
+                  setStatusFilter("all");
+                  setDateRange(null);
+                }}
+                style={{ width: "100%" }}
+              >
+                Clear
+              </Button>
+            </Col>
+          </Row>
+        </Card>
+      )}
+
       <Row gutter={[24, 24]}>
         {sortedTrainings.map((training, index) => (
           <TrainingCard
@@ -902,6 +1086,7 @@ function TrainingTabContent({
             training={training}
             index={index}
             isCustom={type === "custom"}
+            completedTrainingIds={completedTrainingIds}
             onEdit={
               type === "custom" && onEditClick && training.id
                 ? () =>
