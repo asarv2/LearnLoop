@@ -12,6 +12,7 @@ import {
   EditOutlined,
   FilterOutlined,
   PlayCircleOutlined,
+  PlusOutlined,
   SearchOutlined,
   TeamOutlined,
   UserOutlined,
@@ -37,6 +38,7 @@ import {
 } from "antd";
 import { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 const { Title, Text } = Typography;
@@ -829,6 +831,31 @@ export default function AdminTrainingsPage() {
         }}
         training={selectedTraining}
       />
+
+      {/* Floating Action Button */}
+      <Link href="/admin/trainings/create">
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          size="large"
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            height: "auto",
+            padding: "12px 16px",
+            borderRadius: "8px",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            fontWeight: 500,
+          }}
+        >
+          Create Training
+        </Button>
+      </Link>
     </div>
   );
 }

@@ -12,7 +12,6 @@ import {
   HistoryOutlined,
   LogoutOutlined,
   MessageOutlined,
-  PlusOutlined,
   ProfileOutlined,
   SwapOutlined,
   TeamOutlined,
@@ -47,11 +46,6 @@ const adminMenuItems = [
     key: "/admin/trainings",
     icon: <BookOutlined />,
     label: <Link href="/admin/trainings">Trainings</Link>,
-  },
-  {
-    key: "/admin/create",
-    icon: <PlusOutlined />,
-    label: <Link href="/admin/create">Create</Link>,
   },
   {
     key: "/admin/documents",
