@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import FilePreviewModal from "@/components/chat/FilePreviewModal";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { api } from "@/lib/api/fetcher";
 import {
@@ -992,31 +993,12 @@ export default function TrainingComponent({
       </Row>
 
       {/* Document Preview Modal */}
-      {custom && uploadedFile && (
-        <Modal
-          title={`Preview: ${uploadedFile.name}`}
-          open={documentPreviewVisible}
-          onCancel={() => setDocumentPreviewVisible(false)}
-          footer={null}
-          width={800}
-        >
-          <div style={{ textAlign: "center", padding: "20px" }}>
-            <FileTextOutlined
-              style={{
-                fontSize: "48px",
-                color: "#d9d9d9",
-                marginBottom: "16px",
-              }}
-            />
-            <div>
-              <Text type="secondary">Document preview not available</Text>
-            </div>
-            <div style={{ marginTop: "8px" }}>
-              <Text type="secondary">File: {uploadedFile.name}</Text>
-            </div>
-          </div>
-        </Modal>
-      )}
+      <FilePreviewModal
+        isOpen={documentPreviewVisible}
+        onClose={() => setDocumentPreviewVisible(false)}
+        file={uploadedFile || undefined}
+        documentId={uploadedDocumentId || undefined}
+      />
     </div>
   );
 }
