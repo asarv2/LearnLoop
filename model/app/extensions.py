@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib  # For reference audio caching
 import logging
 import os
 import tempfile
+import time
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 # --- set threads early ---
@@ -20,6 +23,12 @@ _pin_cpu_threads()
 # now import numpy/torch/etc.
 import numpy as np
 import soundfile as sf  # type: ignore
+
+# Import torch for type checking
+try:
+    import torch  # type: ignore
+except ImportError:
+    torch = None  # type: ignore
 
 # ---------- logging & warnings ----------
 logger = logging.getLogger("model_service")
@@ -65,6 +74,22 @@ BASE = Path(__file__).resolve().parents[1]
 MODEL_CACHE_DIR = BASE / "model_cache"
 
 MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ---------- Global CUDA optimizations ----------
+def _enable_cuda_fast_paths() -> None:
+    """Enable CUDA fast paths globally for RTX 3060 (Ampere architecture)."""
+    try:
+        import torch
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cudnn.benchmark = True  # autotune fastest conv algo
+        torch.set_float32_matmul_precision("high")  # enables TF32 on Ampere+
+    except Exception:
+        pass
+
+# Enable CUDA optimizations early
+_enable_cuda_fast_paths()
 
 
 def _pick_torch_device() -> str:
@@ -138,6 +163,100 @@ def get_whisper_tiny(device_hint: str = "auto") -> Any:
         return None
 
 
+# ---------- Reference audio caching ----------
+_REF_CACHE: dict[str, str] = {}  # key: sha1 of raw ref audio bytes -> path to tmp wav
+
+def _cache_ref_wav(
+    reference_audio: np.ndarray,
+    src_sr: int | None,
+    native_sr: int,
+) -> str:
+    """Cache reference audio to avoid re-deriving embeddings.
+
+    Args:
+        reference_audio: PCM float32 mono samples.
+        src_sr: Original sample rate of ``reference_audio``.  If ``None`` we
+            assume it's already at ``native_sr``.
+        native_sr: Sample rate required by the downstream model.
+    """
+    key = hashlib.sha1(reference_audio.tobytes()).hexdigest()
+    if key in _REF_CACHE:
+        return _REF_CACHE[key]
+    x = reference_audio.astype(np.float32).reshape(-1)
+    src_sr = int(src_sr) if src_sr else native_sr
+    if src_sr != native_sr:
+        x = _resample_fast(x, src_sr, native_sr)
+    td = tempfile.gettempdir()
+    outp = os.path.join(td, f"ref-{key}.wav")
+    if not os.path.exists(outp):
+        sf.write(outp, x, native_sr, subtype="PCM_16")
+    _REF_CACHE[key] = outp
+    return outp
+
+
+# ---------- Audio format normalization ----------
+def _to_pcm_f32(arr: "np.ndarray | list | torch.Tensor") -> np.ndarray:
+    """Normalize any audio array to float32 in [-1, 1] range."""
+    import numpy as np
+    try:
+        import torch  # type: ignore
+        if hasattr(arr, "detach"):  # torch.Tensor
+            arr = arr.detach().cpu().numpy()
+    except Exception:
+        pass
+
+    x = np.asarray(arr)
+    
+    # Squeeze any extra dimensions (handles [1, N] or [N, 1] cases)
+    if x.ndim > 1:
+        x = x.squeeze()
+    
+    # If it's integer, normalize to [-1, 1]
+    if np.issubdtype(x.dtype, np.integer):
+        # int16 is most common; if not sure, divide by the max possible magnitude
+        max_mag = np.iinfo(x.dtype).max
+        x = x.astype(np.float32) / float(max_mag)
+    else:
+        x = x.astype(np.float32)
+
+    # If someone handed us float32 but in int16-scale, detect and fix
+    mx = float(np.max(np.abs(x))) if x.size else 0.0
+    if mx > 1.5:  # clearly not normalized
+        # More robust detection: if it's really large, it's likely int16-scaled
+        x = (x / (32768.0 if mx < 40000.0 else mx)).astype(np.float32)
+    
+    # Check for NaN/Inf values and replace
+    x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # Safety clamp
+    return np.clip(x, -1.0, 1.0).astype(np.float32)
+
+
+def _dbg_once(name: str, x: np.ndarray) -> None:
+    """One-shot debug logging for audio format verification."""
+    if getattr(_dbg_once, name, False):
+        return
+    setattr(_dbg_once, name, True)
+    import numpy as np
+    mx = float(np.max(np.abs(x))) if x.size else 0.0
+    logger.info(f"[audio-check] {name}: dtype={x.dtype} max|x|={mx:.3f} len={x.size}")
+
+
+# ---------- Declick guard ----------
+def _declick_guard(y: np.ndarray, sr_native: int) -> np.ndarray:
+    """Remove static/pops with 2ms ramp + clamp."""
+    y = np.asarray(y, np.float32).reshape(-1)
+    y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+    # 2 ms fade-in/out to avoid clicks
+    N = max(1, int(0.002 * sr_native))
+    if y.size >= 2*N:
+        ramp = np.linspace(0.0, 1.0, N, dtype=np.float32)
+        y[:N] *= ramp
+        y[-N:] *= ramp[::-1]
+    # mild limiter
+    return np.clip(y, -1.0, 1.0)
+
+
 # ---------- TTS (Kokoro) ----------
 
 # Optional: map your abstract voice names to Kokoro voices
@@ -147,52 +266,98 @@ VOICE_MAP = {
 
 # ---------- TTS (Chatterbox) ----------
 
-@lru_cache(maxsize=1)
-def get_chatterbox_tts() -> Any:
-    """Load English Chatterbox TTS on CUDA (no CPU fallback)."""
+# ---------- helpers ----------
+def _maybe_eval(model: object) -> object:
+    try:
+        import torch.nn as nn  # type: ignore
+        if isinstance(model, nn.Module):
+            model.eval()
+    except Exception:
+        pass
+    return model
+
+def _maybe_half(model: object) -> None:
     try:
         import torch
+        import torch.nn as nn  # type: ignore
+        if isinstance(model, nn.Module):
+            try:
+                model.half()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def _maybe_to_cuda(model: object) -> object:
+    """Try to put model on CUDA if it supports .to() and CUDA is available."""
+    try:
+        import torch  # type: ignore
+        if torch.cuda.is_available() and hasattr(model, "to"):
+            model = model.to("cuda")  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    return model
+
+@lru_cache(maxsize=1)
+def get_chatterbox_tts() -> Any:
+    """Load English Chatterbox TTS on CUDA when possible; tolerate API variants."""
+    try:
+        import torch  # type: ignore
         if not torch.cuda.is_available():
             logger.info("ChatterboxTTS skipped: CUDA not available")
             return None
-        from chatterbox.tts import ChatterboxTTS  # type: ignore
 
-        torch.backends.cudnn.benchmark = True
-        torch.set_float32_matmul_precision("high")  # favor tensor cores
-
-        mdl = ChatterboxTTS.from_pretrained(device="cuda").eval()
+        # Import path can differ across releases
         try:
-            mdl.half()  # FP16 weights if supported
+            from chatterbox.tts import ChatterboxTTS  # type: ignore
         except Exception:
-            pass
-        logger.info("Initialized ChatterboxTTS on CUDA (fp16-ready)")
+            from chatterbox import ChatterboxTTS  # type: ignore
+
+        # Some versions accept device=..., some don't
+        try:
+            mdl = ChatterboxTTS.from_pretrained(device="cuda")
+        except TypeError:
+            mdl = ChatterboxTTS.from_pretrained()
+            mdl = _maybe_to_cuda(mdl)
+
+        _maybe_eval(mdl)
+        _maybe_half(mdl)
+
+        logger.info("Initialized ChatterboxTTS (CUDA-ready)")
         return mdl
     except Exception as e:
-        logger.warning(f"ChatterboxTTS load failed: {e}")
+        logger.warning(f"ChatterboxTTS load failed (tolerated): {e}")
         return None
 
 @lru_cache(maxsize=1)
 def get_chatterbox_multilingual() -> Any:
-    """Load Multilingual Chatterbox TTS on CUDA (no CPU fallback)."""
+    """Load Multilingual Chatterbox; tolerate import / API differences."""
     try:
-        import torch
+        import torch  # type: ignore
         if not torch.cuda.is_available():
             logger.info("ChatterboxMultilingual skipped: CUDA not available")
             return None
-        from chatterbox import ChatterboxMultilingualTTS  # type: ignore
 
-        torch.backends.cudnn.benchmark = True
-        torch.set_float32_matmul_precision("high")  # favor tensor cores
-
-        mdl = ChatterboxMultilingualTTS.from_pretrained(device="cuda").eval()
+        # Import path can differ
         try:
-            mdl.half()  # FP16 weights if supported
+            from chatterbox.multilingual import \
+                ChatterboxMultilingualTTS  # type: ignore
         except Exception:
-            pass
-        logger.info("Initialized Chatterbox Multilingual TTS on CUDA (fp16-ready)")
+            from chatterbox import ChatterboxMultilingualTTS  # type: ignore
+
+        try:
+            mdl = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
+        except TypeError:
+            mdl = ChatterboxMultilingualTTS.from_pretrained()
+            mdl = _maybe_to_cuda(mdl)
+
+        _maybe_eval(mdl)
+        _maybe_half(mdl)
+
+        logger.info("Initialized ChatterboxMultilingualTTS (CUDA-ready)")
         return mdl
     except Exception as e:
-        logger.warning(f"Chatterbox Multilingual load failed: {e}")
+        logger.warning(f"Chatterbox Multilingual load failed (tolerated): {e}")
         return None
 
 @lru_cache(maxsize=1)
@@ -282,6 +447,18 @@ def synthesize_kokoro(text: str, voice: str = "alloy", sr: int = 48000) -> tuple
             return np.zeros(0, dtype=np.float32), sr
 
         y24 = np.concatenate(chunks, axis=0).astype(np.float32)
+        
+        # DEBUG: Log raw Kokoro output
+        raw_max_kokoro = float(np.max(np.abs(y24))) if y24.size else 0.0
+        logger.info(f"[kokoro-raw] max|x|={raw_max_kokoro:.3f} len={y24.size}")
+        
+        y24 = _to_pcm_f32(y24)  # normalize to [-1, 1]
+        _dbg_once("kokoro_out", y24)  # debug logging
+        
+        # DEBUG: Log after normalization
+        norm_max_kokoro = float(np.max(np.abs(y24))) if y24.size else 0.0
+        logger.info(f"[kokoro-normalized] max|x|={norm_max_kokoro:.3f} len={y24.size}")
+        
         y = _resample_fast(y24, 24000, sr)
         return y, sr
     except Exception as e:
@@ -301,64 +478,172 @@ def synthesize_tts(
     language: str | None = None,
     prefer_multilingual: bool = False,
     reference_audio: np.ndarray | None = None,
+    reference_audio_sr: int | None = None,
 ) -> tuple[np.ndarray, int]:
     """
-    Prefer Chatterbox on CUDA; if a reference clip is provided, do zero-shot voice cloning.
-    Fallback to Kokoro on CPU. Returns (float32 mono PCM, sample_rate).
+    Optimized TTS with fast Chatterbox mode, reference caching, and declick guard.
+    Prefer English Chatterbox for English text; fallback to Kokoro on CPU.
+    Returns (float32 mono PCM, sample_rate).
     """
     try:
         import torch
         if torch.cuda.is_available():
-            # 1) Pick model (EN or multilingual)
-            mdl = get_chatterbox_multilingual() if prefer_multilingual else get_chatterbox_tts()
-            if mdl is None:
-                mdl = get_chatterbox_tts() if prefer_multilingual else get_chatterbox_multilingual()
+            # 1) Pick model (prefer English for English text)
+            is_english = language is None or language.lower() in ('en', 'english')
+            if is_english and not prefer_multilingual:
+                mdl = get_chatterbox_tts()  # English model is faster
+            else:
+                mdl = get_chatterbox_multilingual() if prefer_multilingual else get_chatterbox_tts()
+                if mdl is None:
+                    mdl = get_chatterbox_tts() if prefer_multilingual else get_chatterbox_multilingual()
+            
             if mdl is not None:
                 sr_native = getattr(mdl, "sr", 24000)
-                gen_kwargs = {}
                 
-                # multilingual API uses language_id (per README)
-                if language and mdl.__class__.__name__.lower().startswith("chatterboxmultilingual"):
-                    gen_kwargs["language_id"] = language  # e.g., "en", "fr", "ja"
-
-                # 2) If we have a reference clip, write it to a temp wav and pass audio_prompt_path
-                audio_prompt_path = None
+                # 2) Reference audio caching (avoid re-deriving embeddings)
                 if reference_audio is not None and reference_audio.size > 0:
-                    with tempfile.TemporaryDirectory() as td:
-                        # If your ref clip isn't already at sr_native, resample before saving
-                        ref = reference_audio.astype(np.float32).reshape(-1)
-                        if sr != sr_native:
-                            ref = _resample_fast(ref, sr_in=sr, sr_out=sr_native)
-                        audio_prompt_path = os.path.join(td, "ref.wav")
-                        sf.write(audio_prompt_path, ref, sr_native, subtype="PCM_16")
-                        gen_kwargs["audio_prompt_path"] = audio_prompt_path  # <- cloning!
-
+                    audio_prompt_path = _cache_ref_wav(
+                        reference_audio,
+                        reference_audio_sr if reference_audio_sr else sr,
+                        sr_native,
+                    )
+                    # Note: Chatterbox may not support audio_prompt_path parameter
+                    # We'll try it but fall back to text-only if it fails
+                    try:
+                        # 3) Fast generation with CUDA optimizations
                         if torch.cuda.is_available():
-                            stream = torch.cuda.current_stream()
                             with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-                                wav = mdl.generate(text, **gen_kwargs)
-                            torch.cuda.synchronize()  # ensure completion before returning
+                                wav = mdl.generate(text, audio_prompt_path=audio_prompt_path)
+                            torch.cuda.synchronize()
                         else:
-                            wav = mdl.generate(text, **gen_kwargs)
+                            with torch.inference_mode():
+                                wav = mdl.generate(text, audio_prompt_path=audio_prompt_path)
+                    except TypeError:
+                        # Fallback to text-only generation
+                        if torch.cuda.is_available():
+                            with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+                                wav = mdl.generate(text)
+                            torch.cuda.synchronize()
+                        else:
+                            with torch.inference_mode():
+                                wav = mdl.generate(text)
                 else:
+                    # 3) Fast generation with CUDA optimizations (text-only)
                     if torch.cuda.is_available():
-                        stream = torch.cuda.current_stream()
                         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
-                            wav = mdl.generate(text, **gen_kwargs)
-                        torch.cuda.synchronize()  # ensure completion before returning
+                            wav = mdl.generate(text)
+                        torch.cuda.synchronize()
                     else:
-                        wav = mdl.generate(text, **gen_kwargs)
+                        with torch.inference_mode():
+                            wav = mdl.generate(text)
 
-                y = wav.squeeze().detach().cpu().numpy().astype(np.float32)
+                # Handle both torch tensors and numpy arrays from model.generate()
+                y_raw = wav  # could be tensor, np array, or list
+                
+                # DEBUG: Log raw output before normalization
+                try:
+                    import numpy as np
+                    if hasattr(y_raw, "detach"):
+                        temp = y_raw.detach().cpu().numpy()
+                    else:
+                        temp = np.asarray(y_raw)
+                    raw_max = float(np.max(np.abs(temp))) if temp.size else 0.0
+                    raw_dtype = temp.dtype
+                    logger.info(f"[chatterbox-raw] dtype={raw_dtype} max|x|={raw_max:.3f} len={temp.size}")
+                except Exception:
+                    pass
+                
+                y = _to_pcm_f32(y_raw)  # << normalize here
+                _dbg_once("tts_out", y)  # debug logging
+                
+                # DEBUG: Log after normalization
+                norm_max = float(np.max(np.abs(y))) if y.size else 0.0
+                logger.info(f"[chatterbox-normalized] max|x|={norm_max:.3f} len={y.size}")
+                
+                # CRITICAL FIX: Chatterbox outputs at full scale (0dB), but Kokoro outputs
+                # at ~-6 to -8dB. Apply gain reduction to prevent clipping/static when
+                # audio is sent to server and potentially mixed/boosted downstream.
+                # Target: -6dB headroom (multiply by 0.5)
+                y = y * 0.5
+                logger.info(f"[chatterbox-gain-reduced] max|x|={float(np.max(np.abs(y))):.3f} (applied -6dB)")
+                
+                y = _declick_guard(y, sr_native)
+                
+                # 5) Keep native SR until final resample
                 if sr != sr_native:
                     y = _resample_fast(y, sr_native, sr)
                 return y, sr
     except Exception as e:
         logger.warning(f"synthesize_tts: Chatterbox path failed (clone or base). Falling back. err={e}")
 
-    # 3) CPU fallback
+    # 6) CPU fallback
     return synthesize_kokoro(text=text, voice="alloy", sr=sr)
 
+
+# ---------- TTS Warmup and Heartbeat ----------
+
+_last_tts_warm_ts: float | None = None
+
+def warm_chatterbox_once() -> None:
+    """Single tiny forward to populate weights/caches & compile fast paths."""
+    try:
+        import torch
+        mdl = get_chatterbox_tts() or get_chatterbox_multilingual()
+        if mdl is None or not torch.cuda.is_available():
+            return
+        # shortest possible text; avoids ref-audio, attention build-up
+        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+            _ = mdl.generate(" ")
+        torch.cuda.synchronize()
+        global _last_tts_warm_ts
+        _last_tts_warm_ts = time.time()
+        logger.info("Chatterbox TTS warmup complete.")
+    except Exception as e:
+        logger.info(f"Chatterbox warmup skipped: {e}")
+
+async def _tts_heartbeat_loop(interval_s: int) -> None:
+    """Periodically tick the model so the CUDA context and clocks stay hot."""
+    try:
+        import torch
+    except Exception:
+        torch = None  # type: ignore
+
+    while True:
+        try:
+            mdl = get_chatterbox_tts() or get_chatterbox_multilingual()
+            if mdl is not None and (torch is not None) and torch.cuda.is_available():
+                # absolutely minimal work; single token'ish path
+                with torch.inference_mode(), torch.autocast("cuda", dtype=torch.float16):
+                    _ = mdl.generate(" ")  # DO NOT pass reference audio here
+                if torch is not None:
+                    torch.cuda.synchronize()
+                global _last_tts_warm_ts
+                _last_tts_warm_ts = time.time()
+        except Exception as e:
+            logger.debug(f"TTS heartbeat tick failed: {e}")
+        await asyncio.sleep(max(30, interval_s))
+
+def spawn_tts_heartbeat() -> None:
+    """
+    Fire-and-forget background heartbeat if enabled.
+    Configure with:
+      ENABLE_TTS_HEARTBEAT=1
+      TTS_HEARTBEAT_SECS=180   (default 180s)
+    """
+    try:
+        enable = os.getenv("ENABLE_TTS_HEARTBEAT", "1") not in ("0", "false", "False")
+        if not enable:
+            return
+        interval = int(os.getenv("TTS_HEARTBEAT_SECS", "180"))
+        loop = asyncio.get_running_loop()
+        loop.create_task(_tts_heartbeat_loop(interval))
+        logger.info(f"Spawned TTS heartbeat every {interval}s.")
+    except RuntimeError:
+        # no running loop yet (e.g., called from sync context) — ignore
+        pass
+
+def last_tts_warm_timestamp() -> Optional[float]:
+    return _last_tts_warm_ts
 
 def warm_all_models() -> None:
     """Warm up all models for faster first inference."""

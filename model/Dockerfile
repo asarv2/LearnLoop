@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
+FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
 
 # Set working directory
 WORKDIR /app
@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential python3-dev \
   && pip install --no-cache-dir --upgrade pip \
-  && pip install --no-cache-dir numpy==1.26.4 \
+  && pip install --no-cache-dir numpy==1.26.0 \
   && pip install --no-cache-dir "ctc-segmentation==1.7.4" \
   && apt-get purge -y --auto-remove build-essential python3-dev \
   && rm -rf /var/lib/apt/lists/*
@@ -25,27 +25,50 @@ COPY requirements.txt ./
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential g++ gcc python3-dev cython3 \
   && pip install --no-cache-dir --upgrade pip \
-  && pip install --no-cache-dir -r requirements.txt \
+  && pip install --no-cache-dir --prefer-binary --upgrade-strategy only-if-needed \
+       -r requirements.txt \
   && apt-get purge -y --auto-remove build-essential g++ gcc python3-dev cython3 \
   && rm -rf /var/lib/apt/lists/*
 
-# FlashAttention (Torch 2.8 + CUDA 12, CPython 3.11)
-RUN pip install --no-cache-dir \
-  https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.8cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
+# FlashAttention removed to avoid ABI compatibility issues
+# Transformers will fall back to PyTorch's built-in attention kernels
+ENV USE_FLASH_ATTENTION=0
 
-# Dynamically locate cuDNN wheel's lib dir and register it with the loader
+# Pre-download spaCy model to avoid runtime downloads
+RUN python -m pip install --no-cache-dir spacy && \
+    python -m spacy download en_core_web_sm
+
+# Make cuDNN's pip-installed libs visible to the dynamic linker
 RUN python - <<'PY'
-import pathlib, sys, os
-import nvidia.cudnn as cudnn  # from nvidia-cudnn-cu12 wheel
-# For namespace packages, __path__ is a list of directories containing the package
-pkg_dir = pathlib.Path(next(iter(getattr(cudnn, "__path__"))))
-lib_dir = (pkg_dir / "lib").resolve()
+import pathlib, nvidia.cudnn as cudnn
+lib_dir = (pathlib.Path(next(iter(cudnn.__path__))) / "lib").resolve()
 print("cuDNN lib dir:", lib_dir)
-if not lib_dir.exists():
-    raise SystemExit(f"cuDNN lib dir not found: {lib_dir}")
 open("/etc/ld.so.conf.d/zz-cudnn.conf", "w").write(str(lib_dir) + "\n")
 PY
 RUN ldconfig
+
+# (Optional) sanity checks
+RUN ldconfig -p | grep -E 'libcudnn_(cnn|ops)\.so\.9' || true
+RUN python - <<'PY'
+import ctypes, pathlib, nvidia.cudnn as cudnn
+lib_dir = (pathlib.Path(next(iter(cudnn.__path__))) / "lib").resolve()
+ctypes.CDLL(str(lib_dir / "libcudnn_cnn.so.9"))
+ctypes.CDLL(str(lib_dir / "libcudnn_ops.so.9"))
+print("Loaded cuDNN CNN/OPS successfully")
+PY
+
+# Sanity check: Verify Torch, Triton, and CUDA versions
+RUN python - <<'PY'
+import torch, sys
+print("Torch:", torch.__version__)
+import triton
+print("Triton:", triton.__version__)
+print("CUDA available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("CUDA version:", torch.version.cuda)
+    print("GPU count:", torch.cuda.device_count())
+PY
+
 
 # Validation: Verify cuDNN libraries are properly loaded
 # Uncomment the following lines for debugging if needed:

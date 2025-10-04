@@ -98,6 +98,14 @@ services:
       - PORT=8000
       - HOST=0.0.0.0
       - WHISPER_DEVICE=cuda
+      # Add these for optimal performance
+      - CUDA_DEVICE_MAX_CONNECTIONS=1
+      - CUBLAS_WORKSPACE_CONFIG=:16:8
+      - TOKENIZERS_PARALLELISM=false
+      - OMP_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - NUMEXPR_NUM_THREADS=1
     volumes:
       - ../model_cache:/app/model_cache
     deploy:
@@ -109,7 +117,7 @@ services:
           devices:
             - driver: nvidia
               capabilities: [gpu]
-              device_ids: ["0"]
+              device_ids: ["1"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
