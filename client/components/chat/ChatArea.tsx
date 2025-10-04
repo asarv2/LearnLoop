@@ -620,8 +620,8 @@ export default function ChatArea({
   );
 
   // Get the current user and their associated persona
-  const { user } = useAuth();
-  const { data: userPersona } = useUserPersona(user?.id);
+  const { effectiveProfile } = useAuth();
+  const { data: userPersona } = useUserPersona(effectiveProfile?.id);
   const { data: allPersonas } = usePersonas();
 
   // Scenario association - use chat.scenario_id directly

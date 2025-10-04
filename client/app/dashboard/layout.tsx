@@ -3,7 +3,8 @@
 import { useAuth } from "@/components/auth/AuthProvider";
 import WelcomeModal from "@/components/common/WelcomeModal";
 import SuggestionsModal from "@/components/suggestions/SuggestionsModal";
-import { useRole } from "@/contexts/role-context";
+import { Profile } from "@/types";
+import { ViewMode } from "@/types/auth";
 import {
   LogoutOutlined,
   MessageOutlined,
@@ -34,38 +35,62 @@ const menuItems = [
     key: "/dashboard/history",
     label: "History",
   },
-  // {
-  //   key: "/dashboard/settings",
-  //   icon: <SettingOutlined />,
-  //   label: <Link href="/dashboard/settings">Settings</Link>,
-  // },
 ];
 
 const getUserMenuItems = (
-  userRole: string | null,
-  currentView: "employee" | "admin",
-  switchToAdmin: () => void,
-  switchToEmployee: () => void
+  activeProfile: Profile | null,
+  effectiveProfile: Profile | null,
+  isEmulating: boolean,
+  startEmulation: (viewMode: ViewMode) => Promise<boolean>,
+  stopEmulation: () => void
 ): MenuProps["items"] => {
   const items: MenuProps["items"] = [];
 
-  // Add view switch options for superadmin users
-  if (userRole === "superadmin") {
-    if (currentView === "employee") {
+  // Add emulation controls based on user's actual role and current state
+  if (activeProfile?.role === "superadmin") {
+    if (isEmulating && effectiveProfile?.role === "employee") {
+      // Currently emulating employee view, show option to return to admin
       items.push({
-        key: "switch-to-admin",
+        key: "return-to-admin",
         icon: <SwapOutlined />,
         label: "Switch to Admin View",
-        onClick: switchToAdmin,
+        onClick: async () => {
+          await stopEmulation();
+        },
       });
-    } else {
+    } else if (!isEmulating) {
+      // Not emulating, show option to switch to employee view
       items.push({
         key: "switch-to-employee",
         icon: <SwapOutlined />,
         label: "Switch to Employee View",
-        onClick: switchToEmployee,
+        onClick: async () => {
+          await startEmulation("employee");
+        },
       });
     }
+  } else if (activeProfile?.role === "admin" && !isEmulating) {
+    // Admin can switch to employee view
+    items.push({
+      key: "switch-to-employee",
+      icon: <SwapOutlined />,
+      label: "Switch to Employee View",
+      onClick: async () => {
+        await startEmulation("employee");
+      },
+    });
+  }
+
+  // If currently emulating, show stop emulation option
+  if (isEmulating) {
+    items.push({
+      key: "stop-emulation",
+      icon: <SwapOutlined />,
+      label: "Stop Emulation",
+      onClick: async () => {
+        await stopEmulation();
+      },
+    });
   }
 
   // Add profile option
@@ -105,29 +130,31 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user, signOut } = useAuth();
   const {
-    userRole,
+    effectiveProfile,
+    activeProfile,
+    isEmulating,
+    startEmulation,
+    stopEmulation,
+    signOut,
     loading,
-    switchToAdmin,
-    switchToEmployee,
-    currentView,
-    showWelcomeModal,
-    setShowWelcomeModal,
-  } = useRole();
+    isProfileLoading,
+  } = useAuth();
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
 
-  // Redirect admin users to admin interface if they're not in employee view
+  // Redirect admin users to admin interface if they're not emulating employee view
   useEffect(() => {
     if (
       !loading &&
-      (userRole === "admin" ||
-        (userRole === "superadmin" && currentView === "admin"))
+      !isProfileLoading &&
+      (activeProfile?.role === "admin" ||
+        (activeProfile?.role === "superadmin" && !isEmulating))
     ) {
       router.push("/admin/analytics");
     }
-  }, [userRole, loading, currentView, router]);
+  }, [activeProfile?.role, loading, isProfileLoading, isEmulating, router]);
 
-  if (loading) {
+  if (loading || isProfileLoading) {
     return (
       <div
         style={{
@@ -288,10 +315,11 @@ export default function DashboardLayout({
               <Dropdown
                 menu={{
                   items: getUserMenuItems(
-                    userRole,
-                    currentView,
-                    switchToAdmin,
-                    switchToEmployee
+                    activeProfile,
+                    effectiveProfile,
+                    isEmulating,
+                    startEmulation,
+                    stopEmulation
                   ),
                   onClick: handleMenuClick,
                 }}
@@ -299,9 +327,22 @@ export default function DashboardLayout({
               >
                 <Space style={{ cursor: "pointer" }} size="small">
                   <Avatar size="default" icon={<UserOutlined />} />
-                  <Text strong style={{ color: "#262626" }}>
-                    {user?.user_metadata?.full_name || user?.email || "User"}
-                  </Text>
+                  <div>
+                    <Text strong style={{ color: "#262626" }}>
+                      {effectiveProfile?.name || "User"}
+                    </Text>
+                    {isEmulating && (
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          color: "#1890ff",
+                          marginTop: "2px",
+                        }}
+                      >
+                        Viewing as {effectiveProfile?.role}
+                      </div>
+                    )}
+                  </div>
                 </Space>
               </Dropdown>
             </Space>

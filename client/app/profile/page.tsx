@@ -31,14 +31,14 @@ const { TextArea } = Input;
 const { Option } = Select;
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  const { effectiveProfile } = useAuth();
   const router = useRouter();
   const [form] = Form.useForm();
   const [isEditing] = useState(true);
   const [messageApi, contextHolder] = message.useMessage();
 
   // Get user personas
-  const { data: personas, isLoading, error } = usePersonas(user?.id);
+  const { data: personas, isLoading, error } = usePersonas(effectiveProfile?.id);
   const createProfile = useCreateProfile();
   const createPersona = useCreatePersona();
   const updatePersona = useUpdatePersona(personas?.[0]?.id || "");
@@ -60,14 +60,14 @@ export default function ProfilePage() {
     try {
       // Create profile first
       const profile = await createProfile.mutateAsync({
-        id: user?.id,
-        name: user?.user_metadata?.full_name || user?.email || "User Profile",
+        id: effectiveProfile?.id,
+        name: effectiveProfile?.name || "User Profile",
       });
 
       // Create persona for the profile
       await createPersona.mutateAsync({
         profile_id: profile.id,
-        name: user?.user_metadata?.full_name || user?.email || "User",
+        name: effectiveProfile?.name || "User",
         description: "Please update your profile information",
         position: "",
         level: "junior",

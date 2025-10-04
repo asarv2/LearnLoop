@@ -3,7 +3,6 @@
 
 import { AuthProvider, useAuth } from "@/components/auth/AuthProvider";
 import { Toaster } from "@/components/ui/toaster";
-import { RoleProvider } from "@/contexts/role-context";
 import { WebSocketProvider } from "@/contexts/websocket-context";
 import { createQueryClient } from "@/utils/react-query/queryClient";
 import { Theme } from "@radix-ui/themes";
@@ -29,22 +28,20 @@ export const Providers = ({ children }: { children: React.ReactNode }) => {
   return (
     <ReactQueryClientProvider>
       <AuthProvider>
-        <RoleProvider>
-          <WebSocketProviderWrapper>
-            <Theme>
-              <ConfigProvider
-                theme={{
-                  token: {
-                    colorPrimary: "#1890ff",
-                  },
-                }}
-              >
-                {children}
-                <Toaster />
-              </ConfigProvider>
-            </Theme>
-          </WebSocketProviderWrapper>
-        </RoleProvider>
+        <WebSocketProviderWrapper>
+          <Theme>
+            <ConfigProvider
+              theme={{
+                token: {
+                  colorPrimary: "#1890ff",
+                },
+              }}
+            >
+              {children}
+              <Toaster />
+            </ConfigProvider>
+          </Theme>
+        </WebSocketProviderWrapper>
       </AuthProvider>
     </ReactQueryClientProvider>
   );
@@ -56,11 +53,11 @@ const WebSocketProviderWrapper = ({
 }: {
   children: React.ReactNode;
 }) => {
-  const { user } = useAuth();
-  const profileId = user?.id || undefined;
+  const { effectiveProfile } = useAuth();
 
   return (
-    <WebSocketProvider profileId={profileId}>{children}</WebSocketProvider>
+    <WebSocketProvider profileId={effectiveProfile?.id}>
+      {children}
+    </WebSocketProvider>
   );
 };
-

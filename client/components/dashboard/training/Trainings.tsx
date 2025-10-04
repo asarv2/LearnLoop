@@ -15,7 +15,6 @@ import {
   useCreateDocument,
   useDocument,
 } from "@/lib/api/hooks/useDocuments";
-import { useProfile } from "@/lib/api/hooks/useProfiles";
 import { useScenariosByTrainingId } from "@/lib/api/hooks/useScenarios";
 import {
   useCustomTrainingsForUser,
@@ -461,8 +460,7 @@ function CreateCustomTrainingModal({
   const [uploadedDocumentId, setUploadedDocumentId] = useState<string | null>(
     null
   );
-  const { user } = useAuth();
-  const { data: currentProfile } = useProfile(user?.id || "", !!user);
+  const { effectiveProfile } = useAuth();
   const { emitCreateTraining } = useWebSocket();
   const queryClient = useQueryClient();
 
@@ -585,7 +583,7 @@ function CreateCustomTrainingModal({
 
             const document = await createDocument.mutateAsync({
               content: "",
-              profile_id: user?.id || null,
+              profile_id: effectiveProfile?.id || null,
               title: uploadedFile.name,
             });
 
@@ -620,8 +618,8 @@ function CreateCustomTrainingModal({
           name: values.scenario,
           description: values.description,
           document_id: documentId,
-          profile_id: user?.id,
-          company: currentProfile?.company || undefined,
+          profile_id: effectiveProfile?.id,
+          company: effectiveProfile?.company || undefined,
         });
       } catch (error) {
         console.error("Error in training creation:", error);
@@ -894,8 +892,7 @@ function TrainingTabContent({
     description?: string | null;
   }) => void;
 }) {
-  const { user } = useAuth();
-  const { data: currentProfile } = useProfile(user?.id || "", !!user);
+  const { effectiveProfile } = useAuth();
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     "all" | "overdue" | "incomplete" | "completed"
@@ -909,26 +906,26 @@ function TrainingTabContent({
     data: trainings,
     isLoading,
     error,
-  } = useTrainingsByTypeAndCompany(type, currentProfile?.company || null);
-  const { data: customTrainings } = useCustomTrainingsForUser(user?.id);
+  } = useTrainingsByTypeAndCompany(type, effectiveProfile?.company || null);
+  const { data: customTrainings } = useCustomTrainingsForUser(effectiveProfile?.id);
 
   // Fetch user's chats to determine completed trainings
   const { data: chats } = useQuery({
     queryKey: ["chats"],
     queryFn: () => api<ChatCreate[]>("/api/v1/chats"),
     staleTime: 2 * 60_000,
-    enabled: !!user?.id,
+    enabled: !!effectiveProfile?.id,
   });
 
   const completedTrainingIds = useMemo(() => {
     const ids = new Set<string>();
     (chats || []).forEach((c) => {
-      if (c.completed && c.training_id && c.profile_id === user?.id) {
+      if (c.completed && c.training_id && c.profile_id === effectiveProfile?.id) {
         ids.add(c.training_id);
       }
     });
     return ids;
-  }, [chats, user?.id]);
+  }, [chats, effectiveProfile?.id]);
 
   if (isLoading) {
     return (

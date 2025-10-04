@@ -2,7 +2,6 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWebSocket } from "@/contexts/websocket-context";
-import { useProfile } from "@/lib/api/hooks/useProfiles";
 import { trainingKeys } from "@/lib/api/keys";
 import type { Rubric } from "@/types";
 import {
@@ -54,8 +53,7 @@ export default function AdminCreatePage() {
   const [rubrics, setRubrics] = useState<Rubric[]>([]);
   const [loadingRubrics, setLoadingRubrics] = useState(false);
 
-  const { user } = useAuth();
-  const { data: currentProfile } = useProfile(user?.id || "", !!user);
+  const { effectiveProfile } = useAuth();
   const { emitCreateTraining } = useWebSocket();
   const queryClient = useQueryClient();
   const [messageApi, contextHolder] = message.useMessage();
@@ -171,7 +169,7 @@ export default function AdminCreatePage() {
     moods?: string[];
     rubricId?: string;
   }) => {
-    if (!currentProfile?.company) {
+    if (!effectiveProfile?.company) {
       messageApi.error(
         "You must be assigned to a company to create trainings."
       );
@@ -194,10 +192,10 @@ export default function AdminCreatePage() {
         // policy_id: values.policyId,
         // moods: values.moods || [],
         //rubric_id: values.rubricId,
-        profile_id: user?.id,
+        profile_id: effectiveProfile?.id,
         // Additional data for admin-created required trainings
         training_type: "required",
-        company: currentProfile.company,
+        company: effectiveProfile.company,
         due_date: values.dueDate ? values.dueDate.toISOString() : undefined,
         admin_created: true,
       });
@@ -437,7 +435,7 @@ export default function AdminCreatePage() {
                   {/* Company-specific rubrics */}
                   {rubrics
                     .filter(
-                      (rubric) => rubric.company === currentProfile?.company
+                      (rubric) => rubric.company === effectiveProfile?.company
                     )
                     .map((rubric) => (
                       <Select.Option key={rubric.id} value={rubric.id}>
@@ -518,8 +516,8 @@ export default function AdminCreatePage() {
                 <Text strong>Visibility:</Text>
                 <div style={{ marginTop: "4px" }}>
                   <Text type="secondary">
-                    {currentProfile?.company
-                      ? `Only employees in ${currentProfile.company}`
+                    {effectiveProfile?.company
+                      ? `Only employees in ${effectiveProfile.company}`
                       : "No company assigned"}
                   </Text>
                 </div>

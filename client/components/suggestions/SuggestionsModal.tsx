@@ -18,10 +18,10 @@ export default function SuggestionsModal({
 }: SuggestionsModalProps) {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const { user } = useAuth();
+  const { effectiveProfile } = useAuth();
 
   const handleSubmit = async (values: { suggestion: string }) => {
-    if (!user?.id) {
+    if (!effectiveProfile?.id) {
       toast.error("You must be logged in to submit a suggestion");
       return;
     }
@@ -32,7 +32,7 @@ export default function SuggestionsModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_id: user.id,
+          user_id: effectiveProfile.id,
           feedback_text: values.suggestion,
         }),
       });

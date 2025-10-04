@@ -77,7 +77,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     error: string;
   } | null>(null);
   const preparingModelTimerRef = useRef<number | null>(null);
-  const { user } = useAuth();
+  const { effectiveProfile } = useAuth();
   const { data: fields } = useFields();
   const { data: groups } = useGroups();
   // Fetch scenario data
@@ -197,9 +197,11 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
     const personaIds: string[] = [];
 
     // Add user persona ID (from logged-in user)
-    if (user?.id) {
+    if (effectiveProfile?.id) {
       // Find the user persona for this profile
-      const userPersona = personas?.find((p) => p.profile_id === user.id);
+      const userPersona = personas?.find(
+        (p) => p.profile_id === effectiveProfile.id
+      );
       if (userPersona && userPersona.id) {
         personaIds.push(userPersona.id);
       }
@@ -1278,7 +1280,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       const { resolvedIndiv, resolvedGroup } = await resolveDocumentFilesOnce(
         fieldValues,
         groupFieldValues,
-        user?.id
+        effectiveProfile?.id
       );
       setFieldValues((prev) => mergeByFieldId(prev, resolvedIndiv));
       setGroupFieldValues((prev) => mergeByGroupAndField(prev, resolvedGroup));
@@ -1359,8 +1361,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
               // Create a simple custom persona with just name and voice
               const newPersona = await createPersona.mutateAsync({
                 name: customPersonaName,
-                description:
-                  voicePersona?.description,
+                description: voicePersona?.description,
                 profile_id: null,
                 temperature: 0.0, // Default temperature
                 voice: voicePersona?.voice,
@@ -1630,7 +1631,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       const { resolvedIndiv, resolvedGroup } = await resolveDocumentFilesOnce(
         fieldValues,
         groupFieldValues,
-        user?.id
+        effectiveProfile?.id
       );
       setFieldValues((prev) => mergeByFieldId(prev, resolvedIndiv));
       setGroupFieldValues((prev) => mergeByGroupAndField(prev, resolvedGroup));
@@ -1664,7 +1665,7 @@ export default function NewScenario({ scenarioId }: NewScenarioProps) {
       // Start training with only scenario_id
       emitStartTraining({
         scenario_id: scenarioToUse,
-        profile_id: user?.id || undefined,
+        profile_id: effectiveProfile?.id || undefined,
       });
 
       // Note: "Creating scenario" will complete when WebSocket responds

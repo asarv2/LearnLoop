@@ -1,7 +1,6 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useProfile } from "@/lib/api/hooks/useProfiles";
 import {
   Standard,
   useRubrics,
@@ -36,23 +35,19 @@ const { Search } = Input;
 
 export default function AdminRubricsPage() {
   const router = useRouter();
-  const { user } = useAuth();
-  const { data: currentProfile, isLoading: profileLoading } = useProfile(
-    user?.id || "",
-    !!user
-  );
+  const { effectiveProfile, isProfileLoading } = useAuth();
   const {
     data: rubrics,
     isLoading: rubricsLoading,
     refetch: refetchRubrics,
-  } = useRubrics(currentProfile?.company || null);
+  } = useRubrics(effectiveProfile?.company || null);
 
   // Refetch rubrics when the page loads to ensure fresh data
   useEffect(() => {
-    if (currentProfile?.company) {
+    if (effectiveProfile?.company) {
       refetchRubrics();
     }
-  }, [currentProfile?.company, refetchRubrics]);
+  }, [effectiveProfile?.company, refetchRubrics]);
 
   const [searchText, setSearchText] = useState("");
   const [selectedRubricId, setSelectedRubricId] = useState<string | null>(null);
@@ -137,7 +132,7 @@ export default function AdminRubricsPage() {
     : filteredRubrics;
 
   // Show loading state while profile is loading
-  if (profileLoading) {
+  if (isProfileLoading) {
     return (
       <div style={{ textAlign: "center", padding: "50px" }}>
         <div>Loading profile...</div>
@@ -146,7 +141,7 @@ export default function AdminRubricsPage() {
   }
 
   // Show message if no company
-  if (!currentProfile?.company) {
+  if (!effectiveProfile?.company) {
     return (
       <div style={{ textAlign: "center", padding: "50px" }}>
         <div>No company assigned to your profile.</div>

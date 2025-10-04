@@ -2,7 +2,6 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { api } from "@/lib/api/fetcher";
-import { useProfile } from "@/lib/api/hooks/useProfiles";
 import { useTrainingsByTypeAndCompany } from "@/lib/api/hooks/useTrainings";
 import { Training } from "@/types";
 import {
@@ -356,8 +355,7 @@ function EmployeeCompletionModal({
 }
 
 export default function AdminTrainingsPage() {
-  const { user } = useAuth();
-  const { data: currentProfile } = useProfile(user?.id || "", !!user);
+  const { effectiveProfile } = useAuth();
   const [messageApi, contextHolder] = message.useMessage();
   const queryClient = useQueryClient();
 
@@ -400,14 +398,14 @@ export default function AdminTrainingsPage() {
   // Fetch only required trainings data
   const { data: requiredTrainings, isLoading } = useTrainingsByTypeAndCompany(
     "required",
-    currentProfile?.company || null
+    effectiveProfile?.company || null
   );
 
   // Fetch completion rates
   const { data: completionRates, isLoading: loadingCompletion } = useQuery({
-    queryKey: ["training-completion", currentProfile?.company],
-    queryFn: () => fetchCompletionRates(currentProfile?.company || null),
-    enabled: !!currentProfile?.company,
+    queryKey: ["training-completion", effectiveProfile?.company],
+    queryFn: () => fetchCompletionRates(effectiveProfile?.company || null),
+    enabled: !!effectiveProfile?.company,
     staleTime: 2 * 60_000, // 2 minutes
   });
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useProfile } from "@/lib/api/hooks/useProfiles";
 import { SaveOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import {
   Button,
@@ -28,12 +27,8 @@ interface Standard {
 }
 
 export default function CreateRubricPage() {
-  const { user } = useAuth();
+  const { effectiveProfile, isProfileLoading } = useAuth();
   const router = useRouter();
-  const { data: currentProfile, isLoading: profileLoading } = useProfile(
-    user?.id || "",
-    !!user
-  );
 
   const [rubricName, setRubricName] = useState("");
   const [rubricDescription, setRubricDescription] = useState("");
@@ -74,7 +69,7 @@ export default function CreateRubricPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   // Show loading state while profile is loading
-  if (profileLoading) {
+  if (isProfileLoading) {
     return (
       <div style={{ textAlign: "center", padding: "50px" }}>
         <div>Loading profile...</div>
@@ -83,7 +78,7 @@ export default function CreateRubricPage() {
   }
 
   // Show message if no company
-  if (!currentProfile?.company) {
+  if (!effectiveProfile?.company) {
     return (
       <div style={{ textAlign: "center", padding: "50px" }}>
         <div>No company assigned to your profile.</div>
@@ -248,7 +243,7 @@ export default function CreateRubricPage() {
         body: JSON.stringify({
           name: rubricName,
           description: rubricDescription,
-          company: currentProfile?.company,
+          company: effectiveProfile?.company,
           standards: standards.map((s) => ({
             name: s.name,
             description: s.description,

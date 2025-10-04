@@ -141,7 +141,7 @@ function ScenarioCard({
 export default function TrainingScenarios({
   trainingId,
 }: TrainingScenariosProps) {
-  const { user } = useAuth();
+  const { effectiveProfile } = useAuth();
   const { emitStartTraining } = useWebSocket();
   const router = useRouter();
   const [startingId, setStartingId] = useState<string | null>(null);
@@ -223,7 +223,7 @@ export default function TrainingScenarios({
               setStartingId(scenario.id);
               emitStartTraining({
                 scenario_id: scenario.id,
-                profile_id: user?.id || undefined,
+                profile_id: effectiveProfile?.id || undefined,
               });
             }}
           />
