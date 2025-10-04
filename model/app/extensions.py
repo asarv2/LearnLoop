@@ -541,6 +541,13 @@ def synthesize_tts(
                 norm_max = float(np.max(np.abs(y))) if y.size else 0.0
                 logger.info(f"[chatterbox-normalized] max|x|={norm_max:.3f} len={y.size}")
                 
+                # CRITICAL FIX: Chatterbox outputs at full scale (0dB), but Kokoro outputs
+                # at ~-6 to -8dB. Apply gain reduction to prevent clipping/static when
+                # audio is sent to server and potentially mixed/boosted downstream.
+                # Target: -6dB headroom (multiply by 0.5)
+                y = y * 0.5
+                logger.info(f"[chatterbox-gain-reduced] max|x|={float(np.max(np.abs(y))):.3f} (applied -6dB)")
+                
                 y = _declick_guard(y, sr_native)
                 
                 # 5) Keep native SR until final resample
