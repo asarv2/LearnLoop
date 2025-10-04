@@ -14,7 +14,7 @@ import socketio  # type: ignore
 from agents.items import TResponseInputItem
 from app.db import get_session
 from app.models import Documents  # ✨ Import Personas
-from app.models import (Attempts, Chats, Fields, Messages, Parameters,
+from app.models import (Attempts, Chats, Fields, Groups, Messages, Parameters,
                         Personas, Scenarios, Trainings)
 from app.room import get_room
 from app.services.agents.document import run_document_agent
@@ -554,23 +554,153 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
                 room=sid,
             )
 
-            # create new group, with differnt mood_id and persona_id
+            general_group = db_session.exec(select(Groups).where(Groups.id == "8b6ed9ac-bfb7-4f31-992b-73935f6560bf")).one()
+
+            # Get the original persona and mood fields to copy their properties
+            original_persona_field = db_session.exec(select(Fields).where(Fields.id == general_group.persona_field_id)).one()
+            original_mood_field = db_session.exec(select(Fields).where(Fields.id == general_group.mood_field_id)).one()
+
+            # Create new persona field with same name and description
+            new_persona_field = Fields(
+                name=f"{original_persona_field.name} - {name}",
+                description=original_persona_field.description,
+                field_type=original_persona_field.field_type,
+                hidden=original_persona_field.hidden
+            )
+            db_session.add(new_persona_field)
+            db_session.commit()
+            db_session.refresh(new_persona_field)
+
+            # Create new mood field with same name and description
+            new_mood_field = Fields(
+                name=f"{original_mood_field.name} - {name}",
+                description=original_mood_field.description,
+                field_type=original_mood_field.field_type,
+                hidden=original_mood_field.hidden
+            )
+            db_session.add(new_mood_field)
+            db_session.commit()
+            db_session.refresh(new_mood_field)
+
+            # Get all persona parameters from the original field
+            original_persona_params = db_session.exec(
+                select(Parameters).where(Parameters.field_id == general_group.persona_field_id)
+            ).all()
+
+            # Get all mood parameters from the original field
+            original_mood_params = db_session.exec(
+                select(Parameters).where(Parameters.field_id == general_group.mood_field_id)
+            ).all()
+
+            # Separate persona parameters by gender (based on voice)
+            male_persona_params = []
+            female_persona_params = []
+            custom_persona_param = None
+
+            for param in original_persona_params:
+                if param.value is None:  # Custom parameter
+                    custom_persona_param = param
+                    continue
+                
+                # Get the persona to determine voice/gender
+                persona = db_session.exec(select(Personas).where(Personas.id == param.value)).one_or_none()
+                if persona and persona.voice in ['echo', 'verse', 'ash']:  # Male voices
+                    male_persona_params.append(param)
+                elif persona and persona.voice in ['alloy', 'shimmer', 'sage']:  # Female voices
+                    female_persona_params.append(param)
+
+            # Randomly select 2 male and 2 female persona parameters
+            import random
+            selected_male_params = random.sample(male_persona_params, min(2, len(male_persona_params)))
+            selected_female_params = random.sample(female_persona_params, min(2, len(female_persona_params)))
+            selected_persona_params = selected_male_params + selected_female_params
+
+            # Create new persona parameters
+            new_persona_param_ids = []
+            for param in selected_persona_params:
+                new_param = Parameters(
+                    field_id=new_persona_field.id,
+                    name=param.name,
+                    description=param.description,
+                    value=param.value
+                )
+                db_session.add(new_param)
+                db_session.commit()
+                db_session.refresh(new_param)
+                new_persona_param_ids.append(str(new_param.id))
+
+            # Add custom parameter if it exists
+            if custom_persona_param:
+                custom_new_param = Parameters(
+                    field_id=new_persona_field.id,
+                    name=custom_persona_param.name,
+                    description=custom_persona_param.description,
+                    value=custom_persona_param.value
+                )
+                db_session.add(custom_new_param)
+                db_session.commit()
+                db_session.refresh(custom_new_param)
+                new_persona_param_ids.append(str(custom_new_param.id))
+
+            # Use mood parameters from client data instead of random selection
+            mood_params_with_values = [p for p in original_mood_params if p.value is not None]
+            custom_mood_param = next((p for p in original_mood_params if p.value is None), None)
+            
+            # Filter mood parameters based on what was sent from client
+            selected_mood_params = []
+            if mood_parameters:
+                for mood_value in mood_parameters:
+                    matching_param = next((p for p in mood_params_with_values if p.value == mood_value), None)
+                    if matching_param:
+                        selected_mood_params.append(matching_param)
+
+            # Create new mood parameters
+            new_mood_param_ids = []
+            for param in selected_mood_params:
+                new_param = Parameters(
+                    field_id=new_mood_field.id,
+                    name=param.name,
+                    description=param.description,
+                    value=param.value
+                )
+                db_session.add(new_param)
+                db_session.commit()
+                db_session.refresh(new_param)
+                new_mood_param_ids.append(str(new_param.id))
+
+            # Add custom mood parameter if it exists
+            if custom_mood_param:
+                custom_new_param = Parameters(
+                    field_id=new_mood_field.id,
+                    name=custom_mood_param.name,
+                    description=custom_mood_param.description,
+                    value=custom_mood_param.value
+                )
+                db_session.add(custom_new_param)
+                db_session.commit()
+                db_session.refresh(custom_new_param)
+                new_mood_param_ids.append(str(custom_new_param.id))
+
+            # Create new group with training name suffix
             group = Groups(
-                mood_id=uuid.UUID(mood_parameters[0]) if mood_parameters else None,
-                persona_id=uuid.UUID(persona_parameters[0]) if persona_parameters else None,
+                name=f"{general_group.name} - {name}",
+                description=f"{general_group.description} - {name}",
+                level_field_id=general_group.level_field_id,
+                position_field_id=general_group.position_field_id,
+                mood_field_id=new_mood_field.id,
+                persona_field_id=new_persona_field.id,
+                field_ids=[]
             )
             db_session.add(group)
             db_session.commit()
             db_session.refresh(group)
 
-            # Create scenario entry with the specified group_id and rubric_id
-            group_id = uuid.UUID("8b6ed9ac-bfb7-4f31-992b-73935f6560bf")
             scenario = Scenarios(
                 title=name,
                 description=description,
                 training_id=training.id,
                 rubric_id=uuid.UUID(rubric_id) if rubric_id else None,
-                group_ids=[group_id],
+                group_ids=[str(group.id)],
                 objectives=[],
                 parameter_ids=[],
                 policy_ids=[uuid.UUID(policy_id) if policy_id else None],
@@ -584,7 +714,7 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
             db_session.commit()
             db_session.refresh(scenario)
 
-            logger.info(f"Created scenario {scenario.id} with group_id {group_id} and rubric_id {rubric_id}")
+            logger.info(f"Created scenario {scenario.id} with group_id {group.id} and rubric_id {rubric_id}")
 
             # Emit progress update: generating document
             await sio.emit(
