@@ -339,44 +339,6 @@ async def ice_candidate(sid: str, data: dict[str, Any]) -> None:
         await sessions[sid].add_ice(data.get("candidate"))
 
 
-# ── Rubric Generation Endpoint ───────────────────────────────────────────────
-from pydantic import BaseModel
-
-
-class RubricGenerationRequest(BaseModel):
-    rubric_name: str
-    rubric_description: str
-    standards: list[dict[str, str]]
-    num_levels: int = 5
-
-
-@fastapi_app.post("/rubrics/generate")
-async def generate_rubric(request: RubricGenerationRequest) -> JSONResponse:
-    """
-    Generate rubric criteria using AI agent.
-    """
-    try:
-        from app.services.agents.rubric import run_rubric_generation_agent
-
-        logger.info(
-            f"Starting rubric generation for '{request.rubric_name}' with {len(request.standards)} standards"
-        )
-
-        result = await run_rubric_generation_agent(
-            rubric_name=request.rubric_name,
-            rubric_description=request.rubric_description,
-            standards=request.standards,
-            num_levels=request.num_levels,
-        )
-
-        logger.info(f"Rubric generation completed successfully")
-        return JSONResponse(content=result)
-
-    except Exception as e:
-        logger.error(f"Error generating rubric: {str(e)}", exc_info=True)
-        return JSONResponse(
-            content={"error": f"Failed to generate rubric: {str(e)}"}, status_code=500
-        )
 
 
 # ── Health + info ─────────────────────────────────────────────────────────────

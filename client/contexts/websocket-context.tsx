@@ -116,17 +116,25 @@ interface WebSocketContextType {
   emitEndTraining: (data: { chat_id: string }) => void;
   emitGetHints: (data: { chat_id: string; message_id: string }) => void;
   emitCreateTraining: (data: {
-      name: string;
-      description: string;
-      document_id?: string;
-      policy_id?: string;
-      mood_parameters?: string[];
-      rubric_id?: string;
-      profile_id?: string;
-      training_type?: string;
-      company?: string;
-      due_date?: string;
-      admin_created?: boolean;
+    name: string;
+    description: string;
+    document_id?: string;
+    policy_id?: string;
+    mood_parameters?: string[];
+    rubric_id?: string;
+    profile_id?: string;
+    training_type?: string;
+    company?: string;
+    due_date?: string;
+    admin_created?: boolean;
+  }) => void;
+
+  // Rubric generation
+  emitGenerateRubric: (data: {
+    rubric_name: string;
+    rubric_description: string;
+    standards: Array<{ name: string; description: string }>;
+    num_levels?: number;
   }) => void;
 
   // Local mic stream access for UI visualizations (read-only)
@@ -767,6 +775,31 @@ export function WebSocketProvider({
       }
     );
 
+    // Rubric generation response
+    socket.on(
+      "rubric_generated",
+      (data: {
+        success: boolean;
+        standards: Array<{ name: string; items: string[] }>;
+        message: string;
+      }) => {
+        logInfo("Rubric generated", data);
+        if (data.success) {
+          window.dispatchEvent(
+            new CustomEvent("rubricGenerated", {
+              detail: {
+                success: data.success,
+                standards: data.standards,
+                message: data.message,
+              },
+            })
+          );
+        } else {
+          toast.error(data.message);
+        }
+      }
+    );
+
     socket.on(
       "conversation.item.input_audio_transcription.delta",
       (data: { chat_id: string; delta: string; itemId: string }) => {
@@ -1330,6 +1363,24 @@ export function WebSocketProvider({
     []
   );
 
+  const emitGenerateRubric = useCallback(
+    (data: {
+      rubric_name: string;
+      rubric_description: string;
+      standards: Array<{ name: string; description: string }>;
+      num_levels?: number;
+    }) => {
+      if (!socketRef.current?.connected) {
+        logError("Cannot generate rubric - WebSocket not connected");
+        toast.error("WebSocket not connected. Please refresh the page.");
+        return;
+      }
+      logInfo("Emitting generate_rubric", data);
+      socketRef.current.emit("generate_rubric", data);
+    },
+    []
+  );
+
   // ────────────────────────────────────────────────────────────────────────────
   // Value
   // ────────────────────────────────────────────────────────────────────────────
@@ -1371,6 +1422,7 @@ export function WebSocketProvider({
     emitEndTraining,
     emitGetHints,
     emitCreateTraining,
+    emitGenerateRubric,
     getLocalMicStream,
   };
 

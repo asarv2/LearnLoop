@@ -2013,6 +2013,57 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
         except Exception:
             logger.exception("client_interrupted handler failed")
 
+    @sio.event  # type: ignore
+    async def generate_rubric(sid: str, data: dict[str, Any]) -> None:
+        """Generate rubric criteria using AI agent via WebSocket."""
+        try:
+            logger.info(f"generate_rubric event triggered for sid={sid}")
+
+            rubric_name = data.get("rubric_name")
+            rubric_description = data.get("rubric_description", "")
+            standards = data.get("standards", [])
+            num_levels = data.get("num_levels", 5)
+
+            if not rubric_name:
+                await emit_error(sid, "Missing rubric_name")
+                return
+
+            if not standards or not isinstance(standards, list):
+                await emit_error(sid, "Missing or invalid standards")
+                return
+
+            logger.info(
+                f"Starting rubric generation for '{rubric_name}' with {len(standards)} standards"
+            )
+
+            # Import and run the rubric generation agent
+            from app.services.agents.rubric import run_rubric_generation_agent
+
+            result = await run_rubric_generation_agent(
+                rubric_name=rubric_name,
+                rubric_description=rubric_description,
+                standards=standards,
+                num_levels=num_levels,
+            )
+
+            logger.info(f"Rubric generation completed successfully")
+
+            # Emit success response
+            sio = get_sio_instance()
+            await sio.emit(
+                "rubric_generated",
+                {
+                    "success": True,
+                    "standards": result.get("standards", []),
+                    "message": "Rubric generated successfully",
+                },
+                room=sid,
+            )
+
+        except Exception as e:
+            logger.error(f"Error generating rubric: {str(e)}", exc_info=True)
+            await emit_error(sid, f"Failed to generate rubric: {str(e)}")
+
     logger.info("Successfully registered training WebSocket event handlers")
     register_training_events._registered = True  # type: ignore[attr-defined]
 
