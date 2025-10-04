@@ -131,7 +131,18 @@ export default function CategoricalField({
   return (
     <Flex direction="column" gap="3">
       {displayedParameters
-        ?.sort((a, b) => b.updated_at?.localeCompare(a.updated_at || "") || 0)
+        ?.sort((a, b) => {
+          // Custom parameters (value === null) should always appear last
+          const aIsCustom = a.value === null;
+          const bIsCustom = b.value === null;
+
+          if (aIsCustom && !bIsCustom) return 1; // a is custom, b is not - a goes last
+          if (!aIsCustom && bIsCustom) return -1; // a is not custom, b is - b goes last
+          if (aIsCustom && bIsCustom) return 0; // both custom - maintain original order
+
+          // For non-custom parameters, sort by updated_at (newest first)
+          return b.updated_at?.localeCompare(a.updated_at || "") || 0;
+        })
         .map((parameter, index) => {
           // Custom sentinel is determined by value === null
           const isCustom = parameter.value === null;

@@ -39,6 +39,7 @@ export const ScenarioUpdateSchema = z.object({
   field_ids: z.array(z.string()).nullable().optional(),
   group_ids: z.array(z.string()).optional(),
   parameter_ids: z.array(z.string()).optional(),
+  policy_ids: z.array(z.string()).optional(),
   prompt_mapping: z.any().optional(), // Json type
   prompts: z.any().optional(), // Json type
 });
@@ -76,6 +77,18 @@ export const scenarioRepo = {
       .from("scenarios")
       .select("*")
       .eq("training_id", trainingId)
+      .order("created_at", { ascending: false });
+    if (error) throw new HttpError(500, error.message);
+    return data;
+  },
+
+  async listParentScenariosByTrainingId(trainingId: string) {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("scenarios")
+      .select("*")
+      .eq("training_id", trainingId)
+      .is("parent_id", null)
       .order("created_at", { ascending: false });
     if (error) throw new HttpError(500, error.message);
     return data;

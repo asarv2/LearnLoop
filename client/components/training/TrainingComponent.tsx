@@ -97,6 +97,16 @@ export default function TrainingComponent({
   const [loadingPolicies, setLoadingPolicies] = useState(false);
   const [rubrics, setRubrics] = useState<Rubric[]>([]);
   const [loadingRubrics, setLoadingRubrics] = useState(false);
+  const [scenarios, setScenarios] = useState<
+    Array<{
+      id: string;
+      title: string;
+      parent_id: string | null;
+      policy_ids: string[];
+      training_id: string | null;
+    }>
+  >([]);
+  const [loadingScenarios, setLoadingScenarios] = useState(false);
 
   // Document upload state for custom mode
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -148,6 +158,30 @@ export default function TrainingComponent({
       fetchPolicies();
     }
 
+    // Fetch scenarios for edit mode to get existing policy_ids
+    if (isEditMode && training_id) {
+      const fetchScenarios = async () => {
+        setLoadingScenarios(true);
+        try {
+          const res = await fetch(
+            `/api/v1/scenarios?training_id=${training_id}`,
+            { cache: "no-store" }
+          );
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setScenarios(data);
+          }
+        } catch (error) {
+          console.error("Error fetching scenarios:", error);
+          messageApi.error("Failed to load scenarios");
+        } finally {
+          setLoadingScenarios(false);
+        }
+      };
+
+      fetchScenarios();
+    }
+
     const fetchRubrics = async () => {
       setLoadingRubrics(true);
       try {
@@ -165,11 +199,15 @@ export default function TrainingComponent({
     };
 
     fetchRubrics();
-  }, [custom, messageApi]);
+  }, [custom, messageApi, isEditMode, training_id]);
 
   // Set form values when in edit mode
   useEffect(() => {
     if (isEditMode && currentTraining && visible) {
+      // Get the first policy_id from scenarios for prefill
+      const firstScenario = scenarios.find((s) => s.parent_id === null);
+      const firstPolicyId = firstScenario?.policy_ids?.[0] || null;
+
       form.setFieldsValue({
         title: currentTraining.title || "",
         scenario: currentTraining.title || "", // For custom trainings
@@ -180,13 +218,14 @@ export default function TrainingComponent({
         due_date: currentTraining.due_date
           ? dayjs(currentTraining.due_date)
           : null,
+        policyId: firstPolicyId, // Prefill with first policy from scenarios
       });
     } else if (!visible) {
       form.resetFields();
       setUploadedFile(null);
       setUploadedDocumentId(null);
     }
-  }, [isEditMode, currentTraining, visible, custom, form]);
+  }, [isEditMode, currentTraining, visible, custom, form, scenarios]);
 
   // Listen for training creation progress events (only for creation mode)
   React.useEffect(() => {
@@ -329,6 +368,7 @@ export default function TrainingComponent({
 
       setIsCreating(true);
       try {
+        // Update the training
         await api(`/api/v1/trainings/${trainingId}`, {
           method: "PATCH",
           body: JSON.stringify({
@@ -339,6 +379,23 @@ export default function TrainingComponent({
             due_date: values.due_date ? values.due_date.toISOString() : null,
           }),
         });
+
+        // Update scenarios with the policy_id if provided
+        if (values.policyId) {
+          // Get all parent scenarios (parent_id is null) for this training
+          const parentScenarios = scenarios.filter((s) => s.parent_id === null);
+
+          // Update each parent scenario with the policy_id
+          for (const scenario of parentScenarios) {
+            await api(`/api/v1/scenarios/${scenario.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                policy_ids: [values.policyId],
+              }),
+            });
+          }
+        }
+
         messageApi.success("Training updated successfully");
         queryClient.invalidateQueries({ queryKey: ["trainings"] });
         queryClient.invalidateQueries({ queryKey: ["training-completion"] });
@@ -562,7 +619,7 @@ export default function TrainingComponent({
           </div>
         </Form.Item>
       ) : (
-        // Policy selection for required mode
+        // Policy selection for required mode (show in both creation and edit mode)
         <Form.Item
           name="policyId"
           label="Supporting Policy (Optional)"
@@ -571,7 +628,7 @@ export default function TrainingComponent({
           <Select
             placeholder="Select a policy..."
             allowClear
-            loading={loadingPolicies}
+            loading={loadingPolicies || loadingScenarios}
             size="large"
             suffixIcon={<FileTextOutlined />}
             notFoundContent={

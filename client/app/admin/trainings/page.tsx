@@ -24,6 +24,7 @@ import {
   DatePicker,
   Input,
   Modal,
+  Popconfirm,
   Row,
   Select,
   Space,
@@ -314,6 +315,24 @@ export default function AdminTrainingsPage() {
     }
   };
 
+  // Function to delete training
+  const deleteTraining = async (trainingId: string, trainingTitle: string) => {
+    try {
+      await api(`/api/v1/trainings/${trainingId}`, {
+        method: "DELETE",
+      });
+
+      // Invalidate queries to refresh the data
+      queryClient.invalidateQueries({ queryKey: ["trainings"] });
+      queryClient.invalidateQueries({ queryKey: ["training-completion"] });
+
+      messageApi.success(`Training "${trainingTitle}" deleted successfully`);
+    } catch (error) {
+      console.error("Failed to delete training:", error);
+      messageApi.error("Failed to delete training. Please try again.");
+    }
+  };
+
   // State for filters and search
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -564,25 +583,28 @@ export default function AdminTrainingsPage() {
               {record.active ? "Deactivate" : "Activate"}
             </Button>
           </Tooltip>
-          <Tooltip title="Delete Training">
-            <Button
-              type="text"
-              icon={<DeleteOutlined />}
-              size="small"
-              danger
-              onClick={() => {
-                Modal.confirm({
-                  title: "Delete Training",
-                  content: `Are you sure you want to delete "${record.title}"?`,
-                  okText: "Delete",
-                  okType: "danger",
-                  onOk: () => {
-                    messageApi.success("Training deleted successfully");
-                  },
-                });
-              }}
-            />
-          </Tooltip>
+          <Popconfirm
+            title="Delete Training"
+            description={`Are you sure you want to delete "${record.title}"?`}
+            onConfirm={() => {
+              if (record.id) {
+                deleteTraining(record.id, record.title || "");
+              }
+            }}
+            okText="Delete"
+            cancelText="Cancel"
+            okType="danger"
+          >
+            <Tooltip title="Delete Training">
+              <Button
+                type="text"
+                icon={<DeleteOutlined />}
+                size="small"
+                danger
+                disabled={!record.id}
+              />
+            </Tooltip>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -746,7 +768,9 @@ export default function AdminTrainingsPage() {
         }}
         onSaved={() => {
           queryClient.invalidateQueries({ queryKey: ["trainings"] });
-          queryClient.invalidateQueries({ queryKey: ["training-completion"] });
+          queryClient.invalidateQueries({
+            queryKey: ["training-completion"],
+          });
         }}
         training={selectedTraining}
       />

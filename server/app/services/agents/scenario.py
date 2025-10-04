@@ -774,7 +774,7 @@ async def run_scenario_agent(
                     }
                     content.append(no_pdf_text_item)
                     logger.info(f"Added policy text content (no PDF available) for {policy_id}")
-                
+                policy_content_items.extend(content)
             except Exception as e:
                 logger.warning(f"Failed to retrieve policy content for {policy_id}: {e}")
 
@@ -841,11 +841,38 @@ async def run_scenario_agent(
             context_items.append({"role": "developer", "content": tools_info_content})
 
         # Update history with tools information
-        policy_content_message: EasyInputMessageParam = {
-            "role": "developer",
-            "content": policy_content_items,
-        }
-        history = parameter_history + context_items + [policy_content_message]
+        # Only add policy content message if there's actual content
+        history = parameter_history + context_items
+        if policy_content_items:
+            history.append({
+                "role": "user",
+                "content": policy_content_items,
+            })
+
+        # Validate that all messages have content before sending to AI model
+        def validate_message_content(message: Any) -> bool:
+            """Validate that a message has valid content."""
+            if not isinstance(message, dict):
+                return True  # Skip validation for non-dict messages
+            content = message.get("content")
+            if not content:
+                return False
+            if isinstance(content, list):
+                return len(content) > 0
+            if isinstance(content, str):
+                return len(content.strip()) > 0
+            return True
+
+        # Filter out any messages with empty content
+        history = [msg for msg in history if validate_message_content(msg)]
+        
+        if not history:
+            logger.error("No valid messages to send to AI model")
+            return {
+                "success": False,
+                "message": "No valid content to process",
+                "scenario_id": None,
+            }
 
         # Build persona existence map from the personas we already fetched for context
         persona_exists_map = {}
