@@ -9,8 +9,8 @@ import {
 } from "@/lib/api/hooks/useDocuments";
 import { useGroup } from "@/lib/api/hooks/useGroups";
 import { useParametersByField } from "@/lib/api/hooks/useParameters";
+import { useRubrics } from "@/lib/api/hooks/useRubrics";
 import { trainingKeys } from "@/lib/api/keys";
-import type { Rubric } from "@/types";
 import {
   CalendarOutlined,
   DeleteOutlined,
@@ -99,18 +99,6 @@ export default function TrainingComponent({
   });
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loadingPolicies, setLoadingPolicies] = useState(false);
-  const [rubrics, setRubrics] = useState<Rubric[]>([]);
-  const [loadingRubrics, setLoadingRubrics] = useState(false);
-  const [scenarios, setScenarios] = useState<
-    Array<{
-      id: string;
-      title: string;
-      parent_id: string | null;
-      policy_ids: string[];
-      training_id: string | null;
-    }>
-  >([]);
-  const [loadingScenarios, setLoadingScenarios] = useState(false);
 
   // Document upload state for custom mode
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -140,6 +128,11 @@ export default function TrainingComponent({
       !!generalGroup?.mood_field_id
     );
 
+  // Fetch rubrics using the same hook as the rubrics page
+  const { data: rubrics, isLoading: loadingRubrics } = useRubrics(
+    effectiveProfile?.company || null
+  );
+
   // Fetch policies and rubrics on component mount (only for required mode)
   useEffect(() => {
     if (!custom) {
@@ -161,75 +154,26 @@ export default function TrainingComponent({
 
       fetchPolicies();
     }
-
-    // Fetch scenarios for edit mode to get existing policy_ids
-    if (isEditMode && training_id) {
-      const fetchScenarios = async () => {
-        setLoadingScenarios(true);
-        try {
-          const res = await fetch(
-            `/api/v1/scenarios?training_id=${training_id}`,
-            { cache: "no-store" }
-          );
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            setScenarios(data);
-          }
-        } catch (error) {
-          console.error("Error fetching scenarios:", error);
-          messageApi.error("Failed to load scenarios");
-        } finally {
-          setLoadingScenarios(false);
-        }
-      };
-
-      fetchScenarios();
-    }
-
-    const fetchRubrics = async () => {
-      setLoadingRubrics(true);
-      try {
-        const res = await fetch("/api/v1/rubrics", { cache: "no-store" });
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setRubrics(data);
-        }
-      } catch (error) {
-        console.error("Error fetching rubrics:", error);
-        messageApi.error("Failed to load rubrics");
-      } finally {
-        setLoadingRubrics(false);
-      }
-    };
-
-    fetchRubrics();
   }, [custom, messageApi, isEditMode, training_id]);
 
   // Set form values when in edit mode
   useEffect(() => {
     if (isEditMode && currentTraining && visible) {
-      // Get the first policy_id from scenarios for prefill
-      const firstScenario = scenarios.find((s) => s.parent_id === null);
-      const firstPolicyId = firstScenario?.policy_ids?.[0] || null;
-
       form.setFieldsValue({
         title: currentTraining.title || "",
         scenario: currentTraining.title || "", // For custom trainings
         description: currentTraining.description || "",
         active: currentTraining.active ?? true,
-        training_type:
-          currentTraining.training_type || (custom ? "custom" : "required"),
         due_date: currentTraining.due_date
           ? dayjs(currentTraining.due_date)
           : null,
-        policyId: firstPolicyId, // Prefill with first policy from scenarios
       });
     } else if (!visible) {
       form.resetFields();
       setUploadedFile(null);
       setUploadedDocumentId(null);
     }
-  }, [isEditMode, currentTraining, visible, custom, form, scenarios]);
+  }, [isEditMode, currentTraining, visible, custom, form]);
 
   // Listen for training creation progress events (only for creation mode)
   React.useEffect(() => {
@@ -371,26 +315,9 @@ export default function TrainingComponent({
             title: custom ? values.scenario : values.title,
             description: values.description || null,
             active: values.active,
-            training_type: values.training_type,
             due_date: values.due_date ? values.due_date.toISOString() : null,
           }),
         });
-
-        // Update scenarios with the policy_id if provided
-        if (values.policyId) {
-          // Get all parent scenarios (parent_id is null) for this training
-          const parentScenarios = scenarios.filter((s) => s.parent_id === null);
-
-          // Update each parent scenario with the policy_id
-          for (const scenario of parentScenarios) {
-            await api(`/api/v1/scenarios/${scenario.id}`, {
-              method: "PATCH",
-              body: JSON.stringify({
-                policy_ids: [values.policyId],
-              }),
-            });
-          }
-        }
 
         messageApi.success("Training updated successfully");
         queryClient.invalidateQueries({ queryKey: ["trainings"] });
@@ -493,26 +420,11 @@ export default function TrainingComponent({
         />
       </Form.Item>
 
-      {/* Training Type (only in edit mode) */}
+      {/* Due Date (only in edit mode) */}
       {isEditMode && (
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="training_type" label="Type">
-              <Select
-                options={[
-                  { label: "Standard", value: "standard" },
-                  { label: "Required", value: "required" },
-                  { label: "Custom", value: "custom" },
-                ]}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="due_date" label="Due Date">
-              <DatePicker style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
-        </Row>
+        <Form.Item name="due_date" label="Due Date">
+          <DatePicker style={{ width: "100%" }} />
+        </Form.Item>
       )}
 
       {!custom && !isEditMode && (
@@ -636,68 +548,70 @@ export default function TrainingComponent({
           </div>
         </Form.Item>
       ) : (
-        // Policy selection for required mode (show in both creation and edit mode)
-        <Form.Item
-          name="policyId"
-          label="Supporting Policy (Optional)"
-          tooltip="Select a company policy to include with this training"
-        >
-          <Select
-            placeholder="Select a policy..."
-            allowClear
-            loading={loadingPolicies || loadingScenarios}
-            size="large"
-            suffixIcon={<FileTextOutlined />}
-            notFoundContent={
-              policies.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "20px" }}>
-                  <FileTextOutlined
-                    style={{
-                      fontSize: "24px",
-                      color: "#d9d9d9",
-                      marginBottom: "8px",
-                    }}
-                  />
-                  <div style={{ color: "#8c8c8c" }}>
-                    No policies uploaded yet
-                  </div>
-                  <div
-                    style={{
-                      color: "#bfbfbf",
-                      fontSize: "12px",
-                      marginTop: "4px",
-                    }}
-                  >
-                    Upload policies in the Documents section first
-                  </div>
-                </div>
-              ) : (
-                "No policies found"
-              )
-            }
+        // Policy selection for required mode (only show in creation mode, not edit mode)
+        !isEditMode && (
+          <Form.Item
+            name="policyId"
+            label="Supporting Policy (Optional)"
+            tooltip="Select a company policy to include with this training"
           >
-            {policies.map((policy) => (
-              <Select.Option key={policy.id} value={policy.id}>
-                <div>
-                  <div style={{ fontWeight: 500 }}>{policy.title}</div>
-                  {policy.description && (
+            <Select
+              placeholder="Select a policy..."
+              allowClear
+              loading={loadingPolicies}
+              size="large"
+              suffixIcon={<FileTextOutlined />}
+              notFoundContent={
+                policies.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "20px" }}>
+                    <FileTextOutlined
+                      style={{
+                        fontSize: "24px",
+                        color: "#d9d9d9",
+                        marginBottom: "8px",
+                      }}
+                    />
+                    <div style={{ color: "#8c8c8c" }}>
+                      No policies uploaded yet
+                    </div>
                     <div
                       style={{
+                        color: "#bfbfbf",
                         fontSize: "12px",
-                        color: "#8c8c8c",
-                        marginTop: "2px",
+                        marginTop: "4px",
                       }}
                     >
-                      {policy.description.length > 60
-                        ? `${policy.description.substring(0, 60)}...`
-                        : policy.description}
+                      Upload policies in the Documents section first
                     </div>
-                  )}
-                </div>
-              </Select.Option>
-            ))}
-          </Select>
-        </Form.Item>
+                  </div>
+                ) : (
+                  "No policies found"
+                )
+              }
+            >
+              {policies.map((policy) => (
+                <Select.Option key={policy.id} value={policy.id}>
+                  <div>
+                    <div style={{ fontWeight: 500 }}>{policy.title}</div>
+                    {policy.description && (
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: "#8c8c8c",
+                          marginTop: "2px",
+                        }}
+                      >
+                        {policy.description.length > 60
+                          ? `${policy.description.substring(0, 60)}...`
+                          : policy.description}
+                      </div>
+                    )}
+                  </div>
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        )
       )}
 
       {/* Moods field (only for creation mode) */}
@@ -756,7 +670,7 @@ export default function TrainingComponent({
             style={{ width: "100%" }}
             optionLabelProp="label"
             notFoundContent={
-              rubrics.length === 0 ? (
+              !rubrics || rubrics.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "20px" }}>
                   <div style={{ color: "#8c8c8c" }}>No rubrics available</div>
                 </div>
@@ -765,12 +679,9 @@ export default function TrainingComponent({
               )
             }
           >
-            {/* General rubric (generic) */}
+            {/* General rubrics (generic) */}
             {rubrics
-              .filter(
-                (rubric) =>
-                  !rubric.company && rubric.name.toLowerCase() === "general"
-              )
+              ?.filter((rubric) => !rubric.company)
               .map((rubric) => (
                 <Select.Option
                   key={rubric.id}
@@ -794,7 +705,7 @@ export default function TrainingComponent({
 
             {/* Company-specific rubrics */}
             {rubrics
-              .filter((rubric) => rubric.company === effectiveProfile?.company)
+              ?.filter((rubric) => rubric.company === effectiveProfile?.company)
               .map((rubric) => (
                 <Select.Option
                   key={rubric.id}
