@@ -174,6 +174,7 @@ class OpenAIAgent(Agent):
             "had_text": False,
             "open": False,
             "parent_id": None,
+            "accum_text": "",  # Track accumulated text for Fix B alternative
         }
         self._anchor_item_ids: set[str] = (
             set()
@@ -1813,6 +1814,7 @@ class OpenAIAgent(Agent):
                     "had_text": False,
                     "open": True,
                     "parent_id": parent,
+                    "accum_text": "",  # Initialize accumulated text
                 }
             )
             self._anchor_item_ids.clear()
@@ -1833,6 +1835,8 @@ class OpenAIAgent(Agent):
             voice=True,
             parent_id=self._user_anchor.get("parent_id"),
         )
+        # Track accumulated text for Fix B alternative
+        self._user_anchor["accum_text"] = (self._user_anchor.get("accum_text") or "") + delta
         self._user_anchor["chunk_idx"] = (self._user_anchor["chunk_idx"] or 0) + 1
         self._user_anchor["had_text"] = True
 
@@ -1866,19 +1870,28 @@ class OpenAIAgent(Agent):
             self._user_anchor["chunk_idx"] = (self._user_anchor["chunk_idx"] or 0) + 1
             self._user_anchor["had_text"] = True
 
-        # Only close the bubble when the *latest* item completes
+        # Only close the bubble when the *current* latest item completes
+        # This prevents old items from finalizing after a pause, which was causing
+        # the "back half only" symptom
         if item_id and self._latest_item_id and item_id == self._latest_item_id:
             if self._user_anchor["had_text"]:
+                # Fix A: Finalize the last non-empty chunk instead of creating a new empty one
+                # This prevents the empty final chunk from overriding meaningful content
+                last_idx = max(0, (self._user_anchor["chunk_idx"] or 1) - 1)
+                
+                # Alternative Fix B: Use accumulated text for final chunk if Fix A doesn't work
+                # with the room's append_text_chunk implementation
+                final_text = ""  # Fix A: empty text, finalize previous chunk
+                # final_text = self._user_anchor.get("accum_text", "")  # Fix B: repeat full text
+                
                 await self.room.append_text_chunk(
                     source_id="openai:user-transcript",
                     role="user",
-                    text="",
+                    text=final_text,
                     message_id=str(self._user_anchor["msg_id"])
                     if self._user_anchor["msg_id"] is not None
                     else None,
-                    chunk_idx=int(self._user_anchor["chunk_idx"])
-                    if self._user_anchor["chunk_idx"] is not None
-                    else 0,
+                    chunk_idx=last_idx,  # finalize the last real chunk
                     is_final=True,
                     persona_id=await self._get_user_persona_id(),
                     voice=True,
@@ -1892,6 +1905,7 @@ class OpenAIAgent(Agent):
                     "had_text": False,
                     "open": False,
                     "parent_id": None,
+                    "accum_text": "",  # Reset accumulated text
                 }
             )
             self._anchor_item_ids.clear()
@@ -1924,6 +1938,7 @@ class OpenAIAgent(Agent):
                     "had_text": False,
                     "open": True,
                     "parent_id": parent,
+                    "accum_text": "",  # Initialize accumulated text
                 }
             )
             self._anchor_item_ids.clear()
@@ -2017,7 +2032,9 @@ class OpenAIAgent(Agent):
                         await self._handle_speech_started(payload)
 
                     elif evt_type in ("input_audio_buffer.speech_stopped", "input_audio_buffer.committed"):
-                        pass  # No action needed
+                        # No action needed - removed stop_guard_latest mechanism that was causing
+                        # "back half only" symptoms by allowing old items to finalize after pause
+                        pass
 
                     elif evt_type == "conversation.item.created":
                         pass  # Only create on actual transcript deltas
