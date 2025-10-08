@@ -1,8 +1,12 @@
 "use client";
 import { ArrowRight, Building, CreditCard, Mail, User } from "lucide-react";
 import { useState } from "react";
+import AuthModal from "./auth/AuthModal";
 
 const GetStartedPage = () => {
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("signup");
+
   const [formData, setFormData] = useState({
     companyName: "",
     street: "",
@@ -29,6 +33,11 @@ const GetStartedPage = () => {
     { value: "scale", label: "Scale - $25,000/year (500 users)" },
     { value: "enterprise", label: "Enterprise - Custom Pricing (500+ users)" },
   ];
+
+  const handleSignUp = () => {
+    setAuthMode("signup");
+    setAuthModalOpen(true);
+  };
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -154,7 +163,7 @@ const GetStartedPage = () => {
 
             <div className="flex items-center space-x-3">
               <button
-                onClick={() => window.open("/auth", "_self")}
+                onClick={handleSignUp}
                 className="text-gray-600 hover:text-gray-900 font-medium transition-colors px-4 py-2"
               >
                 Sign Up
@@ -523,6 +532,13 @@ const GetStartedPage = () => {
           </div>
         </div>
       </footer>
+
+      <AuthModal
+        open={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        mode={authMode}
+        onModeChange={setAuthMode}
+      />
     </div>
   );
 };

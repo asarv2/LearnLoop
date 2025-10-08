@@ -129,8 +129,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ) {
       const effectiveRole = effectiveProfile.role;
 
-      // 1. Redirect from home page based on role
-      if (pathname === "/") {
+      // 1. Redirect from home page or other public pages based on role
+      if (
+        pathname === "/" ||
+        pathname === "/get-started" ||
+        pathname === "/pricing" ||
+        pathname === "/about" ||
+        pathname === "/contact" ||
+        pathname === "/terms-of-service" ||
+        pathname === "/privacy-policy"
+      ) {
         if (effectiveRole === "admin" || effectiveRole === "superadmin") {
           router.push("/admin/analytics");
         } else if (effectiveRole === "employee") {
