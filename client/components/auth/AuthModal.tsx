@@ -2,7 +2,12 @@
 
 import { toast } from "@/lib/toast";
 import useSupabaseBrowser from "@/utils/supabase/supabase-browser";
-import { LockOutlined, MailOutlined, UserOutlined } from "@ant-design/icons";
+import {
+  LockOutlined,
+  MailOutlined,
+  SafetyCertificateOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import { Alert, Button, Form, Input, Modal, Typography } from "antd";
 import { useState } from "react";
 
@@ -30,18 +35,40 @@ export default function AuthModal({
     email: string;
     password: string;
     fullName?: string;
+    companyCode?: string;
   }) => {
     setLoading(true);
     setError(null);
 
     try {
       if (mode === "signup") {
+        // Validate company code first
+        if (!values.companyCode) {
+          throw new Error("Company code is required for signup");
+        }
+
+        const codeResponse = await fetch("/api/v1/validate-company-code", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ code: values.companyCode }),
+        });
+
+        const codeResult = await codeResponse.json();
+
+        if (!codeResponse.ok) {
+          throw new Error(codeResult.error || "Invalid company code");
+        }
+
         const { data, error } = await supabase.auth.signUp({
           email: values.email,
           password: values.password,
           options: {
             data: {
               full_name: values.fullName,
+              company_code: values.companyCode,
+              company_name: codeResult.companyName,
             },
           },
         });
@@ -158,6 +185,30 @@ export default function AuthModal({
               <Input
                 prefix={<UserOutlined />}
                 placeholder="Enter your full name"
+              />
+            </Form.Item>
+          )}
+
+          {mode === "signup" && (
+            <Form.Item
+              name="companyCode"
+              label="Company Code"
+              rules={[
+                { required: true, message: "Please enter your company code" },
+                {
+                  min: 3,
+                  message: "Company code must be at least 3 characters",
+                },
+              ]}
+            >
+              <Input
+                prefix={<SafetyCertificateOutlined />}
+                placeholder="Enter your company code"
+                style={{ textTransform: "uppercase" }}
+                onChange={(e) => {
+                  const upperValue = e.target.value.toUpperCase();
+                  form.setFieldValue("companyCode", upperValue);
+                }}
               />
             </Form.Item>
           )}

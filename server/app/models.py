@@ -163,6 +163,31 @@ class Rubrics(_Base, table=True):
     scenarios: List['Scenarios'] = Relationship(back_populates='rubric')
 
 
+class UserAdditionRequests(_Base, table=True):
+    __tablename__ = 'user_addition_requests'
+    __table_args__ = (
+        CheckConstraint("status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'completed'::text])", name='user_addition_requests_status_check'),
+        CheckConstraint('users_to_add > 0', name='user_addition_requests_users_to_add_check'),
+        PrimaryKeyConstraint('id', name='user_addition_requests_pkey'),
+        Index('idx_user_addition_requests_company', 'company'),
+        Index('idx_user_addition_requests_created_at', 'created_at'),
+        Index('idx_user_addition_requests_status', 'status')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    company: str = Field(sa_column=Column('company', Text))
+    current_plan: str = Field(sa_column=Column('current_plan', Text))
+    users_to_add: int = Field(sa_column=Column('users_to_add', Integer))
+    total_cost: Optional[Decimal] = Field(default=None, sa_column=Column('total_cost', Numeric(10, 2), default=0))
+    requested_by: Optional[str] = Field(default=None, sa_column=Column('requested_by', Text))
+    status: Optional[str] = Field(default=None, sa_column=Column('status', Text, default=r'pending'))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    processed_at: Optional[datetime] = Field(default=None, sa_column=Column('processed_at', DateTime(True)))
+    processed_by: Optional[str] = Field(default=None, sa_column=Column('processed_by', Text))
+    notes: Optional[str] = Field(default=None, sa_column=Column('notes', Text))
+
+
 class Parameters(_Base, table=True):
     __table_args__ = (
         ForeignKeyConstraint(['field_id'], ['fields.id'], ondelete='CASCADE', name='parameters_field_id_fkey'),

@@ -921,6 +921,51 @@ export type Database = {
         }
         Relationships: []
       }
+      user_addition_requests: {
+        Row: {
+          company: string
+          created_at: string | null
+          current_plan: string
+          id: string
+          notes: string | null
+          processed_at: string | null
+          processed_by: string | null
+          requested_by: string | null
+          status: string | null
+          total_cost: number | null
+          updated_at: string | null
+          users_to_add: number
+        }
+        Insert: {
+          company: string
+          created_at?: string | null
+          current_plan: string
+          id?: string
+          notes?: string | null
+          processed_at?: string | null
+          processed_by?: string | null
+          requested_by?: string | null
+          status?: string | null
+          total_cost?: number | null
+          updated_at?: string | null
+          users_to_add: number
+        }
+        Update: {
+          company?: string
+          created_at?: string | null
+          current_plan?: string
+          id?: string
+          notes?: string | null
+          processed_at?: string | null
+          processed_by?: string | null
+          requested_by?: string | null
+          status?: string | null
+          total_cost?: number | null
+          updated_at?: string | null
+          users_to_add?: number
+        }
+        Relationships: []
+      }
       user_feedback: {
         Row: {
           created_at: string
