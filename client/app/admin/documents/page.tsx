@@ -127,6 +127,15 @@ export default function AdminPoliciesPage() {
             name="file"
             multiple={false}
             showUploadList={false}
+            accept=".pdf"
+            beforeUpload={(file) => {
+              const isPDF = file.type === "application/pdf";
+              if (!isPDF) {
+                message.error("You can only upload PDF files!");
+                return false;
+              }
+              return true;
+            }}
             customRequest={async (options) => {
               const { file, onSuccess, onError } = options as {
                 file: File;
@@ -214,7 +223,7 @@ export default function AdminPoliciesPage() {
                   Upload new document
                 </div>
                 <div style={{ color: "#8c8c8c", fontSize: 13 }}>
-                  PDF, DOCX, PPTX…
+                  PDF files only
                 </div>
               </div>
             </Card>

@@ -15,10 +15,10 @@ const { TextArea } = Input;
 export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const { user } = useAuth();
+  const { effectiveProfile } = useAuth();
 
   const handleSubmit = async (values: { feedback: string }) => {
-    if (!user?.id) {
+    if (!effectiveProfile?.id) {
       toast.error("You must be logged in to submit feedback");
       return;
     }
@@ -31,7 +31,7 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          user_id: user.id,
+          user_id: effectiveProfile.id,
           feedback_text: values.feedback,
         }),
       });

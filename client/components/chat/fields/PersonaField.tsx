@@ -18,6 +18,8 @@ export default function PersonaField({
   selectedParameterId,
   customPersonaName,
   setCustomPersonaName,
+  customPersonaDescription,
+  setCustomPersonaDescription,
   customVoiceType,
   setCustomVoiceType,
   customVoiceFile,
@@ -27,6 +29,9 @@ export default function PersonaField({
 }: PersonaFieldProps) {
   const { data: parameters, isLoading } = useParametersByField(field.id);
   const { data: personas } = usePersonas();
+
+  // Feature flag for custom voice upload
+  const isCustomVoiceEnabled = process.env.NEXT_PUBLIC_CUSTOM_VOICE === "true";
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -271,7 +276,18 @@ export default function PersonaField({
   return (
     <Flex direction="column" gap="3">
       {displayedParameters
-        ?.sort((a, b) => b.updated_at?.localeCompare(a.updated_at || "") || 0)
+        ?.sort((a, b) => {
+          // Custom parameters (value === null) should always appear last
+          const aIsCustom = a.value === null;
+          const bIsCustom = b.value === null;
+
+          if (aIsCustom && !bIsCustom) return 1; // a is custom, b is not - a goes last
+          if (!aIsCustom && bIsCustom) return -1; // a is not custom, b is - b goes last
+          if (aIsCustom && bIsCustom) return 0; // both custom - maintain original order
+
+          // For non-custom parameters, sort by updated_at (newest first)
+          return b.updated_at?.localeCompare(a.updated_at || "") || 0;
+        })
         .map((parameter, index) => {
           // Custom sentinel is determined by value === null
           const isCustom = parameter.value === null;
@@ -506,6 +522,7 @@ export default function PersonaField({
                           variant="soft"
                           onClick={handlePlayCustomVoice}
                           style={{
+                            flex: 1,
                             background: isPlayingCustomVoice
                               ? "var(--green-3)"
                               : "var(--gray-3)",
@@ -513,15 +530,18 @@ export default function PersonaField({
                               ? "var(--green-11)"
                               : "var(--gray-11)",
                             border: "1px solid var(--gray-6)",
-                            borderRadius: "6px",
-                            padding: "8px 12px",
+                            borderRadius: "8px",
+                            padding: "12px 16px",
                             cursor: "pointer",
                             display: "flex",
                             alignItems: "center",
                             gap: "6px",
+                            fontSize: "16px",
+                            height: "48px",
+                            marginRight: "12px",
                           }}
                         >
-                          <SpeakerLoudIcon width="14" height="14" />
+                          <SpeakerLoudIcon width="16" height="16" />
                           <Text size="2">
                             {isPlayingCustomVoice ? "Playing..." : "Play Voice"}
                           </Text>
@@ -531,19 +551,22 @@ export default function PersonaField({
                           variant="ghost"
                           onClick={handleRemoveCustomVoice}
                           style={{
-                            color: "var(--red-9)",
-                            padding: "8px",
-                            minWidth: "auto",
-                            width: "32px",
-                            height: "32px",
-                            borderRadius: "6px",
+                            background: "var(--red-3)",
+                            color: "var(--red-11)",
+                            border: "1px solid var(--red-6)",
+                            borderRadius: "8px",
+                            padding: "0",
                             cursor: "pointer",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
+                            minWidth: "auto",
+                            width: "44px",
+                            height: "44px",
+                            marginRight: "2px",
                           }}
                         >
-                          <Cross2Icon width="14" height="14" />
+                          <Cross2Icon width="18" height="18" />
                         </Button>
                         <audio
                           ref={customAudioRef}
@@ -564,6 +587,7 @@ export default function PersonaField({
                           style={{
                             flex: 1,
                             padding: "12px 16px",
+                            paddingRight: "40px",
                             borderRadius: "8px",
                             border: `1px solid ${
                               customVoiceType
@@ -573,6 +597,11 @@ export default function PersonaField({
                             fontSize: "16px",
                             outline: "none",
                             background: "white",
+                            appearance: "none",
+                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                            backgroundPosition: "right 12px center",
+                            backgroundRepeat: "no-repeat",
+                            backgroundSize: "16px 16px",
                           }}
                         >
                           <option value="">Select voice...</option>
@@ -594,42 +623,75 @@ export default function PersonaField({
                             );
                           })}
                         </select>
-                        <input
-                          type="file"
-                          accept=".wav,audio/*"
-                          onChange={handleVoiceFileUpload}
-                          style={{ display: "none" }}
-                          id={`voice-upload-${field.id}`}
-                        />
-                        <Button
-                          size="2"
-                          variant="soft"
-                          onClick={() =>
-                            document
-                              .getElementById(`voice-upload-${field.id}`)
-                              ?.click()
-                          }
-                          style={{
-                            background: "var(--violet-3)",
-                            color: "var(--violet-11)",
-                            border: "1px solid var(--violet-6)",
-                            borderRadius: "6px",
-                            padding: "8px",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            minWidth: "auto",
-                            width: "32px",
-                            height: "32px",
-                          }}
-                        >
-                          <UploadIcon width="14" height="14" />
-                        </Button>
+                        {isCustomVoiceEnabled && (
+                          <>
+                            <input
+                              type="file"
+                              accept=".wav,audio/*"
+                              onChange={handleVoiceFileUpload}
+                              style={{ display: "none" }}
+                              id={`voice-upload-${field.id}`}
+                            />
+                            <Button
+                              size="2"
+                              variant="soft"
+                              onClick={() =>
+                                document
+                                  .getElementById(`voice-upload-${field.id}`)
+                                  ?.click()
+                              }
+                              style={{
+                                background: "var(--violet-3)",
+                                color: "var(--violet-11)",
+                                border: "1px solid var(--violet-6)",
+                                borderRadius: "8px",
+                                padding: "10px 14px",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                minWidth: "auto",
+                                width: "44px",
+                                height: "44px",
+                              }}
+                            >
+                              <UploadIcon width="18" height="18" />
+                            </Button>
+                          </>
+                        )}
                       </Flex>
                     )}
                   </Box>
                 </Flex>
+
+                {/* Description field - aligned with upload button */}
+                <Box style={{ marginTop: "12px", marginRight: "-12px" }}>
+                  <textarea
+                    placeholder={`Enter ${
+                      field.name?.toLowerCase() || "persona"
+                    } description...`}
+                    value={customPersonaDescription}
+                    onChange={(e) =>
+                      setCustomPersonaDescription(e.target.value)
+                    }
+                    rows={1}
+                    style={{
+                      width: "100%",
+                      padding: "12px 16px",
+                      borderRadius: "8px",
+                      border: `1px solid ${
+                        customPersonaDescription
+                          ? "var(--green-7)"
+                          : "var(--gray-6)"
+                      }`,
+                      fontSize: "16px",
+                      outline: "none",
+                      background: "white",
+                      resize: "vertical",
+                      minHeight: "80px",
+                    }}
+                  />
+                </Box>
               </Box>
             )}
           </Flex>

@@ -14,7 +14,7 @@ import socketio  # type: ignore
 from agents.items import TResponseInputItem
 from app.db import get_session
 from app.models import Documents  # ✨ Import Personas
-from app.models import (Attempts, Chats, Fields, Messages, Parameters,
+from app.models import (Attempts, Chats, Fields, Groups, Messages, Parameters,
                         Personas, Scenarios, Trainings)
 from app.room import get_room
 from app.services.agents.document import run_document_agent
@@ -453,7 +453,9 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
         training_type = data.get("training_type", "custom")  # Default to custom
         company = data.get("company")  # Company assignment
         due_date_str = data.get("due_date")  # Due date for required trainings
-        admin_created = data.get("admin_created", False)  # Flag for admin creation
+        policy_id = data.get("policy_id")
+        mood_parameters = data.get("mood_parameters")
+        rubric_id = data.get("rubric_id")
 
         # Parse due_date if provided
         due_date = None
@@ -531,7 +533,7 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
                 due_date=due_date,
                 active=True,
                 practice=False,
-                show_documents=True,
+                show_documents=False,
             )
             db_session.add(training)
             db_session.commit()
@@ -552,17 +554,184 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
                 room=sid,
             )
 
-            # Create scenario entry with the specified group_id and rubric_id
-            group_id = uuid.UUID("8b6ed9ac-bfb7-4f31-992b-73935f6560bf")
-            rubric_id = uuid.UUID("a121c3fe-7559-41cf-bbcd-499a2f515af6")  # General rubric
+            general_group = db_session.exec(select(Groups).where(Groups.id == "8b6ed9ac-bfb7-4f31-992b-73935f6560bf")).one()
+
+            # Get the original persona and mood fields to copy their properties
+            original_persona_field = db_session.exec(select(Fields).where(Fields.id == general_group.persona_field_id)).one()
+            original_mood_field = db_session.exec(select(Fields).where(Fields.id == general_group.mood_field_id)).one()
+
+            # Create new persona field with same name and description
+            new_persona_field = Fields(
+                name=f"{original_persona_field.name}",
+                description=original_persona_field.description,
+                field_type=original_persona_field.field_type,
+                hidden=original_persona_field.hidden
+            )
+            db_session.add(new_persona_field)
+            db_session.commit()
+            db_session.refresh(new_persona_field)
+
+            # Create new mood field with same name and description
+            new_mood_field = Fields(
+                name=f"{original_mood_field.name}",
+                description=original_mood_field.description,
+                field_type=original_mood_field.field_type,
+                hidden=original_mood_field.hidden
+            )
+            db_session.add(new_mood_field)
+            db_session.commit()
+            db_session.refresh(new_mood_field)
+
+            # Get all persona parameters from the original field
+            original_persona_params = db_session.exec(
+                select(Parameters).where(Parameters.field_id == general_group.persona_field_id)
+            ).all()
+
+            # Get all mood parameters from the original field
+            original_mood_params = db_session.exec(
+                select(Parameters).where(Parameters.field_id == general_group.mood_field_id)
+            ).all()
+
+            # Separate persona parameters by gender (based on voice)
+            male_persona_params = []
+            female_persona_params = []
+            custom_persona_param = None
+
+            for param in original_persona_params:
+                if param.value is None:  # Custom parameter
+                    custom_persona_param = param
+                    continue
+                
+                # Get the persona to determine voice/gender
+                persona = db_session.exec(select(Personas).where(Personas.id == param.value)).one_or_none()
+                if persona and persona.voice in ['echo', 'verse', 'ash']:  # Male voices
+                    male_persona_params.append(param)
+                elif persona and persona.voice in ['alloy', 'shimmer', 'sage']:  # Female voices
+                    female_persona_params.append(param)
+
+            # Randomly select 2 male and 2 female persona parameters
+            import random
+            selected_male_params = random.sample(male_persona_params, min(2, len(male_persona_params)))
+            selected_female_params = random.sample(female_persona_params, min(2, len(female_persona_params)))
+            selected_persona_params = selected_male_params + selected_female_params
+
+            # Create new persona parameters
+            new_persona_param_ids = []
+            for param in selected_persona_params:
+                new_param = Parameters(
+                    field_id=new_persona_field.id,
+                    name=param.name,
+                    description=param.description,
+                    value=param.value
+                )
+                db_session.add(new_param)
+                db_session.commit()
+                db_session.refresh(new_param)
+                new_persona_param_ids.append(str(new_param.id))
+
+            # Add custom parameter if it exists
+            if custom_persona_param:
+                custom_new_param = Parameters(
+                    field_id=new_persona_field.id,
+                    name=custom_persona_param.name,
+                    description=custom_persona_param.description,
+                    value=custom_persona_param.value
+                )
+                db_session.add(custom_new_param)
+                db_session.commit()
+                db_session.refresh(custom_new_param)
+                new_persona_param_ids.append(str(custom_new_param.id))
+
+            # Use mood parameters from client data, but ensure we have exactly 4 moods
+            mood_params_with_values = [p for p in original_mood_params if p.value is not None]
+            custom_mood_param = next((p for p in original_mood_params if p.value is None), None)
+            
+            # Filter mood parameters based on parameter IDs sent from client
+            selected_mood_params = []
+            if mood_parameters:
+                for mood_param_id in mood_parameters:
+                    matching_param = next((p for p in original_mood_params if str(p.id) == mood_param_id), None)
+                    if matching_param:
+                        selected_mood_params.append(matching_param)
+            
+            # Ensure we have exactly 4 moods by randomly selecting additional ones if needed
+            import random
+            original_mood_count = len(selected_mood_params)
+            if len(selected_mood_params) < 4:
+                # Get all available mood parameters (excluding custom and already selected ones)
+                available_mood_params = [
+                    p for p in mood_params_with_values 
+                    if p not in selected_mood_params
+                ]
+                
+                # Randomly select additional moods to reach exactly 4
+                needed_count = 4 - len(selected_mood_params)
+                if len(available_mood_params) >= needed_count:
+                    additional_moods = random.sample(available_mood_params, needed_count)
+                    selected_mood_params.extend(additional_moods)
+                    logger.info(f"Autofilled {needed_count} additional moods to reach exactly 4 total moods")
+                else:
+                    # If we don't have enough available moods, use all available ones
+                    selected_mood_params.extend(available_mood_params)
+                    logger.warning(f"Only {len(selected_mood_params)} moods available, using all of them")
+            
+            # Limit to exactly 4 moods if we somehow have more
+            if len(selected_mood_params) > 4:
+                selected_mood_params = selected_mood_params[:4]
+                logger.warning("Had more than 4 moods selected, truncated to 4")
+            
+            logger.info(f"Final mood selection: {original_mood_count} user-selected, {len(selected_mood_params)} total moods")
+
+            # Create new mood parameters
+            new_mood_param_ids = []
+            for param in selected_mood_params:
+                new_param = Parameters(
+                    field_id=new_mood_field.id,
+                    name=param.name,
+                    description=param.description,
+                    value=param.value
+                )
+                db_session.add(new_param)
+                db_session.commit()
+                db_session.refresh(new_param)
+                new_mood_param_ids.append(str(new_param.id))
+
+            # Add custom mood parameter if it exists
+            if custom_mood_param:
+                custom_new_param = Parameters(
+                    field_id=new_mood_field.id,
+                    name=custom_mood_param.name,
+                    description=custom_mood_param.description,
+                    value=custom_mood_param.value
+                )
+                db_session.add(custom_new_param)
+                db_session.commit()
+                db_session.refresh(custom_new_param)
+                new_mood_param_ids.append(str(custom_new_param.id))
+
+            # Create new group with training name suffix
+            group = Groups(
+                name=f"{general_group.name} - {name}",
+                description=f"{general_group.description} - {name}",
+                level_field_id=general_group.level_field_id,
+                position_field_id=general_group.position_field_id,
+                mood_field_id=new_mood_field.id,
+                persona_field_id=new_persona_field.id,
+                field_ids=[]
+            )
+            db_session.add(group)
+            db_session.commit()
+            db_session.refresh(group)
+
             scenario = Scenarios(
                 title=name,
                 description=description,
                 training_id=training.id,
-                rubric_id=rubric_id,
-                group_ids=[group_id],
+                rubric_id=uuid.UUID(rubric_id) if rubric_id else None,
+                group_ids=[str(group.id)],
                 objectives=[],
                 parameter_ids=[],
+                policy_ids=[uuid.UUID(policy_id) if policy_id else None],
                 document_ids=[uuid.UUID(document_id)] if document_id else [],
                 prompts={},
                 prompt_mapping={},
@@ -573,23 +742,24 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
             db_session.commit()
             db_session.refresh(scenario)
 
-            logger.info(f"Created scenario {scenario.id} with group_id {group_id} and rubric_id {rubric_id}")
+            logger.info(f"Created scenario {scenario.id} with group_id {group.id} and rubric_id {rubric_id}")
 
-            # Emit progress update: generating document
-            await sio.emit(
-                "training_creation_progress",
-                {
-                    "type": "generating_document",
-                    "message": "Generating document template...",
-                    "progress": 75,
-                },
-                room=sid,
-            )
+            # Only generate document template if document_id is provided
+            if document_id and training_type != "custom":
+                # Emit progress update: generating document
+                await sio.emit(
+                    "training_creation_progress",
+                    {
+                        "type": "generating_document",
+                        "message": "Generating document template...",
+                        "progress": 75,
+                    },
+                    room=sid,
+                )
 
-            # Get document as base64 and extract content if document_id is provided
-            document_base64 = None
-            document_content = ""
-            if document_id:
+                # Get document as base64 and extract content
+                document_base64 = None
+                document_content = ""
                 try:
                     document_data = await get_document_base64_and_content(
                         document_id, db_session
@@ -599,109 +769,102 @@ async def handle_create_training(sid: str, data: dict[str, Any]) -> None:
                     logger.info(f"Retrieved document {document_id} successfully")
                 except Exception as e:
                     logger.error(f"Error retrieving document {document_id}: {e}")
-                    # Continue without document
+                    await emit_error(sid, f"Failed to retrieve document: {str(e)}")
+                    return
 
-            # Call the document agent to generate template code
-            try:
-                # Prepare input for document agent with proper typing
-                content: ResponseInputMessageContentListParam = []
+                # Call the document agent to generate template code
+                try:
+                    # Prepare input for document agent with proper typing
+                    content: ResponseInputMessageContentListParam = []
 
-                # Add content - either images OR text, but not both
-                if document_base64:
-                    try:
-                        # Convert PDF to images
-                        logger.info("Converting PDF to images")
-                        image_base64_list = convert_pdf_to_images(
-                            document_base64
-                        )  # Convert all pages
+                    # Add content - either images OR text, but not both
+                    if document_base64:
+                        try:
+                            # Convert PDF to images
+                            logger.info("Converting PDF to images")
+                            image_base64_list = convert_pdf_to_images(
+                                document_base64
+                            )  # Convert all pages
 
-                        if image_base64_list:
-                            # Add all pages as images
-                            for i, image_base64 in enumerate(image_base64_list):
-                                image_item: ResponseInputImageParam = {
-                                    "type": "input_image",
-                                    "image_url": f"data:image/png;base64,{image_base64}",
-                                    "detail": "auto",
-                                }
-                                content.append(image_item)
-                                logger.info(f"Added PDF page {i+1} as image")
+                            if image_base64_list:
+                                # Add all pages as images
+                                for i, image_base64 in enumerate(image_base64_list):
+                                    image_item: ResponseInputImageParam = {
+                                        "type": "input_image",
+                                        "image_url": f"data:image/png;base64,{image_base64}",
+                                        "detail": "auto",
+                                    }
+                                    content.append(image_item)
+                                    logger.info(f"Added PDF page {i+1} as image")
 
-                            logger.info(
-                                f"Added {len(image_base64_list)} PDF pages as images"
-                            )
-                        else:
+                                logger.info(
+                                    f"Added {len(image_base64_list)} PDF pages as images"
+                                )
+                            else:
+                                logger.warning(
+                                    "Failed to convert PDF to images, falling back to text content"
+                                )
+                                # Fall back to text content if image conversion fails
+                                if document_content:
+                                    fallback_text_item_2: ResponseInputTextParam = {
+                                        "type": "input_text",
+                                        "text": f"Here is the extracted text content from the document:\n\n{document_content}",
+                                    }
+                                    content.append(fallback_text_item_2)
+                                    logger.info("Added text content as fallback")
+                        except Exception as e:
                             logger.warning(
-                                "Failed to convert PDF to images, falling back to text content"
+                                f"Error processing PDF: {e}, falling back to text content"
                             )
-                            # Fall back to text content if image conversion fails
+                            # Fall back to text content if image processing fails
                             if document_content:
-                                fallback_text_item_2: ResponseInputTextParam = {
+                                fallback_text_item: ResponseInputTextParam = {
                                     "type": "input_text",
                                     "text": f"Here is the extracted text content from the document:\n\n{document_content}",
                                 }
-                                content.append(fallback_text_item_2)
+                                content.append(fallback_text_item)
                                 logger.info("Added text content as fallback")
-                    except Exception as e:
-                        logger.warning(
-                            f"Error processing PDF: {e}, falling back to text content"
+                    elif document_content:
+                        # No PDF available, use text content
+                        no_pdf_text_item: ResponseInputTextParam = {
+                            "type": "input_text",
+                            "text": f"Here is the extracted text content from the document:\n\n{document_content}",
+                        }
+                        content.append(no_pdf_text_item)
+                        logger.info("Added text content (no PDF available)")
+
+                    # Final validation to ensure content is not empty
+                    if not content:
+                        raise ValueError(
+                            "No content available for document generation - both document_base64 and document_content are empty"
                         )
-                        # Fall back to text content if image processing fails
-                        if document_content:
-                            fallback_text_item: ResponseInputTextParam = {
-                                "type": "input_text",
-                                "text": f"Here is the extracted text content from the document:\n\n{document_content}",
-                            }
-                            content.append(fallback_text_item)
-                            logger.info("Added text content as fallback")
-                elif document_content:
-                    # No PDF available, use text content
-                    no_pdf_text_item: ResponseInputTextParam = {
-                        "type": "input_text",
-                        "text": f"Here is the extracted text content from the document:\n\n{document_content}",
-                    }
-                    content.append(no_pdf_text_item)
-                    logger.info("Added text content (no PDF available)")
 
-                # Ensure we have at least some content - if both are empty, provide fallback text
-                if not content:
-                    fallback_text: ResponseInputTextParam = {
-                        "type": "input_text",
-                        "text": f"Generate a document template for: {name}. Document structure: {description or 'No specific structure provided'}",
-                    }
-                    content.append(fallback_text)
-
-                # Final validation to ensure content is not empty
-                if not content:
-                    raise ValueError(
-                        "No content available for document generation - both document_base64 and document_content are empty"
+                    # Log content summary
+                    logger.info(
+                        f"Prepared {len(content)} content items for document generation"
                     )
 
-                # Log content summary
-                logger.info(
-                    f"Prepared {len(content)} content items for document generation"
-                )
+                    input_items: list[EasyInputMessageParam] = [
+                        {"role": "user", "content": content}
+                    ]
 
-                input_items: list[EasyInputMessageParam] = [
-                    {"role": "user", "content": content}
-                ]
-
-                result = await run_document_agent(
-                    document_type=name,
-                    document_structure=description,  # Use description as fallback
-                    context=f"Custom training template for: {name}",
-                    input_items=input_items,
-                )
-
-                args_code = result.get("args_code", "")
-                render_code = result.get("render_code", "")
-
-                if not args_code or not render_code:
-                    raise ValueError(
-                        "Document agent failed to generate complete template code"
+                    result = await run_document_agent(
+                        document_type=name,
+                        document_structure=description,  # Use description as fallback
+                        context=f"Custom training template for: {name}",
+                        input_items=input_items,
                     )
 
-                # Combine the generated code into a complete template
-                template_code = f'''"""
+                    args_code = result.get("args_code", "")
+                    render_code = result.get("render_code", "")
+
+                    if not args_code or not render_code:
+                        raise ValueError(
+                            "Document agent failed to generate complete template code"
+                        )
+
+                    # Combine the generated code into a complete template
+                    template_code = f'''"""
 {name} Template Module.
 
 Contract:
@@ -717,21 +880,23 @@ Optional:
 {render_code}
 '''
 
-                logger.info(f"Generated template code for scenario {scenario.id}")
+                    logger.info(f"Generated template code for scenario {scenario.id}")
 
-                # Upload template to Supabase Storage
-                await upload_template_to_supabase_storage(
-                    template_code, str(scenario.id)
-                )
+                    # Upload template to Supabase Storage
+                    await upload_template_to_supabase_storage(
+                        template_code, str(scenario.id)
+                    )
 
-                logger.info(
-                    f"Successfully uploaded template for scenario {scenario.id}"
-                )
+                    logger.info(
+                        f"Successfully uploaded template for scenario {scenario.id}"
+                    )
 
-            except Exception as e:
-                logger.error(f"Error generating document template: {e}")
-                await emit_error(sid, f"Failed to generate document template: {str(e)}")
-                return
+                except Exception as e:
+                    logger.error(f"Error generating document template: {e}")
+                    await emit_error(sid, f"Failed to generate document template: {str(e)}")
+                    return
+            else:
+                logger.info(f"No document_id provided, skipping document template generation for scenario {scenario.id}")
 
             # Emit completion event
             await sio.emit(
@@ -1629,6 +1794,8 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                 # Use the centralized scenario agent - it will handle everything including child scenario creation
                 result = await run_scenario_agent(
                     scenario_id=uuid.UUID(parent_id),
+                    original_document_ids=[str(d) for d in parent.document_ids],
+                    policy_ids=parent.policy_ids,
                     field_values=field_values,
                     persona_ids=persona_ids_from_payload_uuids,
                     additional_context=additional_prompt,
@@ -1873,6 +2040,57 @@ def register_training_events(sio: socketio.AsyncServer) -> None:
                     pass
         except Exception:
             logger.exception("client_interrupted handler failed")
+
+    @sio.event  # type: ignore
+    async def generate_rubric(sid: str, data: dict[str, Any]) -> None:
+        """Generate rubric criteria using AI agent via WebSocket."""
+        try:
+            logger.info(f"generate_rubric event triggered for sid={sid}")
+
+            rubric_name = data.get("rubric_name")
+            rubric_description = data.get("rubric_description", "")
+            standards = data.get("standards", [])
+            num_levels = data.get("num_levels", 5)
+
+            if not rubric_name:
+                await emit_error(sid, "Missing rubric_name")
+                return
+
+            if not standards or not isinstance(standards, list):
+                await emit_error(sid, "Missing or invalid standards")
+                return
+
+            logger.info(
+                f"Starting rubric generation for '{rubric_name}' with {len(standards)} standards"
+            )
+
+            # Import and run the rubric generation agent
+            from app.services.agents.rubric import run_rubric_generation_agent
+
+            result = await run_rubric_generation_agent(
+                rubric_name=rubric_name,
+                rubric_description=rubric_description,
+                standards=standards,
+                num_levels=num_levels,
+            )
+
+            logger.info(f"Rubric generation completed successfully")
+
+            # Emit success response
+            sio = get_sio_instance()
+            await sio.emit(
+                "rubric_generated",
+                {
+                    "success": True,
+                    "standards": result.get("standards", []),
+                    "message": "Rubric generated successfully",
+                },
+                room=sid,
+            )
+
+        except Exception as e:
+            logger.error(f"Error generating rubric: {str(e)}", exc_info=True)
+            await emit_error(sid, f"Failed to generate rubric: {str(e)}")
 
     logger.info("Successfully registered training WebSocket event handlers")
     register_training_events._registered = True  # type: ignore[attr-defined]

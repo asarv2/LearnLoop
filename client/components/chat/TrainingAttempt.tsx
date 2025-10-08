@@ -201,7 +201,7 @@ function TrainingAttemptContent() {
     <Box
       style={{
         display: "flex",
-        height: "calc(100vh - 96px)",
+        height: "calc(100vh - 180px)",
         overflow: "hidden",
       }}
     >

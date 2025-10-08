@@ -2,12 +2,14 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import TrainingDetailsModal from "@/components/dashboard/history/TrainingDetailsModal";
-import { api } from "@/lib/api/fetcher";
-import { useProfile } from "@/lib/api/hooks/useProfiles";
+import {
+  useCompanyTrainingHistory,
+  type AttemptWithDetails,
+} from "@/lib/api/hooks/useCompanyTrainingHistory";
 import { useRubricGradesByChat } from "@/lib/api/hooks/useRubricGrades";
 import { useStandardAndRequiredTrainingsForCompany } from "@/lib/api/hooks/useTrainings";
+import type { Profile, Training } from "@/types";
 import { EyeOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
-import { useQuery } from "@tanstack/react-query";
 import {
   Button,
   Card,
@@ -28,49 +30,7 @@ import { useMemo, useState } from "react";
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
-// Data types
-interface Attempt {
-  id: string;
-  training_id: string;
-  profile_id: string;
-  created_at: string;
-  updated_at: string;
-}
-
-// interface Chat {
-//   id: string;
-//   attempt_id: string;
-//   title: string;
-//   completed: boolean;
-//   completed_at?: string;
-//   created_at: string;
-// }
-
-interface Training {
-  id: string;
-  title: string;
-  description?: string;
-}
-
-interface Profile {
-  id: string;
-  name: string;
-  company: string;
-}
-
-interface AttemptWithDetails extends Attempt {
-  training?: Training;
-  profile?: Profile;
-  chatInfo?: {
-    title: string;
-    name: string;
-    isCompleted: boolean;
-    completedAt?: string;
-    totalChats: number;
-    completedChats: number;
-  };
-  latestChatId?: string;
-}
+// Data types are now imported from @/types
 
 // Helper component to display score for a chat
 function ChatScore({
@@ -103,23 +63,6 @@ function ChatScore({
     grades.length > 0 ? Math.round(totalScore / grades.length) : 0;
 
   return <Text>{averageScore}%</Text>;
-}
-
-// Function to fetch company training history
-async function fetchCompanyTrainingHistory(
-  company: string | null
-): Promise<AttemptWithDetails[]> {
-  if (!company) return [];
-
-  try {
-    const response = await api<AttemptWithDetails[]>(
-      `/api/v1/company-training-history?company=${encodeURIComponent(company)}`
-    );
-    return response;
-  } catch (error) {
-    console.error("Failed to fetch company training history:", error);
-    return [];
-  }
 }
 
 // Create columns function
@@ -215,20 +158,7 @@ const createColumns = (
 ];
 
 export default function AdminHistoryPage() {
-  const { user } = useAuth();
-  const {
-    data: currentProfile,
-    isLoading: profileLoading,
-    error: profileError,
-  } = useProfile(user?.id || "", !!user);
-
-  console.log("Profile loading state:", {
-    user: user?.id,
-    profileLoading,
-    profileError,
-    currentProfile,
-  });
-
+  const { effectiveProfile } = useAuth();
   // State for filters and modal
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -241,32 +171,21 @@ export default function AdminHistoryPage() {
   );
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Fetch company training history
+  // Fetch company training history using the new hook
   const {
     data: attempts,
     isLoading,
     error,
-  } = useQuery({
-    queryKey: ["company-training-history", currentProfile?.company],
-    queryFn: () => fetchCompanyTrainingHistory(currentProfile?.company || null),
-    enabled: !!currentProfile?.company,
-    staleTime: 2 * 60_000, // 2 minutes
-  });
+  } = useCompanyTrainingHistory(effectiveProfile?.company || null);
 
   // Fetch available trainings for the filter
   const { data: availableTrainings, isLoading: trainingsLoading } =
-    useStandardAndRequiredTrainingsForCompany(currentProfile?.company || null);
+    useStandardAndRequiredTrainingsForCompany(
+      effectiveProfile?.company || null
+    );
 
-  console.log("Admin History Debug:", {
-    user: user?.id,
-    currentProfile: currentProfile,
-    company: currentProfile?.company,
-    attempts: attempts?.length,
-    availableTrainings: availableTrainings?.length,
-    isLoading,
-    error,
-    enabled: !!currentProfile?.company,
-  });
+  const profileLoading = isLoading;
+  const profileError = error as Error | null;
 
   const handleViewAttempt = (attemptId: string) => {
     setSelectedAttemptId(attemptId);
@@ -345,13 +264,13 @@ export default function AdminHistoryPage() {
   if (profileError) {
     return (
       <div style={{ textAlign: "center", padding: "50px" }}>
-        <div>Error loading profile: {profileError.message}</div>
+        <div>Error loading profile: {profileError?.message}</div>
       </div>
     );
   }
 
   // Show message if no company
-  if (!currentProfile?.company) {
+  if (!effectiveProfile?.company) {
     return (
       <div style={{ textAlign: "center", padding: "50px" }}>
         <div>No company assigned to your profile.</div>

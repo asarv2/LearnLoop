@@ -33,7 +33,7 @@ import {
 const { Title } = Typography;
 
 export default function Overview() {
-  const { user } = useAuth();
+  const { effectiveProfile } = useAuth();
   const { data: chats } = useChats();
   const { data: rubricGrades, isLoading: rubricGradesLoading } =
     useAllRubricGrades();
@@ -41,14 +41,6 @@ export default function Overview() {
   const { data: rubrics } = useRubrics(null);
 
   const [range, setRange] = useState<"weekly" | "monthly">("weekly");
-
-  // Debug logging
-  console.log("Overview Debug:", {
-    userId: user?.id,
-    chatsCount: chats?.length,
-    rubricGradesCount: rubricGrades?.length,
-    rubricGradesLoading,
-  });
 
   // Build maps for rubric points by training
   const rubricPointsByTrainingId = useMemo(() => {
@@ -107,15 +99,15 @@ export default function Overview() {
 
   // Get user's chats (already filtered by the API)
   const userChats = useMemo(() => {
-    if (!user?.id) return [];
+    if (!effectiveProfile?.id) return [];
 
     // The chats API already filters by current user, so we just return them
     return chats || [];
-  }, [chats, user?.id]);
+  }, [chats, effectiveProfile?.id]);
 
   // Get the 5 most recent strengths and improvements from user's rubric grades
   const insights = useMemo(() => {
-    if (!user?.id || !rubricGrades) {
+    if (!effectiveProfile?.id || !rubricGrades) {
       return {
         strengths: [],
         areasForImprovement: [],
@@ -148,7 +140,7 @@ export default function Overview() {
       strengths: allStrengths.slice(0, 5),
       areasForImprovement: allAreasForImprovement.slice(0, 5),
     };
-  }, [user?.id, rubricGrades]);
+  }, [effectiveProfile?.id, rubricGrades]);
 
   const trendData = useMemo(() => {
     // Get all user's completed chats with scores

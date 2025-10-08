@@ -4,7 +4,6 @@ import { toast } from "@/lib/toast";
 import useSupabaseBrowser from "@/utils/supabase/supabase-browser";
 import { LockOutlined, MailOutlined, UserOutlined } from "@ant-design/icons";
 import { Alert, Button, Form, Input, Modal, Typography } from "antd";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 const { Title, Text, Link } = Typography;
@@ -26,7 +25,6 @@ export default function AuthModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const supabase = useSupabaseBrowser();
-  const router = useRouter();
 
   const handleSubmit = async (values: {
     email: string;
@@ -50,11 +48,11 @@ export default function AuthModal({
 
         if (error) throw error;
 
-        // For signup, always redirect to dashboard (no email verification required)
+        // For signup, let AuthProvider handle redirect based on role
         if (data.user) {
           toast.success("Account created successfully!");
-          router.push("/dashboard/trainings");
           onClose();
+          // AuthProvider will handle redirect based on user's role
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -64,8 +62,8 @@ export default function AuthModal({
 
         if (error) throw error;
         toast.success("Welcome back!");
-        router.push("/dashboard/trainings");
         onClose();
+        // AuthProvider will handle redirect based on user's role
       }
     } catch (error: unknown) {
       console.error("Auth error:", error);

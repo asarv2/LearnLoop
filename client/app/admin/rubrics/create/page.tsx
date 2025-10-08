@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useProfile } from "@/lib/api/hooks/useProfiles";
+import { useWebSocket } from "@/contexts/websocket-context";
 import { SaveOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import {
   Button,
@@ -15,7 +15,7 @@ import {
   Typography,
 } from "antd";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -28,12 +28,9 @@ interface Standard {
 }
 
 export default function CreateRubricPage() {
-  const { user } = useAuth();
+  const { effectiveProfile, isProfileLoading } = useAuth();
+  const { emitGenerateRubric } = useWebSocket();
   const router = useRouter();
-  const { data: currentProfile, isLoading: profileLoading } = useProfile(
-    user?.id || "",
-    !!user
-  );
 
   const [rubricName, setRubricName] = useState("");
   const [rubricDescription, setRubricDescription] = useState("");
@@ -73,8 +70,53 @@ export default function CreateRubricPage() {
   const [isGenerated, setIsGenerated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Listen for rubric generation response
+  useEffect(() => {
+    const handleRubricGenerated = (event: CustomEvent) => {
+      const { success, standards: generatedStandards, message } = event.detail;
+
+      if (success && generatedStandards) {
+        // Update the standards with the generated items
+        const updatedStandards = standards.map((s) => {
+          const generatedStandard = generatedStandards.find(
+            (gs: { name: string; items: string[] }) => gs.name === s.name
+          );
+          if (generatedStandard && generatedStandard.items) {
+            return {
+              ...s,
+              items: generatedStandard.items,
+            };
+          }
+          return s;
+        });
+
+        setStandards(updatedStandards);
+        setIsGenerated(true);
+        message.success(
+          "Rubric criteria generated successfully! Review the table below and click Save when ready."
+        );
+      } else {
+        message.error(message || "Failed to generate rubric");
+      }
+
+      setIsGenerating(false);
+    };
+
+    window.addEventListener(
+      "rubricGenerated",
+      handleRubricGenerated as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        "rubricGenerated",
+        handleRubricGenerated as EventListener
+      );
+    };
+  }, [standards]);
+
   // Show loading state while profile is loading
-  if (profileLoading) {
+  if (isProfileLoading) {
     return (
       <div style={{ textAlign: "center", padding: "50px" }}>
         <div>Loading profile...</div>
@@ -83,7 +125,7 @@ export default function CreateRubricPage() {
   }
 
   // Show message if no company
-  if (!currentProfile?.company) {
+  if (!effectiveProfile?.company) {
     return (
       <div style={{ textAlign: "center", padding: "50px" }}>
         <div>No company assigned to your profile.</div>
@@ -150,60 +192,18 @@ export default function CreateRubricPage() {
     setIsGenerating(true);
 
     try {
-      // Call the AI generation endpoint
-      const generateResponse = await fetch("/api/v1/rubrics/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: rubricName,
-          description: rubricDescription,
-          standards: standards.map((s) => ({
-            name: s.name,
-            description: s.description,
-          })),
-        }),
+      // Use WebSocket to generate rubric
+      emitGenerateRubric({
+        rubric_name: rubricName,
+        rubric_description: rubricDescription,
+        standards: standards.map((s) => ({
+          name: s.name,
+          description: s.description,
+        })),
+        num_levels: standards[0]?.items?.length || 5,
       });
 
-      console.log(
-        "Generate response received:",
-        generateResponse.status,
-        generateResponse.ok
-      );
-
-      if (!generateResponse.ok) {
-        const errorData = await generateResponse.json();
-        console.log("Error response:", errorData);
-        throw new Error(errorData.error || "Failed to generate rubric");
-      }
-
-      const generatedData = await generateResponse.json();
-      console.log("Generated data:", generatedData);
-
-      if (!generatedData.success || !generatedData.standards) {
-        throw new Error("Invalid response from generation endpoint");
-      }
-
-      // Update the standards with the generated items
-      const updatedStandards = standards.map((s) => {
-        const generatedStandard = generatedData.standards.find(
-          (gs: { name: string; items: string[] }) => gs.name === s.name
-        );
-        if (generatedStandard && generatedStandard.items) {
-          return {
-            ...s,
-            items: generatedStandard.items,
-          };
-        }
-        return s;
-      });
-
-      setStandards(updatedStandards);
-      setIsGenerated(true);
-      message.success(
-        "Rubric criteria generated successfully! Review the table below and click Save when ready."
-      );
+      console.log("Rubric generation request sent via WebSocket");
     } catch (error) {
       console.error("Error in handleGenerate:", error);
       message.error(
@@ -211,10 +211,7 @@ export default function CreateRubricPage() {
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
-    } finally {
-      console.log("Setting isGenerating to false");
       setIsGenerating(false);
-      console.log("=== GENERATE RUBRIC END ===");
     }
   };
 
@@ -248,7 +245,7 @@ export default function CreateRubricPage() {
         body: JSON.stringify({
           name: rubricName,
           description: rubricDescription,
-          company: currentProfile?.company,
+          company: effectiveProfile?.company,
           standards: standards.map((s) => ({
             name: s.name,
             description: s.description,

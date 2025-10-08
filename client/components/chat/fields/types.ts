@@ -31,6 +31,8 @@ export type PersonaFieldProps = {
   selectedParameterId?: string;
   customPersonaName: string;
   setCustomPersonaName: (value: string) => void;
+  customPersonaDescription: string;
+  setCustomPersonaDescription: (value: string) => void;
   customVoiceType: string;
   setCustomVoiceType: (value: string) => void;
   customVoiceFile: File | null;
@@ -49,6 +51,8 @@ export type FieldCardProps = {
   selectedParameterId?: string;
   customPersonaName: string;
   setCustomPersonaName: (value: string) => void;
+  customPersonaDescription: string;
+  setCustomPersonaDescription: (value: string) => void;
   customVoiceType: string;
   setCustomVoiceType: (value: string) => void;
   customVoiceFile: File | null;

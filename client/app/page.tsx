@@ -1,7 +1,6 @@
 import LandingPage from "@/components/LandingPage";
 import createServerClient from "@/utils/supabase/supabase-server";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 
 export default async function Home() {
   const cookieStore = cookies();
@@ -16,15 +15,7 @@ export default async function Home() {
     return <LandingPage />;
   }
 
-  // Fetch role in one cheap call
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const isAdminView =
-    profile?.role === "admin" || profile?.role === "superadmin";
-
-  redirect(isAdminView ? "/admin/analytics" : "/dashboard/trainings");
+  // Authenticated users will be handled by AuthProvider for routing
+  // This prevents flash of content and allows for emulation state consideration
+  return <LandingPage />;
 }

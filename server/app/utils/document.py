@@ -75,9 +75,8 @@ async def get_document_base64_and_content(
     document_id: str, db_session: Any
 ) -> dict[str, str]:
     """Get document PDF as base64 string and extract content, saving to database."""
-    from sqlmodel import select
-
     from app.models import Documents
+    from sqlmodel import select
 
     supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
     service_role_key = os.getenv("SERVICE_ROLE_KEY")

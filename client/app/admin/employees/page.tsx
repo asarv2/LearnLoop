@@ -2,7 +2,6 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { api } from "@/lib/api/fetcher";
-import { useProfile } from "@/lib/api/hooks/useProfiles";
 import { PlusOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -169,8 +168,7 @@ const createColumns = (
 ];
 
 export default function AdminEmployeesPage() {
-  const { user } = useAuth();
-  const { data: currentProfile } = useProfile(user?.id || "", !!user);
+  const { effectiveProfile } = useAuth();
   const [messageApi, contextHolder] = message.useMessage();
 
   // State for filters
@@ -179,17 +177,17 @@ export default function AdminEmployeesPage() {
 
   // Fetch employees data
   const { data: employees, isLoading } = useQuery({
-    queryKey: ["employees", currentProfile?.company],
-    queryFn: () => fetchEmployeesByCompany(currentProfile?.company || null),
-    enabled: !!currentProfile?.company,
+    queryKey: ["employees", effectiveProfile?.company],
+    queryFn: () => fetchEmployeesByCompany(effectiveProfile?.company || null),
+    enabled: !!effectiveProfile?.company,
     staleTime: 5 * 60_000, // 5 minutes
   });
 
   // Fetch training statistics
   const { data: trainingStats } = useQuery({
-    queryKey: ["employee-training-stats", currentProfile?.company],
-    queryFn: () => fetchEmployeeTrainingStats(currentProfile?.company || null),
-    enabled: !!currentProfile?.company,
+    queryKey: ["employee-training-stats", effectiveProfile?.company],
+    queryFn: () => fetchEmployeeTrainingStats(effectiveProfile?.company || null),
+    enabled: !!effectiveProfile?.company,
     staleTime: 5 * 60_000, // 5 minutes
   });
 

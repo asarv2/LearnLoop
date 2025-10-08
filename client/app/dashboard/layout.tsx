@@ -3,7 +3,8 @@
 import { useAuth } from "@/components/auth/AuthProvider";
 import WelcomeModal from "@/components/common/WelcomeModal";
 import SuggestionsModal from "@/components/suggestions/SuggestionsModal";
-import { useRole } from "@/contexts/role-context";
+import { Profile } from "@/types";
+import { ViewMode } from "@/types/auth";
 import {
   LogoutOutlined,
   MessageOutlined,
@@ -16,7 +17,7 @@ import type { MenuProps } from "antd";
 import { Avatar, Button, Dropdown, Layout, Space, Typography } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 
 const { Content } = Layout;
 const { Text } = Typography;
@@ -34,39 +35,44 @@ const menuItems = [
     key: "/dashboard/history",
     label: "History",
   },
-  // {
-  //   key: "/dashboard/settings",
-  //   icon: <SettingOutlined />,
-  //   label: <Link href="/dashboard/settings">Settings</Link>,
-  // },
 ];
 
 const getUserMenuItems = (
-  userRole: string | null,
-  currentView: "employee" | "admin",
-  switchToAdmin: () => void,
-  switchToEmployee: () => void
+  activeProfile: Profile | null,
+  effectiveProfile: Profile | null,
+  isEmulating: boolean,
+  startEmulation: (viewMode: ViewMode) => Promise<boolean>,
+  stopEmulation: () => void
 ): MenuProps["items"] => {
   const items: MenuProps["items"] = [];
 
-  // Add view switch options for superadmin users
-  if (userRole === "superadmin") {
-    if (currentView === "employee") {
+  // Add emulation controls based on user's actual role and current state
+  if (activeProfile?.role === "superadmin") {
+    if (isEmulating && effectiveProfile?.role === "employee") {
+      // Currently emulating employee view, show option to return to admin
       items.push({
-        key: "switch-to-admin",
+        key: "return-to-admin",
         icon: <SwapOutlined />,
         label: "Switch to Admin View",
-        onClick: switchToAdmin,
+        onClick: async () => {
+          await stopEmulation();
+        },
       });
-    } else {
+    } else if (!isEmulating) {
+      // Not emulating, show option to switch to employee view
       items.push({
         key: "switch-to-employee",
         icon: <SwapOutlined />,
         label: "Switch to Employee View",
-        onClick: switchToEmployee,
+        onClick: async () => {
+          await startEmulation("employee");
+        },
       });
     }
   }
+  // Admins can only see admin view - no emulation options
+
+  // Stop emulation option removed - users can switch back to their actual role instead
 
   // Add profile option
   items.push({
@@ -105,29 +111,22 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user, signOut } = useAuth();
   const {
-    userRole,
+    effectiveProfile,
+    activeProfile,
+    isEmulating,
+    startEmulation,
+    stopEmulation,
+    signOut,
     loading,
-    switchToAdmin,
-    switchToEmployee,
-    currentView,
+    isProfileLoading,
     showWelcomeModal,
     setShowWelcomeModal,
-  } = useRole();
+  } = useAuth();
 
-  // Redirect admin users to admin interface if they're not in employee view
-  useEffect(() => {
-    if (
-      !loading &&
-      (userRole === "admin" ||
-        (userRole === "superadmin" && currentView === "admin"))
-    ) {
-      router.push("/admin/analytics");
-    }
-  }, [userRole, loading, currentView, router]);
+  // Redirect logic is now handled centrally in AuthProvider
 
-  if (loading) {
+  if (loading || isProfileLoading) {
     return (
       <div
         style={{
@@ -160,7 +159,14 @@ export default function DashboardLayout({
   };
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
+    <Layout
+      style={{
+        // make the whole page a flex column that fills the viewport
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       {/* Horizontal Navigation Header */}
       <div
         style={{
@@ -171,6 +177,8 @@ export default function DashboardLayout({
           position: "sticky",
           top: 0,
           zIndex: 1000,
+          // do NOT let this grow/shrink
+          flex: "none",
         }}
       >
         <div
@@ -288,10 +296,11 @@ export default function DashboardLayout({
               <Dropdown
                 menu={{
                   items: getUserMenuItems(
-                    userRole,
-                    currentView,
-                    switchToAdmin,
-                    switchToEmployee
+                    activeProfile,
+                    effectiveProfile,
+                    isEmulating,
+                    startEmulation,
+                    stopEmulation
                   ),
                   onClick: handleMenuClick,
                 }}
@@ -299,9 +308,22 @@ export default function DashboardLayout({
               >
                 <Space style={{ cursor: "pointer" }} size="small">
                   <Avatar size="default" icon={<UserOutlined />} />
-                  <Text strong style={{ color: "#262626" }}>
-                    {user?.user_metadata?.full_name || user?.email || "User"}
-                  </Text>
+                  <div>
+                    <Text strong style={{ color: "#262626" }}>
+                      {effectiveProfile?.name || "User"}
+                    </Text>
+                    {isEmulating && (
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          color: "#1890ff",
+                          marginTop: "2px",
+                        }}
+                      >
+                        Viewing as {effectiveProfile?.role}
+                      </div>
+                    )}
+                  </div>
                 </Space>
               </Dropdown>
             </Space>
@@ -309,12 +331,18 @@ export default function DashboardLayout({
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* Main Content becomes the ONLY scroll container */}
       <Content
         style={{
+          // let Content fill the remaining height
+          flex: 1,
+          // this is critical for scrollable flex children
+          minHeight: 0,
+          // the scroll bar now lives here
+          overflowY: "auto",
+
           padding: "32px 24px",
           background: "#fafafa",
-          minHeight: "calc(100vh - 64px)",
         }}
       >
         <div
@@ -323,7 +351,7 @@ export default function DashboardLayout({
             borderRadius: "12px",
             boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
             padding: "32px",
-            minHeight: "calc(100vh - 128px)",
+            // let the card size to content; avoid forcing viewport math
           }}
         >
           {children}

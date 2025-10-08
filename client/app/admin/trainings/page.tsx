@@ -2,7 +2,6 @@
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { api } from "@/lib/api/fetcher";
-import { useProfile } from "@/lib/api/hooks/useProfiles";
 import { useTrainingsByTypeAndCompany } from "@/lib/api/hooks/useTrainings";
 import { Training } from "@/types";
 import {
@@ -12,6 +11,7 @@ import {
   EditOutlined,
   FilterOutlined,
   PlayCircleOutlined,
+  PlusOutlined,
   SearchOutlined,
   TeamOutlined,
   UserOutlined,
@@ -22,14 +22,13 @@ import {
   Card,
   Col,
   DatePicker,
-  Form,
   Input,
   Modal,
+  Popconfirm,
   Row,
   Select,
   Space,
   Statistic,
-  Switch,
   Table,
   Tooltip,
   Typography,
@@ -37,6 +36,7 @@ import {
 } from "antd";
 import { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 const { Title, Text } = Typography;
@@ -110,7 +110,10 @@ async function fetchEmployeeDetails(
   }
 }
 
-// Edit Training Modal (mini version of create)
+// Import the new unified TrainingComponent
+import TrainingComponent from "@/components/training/TrainingComponent";
+
+// Edit Training Modal using the new unified component
 function EditTrainingModal({
   visible,
   onClose,
@@ -122,104 +125,34 @@ function EditTrainingModal({
   onSaved: () => void;
   training: Partial<Training> | null;
 }) {
-  const [form] = Form.useForm();
-
-  useEffect(() => {
-    if (visible && training) {
-      form.setFieldsValue({
-        title: training.title || "",
-        description: training.description || "",
-        active: training.active ?? true,
-        training_type: training.training_type || "required",
-        due_date: training.due_date ? dayjs(training.due_date) : null,
-      });
-    } else if (!visible) {
-      form.resetFields();
-    }
-  }, [visible, training, form]);
-
-  const handleSubmit = async (values: {
-    title: string;
-    description?: string;
-    active: boolean;
-    training_type?: string;
-    due_date?: dayjs.Dayjs | null;
-  }) => {
-    if (!training?.id) return;
-    try {
-      await api(`/api/v1/trainings/${training.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          title: values.title,
-          description: values.description || null,
-          active: values.active,
-          training_type: values.training_type,
-          due_date: values.due_date ? values.due_date.toISOString() : null,
-        }),
-      });
-      message.success("Training updated successfully");
-      onSaved();
-      onClose();
-    } catch {
-      message.error("Failed to update training");
-    }
+  const handleSuccess = () => {
+    onSaved();
+    onClose();
   };
 
   return (
-    <Modal
-      title="Edit Training"
-      open={visible}
+    <TrainingComponent
+      training_id={training?.id}
+      editingTraining={
+        training?.id
+          ? {
+              id: training.id,
+              title: training.title || "",
+              description: training.description,
+              training_type: training.training_type,
+              active: training.active,
+              due_date: training.due_date,
+            }
+          : null
+      }
+      custom={training?.training_type === "custom"}
+      asModal={true}
+      visible={visible}
       onCancel={onClose}
-      footer={null}
-      width={640}
-      destroyOnClose
-    >
-      <Form form={form} layout="vertical" onFinish={handleSubmit}>
-        <Form.Item
-          name="title"
-          label="Training Name"
-          rules={[{ required: true, message: "Please enter a title" }]}
-        >
-          <Input placeholder="Enter training name" />
-        </Form.Item>
-
-        <Form.Item name="description" label="Description">
-          <Input.TextArea rows={4} placeholder="Enter description" />
-        </Form.Item>
-
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="training_type" label="Type">
-              <Select
-                options={[
-                  { label: "Standard", value: "standard" },
-                  { label: "Required", value: "required" },
-                  { label: "Custom", value: "custom" },
-                ]}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="due_date" label="Due Date">
-              <DatePicker style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Form.Item name="active" label="Active" valuePropName="checked">
-          <Switch />
-        </Form.Item>
-
-        <div style={{ textAlign: "right" }}>
-          <Space>
-            <Button onClick={onClose}>Cancel</Button>
-            <Button type="primary" htmlType="submit">
-              Save Changes
-            </Button>
-          </Space>
-        </div>
-      </Form>
-    </Modal>
+      onSuccess={handleSuccess}
+      title="Edit Training"
+      showGuidelines={false}
+    />
   );
 }
 
@@ -354,8 +287,7 @@ function EmployeeCompletionModal({
 }
 
 export default function AdminTrainingsPage() {
-  const { user } = useAuth();
-  const { data: currentProfile } = useProfile(user?.id || "", !!user);
+  const { effectiveProfile } = useAuth();
   const [messageApi, contextHolder] = message.useMessage();
   const queryClient = useQueryClient();
 
@@ -383,6 +315,24 @@ export default function AdminTrainingsPage() {
     }
   };
 
+  // Function to delete training
+  const deleteTraining = async (trainingId: string, trainingTitle: string) => {
+    try {
+      await api(`/api/v1/trainings/${trainingId}`, {
+        method: "DELETE",
+      });
+
+      // Invalidate queries to refresh the data
+      queryClient.invalidateQueries({ queryKey: ["trainings"] });
+      queryClient.invalidateQueries({ queryKey: ["training-completion"] });
+
+      messageApi.success(`Training "${trainingTitle}" deleted successfully`);
+    } catch (error) {
+      console.error("Failed to delete training:", error);
+      messageApi.error("Failed to delete training. Please try again.");
+    }
+  };
+
   // State for filters and search
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -398,14 +348,14 @@ export default function AdminTrainingsPage() {
   // Fetch only required trainings data
   const { data: requiredTrainings, isLoading } = useTrainingsByTypeAndCompany(
     "required",
-    currentProfile?.company || null
+    effectiveProfile?.company || null
   );
 
   // Fetch completion rates
   const { data: completionRates, isLoading: loadingCompletion } = useQuery({
-    queryKey: ["training-completion", currentProfile?.company],
-    queryFn: () => fetchCompletionRates(currentProfile?.company || null),
-    enabled: !!currentProfile?.company,
+    queryKey: ["training-completion", effectiveProfile?.company],
+    queryFn: () => fetchCompletionRates(effectiveProfile?.company || null),
+    enabled: !!effectiveProfile?.company,
     staleTime: 2 * 60_000, // 2 minutes
   });
 
@@ -633,25 +583,28 @@ export default function AdminTrainingsPage() {
               {record.active ? "Deactivate" : "Activate"}
             </Button>
           </Tooltip>
-          <Tooltip title="Delete Training">
-            <Button
-              type="text"
-              icon={<DeleteOutlined />}
-              size="small"
-              danger
-              onClick={() => {
-                Modal.confirm({
-                  title: "Delete Training",
-                  content: `Are you sure you want to delete "${record.title}"?`,
-                  okText: "Delete",
-                  okType: "danger",
-                  onOk: () => {
-                    messageApi.success("Training deleted successfully");
-                  },
-                });
-              }}
-            />
-          </Tooltip>
+          <Popconfirm
+            title="Delete Training"
+            description={`Are you sure you want to delete "${record.title}"?`}
+            onConfirm={() => {
+              if (record.id) {
+                deleteTraining(record.id, record.title || "");
+              }
+            }}
+            okText="Delete"
+            cancelText="Cancel"
+            okType="danger"
+          >
+            <Tooltip title="Delete Training">
+              <Button
+                type="text"
+                icon={<DeleteOutlined />}
+                size="small"
+                danger
+                disabled={!record.id}
+              />
+            </Tooltip>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -815,7 +768,9 @@ export default function AdminTrainingsPage() {
         }}
         onSaved={() => {
           queryClient.invalidateQueries({ queryKey: ["trainings"] });
-          queryClient.invalidateQueries({ queryKey: ["training-completion"] });
+          queryClient.invalidateQueries({
+            queryKey: ["training-completion"],
+          });
         }}
         training={selectedTraining}
       />
@@ -829,6 +784,31 @@ export default function AdminTrainingsPage() {
         }}
         training={selectedTraining}
       />
+
+      {/* Floating Action Button */}
+      <Link href="/admin/trainings/create">
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          size="large"
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            height: "auto",
+            padding: "12px 16px",
+            borderRadius: "8px",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            fontWeight: 500,
+          }}
+        >
+          Create Training
+        </Button>
+      </Link>
     </div>
   );
 }

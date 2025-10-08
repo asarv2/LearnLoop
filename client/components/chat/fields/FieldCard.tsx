@@ -21,6 +21,8 @@ export default function FieldCard({
   selectedParameterId,
   customPersonaName,
   setCustomPersonaName,
+  customPersonaDescription,
+  setCustomPersonaDescription,
   customVoiceType,
   setCustomVoiceType,
   customVoiceFile,
@@ -116,6 +118,8 @@ export default function FieldCard({
             selectedParameterId={selectedParameterId}
             customPersonaName={customPersonaName}
             setCustomPersonaName={setCustomPersonaName}
+            customPersonaDescription={customPersonaDescription}
+            setCustomPersonaDescription={setCustomPersonaDescription}
             customVoiceType={customVoiceType}
             setCustomVoiceType={setCustomVoiceType}
             customVoiceFile={customVoiceFile}

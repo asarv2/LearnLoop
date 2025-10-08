@@ -29,15 +29,15 @@ interface WelcomeModalProps {
 }
 
 export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
-  const { user } = useAuth();
+  const { effectiveProfile } = useAuth();
   const [form] = Form.useForm();
   const [messageApi, contextHolder] = message.useMessage();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const queryClient = useQueryClient();
 
   // Hooks for profile and persona management
-  const { data: personas } = usePersonas(user?.id);
-  const updateProfile = useUpdateProfile(user?.id || "");
+  const { data: personas } = usePersonas(effectiveProfile?.id);
+  const updateProfile = useUpdateProfile(effectiveProfile?.id || "");
   const updatePersona = useUpdatePersona(personas?.[0]?.id || "");
 
   // Note: We don't need to check viewed_intro here since the modal only shows when it's false
@@ -45,8 +45,8 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
   useEffect(() => {
     if (open) {
       // Pre-fill form with user data if available
-      const fullName = user?.user_metadata?.full_name || "";
-      const firstName = fullName.split(" ")[0] || user?.email || "";
+      const fullName = effectiveProfile?.name || "";
+      const firstName = fullName.split(" ")[0] || "";
 
       form.setFieldsValue({
         name: firstName,
@@ -55,7 +55,7 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
         description: "",
       });
     }
-  }, [open, user, form]);
+  }, [open, effectiveProfile, form]);
 
   const handleSave = async () => {
     try {
@@ -78,10 +78,10 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
       // Wait for all invalidated queries to refetch to ensure smooth UX
       await Promise.all([
         queryClient.refetchQueries({
-          queryKey: profileKeys.detail(user?.id || ""),
+          queryKey: profileKeys.detail(effectiveProfile?.id || ""),
         }),
         queryClient.refetchQueries({
-          queryKey: personaKeys.list({ profileId: user?.id }),
+          queryKey: personaKeys.list({ profileId: effectiveProfile?.id }),
         }),
       ]);
 
