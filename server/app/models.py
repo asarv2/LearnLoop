@@ -104,6 +104,31 @@ class Fields(_Base, table=True):
     parameters: List['Parameters'] = Relationship(back_populates='field')
 
 
+class GetStartedSubmissions(_Base, table=True):
+    __tablename__ = 'get_started_submissions'
+    __table_args__ = (
+        CheckConstraint("pricing_plan = ANY (ARRAY['starter'::text, 'growth'::text, 'professional'::text, 'scale'::text, 'enterprise'::text])", name='check_pricing_plan'),
+        PrimaryKeyConstraint('id', name='get_started_submissions_pkey'),
+        Index('idx_get_started_submissions_corporation', 'corporation_name'),
+        Index('idx_get_started_submissions_email', 'employee_email'),
+        Index('idx_get_started_submissions_submitted_at', 'submitted_at'),
+        {'comment': 'Stores Get Started form submissions with company and employee '
+                'information'}
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    corporation_name: str = Field(sa_column=Column('corporation_name', Text))
+    employee_first_name: str = Field(sa_column=Column('employee_first_name', Text))
+    employee_last_name: str = Field(sa_column=Column('employee_last_name', Text))
+    employee_email: str = Field(sa_column=Column('employee_email', Text))
+    pricing_plan: str = Field(sa_column=Column('pricing_plan', Text))
+    submitted_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('submitted_at', DateTime(True)))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    company_address: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column('company_address', JSONB, comment='JSON object containing: {street, city, state, zipCode, country}'))
+    employee_position: Optional[str] = Field(default=None, sa_column=Column('employee_position', Text))
+
+
 class Groups(_Base, table=True):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='groups_pkey'),
@@ -341,6 +366,7 @@ class Scenarios(_Base, table=True):
     prompt_mapping: Dict[str, Any] = Field(default_factory=dict, sa_column=Column('prompt_mapping', JSONB))
     group_ids: List[uuid.UUID] = Field(sa_column=Column('group_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
     persona_ids: List[uuid.UUID] = Field(sa_column=Column('persona_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
+    policy_ids: List[uuid.UUID] = Field(sa_column=Column('policy_ids', ARRAY(Uuid(as_uuid=True)), server_default=text("'{}'::uuid[]")))
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
     description: Optional[str] = Field(default=None, sa_column=Column('description', Text))

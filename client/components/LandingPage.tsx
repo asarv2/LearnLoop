@@ -571,27 +571,52 @@ const LandingPage = () => {
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl flex items-center justify-center">
-                <span className="text-white font-bold text-lg">L</span>
+            <div className="flex items-center space-x-8">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl flex items-center justify-center">
+                  <span className="text-white font-bold text-lg">L</span>
+                </div>
+                <span className="text-xl font-bold text-gray-900">
+                  LearnLoop
+                </span>
               </div>
-              <span className="text-xl font-bold text-gray-900">LearnLoop</span>
+
+              <div className="flex items-center space-x-6">
+                <button
+                  onClick={() => window.open("/about", "_self")}
+                  className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
+                >
+                  About Us
+                </button>
+                <button
+                  onClick={() => window.open("/pricing", "_self")}
+                  className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
+                >
+                  Pricing
+                </button>
+                <button
+                  onClick={() =>
+                    window.open(
+                      "https://calendly.com/siladiea2005/learnloop-demo",
+                      "_blank"
+                    )
+                  }
+                  className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
+                >
+                  Book Demo
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() =>
-                  window.open(
-                    "https://calendly.com/siladiea2005/learnloop-demo",
-                    "_blank"
-                  )
-                }
-                className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
-              >
-                Book Demo
-              </button>
+            <div className="flex items-center space-x-3">
               <button
                 onClick={handleGetStarted}
+                className="text-gray-600 hover:text-gray-900 font-medium transition-colors px-4 py-2"
+              >
+                Sign Up
+              </button>
+              <button
+                onClick={() => window.open("/get-started", "_self")}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
               >
                 Get Started
@@ -614,7 +639,7 @@ const LandingPage = () => {
 
                 <p className="text-xl text-gray-600 leading-relaxed">
                   Traditional training doesn&apos;t stick. LearnLoop transforms
-                  how employees build skills — through custom, interactive,
+                  how employees communicate — through custom, interactive,
                   AI-powered practice that turns theory into lasting behavior
                   change.
                 </p>
@@ -824,19 +849,127 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* Footer - Simplified */}
-      <footer className="bg-gray-900 text-white py-8">
+      {/* Footer */}
+      <footer className="bg-gray-900 text-white py-12">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex flex-col items-center space-y-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
-                <span className="text-white font-bold text-lg">L</span>
+          <div className="grid md:grid-cols-4 gap-8 mb-8">
+            {/* Company Info */}
+            <div className="md:col-span-2">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+                  <span className="text-white font-bold text-lg">L</span>
+                </div>
+                <span className="text-xl font-bold">LearnLoop</span>
               </div>
-              <span className="text-xl font-bold">LearnLoop</span>
+              <p className="text-gray-400 mb-4 max-w-md">
+                AI-powered training simulations designed to help employees
+                improve their communication skills and build better workplace
+                relationships.
+              </p>
+              <div className="flex space-x-4">
+                <a
+                  href="https://calendly.com/siladiea2005/learnloop-demo"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 transition-colors"
+                >
+                  Book Demo
+                </a>
+              </div>
             </div>
-            <p className="text-gray-400 text-sm">
-              © 2025 LearnLoop. All rights reserved.
-            </p>
+
+            {/* Quick Links */}
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Quick Links</h3>
+              <ul className="space-y-2">
+                <li>
+                  <a
+                    href="/about"
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    About Us
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/pricing"
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    Pricing
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/contact"
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    Contact
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/get-started"
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    Get Started
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            {/* Legal */}
+            <div>
+              <h3 className="text-lg font-semibold mb-4">Legal</h3>
+              <ul className="space-y-2">
+                <li>
+                  <a
+                    href="/terms-of-service"
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    Terms of Service
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/privacy-policy"
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    Privacy Policy
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="mailto:alex@learnloop.org"
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    Support
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Bottom Bar */}
+          <div className="border-t border-gray-800 pt-8">
+            <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
+              <p className="text-gray-400 text-sm">
+                © 2025 LearnLoop LLC. All rights reserved.
+              </p>
+              <div className="flex space-x-6 text-sm text-gray-400">
+                <a
+                  href="mailto:alex@learnloop.org"
+                  className="hover:text-white transition-colors"
+                >
+                  alex@learnloop.org
+                </a>
+                <a
+                  href="mailto:ashok@learnloop.org"
+                  className="hover:text-white transition-colors"
+                >
+                  ashok@learnloop.org
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       </footer>

@@ -240,6 +240,48 @@ export type Database = {
         }
         Relationships: []
       }
+      get_started_submissions: {
+        Row: {
+          company_address: Json | null
+          corporation_name: string
+          created_at: string | null
+          employee_email: string
+          employee_first_name: string
+          employee_last_name: string
+          employee_position: string | null
+          id: string
+          pricing_plan: string
+          submitted_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          company_address?: Json | null
+          corporation_name: string
+          created_at?: string | null
+          employee_email: string
+          employee_first_name: string
+          employee_last_name: string
+          employee_position?: string | null
+          id?: string
+          pricing_plan: string
+          submitted_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          company_address?: Json | null
+          corporation_name?: string
+          created_at?: string | null
+          employee_email?: string
+          employee_first_name?: string
+          employee_last_name?: string
+          employee_position?: string | null
+          id?: string
+          pricing_plan?: string
+          submitted_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       groups: {
         Row: {
           created_at: string
@@ -676,6 +718,7 @@ export type Database = {
           parameter_ids: string[]
           parent_id: string | null
           persona_ids: string[]
+          policy_ids: string[]
           problem_statement: string | null
           prompt_mapping: Json
           prompts: Json
@@ -695,6 +738,7 @@ export type Database = {
           parameter_ids?: string[]
           parent_id?: string | null
           persona_ids?: string[]
+          policy_ids?: string[]
           problem_statement?: string | null
           prompt_mapping?: Json
           prompts?: Json
@@ -714,6 +758,7 @@ export type Database = {
           parameter_ids?: string[]
           parent_id?: string | null
           persona_ids?: string[]
+          policy_ids?: string[]
           problem_statement?: string | null
           prompt_mapping?: Json
           prompts?: Json
