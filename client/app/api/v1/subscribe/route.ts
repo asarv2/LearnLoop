@@ -1,4 +1,4 @@
-import createSupabaseServer from "@/utils/supabase/supabase-server";
+import supabaseServer from "@/utils/supabase/supabase-server";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = await createSupabaseServer(cookies(), true); // true for service role
+    const supabase = await supabaseServer(cookies(), true); // true for service role
 
     // Check if email already exists
     const { data: existingSubscription } = await supabase

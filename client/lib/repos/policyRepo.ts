@@ -25,7 +25,7 @@ export const PolicyUpdateSchema = z.object({
 });
 
 async function getSupabase() {
-  return await supabaseServer();
+  return await supabaseServer(cookies());
 }
 
 export const policyRepo = {

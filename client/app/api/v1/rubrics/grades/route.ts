@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 export async function GET() {
   try {
     // Get current user from Supabase
-    const supabase = await supabaseServer();
+    const supabase = await supabaseServer(cookies());
     const {
       data: { user },
     } = await supabase.auth.getUser();

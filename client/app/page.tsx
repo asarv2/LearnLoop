@@ -1,10 +1,9 @@
 import LandingPage from "@/components/LandingPage";
-import createServerClient from "@/utils/supabase/supabase-server";
+import supabaseServer from "@/utils/supabase/supabase-server";
 import { cookies } from "next/headers";
 
 export default async function Home() {
-  const cookieStore = cookies();
-  const supabase = await createServerClient(cookieStore);
+  const supabase = await supabaseServer(cookies());
 
   const {
     data: { user },

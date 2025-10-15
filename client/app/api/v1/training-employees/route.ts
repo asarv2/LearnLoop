@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 async function getSupabase() {
-  return await supabaseServer();
+  return await supabaseServer(cookies());
 }
 
 // GET /api/v1/training-employees - get detailed employee completion data for a specific training

@@ -20,7 +20,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     // Get current user and their profile
-    const supabase = await supabaseServer();
+    const supabase = await supabaseServer(cookies());
     const {
       data: { user },
       error: authError,

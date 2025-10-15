@@ -45,7 +45,7 @@ export const ScenarioUpdateSchema = z.object({
 });
 
 async function getSupabase() {
-  return await supabaseServer();
+  return await supabaseServer(cookies());
 }
 
 // CRUD wrappers

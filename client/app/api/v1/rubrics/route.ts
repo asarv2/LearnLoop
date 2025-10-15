@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 async function getSupabase() {
-  return await supabaseServer();
+  return await supabaseServer(cookies());
 }
 
 export async function GET(request: Request) {

@@ -12,7 +12,7 @@ export async function DELETE(
     const { id } = await params;
 
     // Get current user and their profile
-    const supabase = await supabaseServer();
+    const supabase = await supabaseServer(cookies());
     const {
       data: { user },
       error: authError,

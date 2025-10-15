@@ -1,5 +1,6 @@
 import { HttpError } from "@/utils/HttpError";
 import supabaseServer from "@/utils/supabase/supabase-server";
+import { cookies } from "next/headers";
 import { z } from "zod";
 
 export const ContactMessageCreateSchema = z.object({
@@ -18,7 +19,7 @@ export type ContactMessageCreate = z.infer<typeof ContactMessageCreateSchema>;
 export type ContactMessageUpdate = z.infer<typeof ContactMessageUpdateSchema>;
 
 async function getSupabase() {
-  return await supabaseServer();
+  return await supabaseServer(cookies());
 }
 
 export const contactMessageRepo = {

@@ -1,6 +1,6 @@
 import { Profile } from "@/types";
 import { ViewMode } from "@/types/auth";
-import createServerClient from "@/utils/supabase/supabase-server";
+import supabaseServer from "@/utils/supabase/supabase-server";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -49,8 +49,7 @@ async function canEmulateViewMode(
 
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = cookies();
-    const supabase = await createServerClient(cookieStore);
+    const supabase = await supabaseServer(cookies());
 
     // Get current user session
     const {
@@ -169,8 +168,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE() {
   try {
-    const cookieStore = cookies();
-    const supabase = await createServerClient(cookieStore);
+    const supabase = await supabaseServer(cookies());
 
     // Get current user session
     const {

@@ -10,14 +10,16 @@ import { NextRequest, NextResponse } from "next/server";
 // GET /api/v1/contact/[id] – get contact message by ID
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const message = await contactMessageRepo.getById(params.id);
+    const { id } = await params;
+    const message = await contactMessageRepo.getById(id);
     return NextResponse.json(message);
   } catch (err) {
+    const { id } = await params;
     const { statusCode, message } = handleHttpError(err);
-    await logError("Failed to get contact message", err, { id: params.id });
+    await logError("Failed to get contact message", err, { id });
     return NextResponse.json({ error: message }, { status: statusCode });
   }
 }
@@ -25,7 +27,7 @@ export async function GET(
 // PUT /api/v1/contact/[id] – update contact message
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const json = await req.json();
   const parse = ContactMessageUpdateSchema.safeParse(json);
@@ -38,15 +40,17 @@ export async function PUT(
   }
 
   try {
+    const { id } = await params;
     const updated = await contactMessageRepo.update(
-      params.id,
+      id,
       parse.data as ContactMessageUpdate
     );
     return NextResponse.json(updated);
   } catch (err) {
+    const { id } = await params;
     const { statusCode, message } = handleHttpError(err);
     await logError("Failed to update contact message", err, {
-      id: params.id,
+      id,
       data: parse.data,
     });
     return NextResponse.json({ error: message }, { status: statusCode });
@@ -56,14 +60,16 @@ export async function PUT(
 // DELETE /api/v1/contact/[id] – delete contact message
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await contactMessageRepo.delete(params.id);
+    const { id } = await params;
+    const result = await contactMessageRepo.delete(id);
     return NextResponse.json(result);
   } catch (err) {
+    const { id } = await params;
     const { statusCode, message } = handleHttpError(err);
-    await logError("Failed to delete contact message", err, { id: params.id });
+    await logError("Failed to delete contact message", err, { id });
     return NextResponse.json({ error: message }, { status: statusCode });
   }
 }
