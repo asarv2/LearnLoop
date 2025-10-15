@@ -4,51 +4,32 @@ const TermsOfServicePage = () => {
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
+      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-transparent">
         <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => window.open("/", "_self")}
+              className="flex items-center space-x-3"
+            >
               <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl flex items-center justify-center">
                 <span className="text-white font-bold text-lg">L</span>
               </div>
               <span className="text-xl font-bold text-gray-900">LearnLoop</span>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => window.open("/", "_self")}
-                className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
-              >
-                Home
-              </button>
-              <button
-                onClick={() => window.open("/about", "_self")}
-                className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
-              >
-                About Us
-              </button>
-              <button
-                onClick={() => window.open("/contact", "_self")}
-                className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
-              >
-                Contact
-              </button>
-            </div>
+            </button>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
       <section className="py-20">
+        <div className="max-w-4xl mx-auto px-6 mb-8">
+          <h1 className="text-4xl font-bold text-gray-900">
+            LearnLoop LLC — Terms of Service
+          </h1>
+          <p className="text-gray-600 mt-2">Effective Date: January 2025</p>
+        </div>
         <div className="max-w-4xl mx-auto px-6">
           <div className="prose prose-lg prose-gray max-w-none">
-            <div className="text-center mb-12">
-              <h1 className="text-4xl font-bold text-gray-900 mb-4">
-                LearnLoop LLC — Terms of Service
-              </h1>
-              <p className="text-gray-600">Effective Date: January 2025</p>
-            </div>
-
             <div className="space-y-8">
               <section>
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">
@@ -266,17 +247,17 @@ const TermsOfServicePage = () => {
                   <li>
                     <strong>Email:</strong>{" "}
                     <a
-                      href="mailto:alex@learnloop.org"
+                      href="mailto:alex@learn-loop.org"
                       className="text-blue-600 hover:text-blue-700 underline"
                     >
-                      alex@learnloop.org
+                      alex@learn-loop.org
                     </a>
                     ,{" "}
                     <a
-                      href="mailto:ashok@learnloop.org"
+                      href="mailto:ashok@learn-loop.org"
                       className="text-blue-600 hover:text-blue-700 underline"
                     >
-                      ashok@learnloop.org
+                      ashok@learn-loop.org
                     </a>
                   </li>
                   <li>

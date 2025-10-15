@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 export async function GET() {
   try {
     // Get current user from Supabase
-    const supabase = await supabaseServer(cookies());
+    const supabase = await supabaseServer();
     const {
       data: { user },
     } = await supabase.auth.getUser();

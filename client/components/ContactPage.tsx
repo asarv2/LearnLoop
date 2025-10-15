@@ -82,22 +82,19 @@ const ContactPage = () => {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-8">
-              <div className="flex items-center space-x-3">
+              <button
+                onClick={() => window.open("/", "_self")}
+                className="flex items-center space-x-3"
+              >
                 <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl flex items-center justify-center">
                   <span className="text-white font-bold text-lg">L</span>
                 </div>
                 <span className="text-xl font-bold text-gray-900">
                   LearnLoop
                 </span>
-              </div>
+              </button>
 
               <div className="flex items-center space-x-6">
-                <button
-                  onClick={() => window.open("/", "_self")}
-                  className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
-                >
-                  Home
-                </button>
                 <button
                   onClick={() => window.open("/about", "_self")}
                   className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
@@ -116,17 +113,6 @@ const ContactPage = () => {
                 >
                   Contact
                 </button>
-                <button
-                  onClick={() =>
-                    window.open(
-                      "https://calendly.com/siladiea2005/learnloop-demo",
-                      "_blank"
-                    )
-                  }
-                  className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
-                >
-                  Book Demo
-                </button>
               </div>
             </div>
 
@@ -138,10 +124,15 @@ const ContactPage = () => {
                 Sign Up
               </button>
               <button
-                onClick={() => window.open("/get-started", "_self")}
+                onClick={() =>
+                  window.open(
+                    "https://calendly.com/siladiea2005/learnloop-demo",
+                    "_blank"
+                  )
+                }
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
               >
-                Get Started
+                Book Demo
               </button>
             </div>
           </div>
@@ -187,17 +178,17 @@ const ContactPage = () => {
                       Send us an email and we&apos;ll respond within 24 hours
                     </p>
                     <a
-                      href="mailto:alex@learnloop.org"
+                      href="mailto:alex@learn-loop.org"
                       className="text-blue-600 hover:text-blue-700 font-medium"
                     >
-                      alex@learnloop.org
+                      alex@learn-loop.org
                     </a>
                     <br />
                     <a
-                      href="mailto:ashok@learnloop.org"
+                      href="mailto:ashok@learn-loop.org"
                       className="text-blue-600 hover:text-blue-700 font-medium"
                     >
-                      ashok@learnloop.org
+                      ashok@learn-loop.org
                     </a>
                   </div>
                 </div>
@@ -255,7 +246,7 @@ const ContactPage = () => {
                     <strong>Founded:</strong> 2025
                   </p>
                   <p>
-                    <strong>Location:</strong> United States
+                    <strong>Location:</strong> San Ramon, CA, United States
                   </p>
                 </div>
               </div>

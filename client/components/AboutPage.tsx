@@ -18,22 +18,19 @@ const AboutPage = () => {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-8">
-              <div className="flex items-center space-x-3">
+              <button
+                onClick={() => window.open("/", "_self")}
+                className="flex items-center space-x-3"
+              >
                 <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl flex items-center justify-center">
                   <span className="text-white font-bold text-lg">L</span>
                 </div>
                 <span className="text-xl font-bold text-gray-900">
                   LearnLoop
                 </span>
-              </div>
+              </button>
 
               <div className="flex items-center space-x-6">
-                <button
-                  onClick={() => window.open("/", "_self")}
-                  className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
-                >
-                  Home
-                </button>
                 <button
                   onClick={() => window.open("/about", "_self")}
                   className="text-blue-600 hover:text-blue-700 font-medium transition-colors"
@@ -46,17 +43,6 @@ const AboutPage = () => {
                 >
                   Pricing
                 </button>
-                <button
-                  onClick={() =>
-                    window.open(
-                      "https://calendly.com/siladiea2005/learnloop-demo",
-                      "_blank"
-                    )
-                  }
-                  className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
-                >
-                  Book Demo
-                </button>
               </div>
             </div>
 
@@ -68,10 +54,15 @@ const AboutPage = () => {
                 Sign Up
               </button>
               <button
-                onClick={() => window.open("/get-started", "_self")}
+                onClick={() =>
+                  window.open(
+                    "https://calendly.com/siladiea2005/learnloop-demo",
+                    "_blank"
+                  )
+                }
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
               >
-                Get Started
+                Book Demo
               </button>
             </div>
           </div>

@@ -36,7 +36,7 @@ export const PersonaUpdateSchema = z.object({
 });
 
 async function getSupabase() {
-  return await supabaseServer(cookies());
+  return await supabaseServer();
 }
 
 // 3.2 – CRUD wrappers
