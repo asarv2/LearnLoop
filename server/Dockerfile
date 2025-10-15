@@ -14,10 +14,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 COPY requirements.txt ./
 
-# Force PyAV wheel; then the rest
+# 1) Install PyAV from wheel only (any 12–16)
+# 2) Then install everything else to the --prefix layer
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install --only-binary=:all: "av==11.0.0" && \
+    pip install --only-binary=:all: "av>=12,<17" && \
     pip install --prefer-binary --prefix=/install -r requirements.txt
 
 ############################################

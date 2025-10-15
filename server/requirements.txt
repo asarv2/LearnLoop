@@ -10,7 +10,7 @@ openai>=1.99.6,<2.0.0
 
 # WebRTC and Media
 aiortc>=1.7.0,<1.8.0
-av==11.0.0
+av>=12,<17
 numpy>=1.26.4,<1.27.0
 
 # WebSocket Signaling
