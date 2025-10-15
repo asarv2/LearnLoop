@@ -21,6 +21,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --prefer-binary --prefix=/install -r requirements.txt
 
 # Sanity check: verify PyAV is properly installed
+ENV PYTHONPATH=/install/lib/python3.11/site-packages
 RUN python -c "import av, aiortc; print('PyAV:', av.__version__)"
 
 ############################################
