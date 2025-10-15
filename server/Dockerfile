@@ -9,7 +9,11 @@ WORKDIR /install
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && \
-    apt-get install -y --no-install-recommends build-essential gcc pkg-config libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev libswscale-dev libswresample-dev libavfilter-dev && \
+    apt-get install -y --no-install-recommends \
+        build-essential gcc pkg-config \
+        # FFmpeg dev headers for PyAV build
+        libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev \
+        libswresample-dev libswscale-dev libavfilter-dev && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
@@ -27,7 +31,9 @@ WORKDIR /app
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates tini && \
+    apt-get install -y --no-install-recommends curl ca-certificates tini \
+        # FFmpeg binaries for runtime media ops
+        ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # bring in the wheels
