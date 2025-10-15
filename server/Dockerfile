@@ -8,17 +8,16 @@ WORKDIR /install
 # build tools + cache APT index between builds
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
+    apt-get update && apt-get install -y --no-install-recommends \
         build-essential gcc pkg-config \
-        # FFmpeg dev headers for PyAV build
-        libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev \
-        libswresample-dev libswscale-dev libavfilter-dev && \
-    rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
+
+# Force PyAV wheel; then the rest
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
+    pip install --only-binary=:all: "av==11.0.0" && \
     pip install --prefer-binary --prefix=/install -r requirements.txt
 
 ############################################
