@@ -9,7 +9,7 @@ WORKDIR /install
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && \
-    apt-get install -y --no-install-recommends build-essential gcc && \
+    apt-get install -y --no-install-recommends build-essential gcc pkg-config libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev libswscale-dev libswresample-dev libavfilter-dev && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
