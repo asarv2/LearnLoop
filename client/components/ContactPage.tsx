@@ -113,17 +113,6 @@ const ContactPage = () => {
                 >
                   Contact
                 </button>
-                <button
-                  onClick={() =>
-                    window.open(
-                      "https://calendly.com/siladiea2005/learnloop-demo",
-                      "_blank"
-                    )
-                  }
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
-                >
-                  Book Demo
-                </button>
               </div>
             </div>
 
@@ -133,6 +122,17 @@ const ContactPage = () => {
                 className="text-gray-600 hover:text-gray-900 font-medium transition-colors px-4 py-2"
               >
                 Sign Up
+              </button>
+              <button
+                onClick={() =>
+                  window.open(
+                    "https://calendly.com/siladiea2005/learnloop-demo",
+                    "_blank"
+                  )
+                }
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+              >
+                Book Demo
               </button>
             </div>
           </div>
