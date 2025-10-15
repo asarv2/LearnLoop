@@ -55,12 +55,13 @@ const PrivacyPolicyPage = () => {
                   1. Introduction
                 </h2>
                 <p className="text-gray-700 leading-relaxed">
-                  LearnLoop LLC ("LearnLoop," "we," "our," or "us") respects
-                  your privacy and is committed to protecting your personal
-                  data. This Privacy Policy explains how we collect, use,
-                  disclose, and safeguard your information when you visit our
-                  website (https://learn-loop.org), use our platform, or
-                  interact with our services (collectively, the "Service").
+                  LearnLoop LLC (&quot;LearnLoop,&quot; &quot;we,&quot;
+                  &quot;our,&quot; or &quot;us&quot;) respects your privacy and
+                  is committed to protecting your personal data. This Privacy
+                  Policy explains how we collect, use, disclose, and safeguard
+                  your information when you visit our website
+                  (https://learn-loop.org), use our platform, or interact with
+                  our services (collectively, the &quot;Service&quot;).
                 </p>
                 <p className="text-gray-700 leading-relaxed">
                   By using LearnLoop, you agree to the terms of this Privacy
@@ -162,7 +163,7 @@ const PrivacyPolicyPage = () => {
                   by these AI systems to generate training responses. LearnLoop
                   does not sell your data to third parties or use your data to
                   train external AI models. All processing is conducted solely
-                  for the purpose of delivering and improving LearnLoop's
+                  for the purpose of delivering and improving LearnLoop&apos;s
                   Service.
                 </p>
               </section>
@@ -176,7 +177,7 @@ const PrivacyPolicyPage = () => {
                   requested by the Client. This includes user profiles, content
                   created during training, and uploaded materials. Clients may
                   contact us to request deletion of data from their
-                  organization's account.
+                  organization&apos;s account.
                 </p>
               </section>
 
@@ -194,7 +195,7 @@ const PrivacyPolicyPage = () => {
                     services, and payment processors)
                   </li>
                   <li>
-                    With your organization's administrator for account
+                    With your organization&apos;s administrator for account
                     management
                   </li>
                   <li>As required by law, regulation, or court order</li>
@@ -254,7 +255,7 @@ const PrivacyPolicyPage = () => {
 
               <section>
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                  9. Children's Privacy
+                  9. Children&apos;s Privacy
                 </h2>
                 <p className="text-gray-700 leading-relaxed">
                   LearnLoop is not directed toward individuals under 13. We do
@@ -271,8 +272,8 @@ const PrivacyPolicyPage = () => {
                 <p className="text-gray-700 leading-relaxed">
                   LearnLoop may update this Privacy Policy from time to time. We
                   will notify users of material changes by email or through
-                  notices on our website. The "Effective Date" at the top of
-                  this document will always reflect the latest version.
+                  notices on our website. The &quot;Effective Date&quot; at the
+                  top of this document will always reflect the latest version.
                 </p>
               </section>
 

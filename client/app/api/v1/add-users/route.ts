@@ -1,4 +1,4 @@
-import { supabaseServer } from "@/utils/supabase/supabase-server";
+import supabaseServer from "@/utils/supabase/supabase-server";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Supabase client with service role
-    const supabase = supabaseServer(cookies(), true);
+    const supabase = await supabaseServer(cookies(), true);
 
     // Insert the user addition request
     const { data, error } = await supabase
@@ -69,4 +69,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

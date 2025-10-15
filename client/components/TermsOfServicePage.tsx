@@ -55,18 +55,19 @@ const TermsOfServicePage = () => {
                   1. Acceptance of Terms
                 </h2>
                 <p className="text-gray-700 leading-relaxed">
-                  Welcome to LearnLoop LLC ("LearnLoop," "we," "our," or "us").
-                  These Terms of Service ("Terms") govern your access to and use
-                  of LearnLoop's website (https://learn-loop.org), web
+                  Welcome to LearnLoop LLC (&quot;LearnLoop,&quot;
+                  &quot;we,&quot; &quot;our,&quot; or &quot;us&quot;). These
+                  Terms of Service (&quot;Terms&quot;) govern your access to and
+                  use of LearnLoop&apos;s website (https://learn-loop.org), web
                   application, and related services (collectively, the
-                  "Service").
+                  &quot;Service&quot;).
                 </p>
                 <p className="text-gray-700 leading-relaxed">
-                  By accessing or using LearnLoop, you ("Customer," "you," or
-                  "your") agree to be bound by these Terms. If you are entering
-                  into this agreement on behalf of a company or other legal
-                  entity, you represent that you have the authority to bind that
-                  entity to these Terms.
+                  By accessing or using LearnLoop, you (&quot;Customer,&quot;
+                  &quot;you,&quot; or &quot;your&quot;) agree to be bound by
+                  these Terms. If you are entering into this agreement on behalf
+                  of a company or other legal entity, you represent that you
+                  have the authority to bind that entity to these Terms.
                 </p>
                 <p className="text-gray-700 leading-relaxed">
                   If you do not agree with these Terms, you may not access or
@@ -113,11 +114,11 @@ const TermsOfServicePage = () => {
                   4. Company Access and Use
                 </h2>
                 <p className="text-gray-700 leading-relaxed">
-                  Each company ("Client") purchasing access to LearnLoop
-                  receives an organization account and a unique company code
-                  that employees may use to join. The Client is responsible for
-                  all activity under its organization account and the actions of
-                  its users.
+                  Each company (&quot;Client&quot;) purchasing access to
+                  LearnLoop receives an organization account and a unique
+                  company code that employees may use to join. The Client is
+                  responsible for all activity under its organization account
+                  and the actions of its users.
                 </p>
               </section>
 
@@ -214,10 +215,11 @@ const TermsOfServicePage = () => {
                   9. Disclaimer of Warranties
                 </h2>
                 <p className="text-gray-700 leading-relaxed">
-                  The Service is provided "as is" and "as available." LearnLoop
-                  makes no warranties or representations, express or implied,
-                  including but not limited to warranties of merchantability,
-                  fitness for a particular purpose, or non-infringement.
+                  The Service is provided &quot;as is&quot; and &quot;as
+                  available.&quot; LearnLoop makes no warranties or
+                  representations, express or implied, including but not limited
+                  to warranties of merchantability, fitness for a particular
+                  purpose, or non-infringement.
                 </p>
               </section>
 
@@ -233,8 +235,8 @@ const TermsOfServicePage = () => {
                   Service.
                 </p>
                 <p className="text-gray-700 leading-relaxed">
-                  LearnLoop's total cumulative liability shall not exceed the
-                  total amount paid by the Client to LearnLoop in the twelve
+                  LearnLoop&apos;s total cumulative liability shall not exceed
+                  the total amount paid by the Client to LearnLoop in the twelve
                   (12) months preceding the event giving rise to the claim.
                 </p>
               </section>
@@ -248,8 +250,8 @@ const TermsOfServicePage = () => {
                   California, without regard to its conflict of law principles.
                   All disputes arising out of or related to these Terms or the
                   Service shall be resolved by binding arbitration administered
-                  by the American Arbitration Association ("AAA") under its
-                  Commercial Arbitration Rules.
+                  by the American Arbitration Association (&quot;AAA&quot;)
+                  under its Commercial Arbitration Rules.
                 </p>
               </section>
 

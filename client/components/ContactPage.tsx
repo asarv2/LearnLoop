@@ -156,8 +156,8 @@ const ContactPage = () => {
               Contact Us
             </h1>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
-              Have questions about LearnLoop? We'd love to hear from you. Send
-              us a message and we'll respond as soon as possible.
+              Have questions about LearnLoop? We&apos;d love to hear from you.
+              Send us a message and we&apos;ll respond as soon as possible.
             </p>
           </div>
 
@@ -169,8 +169,8 @@ const ContactPage = () => {
                   Get in Touch
                 </h2>
                 <p className="text-gray-600 mb-8">
-                  Ready to transform your training? We're here to help you get
-                  started with LearnLoop.
+                  Ready to transform your training? We&apos;re here to help you
+                  get started with LearnLoop.
                 </p>
               </div>
 
@@ -184,7 +184,7 @@ const ContactPage = () => {
                       Email Us
                     </h3>
                     <p className="text-gray-600 mb-2">
-                      Send us an email and we'll respond within 24 hours
+                      Send us an email and we&apos;ll respond within 24 hours
                     </p>
                     <a
                       href="mailto:alex@learnloop.org"

@@ -92,15 +92,16 @@ const ComingSoonPage = () => {
             </h1>
 
             <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed mb-12">
-              We're working hard to bring you a seamless payment experience with
-              Stripe. In the meantime, you can still get started with LearnLoop.
+              We&apos;re working hard to bring you a seamless payment experience
+              with Stripe. In the meantime, you can still get started with
+              LearnLoop.
             </p>
 
             <div className="bg-blue-50 border border-blue-200 rounded-2xl p-8 max-w-2xl mx-auto mb-12">
               <div className="flex items-center justify-center gap-3 mb-4">
                 <Clock className="w-6 h-6 text-blue-600" />
                 <h2 className="text-xl font-semibold text-gray-900">
-                  What's Available Now
+                  What&apos;s Available Now
                 </h2>
               </div>
 

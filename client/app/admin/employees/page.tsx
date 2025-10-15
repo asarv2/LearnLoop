@@ -170,7 +170,7 @@ const createColumns = (
 
 export default function AdminEmployeesPage() {
   const { effectiveProfile } = useAuth();
-  const [messageApi, contextHolder] = message.useMessage();
+  const [, contextHolder] = message.useMessage();
 
   // State for filters
   const [searchText, setSearchText] = useState("");
@@ -297,7 +297,7 @@ export default function AdminEmployeesPage() {
         open={addUsersModalOpen}
         onClose={() => setAddUsersModalOpen(false)}
         company={effectiveProfile?.company || ""}
-        currentPlan={effectiveProfile?.plan || "starter"}
+        currentPlan="starter"
       />
     </div>
   );

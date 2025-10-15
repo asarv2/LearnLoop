@@ -49,8 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Supabase client with service role
-    const cookieStore = await cookies();
-    const supabase = await supabaseServer(cookieStore, true);
+    const supabase = await supabaseServer(cookies(), true);
 
     // Combine address fields into JSON object
     const companyAddress = {

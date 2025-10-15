@@ -68,7 +68,7 @@ const GetStartedPage = () => {
       if (response.ok) {
         setSubmitStatus("success");
         setSubmitMessage(
-          "Thank you! We'll be in touch soon to get you started with LearnLoop."
+          "Thank you! We&apos;ll be in touch soon to get you started with LearnLoop."
         );
         setFormData({
           companyName: "",
@@ -187,8 +187,8 @@ const GetStartedPage = () => {
               Get Started with LearnLoop
             </h1>
             <p className="text-xl text-gray-600 leading-relaxed">
-              Ready to transform your training? Let's get you set up with the
-              perfect plan for your organization.
+              Ready to transform your training? Let&apos;s get you set up with
+              the perfect plan for your organization.
             </p>
           </div>
 
@@ -508,7 +508,7 @@ const GetStartedPage = () => {
                 >
                   Privacy Policy
                 </a>
-                . We'll contact you shortly to discuss your LearnLoop
+                . We&apos;ll contact you shortly to discuss your LearnLoop
                 implementation.
               </p>
             </form>
