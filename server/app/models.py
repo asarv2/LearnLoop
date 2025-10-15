@@ -2,10 +2,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from decimal import Decimal
 from sqlalchemy import (ARRAY, Boolean, CheckConstraint, Column, Computed,
                         DateTime, Double, Enum, ForeignKeyConstraint, Index,
                         Integer, PrimaryKeyConstraint, SmallInteger, String,
-                        Text, UniqueConstraint, Uuid, text)
+                        Text, UniqueConstraint, Uuid, text, Numeric)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped
 from sqlmodel import Field, Relationship, SQLModel

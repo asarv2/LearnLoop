@@ -1,4 +1,5 @@
 "use client";
+import { useStatsigAnalytics } from "@/hooks/useStatsigAnalytics";
 import {
   CheckCircle2,
   Clock,
@@ -11,24 +12,24 @@ import {
   Users,
 } from "lucide-react";
 import Image from "next/image";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import AuthModal from "./auth/AuthModal";
 
 // Mini scenario preview component - moved outside to prevent re-creation
 const MiniScenarioPreview = ({
   previewScenario,
-  setPreviewScenario,
   previewPosition,
-  setPreviewPosition,
   previewPersonality,
-  setPreviewPersonality,
+  onScenarioChange,
+  onPositionChange,
+  onPersonalityChange,
 }: {
   previewScenario: string;
-  setPreviewScenario: (value: string) => void;
   previewPosition: string;
-  setPreviewPosition: (value: string) => void;
   previewPersonality: string;
-  setPreviewPersonality: (value: string) => void;
+  onScenarioChange: (value: string) => void;
+  onPositionChange: (value: string) => void;
+  onPersonalityChange: (value: string) => void;
 }) => {
   const scenarios = [
     "Employee Termination",
@@ -68,7 +69,7 @@ const MiniScenarioPreview = ({
           </div>
           <select
             value={previewScenario}
-            onChange={(e) => setPreviewScenario(e.target.value)}
+            onChange={(e) => onScenarioChange(e.target.value)}
             className={`w-full p-2 border rounded text-sm outline-none transition-all ${
               previewScenario
                 ? "border-green-400 bg-green-50"
@@ -106,7 +107,7 @@ const MiniScenarioPreview = ({
             type="text"
             placeholder="Enter role..."
             value={previewPosition}
-            onChange={(e) => setPreviewPosition(e.target.value)}
+            onChange={(e) => onPositionChange(e.target.value)}
             className={`w-full p-2 border rounded text-sm outline-none transition-all ${
               previewPosition
                 ? "border-green-400 bg-green-50"
@@ -150,7 +151,7 @@ const MiniScenarioPreview = ({
               return (
                 <div
                   key={personality}
-                  onClick={() => setPreviewPersonality(personality)}
+                  onClick={() => onPersonalityChange(personality)}
                   className={`p-3 border-2 rounded cursor-pointer transition-all ${
                     isSelected ? selectedColors[index] : colors[index]
                   } hover:shadow-sm`}
@@ -464,6 +465,14 @@ const MiniFeedbackPreview = () => {
 const LandingPage = () => {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const {
+    logEvent,
+    logPageView,
+    logNavigationClick,
+    logCTAClick,
+    logFormSubmission,
+    STATSIG_EVENTS,
+  } = useStatsigAnalytics();
 
   // Mini scenario preview state
   const [previewScenario, setPreviewScenario] = useState("");
@@ -478,15 +487,65 @@ const LandingPage = () => {
   >("idle");
   const [subscriptionMessage, setSubscriptionMessage] = useState("");
 
-  const handleGetStarted = () => {
+  // Track page view on component mount
+  useEffect(() => {
+    logPageView("landing");
+  }, [logPageView]);
+
+  // Event handlers for tracking
+  const handleNavClick = (destination: string) => {
+    logNavigationClick(destination, "landing");
+    window.open(`/${destination}`, "_self");
+  };
+
+  const handleSignUpClick = () => {
+    logCTAClick("sign_up", "landing");
     setAuthMode("signup");
     setAuthModalOpen(true);
   };
+
+  // Remove unused function - AuthModal tracking will be handled in AuthModal component
+
+  const handleScenarioChange = (value: string) => {
+    logEvent(STATSIG_EVENTS.SCENARIO_PREVIEW_SCENARIO_SELECTED, {
+      action: "scenario_selected",
+      value,
+    });
+    setPreviewScenario(value);
+  };
+
+  const handlePositionChange = (value: string) => {
+    logEvent(STATSIG_EVENTS.SCENARIO_PREVIEW_POSITION_ENTERED, {
+      action: "position_entered",
+      value,
+    });
+    setPreviewPosition(value);
+  };
+
+  const handlePersonalityChange = (value: string) => {
+    logEvent(STATSIG_EVENTS.SCENARIO_PREVIEW_PERSONALITY_SELECTED, {
+      action: "personality_selected",
+      value,
+    });
+    setPreviewPersonality(value);
+  };
+
+  const handleFooterLinkClick = (section: string, destination: string) => {
+    logEvent(STATSIG_EVENTS.FOOTER_LINK_CLICKED, {
+      section,
+      destination,
+    });
+  };
+
+  // handleGetStarted removed - no Get Started button in current design
 
   const handleEmailSubscription = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setSubscriptionStatus("idle");
+
+    // Log subscription attempt
+    logEvent(STATSIG_EVENTS.EMAIL_SUBSCRIPTION_ATTEMPTED, { email });
 
     try {
       const response = await fetch("/api/v1/subscribe", {
@@ -503,17 +562,26 @@ const LandingPage = () => {
         setSubscriptionStatus("success");
         setSubscriptionMessage(data.message);
         setEmail("");
+        logFormSubmission("email_subscription", true, { email });
       } else {
         setSubscriptionStatus("error");
         setSubscriptionMessage(
           data.error || "Something went wrong. Please try again."
         );
+        logFormSubmission("email_subscription", false, {
+          email,
+          error: data.error,
+        });
       }
     } catch {
       setSubscriptionStatus("error");
       setSubscriptionMessage(
         "Network error. Please check your connection and try again."
       );
+      logFormSubmission("email_subscription", false, {
+        email,
+        error: "Network error",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -583,13 +651,13 @@ const LandingPage = () => {
 
               <div className="flex items-center space-x-6">
                 <button
-                  onClick={() => window.open("/about", "_self")}
+                  onClick={() => handleNavClick("about")}
                   className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
                 >
                   About Us
                 </button>
                 <button
-                  onClick={() => window.open("/pricing", "_self")}
+                  onClick={() => handleNavClick("pricing")}
                   className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
                 >
                   Pricing
@@ -599,18 +667,19 @@ const LandingPage = () => {
 
             <div className="flex items-center space-x-3">
               <button
-                onClick={handleGetStarted}
+                onClick={handleSignUpClick}
                 className="text-gray-600 hover:text-gray-900 font-medium transition-colors px-4 py-2"
               >
                 Sign Up
               </button>
               <button
-                onClick={() =>
+                onClick={() => {
+                  logNavigationClick("book_demo", "landing");
                   window.open(
                     "https://calendly.com/siladiea2005/learnloop-demo",
                     "_blank"
-                  )
-                }
+                  );
+                }}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
               >
                 Book Demo
@@ -727,11 +796,11 @@ const LandingPage = () => {
                   <div className="mt-6">
                     <MiniScenarioPreview
                       previewScenario={previewScenario}
-                      setPreviewScenario={setPreviewScenario}
                       previewPosition={previewPosition}
-                      setPreviewPosition={setPreviewPosition}
                       previewPersonality={previewPersonality}
-                      setPreviewPersonality={setPreviewPersonality}
+                      onScenarioChange={handleScenarioChange}
+                      onPositionChange={handlePositionChange}
+                      onPersonalityChange={handlePersonalityChange}
                     />
                   </div>
                 )}
@@ -865,6 +934,9 @@ const LandingPage = () => {
                   href="https://calendly.com/siladiea2005/learnloop-demo"
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() =>
+                    handleFooterLinkClick("company_info", "book_demo")
+                  }
                   className="text-blue-400 hover:text-blue-300 transition-colors"
                 >
                   Book Demo
@@ -879,6 +951,9 @@ const LandingPage = () => {
                 <li>
                   <a
                     href="/about"
+                    onClick={() =>
+                      handleFooterLinkClick("quick_links", "about")
+                    }
                     className="text-gray-400 hover:text-white transition-colors"
                   >
                     About Us
@@ -887,6 +962,9 @@ const LandingPage = () => {
                 <li>
                   <a
                     href="/pricing"
+                    onClick={() =>
+                      handleFooterLinkClick("quick_links", "pricing")
+                    }
                     className="text-gray-400 hover:text-white transition-colors"
                   >
                     Pricing
@@ -895,6 +973,9 @@ const LandingPage = () => {
                 <li>
                   <a
                     href="/contact"
+                    onClick={() =>
+                      handleFooterLinkClick("quick_links", "contact")
+                    }
                     className="text-gray-400 hover:text-white transition-colors"
                   >
                     Contact
@@ -910,6 +991,9 @@ const LandingPage = () => {
                 <li>
                   <a
                     href="/terms-of-service"
+                    onClick={() =>
+                      handleFooterLinkClick("legal", "terms_of_service")
+                    }
                     className="text-gray-400 hover:text-white transition-colors"
                   >
                     Terms of Service
@@ -918,6 +1002,9 @@ const LandingPage = () => {
                 <li>
                   <a
                     href="/privacy-policy"
+                    onClick={() =>
+                      handleFooterLinkClick("legal", "privacy_policy")
+                    }
                     className="text-gray-400 hover:text-white transition-colors"
                   >
                     Privacy Policy
@@ -926,6 +1013,7 @@ const LandingPage = () => {
                 <li>
                   <a
                     href="mailto:alex@learn-loop.org"
+                    onClick={() => handleFooterLinkClick("legal", "support")}
                     className="text-gray-400 hover:text-white transition-colors"
                   >
                     Support

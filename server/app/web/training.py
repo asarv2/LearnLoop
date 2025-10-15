@@ -13,7 +13,7 @@ from typing import Any, cast
 import socketio  # type: ignore
 from agents.items import TResponseInputItem
 from app.db import get_session
-from app.models import Documents  # ✨ Import Personas
+from app.models import Documents
 from app.models import (Attempts, Chats, Fields, Groups, Messages, Parameters,
                         Personas, Scenarios, Trainings)
 from app.room import get_room

@@ -1,15 +1,44 @@
 "use client";
+import { useStatsigAnalytics } from "@/hooks/useStatsigAnalytics";
 import { ArrowRight, Calendar, Users, Zap } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AuthModal from "./auth/AuthModal";
 
 const PricingPage = () => {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const {
+    logEvent,
+    logNavigationClick,
+    logCTAClick,
+    logPricingPlanClick,
+    STATSIG_EVENTS,
+  } = useStatsigAnalytics();
+
+  // Track page view on component mount
+  useEffect(() => {
+    logEvent(STATSIG_EVENTS.PRICING_PAGE_VIEWED);
+  }, [logEvent, STATSIG_EVENTS.PRICING_PAGE_VIEWED]);
 
   const handleGetStarted = () => {
+    logCTAClick("sign_up", "pricing");
     setAuthMode("signup");
     setAuthModalOpen(true);
+  };
+
+  const handleNavClick = (destination: string) => {
+    logNavigationClick(destination, "pricing");
+    window.open(`/${destination}`, "_self");
+  };
+
+  const handlePlanClick = (
+    planData: Record<string, string | number | boolean>,
+    action: "start_trial" | "contact_sales"
+  ) => {
+    logPricingPlanClick({
+      ...planData,
+      action,
+    });
   };
 
   const pricingTiers = [
@@ -59,7 +88,7 @@ const PricingPage = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-8">
               <button
-                onClick={() => window.open("/", "_self")}
+                onClick={() => handleNavClick("")}
                 className="flex items-center space-x-3"
               >
                 <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl flex items-center justify-center">
@@ -72,13 +101,13 @@ const PricingPage = () => {
 
               <div className="flex items-center space-x-6">
                 <button
-                  onClick={() => window.open("/about", "_self")}
+                  onClick={() => handleNavClick("about")}
                   className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
                 >
                   About Us
                 </button>
                 <button
-                  onClick={() => window.open("/pricing", "_self")}
+                  onClick={() => handleNavClick("pricing")}
                   className="text-blue-600 hover:text-blue-700 font-medium transition-colors"
                 >
                   Pricing
@@ -94,12 +123,13 @@ const PricingPage = () => {
                 Sign Up
               </button>
               <button
-                onClick={() =>
+                onClick={() => {
+                  logNavigationClick("book_demo", "pricing");
                   window.open(
                     "https://calendly.com/siladiea2005/learnloop-demo",
                     "_blank"
-                  )
-                }
+                  );
+                }}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
               >
                 Book Demo
@@ -193,19 +223,23 @@ const PricingPage = () => {
                     <div className="mt-6">
                       {isEnterprise ? (
                         <button
-                          onClick={() =>
+                          onClick={() => {
+                            handlePlanClick(tier, "contact_sales");
                             window.open(
                               "https://calendly.com/siladiea2005/learnloop-demo",
                               "_blank"
-                            )
-                          }
+                            );
+                          }}
                           className="w-full py-2 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition-colors"
                         >
                           Contact Sales
                         </button>
                       ) : (
                         <button
-                          onClick={() => window.open("/get-started", "_self")}
+                          onClick={() => {
+                            handlePlanClick(tier as Record<string, string | number | boolean>, "start_trial");
+                            window.open("/get-started", "_self");
+                          }}
                           className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
                         >
                           Start Free Trial

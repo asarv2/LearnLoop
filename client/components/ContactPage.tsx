@@ -1,6 +1,7 @@
 "use client";
+import { useStatsigAnalytics } from "@/hooks/useStatsigAnalytics";
 import { Clock, Mail, MessageSquare } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const ContactPage = () => {
   const [formData, setFormData] = useState({
@@ -15,6 +16,18 @@ const ContactPage = () => {
     "idle" | "success" | "error"
   >("idle");
   const [submitMessage, setSubmitMessage] = useState("");
+  const {
+    logEvent,
+    logNavigationClick,
+    logCTAClick,
+    logFormSubmission,
+    STATSIG_EVENTS,
+  } = useStatsigAnalytics();
+
+  // Track page view on component mount
+  useEffect(() => {
+    logEvent(STATSIG_EVENTS.CONTACT_PAGE_VIEWED);
+  }, [logEvent, STATSIG_EVENTS.CONTACT_PAGE_VIEWED]);
 
   const handleInputChange = (
     e: React.ChangeEvent<
@@ -28,10 +41,25 @@ const ContactPage = () => {
     }));
   };
 
+  const handleFieldFocus = (fieldName: string) => {
+    logEvent(STATSIG_EVENTS.CONTACT_FORM_FIELD_FOCUSED, { field: fieldName });
+  };
+
+  const handleNavClick = (destination: string) => {
+    logNavigationClick(destination, "contact");
+    window.open(`/${destination}`, "_self");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setSubmitStatus("idle");
+
+    // Log form submission attempt
+    logEvent(STATSIG_EVENTS.CONTACT_FORM_SUBMITTED, {
+      subject: formData.subject,
+      has_company: !!formData.company,
+    });
 
     try {
       const response = await fetch("/api/v1/contact", {
@@ -56,17 +84,31 @@ const ContactPage = () => {
           subject: "",
           message: "",
         });
+        logFormSubmission("contact_form", true, {
+          subject: formData.subject,
+          company: formData.company,
+        });
       } else {
         setSubmitStatus("error");
         setSubmitMessage(
           data.error || "Something went wrong. Please try again."
         );
+        logFormSubmission("contact_form", false, {
+          subject: formData.subject,
+          company: formData.company,
+          error: data.error,
+        });
       }
     } catch {
       setSubmitStatus("error");
       setSubmitMessage(
         "Network error. Please check your connection and try again."
       );
+      logFormSubmission("contact_form", false, {
+        subject: formData.subject,
+        company: formData.company,
+        error: "Network error",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -83,7 +125,7 @@ const ContactPage = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-8">
               <button
-                onClick={() => window.open("/", "_self")}
+                onClick={() => handleNavClick("")}
                 className="flex items-center space-x-3"
               >
                 <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl flex items-center justify-center">
@@ -96,19 +138,19 @@ const ContactPage = () => {
 
               <div className="flex items-center space-x-6">
                 <button
-                  onClick={() => window.open("/about", "_self")}
+                  onClick={() => handleNavClick("about")}
                   className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
                 >
                   About Us
                 </button>
                 <button
-                  onClick={() => window.open("/pricing", "_self")}
+                  onClick={() => handleNavClick("pricing")}
                   className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
                 >
                   Pricing
                 </button>
                 <button
-                  onClick={() => window.open("/contact", "_self")}
+                  onClick={() => handleNavClick("contact")}
                   className="text-blue-600 hover:text-blue-700 font-medium transition-colors"
                 >
                   Contact
@@ -118,18 +160,22 @@ const ContactPage = () => {
 
             <div className="flex items-center space-x-3">
               <button
-                onClick={() => window.open("/auth", "_self")}
+                onClick={() => {
+                  logCTAClick("sign_up", "contact");
+                  window.open("/auth", "_self");
+                }}
                 className="text-gray-600 hover:text-gray-900 font-medium transition-colors px-4 py-2"
               >
                 Sign Up
               </button>
               <button
-                onClick={() =>
+                onClick={() => {
+                  logNavigationClick("book_demo", "contact");
                   window.open(
                     "https://calendly.com/siladiea2005/learnloop-demo",
                     "_blank"
-                  )
-                }
+                  );
+                }}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
               >
                 Book Demo
@@ -179,6 +225,11 @@ const ContactPage = () => {
                     </p>
                     <a
                       href="mailto:alex@learn-loop.org"
+                      onClick={() =>
+                        logEvent(STATSIG_EVENTS.CONTACT_INFO_EMAIL_CLICKED, {
+                          email: "alex@learn-loop.org",
+                        })
+                      }
                       className="text-blue-600 hover:text-blue-700 font-medium"
                     >
                       alex@learn-loop.org
@@ -186,6 +237,11 @@ const ContactPage = () => {
                     <br />
                     <a
                       href="mailto:ashok@learn-loop.org"
+                      onClick={() =>
+                        logEvent(STATSIG_EVENTS.CONTACT_INFO_EMAIL_CLICKED, {
+                          email: "ashok@learn-loop.org",
+                        })
+                      }
                       className="text-blue-600 hover:text-blue-700 font-medium"
                     >
                       ashok@learn-loop.org
@@ -208,6 +264,9 @@ const ContactPage = () => {
                       href="https://calendly.com/siladiea2005/learnloop-demo"
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() =>
+                        logEvent(STATSIG_EVENTS.CONTACT_INFO_DEMO_CLICKED)
+                      }
                       className="text-blue-600 hover:text-blue-700 font-medium"
                     >
                       Schedule Demo →
@@ -273,6 +332,7 @@ const ContactPage = () => {
                       name="name"
                       value={formData.name}
                       onChange={handleInputChange}
+                      onFocus={() => handleFieldFocus("name")}
                       required
                       className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                       placeholder="Your name"
@@ -291,6 +351,7 @@ const ContactPage = () => {
                       name="email"
                       value={formData.email}
                       onChange={handleInputChange}
+                      onFocus={() => handleFieldFocus("email")}
                       required
                       className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                       placeholder="your@email.com"
@@ -311,6 +372,7 @@ const ContactPage = () => {
                     name="company"
                     value={formData.company}
                     onChange={handleInputChange}
+                    onFocus={() => handleFieldFocus("company")}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                     placeholder="Your company name"
                   />
@@ -328,6 +390,7 @@ const ContactPage = () => {
                     name="subject"
                     value={formData.subject}
                     onChange={handleInputChange}
+                    onFocus={() => handleFieldFocus("subject")}
                     required
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                   >
@@ -353,6 +416,7 @@ const ContactPage = () => {
                     name="message"
                     value={formData.message}
                     onChange={handleInputChange}
+                    onFocus={() => handleFieldFocus("message")}
                     required
                     rows={5}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none"

@@ -2,6 +2,7 @@
 "use client";
 
 import { AuthProvider, useAuth } from "@/components/auth/AuthProvider";
+import StatsigWrapper from "@/components/providers/StatsigProvider";
 import { Toaster } from "@/components/ui/toaster";
 import { WebSocketProvider } from "@/contexts/websocket-context";
 import { createQueryClient } from "@/utils/react-query/queryClient";
@@ -28,20 +29,22 @@ export const Providers = ({ children }: { children: React.ReactNode }) => {
   return (
     <ReactQueryClientProvider>
       <AuthProvider>
-        <WebSocketProviderWrapper>
-          <Theme>
-            <ConfigProvider
-              theme={{
-                token: {
-                  colorPrimary: "#1890ff",
-                },
-              }}
-            >
-              {children}
-              <Toaster />
-            </ConfigProvider>
-          </Theme>
-        </WebSocketProviderWrapper>
+        <StatsigWrapper>
+          <WebSocketProviderWrapper>
+            <Theme>
+              <ConfigProvider
+                theme={{
+                  token: {
+                    colorPrimary: "#1890ff",
+                  },
+                }}
+              >
+                {children}
+                <Toaster />
+              </ConfigProvider>
+            </Theme>
+          </WebSocketProviderWrapper>
+        </StatsigWrapper>
       </AuthProvider>
     </ReactQueryClientProvider>
   );
