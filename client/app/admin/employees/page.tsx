@@ -1,5 +1,6 @@
 "use client";
 
+import AddUsersModal from "@/components/admin/AddUsersModal";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { api } from "@/lib/api/fetcher";
 import { PlusOutlined, SearchOutlined, UserOutlined } from "@ant-design/icons";
@@ -175,6 +176,9 @@ export default function AdminEmployeesPage() {
   const [searchText, setSearchText] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
 
+  // State for Add Users modal
+  const [addUsersModalOpen, setAddUsersModalOpen] = useState(false);
+
   // Fetch employees data
   const { data: employees, isLoading } = useQuery({
     queryKey: ["employees", effectiveProfile?.company],
@@ -186,7 +190,8 @@ export default function AdminEmployeesPage() {
   // Fetch training statistics
   const { data: trainingStats } = useQuery({
     queryKey: ["employee-training-stats", effectiveProfile?.company],
-    queryFn: () => fetchEmployeeTrainingStats(effectiveProfile?.company || null),
+    queryFn: () =>
+      fetchEmployeeTrainingStats(effectiveProfile?.company || null),
     enabled: !!effectiveProfile?.company,
     staleTime: 5 * 60_000, // 5 minutes
   });
@@ -236,12 +241,9 @@ export default function AdminEmployeesPage() {
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          disabled
-          onClick={() =>
-            messageApi.info("Add Employee functionality coming soon")
-          }
+          onClick={() => setAddUsersModalOpen(true)}
         >
-          Add Employee
+          Add Users
         </Button>
       </div>
 
@@ -289,6 +291,14 @@ export default function AdminEmployeesPage() {
           scroll={{ x: 800 }}
         />
       </Card>
+
+      {/* Add Users Modal */}
+      <AddUsersModal
+        open={addUsersModalOpen}
+        onClose={() => setAddUsersModalOpen(false)}
+        company={effectiveProfile?.company || ""}
+        currentPlan={effectiveProfile?.plan || "starter"}
+      />
     </div>
   );
 }

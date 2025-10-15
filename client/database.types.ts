@@ -240,6 +240,48 @@ export type Database = {
         }
         Relationships: []
       }
+      get_started_submissions: {
+        Row: {
+          company_address: Json | null
+          corporation_name: string
+          created_at: string | null
+          employee_email: string
+          employee_first_name: string
+          employee_last_name: string
+          employee_position: string | null
+          id: string
+          pricing_plan: string
+          submitted_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          company_address?: Json | null
+          corporation_name: string
+          created_at?: string | null
+          employee_email: string
+          employee_first_name: string
+          employee_last_name: string
+          employee_position?: string | null
+          id?: string
+          pricing_plan: string
+          submitted_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          company_address?: Json | null
+          corporation_name?: string
+          created_at?: string | null
+          employee_email?: string
+          employee_first_name?: string
+          employee_last_name?: string
+          employee_position?: string | null
+          id?: string
+          pricing_plan?: string
+          submitted_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       groups: {
         Row: {
           created_at: string
@@ -876,6 +918,51 @@ export type Database = {
           user_id?: string | null
           what_not_to_do?: string[] | null
           what_to_do?: string[] | null
+        }
+        Relationships: []
+      }
+      user_addition_requests: {
+        Row: {
+          company: string
+          created_at: string | null
+          current_plan: string
+          id: string
+          notes: string | null
+          processed_at: string | null
+          processed_by: string | null
+          requested_by: string | null
+          status: string | null
+          total_cost: number | null
+          updated_at: string | null
+          users_to_add: number
+        }
+        Insert: {
+          company: string
+          created_at?: string | null
+          current_plan: string
+          id?: string
+          notes?: string | null
+          processed_at?: string | null
+          processed_by?: string | null
+          requested_by?: string | null
+          status?: string | null
+          total_cost?: number | null
+          updated_at?: string | null
+          users_to_add: number
+        }
+        Update: {
+          company?: string
+          created_at?: string | null
+          current_plan?: string
+          id?: string
+          notes?: string | null
+          processed_at?: string | null
+          processed_by?: string | null
+          requested_by?: string | null
+          status?: string | null
+          total_cost?: number | null
+          updated_at?: string | null
+          users_to_add?: number
         }
         Relationships: []
       }

@@ -104,6 +104,31 @@ class Fields(_Base, table=True):
     parameters: List['Parameters'] = Relationship(back_populates='field')
 
 
+class GetStartedSubmissions(_Base, table=True):
+    __tablename__ = 'get_started_submissions'
+    __table_args__ = (
+        CheckConstraint("pricing_plan = ANY (ARRAY['starter'::text, 'growth'::text, 'professional'::text, 'scale'::text, 'enterprise'::text])", name='check_pricing_plan'),
+        PrimaryKeyConstraint('id', name='get_started_submissions_pkey'),
+        Index('idx_get_started_submissions_corporation', 'corporation_name'),
+        Index('idx_get_started_submissions_email', 'employee_email'),
+        Index('idx_get_started_submissions_submitted_at', 'submitted_at'),
+        {'comment': 'Stores Get Started form submissions with company and employee '
+                'information'}
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    corporation_name: str = Field(sa_column=Column('corporation_name', Text))
+    employee_first_name: str = Field(sa_column=Column('employee_first_name', Text))
+    employee_last_name: str = Field(sa_column=Column('employee_last_name', Text))
+    employee_email: str = Field(sa_column=Column('employee_email', Text))
+    pricing_plan: str = Field(sa_column=Column('pricing_plan', Text))
+    submitted_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('submitted_at', DateTime(True)))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    company_address: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column('company_address', JSONB, comment='JSON object containing: {street, city, state, zipCode, country}'))
+    employee_position: Optional[str] = Field(default=None, sa_column=Column('employee_position', Text))
+
+
 class Groups(_Base, table=True):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='groups_pkey'),
@@ -136,6 +161,31 @@ class Rubrics(_Base, table=True):
 
     standards: List['Standards'] = Relationship(back_populates='rubric')
     scenarios: List['Scenarios'] = Relationship(back_populates='rubric')
+
+
+class UserAdditionRequests(_Base, table=True):
+    __tablename__ = 'user_addition_requests'
+    __table_args__ = (
+        CheckConstraint("status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'completed'::text])", name='user_addition_requests_status_check'),
+        CheckConstraint('users_to_add > 0', name='user_addition_requests_users_to_add_check'),
+        PrimaryKeyConstraint('id', name='user_addition_requests_pkey'),
+        Index('idx_user_addition_requests_company', 'company'),
+        Index('idx_user_addition_requests_created_at', 'created_at'),
+        Index('idx_user_addition_requests_status', 'status')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    company: str = Field(sa_column=Column('company', Text))
+    current_plan: str = Field(sa_column=Column('current_plan', Text))
+    users_to_add: int = Field(sa_column=Column('users_to_add', Integer))
+    total_cost: Optional[Decimal] = Field(default=None, sa_column=Column('total_cost', Numeric(10, 2), default=0))
+    requested_by: Optional[str] = Field(default=None, sa_column=Column('requested_by', Text))
+    status: Optional[str] = Field(default=None, sa_column=Column('status', Text, default=r'pending'))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    processed_at: Optional[datetime] = Field(default=None, sa_column=Column('processed_at', DateTime(True)))
+    processed_by: Optional[str] = Field(default=None, sa_column=Column('processed_by', Text))
+    notes: Optional[str] = Field(default=None, sa_column=Column('notes', Text))
 
 
 class Parameters(_Base, table=True):
