@@ -14,12 +14,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 COPY requirements.txt ./
 
-# 1) Install PyAV from wheel only (any 12–16)
-# 2) Then install everything else to the --prefix layer
+# IMPORTANT: install *into* /install for *both* steps
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install --only-binary=:all: "av>=12,<17" && \
+    pip install --only-binary=:all: --prefix=/install "av>=12,<17" && \
     pip install --prefer-binary --prefix=/install -r requirements.txt
+
+# Sanity check: verify PyAV is properly installed
+RUN python -c "import av, aiortc; print('PyAV:', av.__version__)"
 
 ############################################
 # 3️⃣  runtime image  (what you actually deploy)
