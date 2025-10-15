@@ -148,6 +148,81 @@ export type Database = {
           },
         ]
       }
+      company_codes: {
+        Row: {
+          code: string
+          company_name: string
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          expires_at: string | null
+          id: string
+          is_active: boolean | null
+          times_used: number | null
+          usage_limit: number | null
+        }
+        Insert: {
+          code: string
+          company_name: string
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          times_used?: number | null
+          usage_limit?: number | null
+        }
+        Update: {
+          code?: string
+          company_name?: string
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          times_used?: number | null
+          usage_limit?: number | null
+        }
+        Relationships: []
+      }
+      contact_messages: {
+        Row: {
+          company: string | null
+          created_at: string | null
+          email: string
+          id: string
+          message: string
+          name: string
+          status: string | null
+          subject: string
+          updated_at: string | null
+        }
+        Insert: {
+          company?: string | null
+          created_at?: string | null
+          email: string
+          id?: string
+          message: string
+          name: string
+          status?: string | null
+          subject: string
+          updated_at?: string | null
+        }
+        Update: {
+          company?: string | null
+          created_at?: string | null
+          email?: string
+          id?: string
+          message?: string
+          name?: string
+          status?: string | null
+          subject?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       documents: {
         Row: {
           content: string | null
@@ -597,6 +672,7 @@ export type Database = {
         Row: {
           active: boolean | null
           company: string | null
+          company_name: string | null
           created_at: string | null
           id: string
           last_active: string | null
@@ -608,6 +684,7 @@ export type Database = {
         Insert: {
           active?: boolean | null
           company?: string | null
+          company_name?: string | null
           created_at?: string | null
           id?: string
           last_active?: string | null
@@ -619,6 +696,7 @@ export type Database = {
         Update: {
           active?: boolean | null
           company?: string | null
+          company_name?: string | null
           created_at?: string | null
           id?: string
           last_active?: string | null

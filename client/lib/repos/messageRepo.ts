@@ -2,7 +2,6 @@
 import type { Database } from "@/database.types";
 import { HttpError } from "@/utils/HttpError";
 import supabaseServer from "@/utils/supabase/supabase-server";
-import { cookies } from "next/headers";
 import { z } from "zod";
 
 export type MessageCreate = Database["public"]["Tables"]["messages"]["Insert"];
@@ -43,7 +42,7 @@ export const MessageUpdateSchema = z.object({
 });
 
 async function getSupabase() {
-  return await supabaseServer(cookies());
+  return await supabaseServer();
 }
 
 // 3.2 – CRUD wrappers

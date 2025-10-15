@@ -70,6 +70,47 @@ class Users(_Base, table=True):
     logs: List['Logs'] = Relationship(back_populates='user')
 
 
+class CompanyCodes(_Base, table=True):
+    __tablename__ = 'company_codes'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='company_codes_pkey'),
+        UniqueConstraint('code', name='company_codes_code_key'),
+        Index('idx_company_codes_active', 'is_active'),
+        Index('idx_company_codes_code', 'code')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    code: str = Field(sa_column=Column('code', String(20)))
+    company_name: str = Field(sa_column=Column('company_name', Text))
+    description: Optional[str] = Field(default=None, sa_column=Column('description', Text))
+    is_active: Optional[bool] = Field(default=None, sa_column=Column('is_active', Boolean, default=True))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    created_by: Optional[str] = Field(default=None, sa_column=Column('created_by', Text))
+    expires_at: Optional[datetime] = Field(default=None, sa_column=Column('expires_at', DateTime(True)))
+    usage_limit: Optional[int] = Field(default=None, sa_column=Column('usage_limit', Integer))
+    times_used: Optional[int] = Field(default=None, sa_column=Column('times_used', Integer, default=0))
+
+
+class ContactMessages(_Base, table=True):
+    __tablename__ = 'contact_messages'
+    __table_args__ = (
+        CheckConstraint("status = ANY (ARRAY['pending'::text, 'responded'::text, 'closed'::text])", name='contact_messages_status_check'),
+        PrimaryKeyConstraint('id', name='contact_messages_pkey'),
+        Index('idx_contact_messages_created_at', 'created_at'),
+        Index('idx_contact_messages_status', 'status')
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
+    name: str = Field(sa_column=Column('name', Text))
+    email: str = Field(sa_column=Column('email', Text))
+    subject: str = Field(sa_column=Column('subject', Text))
+    message: str = Field(sa_column=Column('message', Text))
+    created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('created_at', DateTime(True)))
+    updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column('updated_at', DateTime(True)))
+    company: Optional[str] = Field(default=None, sa_column=Column('company', Text))
+    status: Optional[str] = Field(default=None, sa_column=Column('status', Text, default=r'pending'))
+
+
 class EmailSubscriptions(_Base, table=True):
     __tablename__ = 'email_subscriptions'
     __table_args__ = (
@@ -208,7 +249,8 @@ class Parameters(_Base, table=True):
 class Profiles(_Base, table=True):
     __table_args__ = (
         ForeignKeyConstraint(['id'], ['auth.users.id'], ondelete='CASCADE', onupdate='CASCADE', name='profiles_id_fkey'),
-        PrimaryKeyConstraint('id', name='profiles_pkey')
+        PrimaryKeyConstraint('id', name='profiles_pkey'),
+        Index('idx_profiles_company_name', 'company_name')
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
@@ -220,6 +262,7 @@ class Profiles(_Base, table=True):
     last_active: Optional[datetime] = Field(default=None, sa_column=Column('last_active', DateTime(True)))
     role: Optional[str] = Field(default=None, sa_column=Column('role', Enum('employee', 'admin', 'superadmin', name='user_role'), default=r'employee'))
     company: Optional[str] = Field(default=None, sa_column=Column('company', Text))
+    company_name: Optional[str] = Field(default=None, sa_column=Column('company_name', Text))
 
     attempts: List['Attempts'] = Relationship(back_populates='profile')
     documents: List['Documents'] = Relationship(back_populates='profile')

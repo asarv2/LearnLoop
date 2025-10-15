@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 async function getSupabase() {
-  return await supabaseServer(cookies());
+  return await supabaseServer();
 }
 
 // GET /api/v1/training-completion - get completion rates for trainings by company

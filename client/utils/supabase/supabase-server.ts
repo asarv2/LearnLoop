@@ -2,10 +2,9 @@ import { Database } from "@/database.types";
 import { CookieOptions, createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-export default async function c(
-  cookieStore: ReturnType<typeof cookies>,
-  useServiceRole: boolean = false
-) {
+export default async function supabaseServer(useServiceRole: boolean = false) {
+  const cookieStore = cookies();
+
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     useServiceRole
@@ -13,21 +12,20 @@ export default async function c(
       : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        async getAll() {
-          return (await cookieStore)
+        getAll() {
+          return cookieStore
             .getAll()
             .map((cookie) => ({ name: cookie.name, value: cookie.value }));
         },
-        async setAll(
+        setAll(
           cookiesToSet: {
             name: string;
             value: string;
             options?: CookieOptions;
           }[]
         ) {
-          const store = await cookieStore;
           cookiesToSet.forEach(({ name, value, options }) =>
-            store.set(name, value, options)
+            cookieStore.set(name, value, options)
           );
         },
       },

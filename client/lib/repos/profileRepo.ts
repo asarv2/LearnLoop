@@ -2,7 +2,6 @@
 import type { Database } from "@/database.types";
 import { HttpError } from "@/utils/HttpError";
 import supabaseServer from "@/utils/supabase/supabase-server";
-import { cookies } from "next/headers";
 import { z } from "zod";
 
 export type ProfileCreate = Database["public"]["Tables"]["profiles"]["Insert"];
@@ -32,7 +31,7 @@ export const ProfileUpdateSchema = z.object({
 });
 
 async function getSupabase() {
-  return await supabaseServer(cookies());
+  return await supabaseServer();
 }
 
 // CRUD wrappers

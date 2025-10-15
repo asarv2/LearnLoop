@@ -601,7 +601,7 @@ const LandingPage = () => {
                       "_blank"
                     )
                   }
-                  className="text-gray-600 hover:text-gray-900 font-medium transition-colors"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
                 >
                   Book Demo
                 </button>
@@ -614,12 +614,6 @@ const LandingPage = () => {
                 className="text-gray-600 hover:text-gray-900 font-medium transition-colors px-4 py-2"
               >
                 Sign Up
-              </button>
-              <button
-                onClick={() => window.open("/get-started", "_self")}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-sm hover:shadow-md"
-              >
-                Get Started
               </button>
             </div>
           </div>
@@ -906,14 +900,6 @@ const LandingPage = () => {
                     Contact
                   </a>
                 </li>
-                <li>
-                  <a
-                    href="/get-started"
-                    className="text-gray-400 hover:text-white transition-colors"
-                  >
-                    Get Started
-                  </a>
-                </li>
               </ul>
             </div>
 
@@ -939,7 +925,7 @@ const LandingPage = () => {
                 </li>
                 <li>
                   <a
-                    href="mailto:alex@learnloop.org"
+                    href="mailto:alex@learn-loop.org"
                     className="text-gray-400 hover:text-white transition-colors"
                   >
                     Support
@@ -957,16 +943,16 @@ const LandingPage = () => {
               </p>
               <div className="flex space-x-6 text-sm text-gray-400">
                 <a
-                  href="mailto:alex@learnloop.org"
+                  href="mailto:alex@learn-loop.org"
                   className="hover:text-white transition-colors"
                 >
-                  alex@learnloop.org
+                  alex@learn-loop.org
                 </a>
                 <a
-                  href="mailto:ashok@learnloop.org"
+                  href="mailto:ashok@learn-loop.org"
                   className="hover:text-white transition-colors"
                 >
-                  ashok@learnloop.org
+                  ashok@learn-loop.org
                 </a>
               </div>
             </div>

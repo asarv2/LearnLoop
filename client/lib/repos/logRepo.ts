@@ -24,7 +24,7 @@ export const LogUpdateSchema = z.object({
 });
 
 async function getSupabase() {
-  return await supabaseServer(cookies());
+  return await supabaseServer();
 }
 
 // CRUD wrappers

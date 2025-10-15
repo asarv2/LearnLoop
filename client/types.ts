@@ -10,6 +10,10 @@ import type { Tables } from "@/database.types";
 export type Attempt = Tables<'attempts'>;
 // --- CHATS ---
 export type Chat = Tables<'chats'>;
+// --- COMPANY_CODES ---
+export type CompanyCode = Tables<'company_codes'>;
+// --- CONTACT_MESSAGES ---
+export type ContactMessage = Tables<'contact_messages'>;
 // --- DOCUMENTS ---
 export type Document = Tables<'documents'>;
 // --- EMAIL_SUBSCRIPTIONS ---
@@ -71,7 +75,7 @@ export type UserRole = "employee" | "admin" | "superadmin";
 // =============================================
 
 // Union type of all table names
-export type TableName = 'attempts' | 'chats' | 'documents' | 'email_subscriptions' | 'fields' | 'get_started_submissions' | 'groups' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'policies' | 'profiles' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings' | 'user_addition_requests' | 'user_feedback' | 'user_insights';
+export type TableName = 'attempts' | 'chats' | 'company_codes' | 'contact_messages' | 'documents' | 'email_subscriptions' | 'fields' | 'get_started_submissions' | 'groups' | 'hints' | 'logs' | 'messages' | 'parameters' | 'personas' | 'policies' | 'profiles' | 'rubric_grades' | 'rubrics' | 'scenarios' | 'standard_grades' | 'standards' | 'trainings' | 'user_addition_requests' | 'user_feedback' | 'user_insights';
 
 // Union type of all entity types
-export type Entity = Attempt | Chat | Document | EmailSubscription | Field | GetStartedSubmission | Group | Hint | Log | Message | Parameter | Persona | Policy | Profile | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training | UserAdditionRequest | UserFeedback | UserInsight;
+export type Entity = Attempt | Chat | CompanyCode | ContactMessage | Document | EmailSubscription | Field | GetStartedSubmission | Group | Hint | Log | Message | Parameter | Persona | Policy | Profile | RubricGrade | Rubric | Scenario | StandardGrade | Standard | Training | UserAdditionRequest | UserFeedback | UserInsight;
