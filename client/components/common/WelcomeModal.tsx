@@ -1,7 +1,11 @@
 "use client";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { usePersonas, useUpdatePersona } from "@/lib/api/hooks/usePersonas";
+import {
+  useCreatePersona,
+  usePersonas,
+  useUpdatePersona,
+} from "@/lib/api/hooks/usePersonas";
 import { useUpdateProfile } from "@/lib/api/hooks/useProfiles";
 import { personaKeys, profileKeys } from "@/lib/api/keys";
 import { SaveOutlined, UserOutlined } from "@ant-design/icons";
@@ -39,6 +43,7 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
   const { data: personas } = usePersonas(effectiveProfile?.id);
   const updateProfile = useUpdateProfile(effectiveProfile?.id || "");
   const updatePersona = useUpdatePersona(personas?.[0]?.id || "");
+  const createPersona = useCreatePersona();
 
   // Note: We don't need to check viewed_intro here since the modal only shows when it's false
 
@@ -67,13 +72,26 @@ export default function WelcomeModal({ open, onClose }: WelcomeModalProps) {
         viewed_intro: true,
       });
 
-      // Update existing persona
-      await updatePersona.mutateAsync({
-        name: values.name,
-        description: values.description,
-        position: values.position,
-        level: values.level,
-      });
+      // Create or update persona
+      if (personas && personas.length > 0) {
+        // Update existing persona
+        await updatePersona.mutateAsync({
+          name: values.name,
+          description: values.description,
+          position: values.position,
+          level: values.level,
+        });
+      } else {
+        // Create new persona if none exists
+        await createPersona.mutateAsync({
+          profile_id: effectiveProfile?.id || "",
+          name: values.name,
+          description: values.description,
+          position: values.position,
+          level: values.level,
+          active: true,
+        });
+      }
 
       // Wait for all invalidated queries to refetch to ensure smooth UX
       await Promise.all([
