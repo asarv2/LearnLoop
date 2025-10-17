@@ -7,10 +7,10 @@ export default async function supabaseServer(
   useServiceRole: boolean = false
 ) {
   return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co",
     useServiceRole
-      ? process.env.SERVICE_ROLE_KEY!
-      : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      ? process.env.SERVICE_ROLE_KEY || "placeholder-service-key"
+      : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder-key",
     {
       cookies: {
         async getAll() {
