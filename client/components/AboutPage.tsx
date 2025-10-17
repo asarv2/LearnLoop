@@ -101,8 +101,8 @@ const AboutPage = () => {
               </p>
 
               <p className="text-lg text-gray-700 leading-relaxed">
-                Our mission is simple: to make professional growth more
-                engaging, personalized, and measurable through the power of AI.
+                Our mission is simple: "To make professional growth more
+                engaging, personalized, and measurable through the power of AI."
               </p>
             </div>
           </div>

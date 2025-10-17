@@ -250,8 +250,7 @@ class Parameters(_Base, table=True):
 class Profiles(_Base, table=True):
     __table_args__ = (
         ForeignKeyConstraint(['id'], ['auth.users.id'], ondelete='CASCADE', onupdate='CASCADE', name='profiles_id_fkey'),
-        PrimaryKeyConstraint('id', name='profiles_pkey'),
-        Index('idx_profiles_company_name', 'company_name')
+        PrimaryKeyConstraint('id', name='profiles_pkey')
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column('id', Uuid, primary_key=True))
@@ -263,7 +262,6 @@ class Profiles(_Base, table=True):
     last_active: Optional[datetime] = Field(default=None, sa_column=Column('last_active', DateTime(True)))
     role: Optional[str] = Field(default=None, sa_column=Column('role', Enum('employee', 'admin', 'superadmin', name='user_role'), default=r'employee'))
     company: Optional[str] = Field(default=None, sa_column=Column('company', Text))
-    company_name: Optional[str] = Field(default=None, sa_column=Column('company_name', Text))
 
     attempts: List['Attempts'] = Relationship(back_populates='profile')
     documents: List['Documents'] = Relationship(back_populates='profile')
