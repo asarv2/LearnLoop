@@ -12,3 +12,6 @@ htmlcov/
 dump.rdb
 __pycache__/
 *.pyc
+
+# IDE/editor config with secrets
+.cursor/
