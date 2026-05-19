@@ -13,11 +13,7 @@ voice-enabled simulations. Students work through scenarios with AI
 agents that grade, hint, and adapt in real time; instructors author
 rubrics and review outcomes.
 
-[**▶ Watch the demo**](docs/demo.mp4) (click to play)
-
-
 https://github.com/user-attachments/assets/db03379a-c3fd-4f3e-baad-04ab7f9a7b62
-
 
 ## What's in here
 
