@@ -8,10 +8,10 @@
   <em>The next generation of AI simulations.</em>
 </p>
 
-LearnLoop is an AI-driven learning platform built around interactive,
-voice-enabled simulations. Students work through scenarios with AI
-agents that grade, hint, and adapt in real time; instructors author
-rubrics and review outcomes.
+LearnLoop is an AI-driven training platform for organizations and
+companies, built around interactive, voice-enabled simulations.
+Employees work through scenarios with AI agents that grade, hint, and
+adapt in real time; trainers author rubrics and review outcomes.
 
 https://github.com/user-attachments/assets/db03379a-c3fd-4f3e-baad-04ab7f9a7b62
 
