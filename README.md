@@ -23,6 +23,10 @@ https://github.com/user-attachments/assets/db03379a-c3fd-4f3e-baad-04ab7f9a7b62
   pipeline (`grade`, `hint`, `rubric`, `scenario`, `document`, `voice/*`),
   WebRTC room logic, and the message bus.
 - **`model/`** — model service (separate runtime).
+- **`db/setup.sql`** — Postgres schema (profiles, personas, documents,
+  rubrics, standards, scenarios, attempts, chats, messages, hints,
+  grades, assessments, feedback). Run on a fresh Supabase project to
+  recreate the DB structure.
 - **`docker-compose.yml`** — orchestrates `client` (3000), `server`
   (8000), `model` (8001), `documents` (8002), and Redis (6379).
 
